@@ -3,7 +3,6 @@ import path from 'path'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 
-
 function figmaAssetResolver() {
   return {
     name: 'figma-asset-resolver',
@@ -29,6 +28,18 @@ export default defineConfig({
       // Alias @ to the src directory
       '@': path.resolve(__dirname, './src'),
     },
+  },
+  server: {
+    allowedHosts: [
+      'occupational-health-platform-frontend-production.up.railway.app',
+      '.railway.app',
+    ],
+  },
+  preview: {
+    allowedHosts: [
+      'occupational-health-platform-frontend-production.up.railway.app',
+      '.railway.app',
+    ],
   },
 
   // File types to support raw imports. Never add .css, .tsx, or .ts files to this.
