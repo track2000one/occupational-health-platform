@@ -36,6 +36,7 @@ import {
   Campaign as CampaignIcon,
   Assessment as AssessmentIcon,
   Settings as SettingsIcon,
+  AdminPanelSettings as AdminPanelSettingsIcon,
   Logout as LogoutIcon,
   Language as LanguageIcon,
   MedicalInformation as MedicalInformationIcon,
@@ -82,8 +83,10 @@ export function DashboardLayout() {
     { key: 'dataQuality',     label: isRtl ? 'جودة البيانات' : 'Data Quality',        icon: <FactCheckIcon />,     path: '/data-quality',    permission: PERMISSIONS.VIEW_DATA_QUALITY },
     { key: 'appointments',    label: isRtl ? 'المواعيد' : 'Appointments',             icon: <CalendarIcon />,      path: '/appointments',    permission: PERMISSIONS.VIEW_DASHBOARD },
     { key: 'notifications',   label: isRtl ? 'الإشعارات' : 'Notifications',           icon: <NotificationsIcon />, path: '/notifications',   permission: PERMISSIONS.VIEW_DASHBOARD },
+    { key: 'admin',           label: isRtl ? 'لوحة المسؤول' : 'Admin Console',        icon: <AdminPanelSettingsIcon />, path: '/admin',     permission: PERMISSIONS.MANAGE_USERS },
+    { key: 'adminUsers',      label: isRtl ? 'إدارة المستخدمين' : 'Users Management', icon: <PeopleIcon />,              path: '/admin/users', permission: PERMISSIONS.MANAGE_USERS },
     { key: 'auditLog',        label: isRtl ? 'سجل العمليات' : 'Audit Log',            icon: <SecurityIcon />,      path: '/audit-log',       permission: PERMISSIONS.VIEW_AUDIT_LOGS },
-    { key: 'settings',        label: t('settings'),                                    icon: <SettingsIcon />,      path: '/settings',        permission: PERMISSIONS.MANAGE_USERS },
+    { key: 'settings',        label: isRtl ? 'إعدادات النظام' : 'System Settings',      icon: <SettingsIcon />,      path: '/settings',        permission: PERMISSIONS.MANAGE_SETTINGS },
     { key: 'roles',           label: isRtl ? 'الأدوار والصلاحيات' : 'Roles & Perms', icon: <ShieldIcon />,        path: '/roles',           permission: PERMISSIONS.MANAGE_USERS },
   ];
 
