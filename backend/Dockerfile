@@ -14,5 +14,7 @@ RUN python -m pip install --no-cache-dir --upgrade pip \
     && python -m pip install --no-cache-dir -r /app/requirements.txt
 
 COPY . /app
+RUN chmod +x /app/start.sh
 
-CMD ["sh", "-c", "python manage.py migrate && python manage.py bootstrap_admin && python manage.py collectstatic --noinput && exec gunicorn core.wsgi:application --bind 0.0.0.0:${PORT:-8080} --access-logfile - --error-logfile -"]
+ENTRYPOINT ["/app/start.sh"]
+CMD []
