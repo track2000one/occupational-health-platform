@@ -8,4 +8,4 @@ cmds = ["pip install --upgrade pip", "pip install -r requirements.txt"]
 cmds = ["python manage.py collectstatic --noinput"]
 
 [start]
-cmd = "python manage.py migrate && gunicorn core.wsgi:application --bind 0.0.0.0:$PORT"
+cmd = "python manage.py migrate && python manage.py bootstrap_admin && gunicorn core.wsgi:application --bind 0.0.0.0:$PORT"
