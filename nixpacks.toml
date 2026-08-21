@@ -12,4 +12,4 @@ cmds = [
 cmds = ["cd backend && python manage.py collectstatic --noinput"]
 
 [start]
-cmd = "cd backend && python manage.py migrate && cd backend && python manage.py bootstrap_admin && cd backend && gunicorn core.wsgi:application --bind 0.0.0.0:$PORT"
+cmd = "cd backend && python manage.py migrate && python manage.py bootstrap_admin && gunicorn core.wsgi:application --bind 0.0.0.0:$PORT"
