@@ -19,7 +19,7 @@ if (typeof console !== 'undefined') {
   console.warn = (...args: unknown[]) => {
     const joined = args.map(a => (typeof a === 'string' ? a : '')).join(' ');
     if (joined.includes('data-fg') || joined.includes('data-fgid')) return;
-    if (joined.includes('alignItems') || joined.includes('justifyContent') || joined.includes('flexDirection')) return;
+    if (joined.includes('alignItems') || joined.includes('justifyContent')) return;
     if (joined.includes('React does not recognize')) return;
     _consoleWarn(...args);
   };
@@ -38,7 +38,8 @@ import { VaccinationsPage } from './pages/VaccinationsPage';
 import { NeedleStickInjuriesPage } from './pages/NeedleStickInjuriesPage';
 import { MedicalCommitteePage } from './pages/MedicalCommitteePage';
 import { ReportsPage } from './pages/ReportsPage';
-import { UsersManagementPage } from './pages/UsersManagementPage';
+import { AdminUsersPage } from './pages/AdminUsersPage';
+import { AdminDashboardPage } from './pages/AdminDashboardPage';
 import { RolesPermissionsPage } from './pages/RolesPermissionsPage';
 import { NotificationsPage } from './pages/NotificationsPage';
 import { AppointmentsPage } from './pages/AppointmentsPage';
@@ -92,14 +93,20 @@ function AppRoutes() {
         <Route path="data-quality" element={<DataQualityPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
         <Route path="appointments" element={<AppointmentsPage />} />
+        <Route path="admin" element={
+          <PermissionRoute permission="manage:users">
+            <AdminDashboardPage />
+          </PermissionRoute>
+        } />
         <Route path="audit-log" element={
           <PermissionRoute permission="view:auditLogs">
             <AuditLogPage />
           </PermissionRoute>
         } />
-        <Route path="settings" element={
+        <Route path="settings" element={<Navigate to="/admin/users" replace />} />
+        <Route path="admin/users" element={
           <PermissionRoute permission="manage:users">
-            <UsersManagementPage />
+            <AdminUsersPage />
           </PermissionRoute>
         } />
         <Route path="roles" element={
