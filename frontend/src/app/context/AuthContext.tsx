@@ -8,8 +8,17 @@ export interface User {
   name: string;
   email: string;
   role: UserRole;
+  personType?: 'admin' | 'healthStaff' | 'employee' | 'patient' | 'external';
   healthCenterId?: string;
   healthCenterName?: string;
+  nationalId?: string;
+  employeeNumber?: string;
+  medicalRecordNumber?: string;
+  phone?: string;
+  department?: string;
+  jobTitle?: string;
+  specialty?: string;
+  licenseNumber?: string;
   avatar?: string;
   isActive: boolean;
   isStaff?: boolean;
@@ -79,8 +88,17 @@ function normalizeUser(payload: any): User {
     name: payload.name || payload.username || payload.email,
     email: payload.email,
     role: payload.role || 'employee',
+    personType: payload.personType || 'employee',
     healthCenterId: payload.healthCenterId || undefined,
     healthCenterName: payload.healthCenterName || undefined,
+    nationalId: payload.nationalId || undefined,
+    employeeNumber: payload.employeeNumber || undefined,
+    medicalRecordNumber: payload.medicalRecordNumber || undefined,
+    phone: payload.phone || undefined,
+    department: payload.department || undefined,
+    jobTitle: payload.jobTitle || undefined,
+    specialty: payload.specialty || undefined,
+    licenseNumber: payload.licenseNumber || undefined,
     isActive: payload.isActive ?? true,
     isStaff: payload.isStaff,
     isSuperuser: payload.isSuperuser,
@@ -91,22 +109,22 @@ function normalizeUser(payload: any): User {
 
 // Mock users remain as an emergency local fallback only. Production user management is now Django/PostgreSQL based.
 const MOCK_USERS: Record<string, { password: string; user: User }> = {
-  'admin@health.gov':       { password: 'admin123',     user: { id: '1',  name: 'أحمد المنصور',      email: 'admin@health.gov',       role: 'systemAdmin',              isActive: true, isStaff: true, isSuperuser: true } },
-  'manager@health.gov':     { password: 'manager123',   user: { id: '2',  name: 'خالد إبراهيم',       email: 'manager@health.gov',     role: 'ohManager',                isActive: true, isStaff: true } },
-  'ohdoctor@health.gov':    { password: 'doctor123',    user: { id: '3',  name: 'د. سارة محمد',       email: 'ohdoctor@health.gov',    role: 'ohDoctor',                 isActive: true } },
-  'clinicdoc@health.gov':   { password: 'clinic123',    user: { id: '4',  name: 'د. عمر الزهراني',    email: 'clinicdoc@health.gov',   role: 'clinicDoctor',             isActive: true } },
-  'lab@health.gov':         { password: 'lab123',       user: { id: '5',  name: 'فاطمة علي',          email: 'lab@health.gov',         role: 'labOfficer',               isActive: true } },
-  'vaccine@health.gov':     { password: 'vaccine123',   user: { id: '6',  name: 'عمر حسن',            email: 'vaccine@health.gov',     role: 'vaccinationOfficer',       isActive: true } },
-  'needle@health.gov':      { password: 'needle123',    user: { id: '7',  name: 'نورة العتيبي',       email: 'needle@health.gov',      role: 'needleStickOfficer',       isActive: true } },
-  'committee@health.gov':   { password: 'comm123',      user: { id: '8',  name: 'عبدالله القحطاني',   email: 'committee@health.gov',   role: 'medicalCommitteeOfficer',  isActive: true } },
-  'campaign@health.gov':    { password: 'camp123',      user: { id: '9',  name: 'ريم الشمري',         email: 'campaign@health.gov',    role: 'campaignOfficer',          isActive: true } },
-  'center@health.gov':      { password: 'center123',    user: { id: '10', name: 'سلطان المطيري',      email: 'center@health.gov',      role: 'centerManager',            healthCenterId: '1', isActive: true } },
-  'executive@health.gov':   { password: 'exec123',      user: { id: '11', name: 'الأمير فيصل',        email: 'executive@health.gov',   role: 'executive',                isActive: true } },
-  'employee@health.gov':    { password: 'emp123',       user: { id: '12', name: 'ليلى أحمد',          email: 'employee@health.gov',    role: 'employee',                 isActive: true } },
-  'dataentry@health.gov':   { password: 'entry123',     user: { id: '13', name: 'هند السيف',          email: 'dataentry@health.gov',   role: 'dataEntry',                isActive: true } },
-  'quality@health.gov':     { password: 'quality123',   user: { id: '14', name: 'بدر الرشيدي',        email: 'quality@health.gov',     role: 'dataQuality',              isActive: true } },
-  'reports@health.gov':     { password: 'reports123',   user: { id: '15', name: 'مريم البلوي',        email: 'reports@health.gov',     role: 'reportsOfficer',           isActive: true } },
-  'support@health.gov':     { password: 'support123',   user: { id: '16', name: 'وليد الحربي',        email: 'support@health.gov',     role: 'techSupport',              isActive: true, isStaff: true } },
+  'admin@health.gov':       { password: 'admin123',     user: { id: '1',  name: 'أحمد المنصور',      email: 'admin@health.gov',       role: 'systemAdmin', personType: 'admin', isActive: true, isStaff: true, isSuperuser: true } },
+  'manager@health.gov':     { password: 'manager123',   user: { id: '2',  name: 'خالد إبراهيم',       email: 'manager@health.gov',     role: 'ohManager', personType: 'healthStaff', isActive: true, isStaff: true } },
+  'ohdoctor@health.gov':    { password: 'doctor123',    user: { id: '3',  name: 'د. سارة محمد',       email: 'ohdoctor@health.gov',    role: 'ohDoctor', personType: 'healthStaff', isActive: true } },
+  'clinicdoc@health.gov':   { password: 'clinic123',    user: { id: '4',  name: 'د. عمر الزهراني',    email: 'clinicdoc@health.gov',   role: 'clinicDoctor', personType: 'healthStaff', isActive: true } },
+  'lab@health.gov':         { password: 'lab123',       user: { id: '5',  name: 'فاطمة علي',          email: 'lab@health.gov',         role: 'labOfficer', personType: 'healthStaff', isActive: true } },
+  'vaccine@health.gov':     { password: 'vaccine123',   user: { id: '6',  name: 'عمر حسن',            email: 'vaccine@health.gov',     role: 'vaccinationOfficer', personType: 'healthStaff', isActive: true } },
+  'needle@health.gov':      { password: 'needle123',    user: { id: '7',  name: 'نورة العتيبي',       email: 'needle@health.gov',      role: 'needleStickOfficer', personType: 'healthStaff', isActive: true } },
+  'committee@health.gov':   { password: 'comm123',      user: { id: '8',  name: 'عبدالله القحطاني',   email: 'committee@health.gov',   role: 'medicalCommitteeOfficer', personType: 'healthStaff', isActive: true } },
+  'campaign@health.gov':    { password: 'camp123',      user: { id: '9',  name: 'ريم الشمري',         email: 'campaign@health.gov',    role: 'campaignOfficer', personType: 'healthStaff', isActive: true } },
+  'center@health.gov':      { password: 'center123',    user: { id: '10', name: 'سلطان المطيري',      email: 'center@health.gov',      role: 'centerManager', personType: 'healthStaff', healthCenterId: '1', isActive: true } },
+  'executive@health.gov':   { password: 'exec123',      user: { id: '11', name: 'الأمير فيصل',        email: 'executive@health.gov',   role: 'executive', personType: 'admin', isActive: true } },
+  'employee@health.gov':    { password: 'emp123',       user: { id: '12', name: 'ليلى أحمد',          email: 'employee@health.gov',    role: 'employee', personType: 'employee', isActive: true } },
+  'dataentry@health.gov':   { password: 'entry123',     user: { id: '13', name: 'هند السيف',          email: 'dataentry@health.gov',   role: 'dataEntry', personType: 'employee', isActive: true } },
+  'quality@health.gov':     { password: 'quality123',   user: { id: '14', name: 'بدر الرشيدي',        email: 'quality@health.gov',     role: 'dataQuality', personType: 'employee', isActive: true } },
+  'reports@health.gov':     { password: 'reports123',   user: { id: '15', name: 'مريم البلوي',        email: 'reports@health.gov',     role: 'reportsOfficer', personType: 'employee', isActive: true } },
+  'support@health.gov':     { password: 'support123',   user: { id: '16', name: 'وليد الحربي',        email: 'support@health.gov',     role: 'techSupport', personType: 'admin', isActive: true, isStaff: true } },
 };
 
 export function AuthProvider({ children }: { children: ReactNode }) {
