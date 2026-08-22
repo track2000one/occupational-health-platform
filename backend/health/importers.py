@@ -36,6 +36,12 @@ def clean_text(value: Any) -> str:
     return str(value).strip()
 
 
+def json_safe(value: Any):
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    return value
+
+
 def mask_value(value: str) -> str:
     value = clean_text(value)
     if not value:
@@ -133,7 +139,7 @@ def row_to_payload(row: Tuple[Any, ...], header_map: Dict[str, int]) -> Dict[str
 
 
 def masked_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
-    safe = dict(payload)
+    safe = {key: json_safe(value) for key, value in payload.items()}
     for field in SENSITIVE_FIELDS:
         safe[field] = mask_value(safe.get(field, ''))
     return safe
