@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Alert,
@@ -12,7 +12,6 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  Divider,
   Grid,
   IconButton,
   InputAdornment,
@@ -35,16 +34,24 @@ import {
   Add as AddIcon,
   Delete as DeleteIcon,
   Edit as EditIcon,
-  Lock as LockIcon,
   LockReset as LockResetIcon,
   ManageAccounts as ManageAccountsIcon,
+  Refresh as RefreshIcon,
   Search as SearchIcon,
   Shield as ShieldIcon,
   VerifiedUser as VerifiedUserIcon,
 } from '@mui/icons-material';
-import { MOCK_USERS_LIST, type User, useAuth } from '../context/AuthContext';
+import { getAccessToken, type User, useAuth } from '../context/AuthContext';
 import { PERMISSIONS, ROLE_DEFINITIONS, type Permission, type UserRole } from '../data/roles';
 import { mockHealthCenters } from '../data/mockData';
+
+const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000/api').replace(/\/$/, '');
+
+interface HealthCenterOption {
+  id: string;
+  name: string;
+  nameAr?: string;
+}
 
 const permissionGroups: { titleAr: string; titleEn: string; permissions: Permission[] }[] = [
   { titleAr: 'إدارة الموظفين', titleEn: 'Employees', permissions: [PERMISSIONS.VIEW_EMPLOYEES, PERMISSIONS.CREATE_EMPLOYEE, PERMISSIONS.UPDATE_EMPLOYEE, PERMISSIONS.DELETE_EMPLOYEE] },
@@ -53,13 +60,67 @@ const permissionGroups: { titleAr: string; titleEn: string; permissions: Permiss
   { titleAr: 'إدارة النظام', titleEn: 'System Administration', permissions: [PERMISSIONS.MANAGE_USERS, PERMISSIONS.MANAGE_ROLES, PERMISSIONS.MANAGE_SETTINGS, PERMISSIONS.VIEW_AUDIT_LOGS, PERMISSIONS.RESET_PASSWORDS] },
 ];
 
+function normalizeList<T>(payload: any): T[] {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.results)) return payload.results;
+  return [];
+}
+
+async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const token = getAccessToken();
+  if (!token) {
+    throw new Error('لا يوجد رمز دخول من Django. سجّل الدخول مرة أخرى من الواجهة بعد إعادة نشر الـ Backend.');
+  }
+
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+      ...(options.headers || {}),
+    },
+  });
+
+  if (response.status === 204) return null as T;
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message = body.detail || body.email || body.password || body.name || body.role || body.healthCenterId || 'تعذر تنفيذ العملية على قاعدة البيانات';
+    throw new Error(Array.isArray(message) ? message.join(', ') : String(message));
+  }
+  return body as T;
+}
+
+function normalizeUser(user: any): User {
+  return {
+    id: String(user.id),
+    name: user.name || user.username || user.email,
+    email: user.email,
+    role: user.role || 'employee',
+    healthCenterId: user.healthCenterId || '',
+    healthCenterName: user.healthCenterName || '',
+    isActive: user.isActive ?? true,
+    isStaff: user.isStaff,
+    isSuperuser: user.isSuperuser,
+    lastLogin: user.lastLogin,
+    permissions: user.permissions || [],
+  };
+}
+
+function normalizeHealthCenter(center: any): HealthCenterOption {
+  return {
+    id: String(center.id),
+    name: center.name || center.nameAr || '-',
+    nameAr: center.nameAr || center.name,
+  };
+}
+
 function roleLabel(role: UserRole, isRtl: boolean) {
-  const def = ROLE_DEFINITIONS[role];
+  const def = ROLE_DEFINITIONS[role] || ROLE_DEFINITIONS.employee;
   return isRtl ? def.nameAr : def.nameEn;
 }
 
 function RoleChip({ role, isRtl }: { role: UserRole; isRtl: boolean }) {
-  const def = ROLE_DEFINITIONS[role];
+  const def = ROLE_DEFINITIONS[role] || ROLE_DEFINITIONS.employee;
   return <Chip size="small" label={roleLabel(role, isRtl)} sx={{ bgcolor: def.bgColor, color: def.color, fontWeight: 700 }} />;
 }
 
@@ -68,13 +129,40 @@ export function AdminUsersPage() {
   const { user: currentUser } = useAuth();
   const isRtl = i18n.language === 'ar';
 
-  const [users, setUsers] = useState<User[]>(MOCK_USERS_LIST);
+  const fallbackCenters = useMemo(() => mockHealthCenters.map((center: any) => ({ id: String(center.id), name: center.name || center.nameAr, nameAr: center.nameAr || center.name })), []);
+
+  const [users, setUsers] = useState<User[]>([]);
+  const [healthCenters, setHealthCenters] = useState<HealthCenterOption[]>(fallbackCenters);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState<UserRole | 'all'>('all');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [form, setForm] = useState<Partial<User & { password: string }>>({ name: '', email: '', role: 'employee', healthCenterId: '', isActive: true, password: '' });
   const [toast, setToast] = useState({ open: false, message: '', severity: 'success' as 'success' | 'info' | 'warning' | 'error' });
+
+  const fetchUsers = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const [usersPayload, centersPayload] = await Promise.all([
+        apiRequest<any>('/users/'),
+        apiRequest<any>('/health-centers/'),
+      ]);
+      setUsers(normalizeList<any>(usersPayload).map(normalizeUser));
+      const apiCenters = normalizeList<any>(centersPayload).map(normalizeHealthCenter);
+      if (apiCenters.length) setHealthCenters(apiCenters);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'تعذر الاتصال بقاعدة البيانات');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchUsers();
+  }, []);
 
   const filteredUsers = useMemo(() => users.filter(user => {
     const q = search.trim().toLowerCase();
@@ -85,7 +173,7 @@ export function AdminUsersPage() {
 
   const selectedRole = form.role ? ROLE_DEFINITIONS[form.role as UserRole] : ROLE_DEFINITIONS.employee;
   const activeUsers = users.filter(u => u.isActive).length;
-  const adminUsers = users.filter(u => ROLE_DEFINITIONS[u.role].permissions.includes(PERMISSIONS.MANAGE_USERS)).length;
+  const adminUsers = users.filter(u => ROLE_DEFINITIONS[u.role]?.permissions.includes(PERMISSIONS.MANAGE_USERS)).length;
 
   const openAdd = () => {
     setSelectedUser(null);
@@ -99,50 +187,79 @@ export function AdminUsersPage() {
     setDialogOpen(true);
   };
 
-  const saveUser = () => {
+  const saveUser = async () => {
     if (!form.name || !form.email || !form.role) {
       setToast({ open: true, severity: 'error', message: isRtl ? 'الاسم والبريد والدور حقول إلزامية' : 'Name, email, and role are required' });
       return;
     }
 
-    if (selectedUser) {
-      setUsers(prev => prev.map(u => u.id === selectedUser.id ? { ...u, ...form, role: form.role as UserRole, isActive: form.isActive ?? true } as User : u));
-      setToast({ open: true, severity: 'success', message: isRtl ? 'تم تحديث بيانات المستخدم' : 'User has been updated' });
-    } else {
-      const newUser: User = {
-        id: String(Date.now()),
+    try {
+      const payload: any = {
         name: form.name,
         email: form.email,
-        role: form.role as UserRole,
-        healthCenterId: form.healthCenterId || undefined,
+        role: form.role,
+        healthCenterId: form.healthCenterId || '',
         isActive: form.isActive ?? true,
       };
-      setUsers(prev => [newUser, ...prev]);
-      setToast({ open: true, severity: 'success', message: isRtl ? 'تمت إضافة المستخدم' : 'User has been created' });
+      if (form.password) payload.password = form.password;
+
+      if (selectedUser) {
+        await apiRequest(`/users/${selectedUser.id}/`, { method: 'PATCH', body: JSON.stringify(payload) });
+        setToast({ open: true, severity: 'success', message: isRtl ? 'تم تحديث المستخدم في قاعدة البيانات' : 'User updated in database' });
+      } else {
+        await apiRequest('/users/', { method: 'POST', body: JSON.stringify(payload) });
+        setToast({ open: true, severity: 'success', message: isRtl ? 'تمت إضافة المستخدم في قاعدة البيانات' : 'User created in database' });
+      }
+      setDialogOpen(false);
+      await fetchUsers();
+    } catch (err) {
+      setToast({ open: true, severity: 'error', message: err instanceof Error ? err.message : 'تعذر حفظ المستخدم' });
     }
-    setDialogOpen(false);
   };
 
-  const toggleStatus = (target: User) => {
+  const toggleStatus = async (target: User) => {
     if (target.id === currentUser?.id) return;
-    setUsers(prev => prev.map(u => u.id === target.id ? { ...u, isActive: !u.isActive } : u));
-    setToast({
-      open: true,
-      severity: target.isActive ? 'warning' : 'success',
-      message: target.isActive ? (isRtl ? 'تم تعطيل الحساب' : 'Account has been disabled') : (isRtl ? 'تم تفعيل الحساب' : 'Account has been enabled'),
-    });
+    try {
+      await apiRequest(`/users/${target.id}/`, { method: 'PATCH', body: JSON.stringify({ isActive: !target.isActive }) });
+      setToast({
+        open: true,
+        severity: target.isActive ? 'warning' : 'success',
+        message: target.isActive ? (isRtl ? 'تم تعطيل الحساب في قاعدة البيانات' : 'Account disabled in database') : (isRtl ? 'تم تفعيل الحساب في قاعدة البيانات' : 'Account enabled in database'),
+      });
+      await fetchUsers();
+    } catch (err) {
+      setToast({ open: true, severity: 'error', message: err instanceof Error ? err.message : 'تعذر تغيير حالة الحساب' });
+    }
   };
 
-  const resetPassword = (target: User) => {
-    setToast({ open: true, severity: 'info', message: isRtl ? `تم تجهيز إعادة تعيين كلمة المرور لـ ${target.name}` : `Password reset prepared for ${target.name}` });
+  const resetPassword = async (target: User) => {
+    const newPassword = window.prompt(isRtl ? `أدخل كلمة المرور الجديدة للمستخدم ${target.name}` : `Enter a new password for ${target.name}`);
+    if (!newPassword) return;
+    try {
+      await apiRequest(`/users/${target.id}/reset_password/`, { method: 'POST', body: JSON.stringify({ password: newPassword }) });
+      setToast({ open: true, severity: 'info', message: isRtl ? 'تم تحديث كلمة المرور في قاعدة البيانات' : 'Password updated in database' });
+    } catch (err) {
+      setToast({ open: true, severity: 'error', message: err instanceof Error ? err.message : 'تعذر تحديث كلمة المرور' });
+    }
   };
 
-  const deleteUser = (target: User) => {
+  const deleteUser = async (target: User) => {
     if (target.id === currentUser?.id) return;
-    const confirmed = window.confirm(isRtl ? `هل تريد حذف المستخدم ${target.name}؟` : `Delete user ${target.name}?`);
+    const confirmed = window.confirm(isRtl ? `هل تريد حذف المستخدم ${target.name} نهائيًا من قاعدة البيانات؟` : `Delete user ${target.name} from database?`);
     if (!confirmed) return;
-    setUsers(prev => prev.filter(u => u.id !== target.id));
-    setToast({ open: true, severity: 'success', message: isRtl ? 'تم حذف المستخدم' : 'User has been deleted' });
+    try {
+      await apiRequest(`/users/${target.id}/`, { method: 'DELETE' });
+      setToast({ open: true, severity: 'success', message: isRtl ? 'تم حذف المستخدم من قاعدة البيانات' : 'User deleted from database' });
+      await fetchUsers();
+    } catch (err) {
+      setToast({ open: true, severity: 'error', message: err instanceof Error ? err.message : 'تعذر حذف المستخدم' });
+    }
+  };
+
+  const centerLabel = (user: User) => {
+    if (user.healthCenterName) return user.healthCenterName;
+    const center = healthCenters.find(c => c.id === user.healthCenterId);
+    return isRtl ? center?.nameAr || center?.name || '-' : center?.name || '-';
   };
 
   return (
@@ -156,14 +273,19 @@ export function AdminUsersPage() {
             </Stack>
             <Typography variant="h4" fontWeight="bold">{isRtl ? 'إدارة المستخدمين والصلاحيات' : 'Users & Access Management'}</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-              {isRtl ? 'إضافة المستخدمين، تعديل بياناتهم، تعطيل الحسابات، حذف المستخدمين، وربط كل مستخدم بدور وصلاحيات محددة.' : 'Create users, update profiles, disable accounts, delete users, and assign each user to a controlled role.'}
+              {isRtl ? 'البيانات مرتبطة الآن بـ Django/PostgreSQL؛ أي إضافة أو تعديل أو حذف يتم حفظه في قاعدة البيانات.' : 'This page is now connected to Django/PostgreSQL; create, update, and delete operations persist in the database.'}
             </Typography>
           </Box>
-          <Button variant="contained" size="large" startIcon={<AddIcon />} onClick={openAdd} sx={{ borderRadius: 2, px: 3 }}>
-            {isRtl ? 'إضافة مستخدم' : 'Add User'}
-          </Button>
+          <Stack direction={isRtl ? 'row-reverse' : 'row'} spacing={1.5}>
+            <Button variant="outlined" startIcon={<RefreshIcon />} onClick={fetchUsers} disabled={loading}>{isRtl ? 'تحديث' : 'Refresh'}</Button>
+            <Button variant="contained" size="large" startIcon={<AddIcon />} onClick={openAdd} sx={{ borderRadius: 2, px: 3 }}>
+              {isRtl ? 'إضافة مستخدم' : 'Add User'}
+            </Button>
+          </Stack>
         </Stack>
       </Paper>
+
+      {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
 
       <Grid container spacing={2.5} sx={{ mb: 3 }}>
         <Grid size={{ xs: 12, md: 4 }}><Card><CardContent><Typography color="text.secondary">{isRtl ? 'إجمالي المستخدمين' : 'Total Users'}</Typography><Typography variant="h4" fontWeight="bold">{users.length}</Typography></CardContent></Card></Grid>
@@ -174,14 +296,7 @@ export function AdminUsersPage() {
       <Paper sx={{ p: 2.5, mb: 3 }}>
         <Grid container spacing={2} alignItems="center">
           <Grid size={{ xs: 12, md: 7 }}>
-            <TextField
-              fullWidth
-              size="small"
-              value={search}
-              onChange={event => setSearch(event.target.value)}
-              placeholder={isRtl ? 'بحث بالاسم أو البريد أو الدور...' : 'Search by name, email, or role...'}
-              InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon /></InputAdornment> }}
-            />
+            <TextField fullWidth size="small" value={search} onChange={event => setSearch(event.target.value)} placeholder={isRtl ? 'بحث بالاسم أو البريد أو الدور...' : 'Search by name, email, or role...'} InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon /></InputAdornment> }} />
           </Grid>
           <Grid size={{ xs: 12, md: 5 }}>
             <TextField fullWidth select size="small" label={isRtl ? 'تصفية حسب الدور' : 'Filter by role'} value={roleFilter} onChange={event => setRoleFilter(event.target.value as UserRole | 'all')}>
@@ -205,33 +320,30 @@ export function AdminUsersPage() {
             </TableRow>
           </TableHead>
           <TableBody>
-            {filteredUsers.map(target => {
-              const center = mockHealthCenters.find(c => c.id === target.healthCenterId);
-              return (
-                <TableRow key={target.id} hover>
-                  <TableCell>
-                    <Stack direction={isRtl ? 'row-reverse' : 'row'} spacing={1.25} alignItems="center">
-                      <Avatar sx={{ bgcolor: ROLE_DEFINITIONS[target.role].bgColor, color: ROLE_DEFINITIONS[target.role].color }}>{target.name.charAt(0)}</Avatar>
-                      <Box sx={{ textAlign: isRtl ? 'right' : 'left' }}>
-                        <Typography variant="body2" fontWeight={700}>{target.name}</Typography>
-                        <Typography variant="caption" color="text.secondary">{target.email}</Typography>
-                      </Box>
-                    </Stack>
-                  </TableCell>
-                  <TableCell><RoleChip role={target.role} isRtl={isRtl} /></TableCell>
-                  <TableCell>{center?.nameAr || center?.name || '-'}</TableCell>
-                  <TableCell><Chip icon={<ShieldIcon />} label={ROLE_DEFINITIONS[target.role].permissions.length} size="small" variant="outlined" /></TableCell>
-                  <TableCell><Switch checked={target.isActive} color="success" disabled={target.id === currentUser?.id} onChange={() => toggleStatus(target)} /></TableCell>
-                  <TableCell align="center">
-                    <Tooltip title={isRtl ? 'تعديل' : 'Edit'}><IconButton color="primary" onClick={() => openEdit(target)}><EditIcon /></IconButton></Tooltip>
-                    <Tooltip title={isRtl ? 'إعادة تعيين كلمة المرور' : 'Reset Password'}><IconButton color="secondary" onClick={() => resetPassword(target)}><LockResetIcon /></IconButton></Tooltip>
-                    <Tooltip title={target.id === currentUser?.id ? (isRtl ? 'لا يمكن حذف حسابك الحالي' : 'You cannot delete your current account') : (isRtl ? 'حذف' : 'Delete')}>
-                      <span><IconButton color="error" disabled={target.id === currentUser?.id} onClick={() => deleteUser(target)}><DeleteIcon /></IconButton></span>
-                    </Tooltip>
-                  </TableCell>
-                </TableRow>
-              );
-            })}
+            {filteredUsers.map(target => (
+              <TableRow key={target.id} hover>
+                <TableCell>
+                  <Stack direction={isRtl ? 'row-reverse' : 'row'} spacing={1.25} alignItems="center">
+                    <Avatar sx={{ bgcolor: ROLE_DEFINITIONS[target.role]?.bgColor || '#ECEFF1', color: ROLE_DEFINITIONS[target.role]?.color || '#333' }}>{target.name.charAt(0)}</Avatar>
+                    <Box sx={{ textAlign: isRtl ? 'right' : 'left' }}>
+                      <Typography variant="body2" fontWeight={700}>{target.name}</Typography>
+                      <Typography variant="caption" color="text.secondary">{target.email}</Typography>
+                    </Box>
+                  </Stack>
+                </TableCell>
+                <TableCell><RoleChip role={target.role} isRtl={isRtl} /></TableCell>
+                <TableCell>{centerLabel(target)}</TableCell>
+                <TableCell><Chip icon={<ShieldIcon />} label={ROLE_DEFINITIONS[target.role]?.permissions.length || target.permissions?.length || 0} size="small" variant="outlined" /></TableCell>
+                <TableCell><Switch checked={Boolean(target.isActive)} color="success" disabled={target.id === currentUser?.id} onChange={() => toggleStatus(target)} /></TableCell>
+                <TableCell align="center">
+                  <Tooltip title={isRtl ? 'تعديل' : 'Edit'}><IconButton color="primary" onClick={() => openEdit(target)}><EditIcon /></IconButton></Tooltip>
+                  <Tooltip title={isRtl ? 'إعادة تعيين كلمة المرور' : 'Reset Password'}><IconButton color="secondary" onClick={() => resetPassword(target)}><LockResetIcon /></IconButton></Tooltip>
+                  <Tooltip title={target.id === currentUser?.id ? (isRtl ? 'لا يمكن حذف حسابك الحالي' : 'You cannot delete your current account') : (isRtl ? 'حذف' : 'Delete')}>
+                    <span><IconButton color="error" disabled={target.id === currentUser?.id} onClick={() => deleteUser(target)}><DeleteIcon /></IconButton></span>
+                  </Tooltip>
+                </TableCell>
+              </TableRow>
+            ))}
           </TableBody>
         </Table>
       </TableContainer>
@@ -246,37 +358,21 @@ export function AdminUsersPage() {
         <DialogContent dividers>
           <Grid container spacing={2.25}>
             <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label={isRtl ? 'الاسم الكامل' : 'Full Name'} value={form.name || ''} onChange={e => setForm(prev => ({ ...prev, name: e.target.value }))} /></Grid>
-            <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label={isRtl ? 'البريد الإلكتروني' : 'Email'} value={form.email || ''} disabled={!!selectedUser} onChange={e => setForm(prev => ({ ...prev, email: e.target.value }))} /></Grid>
-            <Grid size={{ xs: 12, md: 6 }}>
-              <TextField fullWidth select label={isRtl ? 'الدور والصلاحية' : 'Role & Permission'} value={form.role || 'employee'} onChange={e => setForm(prev => ({ ...prev, role: e.target.value as UserRole }))}>
-                {Object.values(ROLE_DEFINITIONS).map(role => <MenuItem key={role.id} value={role.id}>{isRtl ? role.nameAr : role.nameEn}</MenuItem>)}
-              </TextField>
-            </Grid>
-            <Grid size={{ xs: 12, md: 6 }}>
-              <TextField fullWidth select label={isRtl ? 'المركز الصحي' : 'Health Center'} value={form.healthCenterId || ''} onChange={e => setForm(prev => ({ ...prev, healthCenterId: e.target.value }))}>
-                <MenuItem value="">{isRtl ? 'غير محدد' : 'Not Assigned'}</MenuItem>
-                {mockHealthCenters.map(center => <MenuItem key={center.id} value={center.id}>{center.nameAr || center.name}</MenuItem>)}
-              </TextField>
-            </Grid>
-            <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth type="password" label={selectedUser ? (isRtl ? 'كلمة مرور جديدة - اختياري' : 'New password - optional') : (isRtl ? 'كلمة المرور' : 'Password')} value={form.password || ''} onChange={e => setForm(prev => ({ ...prev, password: e.target.value }))} InputProps={{ startAdornment: <InputAdornment position="start"><LockIcon /></InputAdornment> }} /></Grid>
-            <Grid size={{ xs: 12, md: 6 }}><Stack direction={isRtl ? 'row-reverse' : 'row'} alignItems="center" spacing={1} sx={{ height: '100%' }}><Switch checked={form.isActive ?? true} onChange={e => setForm(prev => ({ ...prev, isActive: e.target.checked }))} color="success" /><Typography>{isRtl ? 'الحساب نشط' : 'Account Active'}</Typography></Stack></Grid>
+            <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label={isRtl ? 'البريد الإلكتروني / اسم المستخدم' : 'Email / Username'} value={form.email || ''} onChange={e => setForm(prev => ({ ...prev, email: e.target.value }))} /></Grid>
+            <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth select label={isRtl ? 'الدور' : 'Role'} value={form.role || 'employee'} onChange={e => setForm(prev => ({ ...prev, role: e.target.value as UserRole }))}>{Object.values(ROLE_DEFINITIONS).map(role => <MenuItem key={role.id} value={role.id}>{isRtl ? role.nameAr : role.nameEn}</MenuItem>)}</TextField></Grid>
+            <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth select label={isRtl ? 'المركز الصحي' : 'Health Center'} value={form.healthCenterId || ''} onChange={e => setForm(prev => ({ ...prev, healthCenterId: e.target.value }))}><MenuItem value="">{isRtl ? 'بدون مركز' : 'No center'}</MenuItem>{healthCenters.map(center => <MenuItem key={center.id} value={center.id}>{isRtl ? center.nameAr || center.name : center.name}</MenuItem>)}</TextField></Grid>
+            <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth type="password" label={selectedUser ? (isRtl ? 'كلمة مرور جديدة - اختياري' : 'New password - optional') : (isRtl ? 'كلمة المرور' : 'Password')} value={form.password || ''} onChange={e => setForm(prev => ({ ...prev, password: e.target.value }))} /></Grid>
+            <Grid size={{ xs: 12, md: 6 }}><Stack direction={isRtl ? 'row-reverse' : 'row'} alignItems="center" spacing={1} sx={{ height: '100%' }}><Typography>{isRtl ? 'الحساب نشط' : 'Active account'}</Typography><Switch checked={form.isActive ?? true} onChange={e => setForm(prev => ({ ...prev, isActive: e.target.checked }))} color="success" /></Stack></Grid>
             <Grid size={{ xs: 12 }}>
-              <Paper variant="outlined" sx={{ p: 2, bgcolor: 'grey.50' }}>
-                <Stack direction={isRtl ? 'row-reverse' : 'row'} justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
-                  <Typography variant="subtitle2" fontWeight="bold">{isRtl ? 'معاينة الصلاحيات الممنوحة' : 'Granted Permissions Preview'}</Typography>
-                  <RoleChip role={selectedRole.id} isRtl={isRtl} />
-                </Stack>
-                <Divider sx={{ mb: 1.5 }} />
-                <Grid container spacing={1.25}>
+              <Paper variant="outlined" sx={{ p: 2, bgcolor: '#fafafa' }}>
+                <Typography fontWeight={700} sx={{ mb: 1 }}>{isRtl ? 'صلاحيات الدور المحدد' : 'Selected role permissions'}</Typography>
+                <Grid container spacing={1.5}>
                   {permissionGroups.map(group => (
                     <Grid key={group.titleEn} size={{ xs: 12, md: 6 }}>
-                      <Typography variant="caption" fontWeight={800} color="text.secondary">{isRtl ? group.titleAr : group.titleEn}</Typography>
-                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.75 }}>
-                        {group.permissions.map(permission => {
-                          const granted = selectedRole.permissions.includes(permission);
-                          return <Chip key={permission} size="small" color={granted ? 'success' : 'default'} variant={granted ? 'filled' : 'outlined'} label={permission} sx={{ fontSize: '0.65rem' }} />;
-                        })}
-                      </Box>
+                      <Typography variant="caption" color="text.secondary" fontWeight={700}>{isRtl ? group.titleAr : group.titleEn}</Typography>
+                      <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap sx={{ mt: 0.75 }}>
+                        {group.permissions.map(permission => <Chip key={permission} size="small" label={permission} color={selectedRole.permissions.includes(permission) ? 'primary' : 'default'} variant={selectedRole.permissions.includes(permission) ? 'filled' : 'outlined'} />)}
+                      </Stack>
                     </Grid>
                   ))}
                 </Grid>
@@ -284,14 +380,14 @@ export function AdminUsersPage() {
             </Grid>
           </Grid>
         </DialogContent>
-        <DialogActions>
+        <DialogActions sx={{ px: 3, py: 2 }}>
           <Button onClick={() => setDialogOpen(false)}>{isRtl ? 'إلغاء' : 'Cancel'}</Button>
-          <Button variant="contained" onClick={saveUser}>{isRtl ? 'حفظ' : 'Save'}</Button>
+          <Button variant="contained" onClick={saveUser}>{isRtl ? 'حفظ في قاعدة البيانات' : 'Save to Database'}</Button>
         </DialogActions>
       </Dialog>
 
-      <Snackbar open={toast.open} autoHideDuration={3500} onClose={() => setToast(prev => ({ ...prev, open: false }))} anchorOrigin={{ vertical: 'bottom', horizontal: isRtl ? 'left' : 'right' }}>
-        <Alert severity={toast.severity} variant="filled" onClose={() => setToast(prev => ({ ...prev, open: false }))}>{toast.message}</Alert>
+      <Snackbar open={toast.open} autoHideDuration={4000} onClose={() => setToast(prev => ({ ...prev, open: false }))}>
+        <Alert severity={toast.severity} onClose={() => setToast(prev => ({ ...prev, open: false }))}>{toast.message}</Alert>
       </Snackbar>
     </Box>
   );
