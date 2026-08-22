@@ -1,7 +1,41 @@
+from django.conf import settings
 from django.db import models
+
+
 class HealthCenter(models.Model):
     name=models.CharField(max_length=150,unique=True); city=models.CharField(max_length=120,blank=True); is_active=models.BooleanField(default=True)
     def __str__(self): return self.name
+
+
+class UserProfile(models.Model):
+    ROLE_CHOICES = (
+        ('systemAdmin', 'System Admin'),
+        ('ohManager', 'OH Manager'),
+        ('ohDoctor', 'OH Doctor'),
+        ('clinicDoctor', 'Clinic Doctor'),
+        ('labOfficer', 'Lab Officer'),
+        ('vaccinationOfficer', 'Vaccination Officer'),
+        ('needleStickOfficer', 'Needle Stick Officer'),
+        ('medicalCommitteeOfficer', 'Medical Committee Officer'),
+        ('campaignOfficer', 'Campaign Officer'),
+        ('centerManager', 'Center Manager'),
+        ('executive', 'Executive'),
+        ('employee', 'Employee'),
+        ('dataEntry', 'Data Entry'),
+        ('dataQuality', 'Data Quality Officer'),
+        ('reportsOfficer', 'Reports Officer'),
+        ('techSupport', 'Technical Support'),
+    )
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='health_profile')
+    role = models.CharField(max_length=40, choices=ROLE_CHOICES, default='employee')
+    health_center = models.ForeignKey(HealthCenter, on_delete=models.SET_NULL, null=True, blank=True, related_name='platform_users')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f'{self.user.username} - {self.role}'
+
+
 class Employee(models.Model):
     GENDER=(('male','Male'),('female','Female')); STATUS=(('completed','Completed'),('incomplete','Incomplete'),('overdue','Overdue')); VACCINE=(('completed','Completed'),('due','Due'),('refused','Refused')); RISK=(('low','Low'),('medium','Medium'),('high','High'))
     name=models.CharField(max_length=200); national_id=models.CharField(max_length=30,unique=True); mobile=models.CharField(max_length=30,blank=True); gender=models.CharField(max_length=10,choices=GENDER,default='male'); health_center=models.ForeignKey(HealthCenter,on_delete=models.PROTECT,related_name='employees'); job_title=models.CharField(max_length=150,blank=True); age=models.PositiveIntegerField(default=0); periodic_exam_status=models.CharField(max_length=20,choices=STATUS,default='incomplete'); vaccination_status=models.CharField(max_length=20,choices=VACCINE,default='due'); risk_level=models.CharField(max_length=20,choices=RISK,default='low'); created_at=models.DateTimeField(auto_now_add=True); updated_at=models.DateTimeField(auto_now=True)
