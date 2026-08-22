@@ -319,23 +319,138 @@ export function AdminUsersPage() {
 
   return (
     <Box>
-      <Paper sx={{ p: 3, mb: 3, borderRadius: 4, background: 'linear-gradient(135deg, #f8fbff 0%, #eef4ff 55%, #fff 100%)', border: '1px solid', borderColor: 'divider' }}>
-        <Stack direction={{ xs: 'column', md: isRtl ? 'row-reverse' : 'row' }} justifyContent="space-between" spacing={2} alignItems={{ xs: 'stretch', md: 'center' }}>
-          <Box sx={{ textAlign: isRtl ? 'right' : 'left' }}>
-            <Stack direction={isRtl ? 'row-reverse' : 'row'} spacing={1} alignItems="center" sx={{ mb: 1 }}>
+      <Paper
+        sx={{
+          p: { xs: 2.5, md: 3.5 },
+          mb: 3,
+          borderRadius: 5,
+          position: 'relative',
+          overflow: 'hidden',
+          background: 'linear-gradient(135deg, rgba(248,251,255,0.98) 0%, rgba(238,244,255,0.96) 48%, rgba(255,255,255,0.98) 100%)',
+          border: '1px solid rgba(102,126,234,.18)',
+          boxShadow: '0 24px 70px rgba(30,41,95,.12), inset 0 1px 0 rgba(255,255,255,.9)',
+          '&::before': {
+            content: '""',
+            position: 'absolute',
+            insetInlineStart: -90,
+            top: -105,
+            width: 260,
+            height: 260,
+            borderRadius: '50%',
+            background: 'radial-gradient(circle, rgba(102,126,234,.18) 0%, rgba(102,126,234,0) 68%)',
+          },
+          '&::after': {
+            content: '""',
+            position: 'absolute',
+            insetInlineEnd: -120,
+            bottom: -140,
+            width: 320,
+            height: 320,
+            borderRadius: '50%',
+            background: 'radial-gradient(circle, rgba(78,205,196,.16) 0%, rgba(78,205,196,0) 68%)',
+          },
+        }}
+      >
+        <Box
+          sx={{
+            position: 'relative',
+            display: 'grid',
+            gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1fr) auto' },
+            gap: { xs: 2.5, md: 3 },
+            alignItems: 'center',
+          }}
+        >
+          <Box sx={{ textAlign: isRtl ? 'right' : 'left', minWidth: 0 }}>
+            <Stack direction={isRtl ? 'row-reverse' : 'row'} spacing={1} alignItems="center" sx={{ mb: 1.25 }}>
               <MedicalInformationIcon color="primary" />
-              <Typography variant="overline" color="primary" fontWeight={900}>{isRtl ? 'إدارة النظام الصحي' : 'Health System Administration'}</Typography>
+              <Typography variant="overline" color="primary" fontWeight={900} letterSpacing={.8}>{isRtl ? 'إدارة النظام الصحي' : 'Health System Administration'}</Typography>
             </Stack>
-            <Typography variant="h4" fontWeight="bold">{isRtl ? 'إدارة المستخدمين والهوية والصلاحيات' : 'Users, Identity & Access Management'}</Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+            <Typography variant="h4" fontWeight={950} sx={{ lineHeight: 1.25, color: '#0f172a' }}>{isRtl ? 'إدارة المستخدمين والهوية والصلاحيات' : 'Users, Identity & Access Management'}</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1, maxWidth: 920, lineHeight: 1.9 }}>
               {isRtl ? 'عرض بطاقات احترافية، منع التكرار عبر البريد ورقم الهوية/السجل والرقم الوظيفي ورقم الملف الطبي، وربط كامل مع Django/PostgreSQL.' : 'Professional cards with database persistence and duplicate prevention through email, National ID, employee number, and medical record number.'}
             </Typography>
           </Box>
-          <Stack direction={isRtl ? 'row-reverse' : 'row'} spacing={1.5}>
-            <Button variant="outlined" startIcon={<RefreshIcon />} onClick={fetchUsers} disabled={loading}>{isRtl ? 'تحديث' : 'Refresh'}</Button>
-            <Button variant="contained" size="large" startIcon={<AddIcon />} onClick={openAdd} sx={{ borderRadius: 3, px: 3 }}>{isRtl ? 'إضافة مستخدم' : 'Add User'}</Button>
+
+          <Stack
+            direction={{ xs: 'column', sm: isRtl ? 'row-reverse' : 'row' }}
+            spacing={1.5}
+            sx={{
+              justifySelf: { xs: 'stretch', md: isRtl ? 'start' : 'end' },
+              alignItems: 'stretch',
+              minWidth: { xs: '100%', sm: 310 },
+            }}
+          >
+            <Button
+              variant="outlined"
+              startIcon={<RefreshIcon />}
+              onClick={fetchUsers}
+              disabled={loading}
+              sx={{
+                height: 58,
+                px: 2.25,
+                borderRadius: 3,
+                fontWeight: 850,
+                bgcolor: 'rgba(255,255,255,.84)',
+                borderColor: 'rgba(102,126,234,.32)',
+                color: '#4f46e5',
+                boxShadow: '0 10px 22px rgba(79,70,229,.12), inset 0 1px 0 rgba(255,255,255,.85)',
+                backdropFilter: 'blur(10px)',
+                '&:hover': {
+                  bgcolor: '#fff',
+                  transform: 'translateY(-2px)',
+                  boxShadow: '0 16px 30px rgba(79,70,229,.18), inset 0 1px 0 rgba(255,255,255,.9)',
+                },
+                '&:active': {
+                  transform: 'translateY(1px)',
+                  boxShadow: '0 7px 15px rgba(79,70,229,.13), inset 0 2px 7px rgba(79,70,229,.12)',
+                },
+              }}
+            >
+              {isRtl ? 'تحديث' : 'Refresh'}
+            </Button>
+
+            <Button
+              variant="contained"
+              size="large"
+              startIcon={<AddIcon />}
+              onClick={openAdd}
+              sx={{
+                height: 58,
+                minWidth: { xs: '100%', sm: 185 },
+                px: 3.25,
+                borderRadius: 3.5,
+                position: 'relative',
+                overflow: 'hidden',
+                fontWeight: 950,
+                color: '#fff',
+                background: 'linear-gradient(180deg, #8ea2ff 0%, #667eea 52%, #4f46e5 100%)',
+                boxShadow: '0 18px 32px rgba(79,70,229,.35), 0 5px 0 rgba(49,46,129,.85), inset 0 1px 0 rgba(255,255,255,.45)',
+                textShadow: '0 1px 1px rgba(0,0,0,.16)',
+                transition: 'all .2s ease',
+                '&::before': {
+                  content: '""',
+                  position: 'absolute',
+                  inset: '2px 12px auto 12px',
+                  height: '44%',
+                  borderRadius: 2.5,
+                  background: 'linear-gradient(180deg, rgba(255,255,255,.42), rgba(255,255,255,0))',
+                  pointerEvents: 'none',
+                },
+                '&:hover': {
+                  transform: 'translateY(-4px)',
+                  background: 'linear-gradient(180deg, #98aaff 0%, #6f84ef 48%, #5148e8 100%)',
+                  boxShadow: '0 24px 42px rgba(79,70,229,.42), 0 6px 0 rgba(49,46,129,.9), inset 0 1px 0 rgba(255,255,255,.52)',
+                },
+                '&:active': {
+                  transform: 'translateY(2px)',
+                  boxShadow: '0 10px 22px rgba(79,70,229,.28), 0 2px 0 rgba(49,46,129,.92), inset 0 4px 10px rgba(0,0,0,.18)',
+                },
+              }}
+            >
+              {isRtl ? 'إضافة مستخدم' : 'Add User'}
+            </Button>
           </Stack>
-        </Stack>
+        </Box>
       </Paper>
 
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
