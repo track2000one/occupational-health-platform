@@ -26,9 +26,25 @@ class UserProfile(models.Model):
         ('reportsOfficer', 'Reports Officer'),
         ('techSupport', 'Technical Support'),
     )
+    PERSON_TYPE_CHOICES = (
+        ('admin', 'Administrator'),
+        ('healthStaff', 'Health Staff'),
+        ('employee', 'Employee'),
+        ('patient', 'Patient'),
+        ('external', 'External'),
+    )
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='health_profile')
     role = models.CharField(max_length=40, choices=ROLE_CHOICES, default='employee')
+    person_type = models.CharField(max_length=30, choices=PERSON_TYPE_CHOICES, default='employee')
     health_center = models.ForeignKey(HealthCenter, on_delete=models.SET_NULL, null=True, blank=True, related_name='platform_users')
+    national_id = models.CharField(max_length=30, unique=True, null=True, blank=True)
+    employee_number = models.CharField(max_length=40, unique=True, null=True, blank=True)
+    medical_record_number = models.CharField(max_length=40, unique=True, null=True, blank=True)
+    phone = models.CharField(max_length=30, blank=True)
+    department = models.CharField(max_length=120, blank=True)
+    job_title = models.CharField(max_length=150, blank=True)
+    specialty = models.CharField(max_length=150, blank=True)
+    license_number = models.CharField(max_length=80, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
