@@ -1,0 +1,100 @@
+/* Asset registry action strip labels
+   Adds clear Arabic/English labels to card action buttons so each card shows
+   View / Edit / Delete-like actions in the same style as IAU Deeds/Assets. */
+
+.MuiTableBody-root .MuiTableRow-root .MuiTableCell-root:last-of-type .MuiIconButton-root {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 8px !important;
+  padding-inline: 12px !important;
+  white-space: nowrap;
+  font-weight: 900 !important;
+  font-size: 13px !important;
+}
+
+/* MUI Tooltip usually injects an aria-label. Use it as the visible button label. */
+.MuiTableBody-root .MuiTableRow-root .MuiTableCell-root:last-of-type .MuiIconButton-root[aria-label]::after {
+  content: attr(aria-label);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+/* Fallbacks for common icon-only actions when aria-label is absent. */
+html[dir='rtl'] .MuiTableBody-root .MuiTableRow-root .MuiTableCell-root:last-of-type .MuiIconButton-colorPrimary:not([aria-label])::after,
+html:not([dir='ltr']) .MuiTableBody-root .MuiTableRow-root .MuiTableCell-root:last-of-type .MuiIconButton-colorPrimary:not([aria-label])::after {
+  content: 'عرض';
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+html[dir='ltr'] .MuiTableBody-root .MuiTableRow-root .MuiTableCell-root:last-of-type .MuiIconButton-colorPrimary:not([aria-label])::after {
+  content: 'View';
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+html[dir='rtl'] .MuiTableBody-root .MuiTableRow-root .MuiTableCell-root:last-of-type .MuiIconButton-colorSecondary:not([aria-label])::after,
+html:not([dir='ltr']) .MuiTableBody-root .MuiTableRow-root .MuiTableCell-root:last-of-type .MuiIconButton-colorSecondary:not([aria-label])::after {
+  content: 'تعديل';
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+html[dir='ltr'] .MuiTableBody-root .MuiTableRow-root .MuiTableCell-root:last-of-type .MuiIconButton-colorSecondary:not([aria-label])::after {
+  content: 'Edit';
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+html[dir='rtl'] .MuiTableBody-root .MuiTableRow-root .MuiTableCell-root:last-of-type .MuiIconButton-colorError:not([aria-label])::after,
+html:not([dir='ltr']) .MuiTableBody-root .MuiTableRow-root .MuiTableCell-root:last-of-type .MuiIconButton-colorError:not([aria-label])::after {
+  content: 'حذف';
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+html[dir='ltr'] .MuiTableBody-root .MuiTableRow-root .MuiTableCell-root:last-of-type .MuiIconButton-colorError:not([aria-label])::after {
+  content: 'Delete';
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+/* Make the action strip closer to the assets cards: three clear buttons when available. */
+.MuiTableBody-root .MuiTableRow-root .MuiTableCell-root:last-of-type .MuiIconButton-root svg {
+  font-size: 17px !important;
+}
+
+.MuiTableBody-root .MuiTableRow-root .MuiTableCell-root:last-of-type .MuiIconButton-colorPrimary {
+  border-color: rgba(15, 53, 87, 0.72) !important;
+  color: #0f3557 !important;
+}
+
+.MuiTableBody-root .MuiTableRow-root .MuiTableCell-root:last-of-type .MuiIconButton-colorSecondary {
+  border-color: rgba(15, 53, 87, 0.72) !important;
+  color: #0f3557 !important;
+}
+
+.MuiTableBody-root .MuiTableRow-root .MuiTableCell-root:last-of-type .MuiIconButton-colorError {
+  border-color: rgba(220, 38, 38, 0.78) !important;
+  color: #dc2626 !important;
+}
+
+@media (max-width: 520px) {
+  .MuiTableBody-root .MuiTableRow-root .MuiTableCell-root:last-of-type .MuiIconButton-root[aria-label]::after,
+  .MuiTableBody-root .MuiTableRow-root .MuiTableCell-root:last-of-type .MuiIconButton-root::after {
+    font-size: 12px;
+  }
+
+  .MuiTableBody-root .MuiTableRow-root .MuiTableCell-root:last-of-type .MuiIconButton-root {
+    padding-inline: 8px !important;
+  }
+}
