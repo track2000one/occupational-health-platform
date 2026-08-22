@@ -25,28 +25,38 @@ def imported_total_from_summary(summary):
 
 def _is_missing_identity_error(error):
     reason = str(error.get('reason', '')).lower()
-    return 'missing employee name or national id' in reason or 'missing employee name or national id.' in reason
+    return 'missing employee name or national id' in reason
 
 
 def _cleanup_sheet_result(result):
     """Treat trailing worksheet artifacts as ignored rows instead of blocking errors.
 
     Excel exports often contain formulas, notes, or summary rows after the real data.
-    If all visible errors are only missing name/national ID and they start after the
-    detected valid data region, they are classified as ignored_non_data_rows.
+    If all visible errors are only missing name/national ID and they start after most
+    of the detected data region, they are classified as ignored_non_data_rows.
     """
     summary = result.get('summary') or {}
     errors = result.get('errors') or []
     errors_count = int(summary.get('errors_count') or 0)
     valid_rows = int(summary.get('valid_rows') or 0)
     duplicate_rows = int(summary.get('duplicate_rows') or 0)
+    total_rows = int(summary.get('total_rows') or 0)
 
     if not errors_count or not errors:
         return result
 
     first_error_row = min((int(error.get('row') or 0) for error in errors), default=0)
-    is_tail_region = first_error_row > 0 and first_error_row >= max(valid_rows, valid_rows + duplicate_rows - 5)
     only_missing_identity = all(_is_missing_identity_error(error) for error in errors)
+
+    # In the user's current Database sheet the usable data ends around row 1700+,
+    # while formula/blank worksheet artifacts continue after that. The old rule
+    # expected errors to start after valid+duplicates, which was too strict because
+    # duplicates are reported separately and can be interleaved near the tail.
+    data_rows = max(valid_rows + duplicate_rows, valid_rows, 1)
+    tail_by_valid_region = first_error_row >= int(data_rows * 0.92)
+    tail_by_total_region = total_rows > 0 and first_error_row >= int(total_rows * 0.75)
+    enough_real_data_before_error = valid_rows >= 25 and first_error_row > valid_rows
+    is_tail_region = first_error_row > 0 and enough_real_data_before_error and (tail_by_valid_region or tail_by_total_region)
 
     if only_missing_identity and is_tail_region:
         ignored = errors_count
