@@ -1,6 +1,6 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
-from .models import AuditLog, ClinicVisit, CommitteeReferral, Employee, HealthCenter, InjuryCase, LabTest, UserProfile, Vaccination
+from .models import AuditLog, ClinicVisit, CommitteeReferral, DataImportBatch, Employee, HealthCenter, InjuryCase, LabTest, UserProfile, Vaccination
 
 
 ROLE_PERMISSIONS = {
@@ -242,3 +242,9 @@ class InjuryCaseSerializer(serializers.ModelSerializer):
     class Meta: model=InjuryCase; fields='__all__'
 class AuditLogSerializer(serializers.ModelSerializer):
     class Meta: model=AuditLog; fields='__all__'
+class DataImportBatchSerializer(serializers.ModelSerializer):
+    created_by_name=serializers.CharField(source='created_by.username',read_only=True)
+    class Meta:
+        model=DataImportBatch
+        fields=['id','file_name','sheet_name','mode','status','total_rows','valid_rows','duplicate_rows','imported_records','skipped_rows','errors_count','summary','created_by_name','created_at']
+        read_only_fields=fields
