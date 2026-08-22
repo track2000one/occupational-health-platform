@@ -45,6 +45,7 @@ import {
   Notifications as NotificationsIcon,
   CalendarMonth as CalendarIcon,
   Security as SecurityIcon,
+  CloudUpload as CloudUploadIcon,
 } from '@mui/icons-material';
 import { Badge } from '@mui/material';
 import { mockNotifications } from '../../data/mockData';
@@ -81,6 +82,7 @@ export function DashboardLayout() {
     { key: 'campaigns',          label: t('campaigns'),          icon: <CampaignIcon />,            path: '/campaigns',              permission: PERMISSIONS.VIEW_CAMPAIGNS },
     { key: 'reports',            label: t('reports'),            icon: <AssessmentIcon />,          path: '/reports',                permission: PERMISSIONS.VIEW_REPORTS },
     { key: 'dataQuality',     label: isRtl ? 'جودة البيانات' : 'Data Quality',        icon: <FactCheckIcon />,     path: '/data-quality',    permission: PERMISSIONS.VIEW_DATA_QUALITY },
+    { key: 'dataImport',      label: isRtl ? 'استيراد Excel آمن' : 'Secure Excel Import', icon: <CloudUploadIcon />, path: '/data-import', permission: PERMISSIONS.MANAGE_USERS },
     { key: 'appointments',    label: isRtl ? 'المواعيد' : 'Appointments',             icon: <CalendarIcon />,      path: '/appointments',    permission: PERMISSIONS.VIEW_DASHBOARD },
     { key: 'notifications',   label: isRtl ? 'الإشعارات' : 'Notifications',           icon: <NotificationsIcon />, path: '/notifications',   permission: PERMISSIONS.VIEW_DASHBOARD },
     { key: 'admin',           label: isRtl ? 'لوحة المسؤول' : 'Admin Console',        icon: <AdminPanelSettingsIcon />, path: '/admin',     permission: PERMISSIONS.MANAGE_USERS },
