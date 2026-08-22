@@ -1,6 +1,7 @@
 from django.contrib.auth import get_user_model
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from .models import AuditLog, ClinicVisit, CommitteeReferral, Employee, HealthCenter, InjuryCase, LabTest, Vaccination
 from .serializers import AuditLogSerializer, ClinicVisitSerializer, CommitteeReferralSerializer, EmployeeSerializer, HealthCenterSerializer, InjuryCaseSerializer, LabTestSerializer, PlatformUserSerializer, VaccinationSerializer
@@ -15,7 +16,7 @@ class IsAdminOrManagerForWrite(permissions.BasePermission):
 class UserViewSet(viewsets.ModelViewSet):
     serializer_class = PlatformUserSerializer
     queryset = get_user_model().objects.select_related('health_profile', 'health_profile__health_center').all().order_by('-date_joined')
-    search_fields = ['username', 'email', 'first_name']
+    search_fields = ['username', 'email', 'first_name', 'health_profile__national_id', 'health_profile__employee_number', 'health_profile__medical_record_number']
 
     def get_permissions(self):
         if self.action == 'me':
@@ -40,7 +41,7 @@ class UserViewSet(viewsets.ModelViewSet):
 
     def perform_destroy(self, instance):
         if instance == self.request.user:
-            raise ValueError('You cannot delete your current account.')
+            raise ValidationError({'detail': 'You cannot delete your current account.'})
         AuditLog.objects.create(user=str(self.request.user), action='delete_user', model_name='User', record_id=str(instance.id))
         instance.delete()
 
