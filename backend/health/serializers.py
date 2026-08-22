@@ -22,13 +22,35 @@ ROLE_PERMISSIONS = {
     'techSupport': ['reset:passwords', 'view:userTechnical'],
 }
 
+IDENTITY_FIELD_LABELS = {
+    'national_id': 'National ID / Registry number already exists.',
+    'employee_number': 'Employee number already exists.',
+    'medical_record_number': 'Medical record number already exists.',
+}
+
+
+def clean_optional_identifier(value):
+    if value is None:
+        return None
+    value = str(value).strip()
+    return value or None
+
 
 class PlatformUserSerializer(serializers.ModelSerializer):
     id = serializers.IntegerField(read_only=True)
     name = serializers.CharField(required=True, allow_blank=False)
     email = serializers.EmailField(required=True)
     role = serializers.ChoiceField(choices=UserProfile.ROLE_CHOICES, required=False, default='employee')
+    personType = serializers.ChoiceField(choices=UserProfile.PERSON_TYPE_CHOICES, required=False, default='employee')
     healthCenterId = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    nationalId = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    employeeNumber = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    medicalRecordNumber = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    phone = serializers.CharField(required=False, allow_blank=True)
+    department = serializers.CharField(required=False, allow_blank=True)
+    jobTitle = serializers.CharField(required=False, allow_blank=True)
+    specialty = serializers.CharField(required=False, allow_blank=True)
+    licenseNumber = serializers.CharField(required=False, allow_blank=True)
     isActive = serializers.BooleanField(required=False, default=True)
     isStaff = serializers.BooleanField(read_only=True)
     isSuperuser = serializers.BooleanField(read_only=True)
@@ -38,7 +60,12 @@ class PlatformUserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = get_user_model()
-        fields = ['id', 'username', 'name', 'email', 'role', 'healthCenterId', 'isActive', 'isStaff', 'isSuperuser', 'lastLogin', 'permissions', 'password']
+        fields = [
+            'id', 'username', 'name', 'email', 'role', 'personType', 'healthCenterId',
+            'nationalId', 'employeeNumber', 'medicalRecordNumber', 'phone', 'department',
+            'jobTitle', 'specialty', 'licenseNumber', 'isActive', 'isStaff', 'isSuperuser',
+            'lastLogin', 'permissions', 'password'
+        ]
         read_only_fields = ['id', 'username', 'isStaff', 'isSuperuser', 'lastLogin', 'permissions']
 
     def _profile(self, obj):
@@ -57,8 +84,17 @@ class PlatformUserSerializer(serializers.ModelSerializer):
             'name': instance.first_name or instance.get_full_name() or instance.username,
             'email': instance.email,
             'role': profile.role,
+            'personType': profile.person_type,
             'healthCenterId': str(profile.health_center_id) if profile.health_center_id else '',
             'healthCenterName': profile.health_center.name if profile.health_center_id else '',
+            'nationalId': profile.national_id or '',
+            'employeeNumber': profile.employee_number or '',
+            'medicalRecordNumber': profile.medical_record_number or '',
+            'phone': profile.phone,
+            'department': profile.department,
+            'jobTitle': profile.job_title,
+            'specialty': profile.specialty,
+            'licenseNumber': profile.license_number,
             'isActive': instance.is_active,
             'isStaff': instance.is_staff,
             'isSuperuser': instance.is_superuser,
@@ -74,11 +110,55 @@ class PlatformUserSerializer(serializers.ModelSerializer):
         except HealthCenter.DoesNotExist:
             raise serializers.ValidationError({'healthCenterId': 'Invalid health center.'})
 
+    def _check_unique_profile_field(self, field_name, value, user_instance=None):
+        value = clean_optional_identifier(value)
+        if not value:
+            return None
+        qs = UserProfile.objects.filter(**{field_name: value})
+        if user_instance is not None:
+            qs = qs.exclude(user=user_instance)
+        if qs.exists():
+            public_name = {
+                'national_id': 'nationalId',
+                'employee_number': 'employeeNumber',
+                'medical_record_number': 'medicalRecordNumber',
+            }[field_name]
+            raise serializers.ValidationError({public_name: IDENTITY_FIELD_LABELS[field_name]})
+        return value
+
+    def _profile_values(self, data, instance=None, partial=False):
+        sentinel = object()
+        values = {}
+        mapping = {
+            'personType': 'person_type',
+            'nationalId': 'national_id',
+            'employeeNumber': 'employee_number',
+            'medicalRecordNumber': 'medical_record_number',
+            'phone': 'phone',
+            'department': 'department',
+            'jobTitle': 'job_title',
+            'specialty': 'specialty',
+            'licenseNumber': 'license_number',
+        }
+        for incoming, model_field in mapping.items():
+            raw = data.pop(incoming, sentinel)
+            if raw is sentinel:
+                if partial:
+                    continue
+                raw = '' if model_field not in ('person_type', 'national_id', 'employee_number', 'medical_record_number') else None
+            if model_field in ('national_id', 'employee_number', 'medical_record_number'):
+                raw = self._check_unique_profile_field(model_field, raw, instance)
+            else:
+                raw = '' if raw is None else str(raw).strip()
+            values[model_field] = raw
+        return values
+
     def create(self, validated_data):
         User = get_user_model()
         password = validated_data.pop('password', None)
         role = validated_data.pop('role', 'employee')
         health_center_id = validated_data.pop('healthCenterId', None)
+        profile_values = self._profile_values(validated_data)
         name = validated_data.pop('name')
         email = validated_data.pop('email').lower().strip()
         is_active = validated_data.pop('isActive', True)
@@ -94,7 +174,14 @@ class PlatformUserSerializer(serializers.ModelSerializer):
             user.is_staff = True
         user.set_password(password or User.objects.make_random_password())
         user.save()
-        UserProfile.objects.update_or_create(user=user, defaults={'role': role, 'health_center': self._resolve_health_center(health_center_id)})
+        UserProfile.objects.update_or_create(
+            user=user,
+            defaults={
+                'role': role,
+                'health_center': self._resolve_health_center(health_center_id),
+                **profile_values,
+            }
+        )
         AuditLog.objects.create(user=str(self.context.get('request').user), action='create_user', model_name='User', record_id=str(user.id))
         return user
 
@@ -102,6 +189,7 @@ class PlatformUserSerializer(serializers.ModelSerializer):
         password = validated_data.pop('password', None)
         role = validated_data.pop('role', None)
         health_center_id = validated_data.pop('healthCenterId', None)
+        profile_values = self._profile_values(validated_data, instance=instance, partial=True)
         name = validated_data.pop('name', None)
         email = validated_data.pop('email', None)
         is_active = validated_data.pop('isActive', None)
@@ -130,6 +218,8 @@ class PlatformUserSerializer(serializers.ModelSerializer):
             profile.role = role
         if health_center_id is not None:
             profile.health_center = self._resolve_health_center(health_center_id)
+        for key, value in profile_values.items():
+            setattr(profile, key, value)
         profile.save()
         AuditLog.objects.create(user=str(self.context.get('request').user), action='update_user', model_name='User', record_id=str(instance.id))
         return instance
