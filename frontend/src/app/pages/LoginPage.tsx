@@ -15,25 +15,26 @@ import {
   Language, ExpandMore as ExpandMoreIcon, ExpandLess as ExpandLessIcon,
   Email as EmailIcon, Lock as LockIcon, CheckCircle as CheckCircleIcon,
   Visibility as VisibilityIcon, VisibilityOff as VisibilityOffIcon,
+  LocalHospital as LocalHospitalIcon, Shield as ShieldIcon,
 } from '@mui/icons-material';
 
 const DEMO_ACCOUNTS = [
-  { email: 'admin@health.gov',      password: 'admin123',    nameAr: 'أحمد المنصور',    nameEn: 'Ahmed Al-Mansour',    roleAr: 'مدير النظام',          roleEn: 'System Admin',             color: '#764ba2' },
-  { email: 'manager@health.gov',    password: 'manager123',  nameAr: 'خالد إبراهيم',    nameEn: 'Khalid Ibrahim',      roleAr: 'مدير الصحة المهنية',   roleEn: 'OH Manager',               color: '#667eea' },
-  { email: 'ohdoctor@health.gov',   password: 'doctor123',   nameAr: 'د. سارة محمد',    nameEn: 'Dr. Sarah Mohammed',  roleAr: 'طبيب الصحة المهنية',   roleEn: 'OH Doctor',                color: '#4facfe' },
-  { email: 'clinicdoc@health.gov',  password: 'clinic123',   nameAr: 'د. عمر الزهراني', nameEn: 'Dr. Omar Al-Zahrani', roleAr: 'طبيب العيادة',         roleEn: 'Clinic Doctor',            color: '#43e97b' },
-  { email: 'lab@health.gov',        password: 'lab123',      nameAr: 'فاطمة علي',       nameEn: 'Fatima Ali',          roleAr: 'مسؤول المختبر',        roleEn: 'Lab Officer',              color: '#f093fb' },
-  { email: 'vaccine@health.gov',    password: 'vaccine123',  nameAr: 'عمر حسن',         nameEn: 'Omar Hassan',         roleAr: 'مسؤول التطعيم',        roleEn: 'Vaccination Officer',      color: '#00b894' },
-  { email: 'needle@health.gov',     password: 'needle123',   nameAr: 'نورة العتيبي',    nameEn: 'Noura Al-Otaibi',     roleAr: 'مسؤول الوخز بالإبرة', roleEn: 'Needle Stick Officer',     color: '#fa709a' },
-  { email: 'committee@health.gov',  password: 'comm123',     nameAr: 'عبدالله القحطاني',nameEn: 'Abdullah Al-Qahtani', roleAr: 'مسؤول الهيئة الطبية', roleEn: 'Committee Officer',        color: '#f9a825' },
-  { email: 'campaign@health.gov',   password: 'camp123',     nameAr: 'ريم الشمري',      nameEn: 'Reem Al-Shammari',    roleAr: 'مسؤول الحملات',        roleEn: 'Campaign Officer',         color: '#fd79a8' },
-  { email: 'center@health.gov',     password: 'center123',   nameAr: 'سلطان المطيري',   nameEn: 'Sultan Al-Mutairi',   roleAr: 'مدير المركز',          roleEn: 'Center Manager',           color: '#6c5ce7' },
-  { email: 'executive@health.gov',  password: 'exec123',     nameAr: 'الأمير فيصل',     nameEn: 'Prince Faisal',       roleAr: 'المدير التنفيذي',      roleEn: 'Executive',                color: '#2d3436' },
-  { email: 'employee@health.gov',   password: 'emp123',      nameAr: 'ليلى أحمد',       nameEn: 'Layla Ahmed',         roleAr: 'موظف',                 roleEn: 'Employee',                 color: '#00cec9' },
-  { email: 'dataentry@health.gov',  password: 'entry123',    nameAr: 'هند السيف',       nameEn: 'Hind Al-Sayf',        roleAr: 'مدخل البيانات',        roleEn: 'Data Entry',               color: '#e17055' },
-  { email: 'quality@health.gov',    password: 'quality123',  nameAr: 'بدر الرشيدي',     nameEn: 'Badr Al-Rashidi',     roleAr: 'مسؤول جودة البيانات', roleEn: 'Data Quality',             color: '#0984e3' },
-  { email: 'reports@health.gov',    password: 'reports123',  nameAr: 'مريم البلوي',     nameEn: 'Mariam Al-Balawi',    roleAr: 'مسؤول التقارير',       roleEn: 'Reports Officer',          color: '#00b894' },
-  { email: 'support@health.gov',    password: 'support123',  nameAr: 'وليد الحربي',     nameEn: 'Walid Al-Harbi',      roleAr: 'الدعم التقني',         roleEn: 'Tech Support',             color: '#636e72' },
+  { email: 'admin@health.gov',      password: 'admin123',    nameAr: 'أحمد المنصور',    nameEn: 'Ahmed Al-Mansour',    roleAr: 'مدير النظام',          roleEn: 'System Admin',             color: '#2FBF9F' },
+  { email: 'manager@health.gov',    password: 'manager123',  nameAr: 'خالد إبراهيم',    nameEn: 'Khalid Ibrahim',      roleAr: 'مدير الصحة المهنية',   roleEn: 'OH Manager',               color: '#6C7EF8' },
+  { email: 'ohdoctor@health.gov',   password: 'doctor123',   nameAr: 'د. سارة محمد',    nameEn: 'Dr. Sarah Mohammed',  roleAr: 'طبيب الصحة المهنية',   roleEn: 'OH Doctor',                color: '#0EA5E9' },
+  { email: 'clinicdoc@health.gov',  password: 'clinic123',   nameAr: 'د. عمر الزهراني', nameEn: 'Dr. Omar Al-Zahrani', roleAr: 'طبيب العيادة',         roleEn: 'Clinic Doctor',            color: '#34D399' },
+  { email: 'lab@health.gov',        password: 'lab123',      nameAr: 'فاطمة علي',       nameEn: 'Fatima Ali',          roleAr: 'مسؤول المختبر',        roleEn: 'Lab Officer',              color: '#14B8A6' },
+  { email: 'vaccine@health.gov',    password: 'vaccine123',  nameAr: 'عمر حسن',         nameEn: 'Omar Hassan',         roleAr: 'مسؤول التطعيم',        roleEn: 'Vaccination Officer',      color: '#10B981' },
+  { email: 'needle@health.gov',     password: 'needle123',   nameAr: 'نورة العتيبي',    nameEn: 'Noura Al-Otaibi',     roleAr: 'مسؤول الوخز بالإبرة', roleEn: 'Needle Stick Officer',     color: '#EF4444' },
+  { email: 'committee@health.gov',  password: 'comm123',     nameAr: 'عبدالله القحطاني',nameEn: 'Abdullah Al-Qahtani', roleAr: 'مسؤول الهيئة الطبية', roleEn: 'Committee Officer',        color: '#F59E0B' },
+  { email: 'campaign@health.gov',   password: 'camp123',     nameAr: 'ريم الشمري',      nameEn: 'Reem Al-Shammari',    roleAr: 'مسؤول الحملات',        roleEn: 'Campaign Officer',         color: '#E84D63' },
+  { email: 'center@health.gov',     password: 'center123',   nameAr: 'سلطان المطيري',   nameEn: 'Sultan Al-Mutairi',   roleAr: 'مدير المركز',          roleEn: 'Center Manager',           color: '#6366F1' },
+  { email: 'executive@health.gov',  password: 'exec123',     nameAr: 'الأمير فيصل',     nameEn: 'Prince Faisal',       roleAr: 'المدير التنفيذي',      roleEn: 'Executive',                color: '#0F172A' },
+  { email: 'employee@health.gov',   password: 'emp123',      nameAr: 'ليلى أحمد',       nameEn: 'Layla Ahmed',         roleAr: 'موظف',                 roleEn: 'Employee',                 color: '#06B6D4' },
+  { email: 'dataentry@health.gov',  password: 'entry123',    nameAr: 'هند السيف',       nameEn: 'Hind Al-Sayf',        roleAr: 'مدخل البيانات',        roleEn: 'Data Entry',               color: '#F97316' },
+  { email: 'quality@health.gov',    password: 'quality123',  nameAr: 'بدر الرشيدي',     nameEn: 'Badr Al-Rashidi',     roleAr: 'مسؤول جودة البيانات', roleEn: 'Data Quality',             color: '#0284C7' },
+  { email: 'reports@health.gov',    password: 'reports123',  nameAr: 'مريم البلوي',     nameEn: 'Mariam Al-Balawi',    roleAr: 'مسؤول التقارير',       roleEn: 'Reports Officer',          color: '#059669' },
+  { email: 'support@health.gov',    password: 'support123',  nameAr: 'وليد الحربي',     nameEn: 'Walid Al-Harbi',      roleAr: 'الدعم التقني',         roleEn: 'Tech Support',             color: '#64748B' },
 ];
 
 export function LoginPage() {
@@ -49,9 +50,8 @@ export function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const isRtl = i18n.language === 'ar';
 
-  // Forgot Password state
   const [forgotOpen, setForgotOpen] = useState(false);
-  const [forgotStep, setForgotStep] = useState(0); // 0=email, 1=code, 2=new password, 3=done
+  const [forgotStep, setForgotStep] = useState(0);
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotEmailError, setForgotEmailError] = useState('');
   const [verifyCode, setVerifyCode] = useState('');
@@ -60,7 +60,7 @@ export function LoginPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordError, setPasswordError] = useState('');
   const [forgotLoading, setForgotLoading] = useState(false);
-  const DEMO_CODE = '123456'; // fixed demo OTP
+  const DEMO_CODE = '123456';
 
   function openForgot() {
     setForgotStep(0);
@@ -155,68 +155,164 @@ export function LoginPage() {
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+      background: 'radial-gradient(circle at 18% 18%, rgba(47,191,159,.16), transparent 28%), radial-gradient(circle at 82% 0%, rgba(108,126,248,.14), transparent 30%), #E9EDF3',
       direction: isRtl ? 'rtl' : 'ltr',
-      py: 4,
+      py: { xs: 3, md: 5 },
+      overflow: 'hidden',
+      position: 'relative',
     }}>
-      <Container maxWidth="sm">
-        <Paper elevation={6} sx={{ p: 4, borderRadius: 3, position: 'relative' }}>
-          <Box sx={{ position: 'absolute', top: 16, right: 16 }}>
-            <IconButton onClick={toggleLanguage} color="primary">
-              <Language />
-            </IconButton>
-          </Box>
+      <Box sx={{ position: 'absolute', width: 420, height: 420, borderRadius: '50%', right: -120, top: -130, background: 'linear-gradient(145deg, rgba(255,255,255,.55), rgba(221,229,239,.45))', boxShadow: '20px 20px 45px rgba(163,174,190,.35), -20px -20px 45px rgba(255,255,255,.75)' }} />
+      <Box sx={{ position: 'absolute', width: 240, height: 240, borderRadius: '50%', left: -80, bottom: -80, background: 'linear-gradient(145deg, rgba(47,191,159,.15), rgba(255,255,255,.5))', boxShadow: '18px 18px 40px rgba(163,174,190,.32), -18px -18px 40px rgba(255,255,255,.72)' }} />
 
-          {/* Logo + Title */}
-          <Box sx={{ textAlign: 'center', mb: 4 }}>
-            <Box sx={{ margin: '0 auto 16px', width: 'fit-content' }}>
-              <img src={logoImg} alt="تجمع الشرقية الصحي" style={{ height: 120, width: 'auto', maxWidth: '100%', objectFit: 'contain' }} />
+      <Container maxWidth="lg" sx={{ position: 'relative', zIndex: 1 }}>
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1.02fr .98fr' }, gap: { xs: 3, md: 5 }, alignItems: 'center' }}>
+          <Paper
+            elevation={0}
+            sx={{
+              p: { xs: 3, sm: 4.5 },
+              borderRadius: { xs: 8, md: 10 },
+              position: 'relative',
+              background: 'linear-gradient(145deg, #F8FAFC 0%, #E9EDF3 100%)',
+              border: '1px solid rgba(255,255,255,.68)',
+              boxShadow: '24px 24px 55px rgba(163,174,190,.48), -24px -24px 55px rgba(255,255,255,.96)',
+              overflow: 'hidden',
+              '&::before': {
+                content: '""',
+                position: 'absolute',
+                width: 230,
+                height: 230,
+                borderRadius: '50%',
+                insetInlineStart: -70,
+                top: -90,
+                border: '1px solid rgba(255,255,255,.72)',
+                boxShadow: 'inset 10px 10px 22px rgba(163,174,190,.18), inset -10px -10px 22px rgba(255,255,255,.72)',
+              },
+            }}
+          >
+            <Box sx={{ position: 'absolute', top: 18, insetInlineEnd: 18 }}>
+              <IconButton
+                onClick={toggleLanguage}
+                sx={{
+                  bgcolor: '#E9EDF3',
+                  boxShadow: '8px 8px 16px rgba(163,174,190,.42), -8px -8px 16px rgba(255,255,255,.92)',
+                  '&:hover': { bgcolor: '#EEF2F7', transform: 'translateY(-1px)' },
+                }}
+              >
+                <Language />
+              </IconButton>
             </Box>
-            <Typography variant="h5" gutterBottom fontWeight="bold">{t('appName')}</Typography>
-            <Typography variant="body2" color="text.secondary">{t('loginSubtitle')}</Typography>
-          </Box>
 
-          {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-
-          {/* Login form */}
-          <Box component="form" onSubmit={handleSubmit} sx={{ mt: 2 }}>
-            <TextField fullWidth label={t('email')} type="email" value={email}
-              onChange={e => setEmail(e.target.value)} required margin="normal" autoComplete="email" />
-            <TextField fullWidth label={t('password')} type={showPassword ? 'text' : 'password'} value={password}
-              onChange={e => setPassword(e.target.value)} required margin="normal" autoComplete="current-password"
-              slotProps={{ input: { endAdornment: (
-                <InputAdornment position="end">
-                  <IconButton onClick={() => setShowPassword(p => !p)} edge="end" size="small">
-                    {showPassword ? <VisibilityOffIcon fontSize="small" /> : <VisibilityIcon fontSize="small" />}
-                  </IconButton>
-                </InputAdornment>
-              ) } }} />
-            <FormControlLabel control={<Checkbox defaultChecked />} label={t('rememberMe')} sx={{ mt: 1 }} />
-            <Button type="submit" fullWidth variant="contained" size="large" disabled={loading}
-              sx={{
-                mt: 3, mb: 2, py: 1.5,
-                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                '&:hover': { background: 'linear-gradient(135deg, #764ba2 0%, #667eea 100%)' },
+            <Box sx={{ position: 'relative', textAlign: 'center', mb: 3.5 }}>
+              <Box sx={{
+                margin: '0 auto 18px',
+                width: 130,
+                height: 130,
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: 'linear-gradient(145deg, #F8FAFC 0%, #DDE5EF 100%)',
+                boxShadow: '18px 18px 34px rgba(163,174,190,.42), -18px -18px 34px rgba(255,255,255,.96), inset 1px 1px 0 rgba(255,255,255,.9)',
               }}>
-              {loading ? t('loading') : t('login')}
-            </Button>
-            <Box sx={{ textAlign: 'center' }}>
-              <Button color="primary" size="small" onClick={openForgot}
-                sx={{ textDecoration: 'underline', textUnderlineOffset: 3 }}>
-                {t('forgotPassword')}
+                <img src={logoImg} alt="تجمع الشرقية الصحي" style={{ height: 86, width: 'auto', maxWidth: '82%', objectFit: 'contain' }} />
+              </Box>
+              <Typography variant="h4" gutterBottom sx={{ fontWeight: 950, color: '#0F172A', letterSpacing: '-.03em' }}>{t('appName')}</Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 650 }}>{t('loginSubtitle')}</Typography>
+            </Box>
+
+            {error && <Alert severity="error" sx={{ mb: 2, borderRadius: 4 }}>{error}</Alert>}
+
+            <Box component="form" onSubmit={handleSubmit} sx={{ mt: 2, position: 'relative' }}>
+              <TextField
+                fullWidth
+                label={t('email')}
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                required
+                margin="normal"
+                autoComplete="email"
+                slotProps={{ input: { startAdornment: <InputAdornment position="start"><EmailIcon fontSize="small" color="action" /></InputAdornment> } }}
+              />
+              <TextField
+                fullWidth
+                label={t('password')}
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                required
+                margin="normal"
+                autoComplete="current-password"
+                slotProps={{ input: { startAdornment: <InputAdornment position="start"><LockIcon fontSize="small" color="action" /></InputAdornment>, endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton onClick={() => setShowPassword(p => !p)} edge="end" size="small">
+                      {showPassword ? <VisibilityOffIcon fontSize="small" /> : <VisibilityIcon fontSize="small" />}
+                    </IconButton>
+                  </InputAdornment>
+                ) } }}
+              />
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 1.2, gap: 1, flexWrap: 'wrap' }}>
+                <FormControlLabel control={<Checkbox defaultChecked />} label={t('rememberMe')} />
+                <Button color="primary" size="small" onClick={openForgot} sx={{ textDecoration: 'underline', textUnderlineOffset: 4, fontWeight: 850 }}>
+                  {t('forgotPassword')}
+                </Button>
+              </Box>
+              <Button
+                type="submit"
+                fullWidth
+                variant="contained"
+                size="large"
+                disabled={loading}
+                sx={{ mt: 3, mb: 2, py: 1.45, borderRadius: 999 }}
+              >
+                {loading ? t('loading') : t('login')}
               </Button>
             </Box>
-          </Box>
+          </Paper>
 
-          {/* Demo accounts section */}
-          <Box sx={{ mt: 3 }}>
+          <Paper
+            elevation={0}
+            sx={{
+              p: { xs: 2.4, md: 3.5 },
+              borderRadius: { xs: 7, md: 9 },
+              background: 'linear-gradient(145deg, #F8FAFC 0%, #E9EDF3 100%)',
+              border: '1px solid rgba(255,255,255,.68)',
+              boxShadow: '18px 18px 42px rgba(163,174,190,.42), -18px -18px 42px rgba(255,255,255,.92)',
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.6, flexDirection: isRtl ? 'row-reverse' : 'row', mb: 2.5 }}>
+              <Box sx={{ width: 54, height: 54, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', background: 'linear-gradient(145deg, #2FBF9F, #0F9F85)', boxShadow: '10px 10px 20px rgba(47,191,159,.28), -8px -8px 18px rgba(255,255,255,.85)' }}>
+                <LocalHospitalIcon />
+              </Box>
+              <Box sx={{ textAlign: isRtl ? 'right' : 'left' }}>
+                <Typography variant="h5" sx={{ fontWeight: 950, color: '#0F172A' }}>
+                  {isRtl ? 'تصميم صحي ناعم وآمن' : 'Soft, secure health experience'}
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 650 }}>
+                  {isRtl ? 'واجهة Neumorphic مناسبة للبيانات الصحية الحساسة' : 'Neumorphic interface suitable for sensitive health data'}
+                </Typography>
+              </Box>
+            </Box>
+
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' }, gap: 1.5, mb: 2.8 }}>
+              {[
+                { label: isRtl ? 'حماية' : 'Secure', icon: <ShieldIcon fontSize="small" />, color: '#2FBF9F' },
+                { label: isRtl ? 'سهل' : 'Usable', icon: <CheckCircleIcon fontSize="small" />, color: '#6C7EF8' },
+                { label: isRtl ? 'طبي' : 'Clinical', icon: <LocalHospitalIcon fontSize="small" />, color: '#0EA5E9' },
+              ].map(item => (
+                <Box key={item.label} sx={{ p: 1.5, borderRadius: 4, textAlign: 'center', background: '#E9EDF3', boxShadow: 'inset 6px 6px 12px rgba(163,174,190,.38), inset -6px -6px 12px rgba(255,255,255,.92)' }}>
+                  <Box sx={{ color: item.color, mb: .5 }}>{item.icon}</Box>
+                  <Typography variant="caption" fontWeight={850}>{item.label}</Typography>
+                </Box>
+              ))}
+            </Box>
+
             <Button
               fullWidth
               variant="outlined"
-              size="small"
+              size="medium"
               onClick={() => setShowAccounts(p => !p)}
               endIcon={showAccounts ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-              sx={{ borderStyle: 'dashed', color: 'text.secondary', borderColor: 'divider' }}
             >
               {isRtl
                 ? (showAccounts ? 'إخفاء الحسابات التجريبية' : 'عرض الحسابات التجريبية')
@@ -224,23 +320,23 @@ export function LoginPage() {
             </Button>
 
             <Collapse in={showAccounts}>
-              <Box sx={{ mt: 2, border: '1px solid', borderColor: 'divider', borderRadius: 2, overflow: 'hidden' }}>
-                <Box sx={{ px: 2, py: 1, bgcolor: 'grey.50' }}>
-                  <Typography variant="caption" color="text.secondary" fontWeight="bold">
+              <Box sx={{ mt: 2, border: '1px solid rgba(255,255,255,.65)', borderRadius: 5, overflow: 'hidden', background: '#E9EDF3', boxShadow: 'inset 7px 7px 14px rgba(163,174,190,.35), inset -7px -7px 14px rgba(255,255,255,.9)' }}>
+                <Box sx={{ px: 2, py: 1.2, bgcolor: 'rgba(255,255,255,.4)' }}>
+                  <Typography variant="caption" color="text.secondary" fontWeight={850}>
                     {isRtl ? 'انقر على اسم المستخدم للدخول مباشرة' : 'Click a name to log in instantly'}
                   </Typography>
                 </Box>
-                <Box sx={{ maxHeight: 340, overflowY: 'auto' }}>
+                <Box sx={{ maxHeight: 420, overflowY: 'auto' }}>
                   <Table size="small" stickyHeader>
                     <TableHead>
                       <TableRow>
-                        <TableCell sx={{ fontWeight: 'bold', bgcolor: 'grey.50', fontSize: '0.7rem' }}>
+                        <TableCell sx={{ fontWeight: 900, bgcolor: '#EEF2F7', fontSize: '0.72rem' }}>
                           {isRtl ? 'الاسم' : 'Name'}
                         </TableCell>
-                        <TableCell sx={{ fontWeight: 'bold', bgcolor: 'grey.50', fontSize: '0.7rem' }}>
+                        <TableCell sx={{ fontWeight: 900, bgcolor: '#EEF2F7', fontSize: '0.72rem' }}>
                           {isRtl ? 'الدور' : 'Role'}
                         </TableCell>
-                        <TableCell sx={{ fontWeight: 'bold', bgcolor: 'grey.50', fontSize: '0.7rem' }}>
+                        <TableCell sx={{ fontWeight: 900, bgcolor: '#EEF2F7', fontSize: '0.72rem' }}>
                           {isRtl ? 'البريد الإلكتروني' : 'Email'}
                         </TableCell>
                       </TableRow>
@@ -261,14 +357,15 @@ export function LoginPage() {
                           <TableCell>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                               <Box sx={{
-                                width: 28, height: 28, borderRadius: '50%',
+                                width: 30, height: 30, borderRadius: '50%',
                                 bgcolor: account.color, color: '#fff',
                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                fontSize: '0.65rem', fontWeight: 'bold', flexShrink: 0,
+                                fontSize: '0.68rem', fontWeight: 900, flexShrink: 0,
+                                boxShadow: `0 8px 16px ${account.color}44`,
                               }}>
                                 {(isRtl ? account.nameAr : account.nameEn).charAt(isRtl ? account.nameAr.indexOf('د') === 0 ? 2 : 0 : 0)}
                               </Box>
-                              <Typography variant="body2" fontWeight="medium" noWrap>
+                              <Typography variant="body2" fontWeight={750} noWrap>
                                 {loggingIn === account.email
                                   ? (isRtl ? 'جارٍ الدخول...' : 'Logging in...')
                                   : (isRtl ? account.nameAr : account.nameEn)}
@@ -279,7 +376,7 @@ export function LoginPage() {
                             <Chip
                               label={isRtl ? account.roleAr : account.roleEn}
                               size="small"
-                              sx={{ bgcolor: `${account.color}20`, color: account.color, fontWeight: 600, fontSize: '0.65rem', height: 20 }}
+                              sx={{ bgcolor: `${account.color}18`, color: account.color, fontWeight: 850, fontSize: '0.65rem', height: 22 }}
                             />
                           </TableCell>
                           <TableCell>
@@ -294,24 +391,24 @@ export function LoginPage() {
                 </Box>
               </Box>
             </Collapse>
-          </Box>
-        </Paper>
+          </Paper>
+        </Box>
       </Container>
 
-      {/* ── Forgot Password Dialog ───────────────────────────────────────── */}
       <Dialog open={forgotOpen} onClose={() => setForgotOpen(false)} maxWidth="xs" fullWidth
-        slotProps={{ paper: { sx: { borderRadius: 3 } } }}>
+        slotProps={{ paper: { sx: { borderRadius: 6, background: 'linear-gradient(145deg, #F8FAFC 0%, #E9EDF3 100%)' } } }}>
         <DialogTitle component="div" sx={{ pb: 0 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexDirection: isRtl ? 'row-reverse' : 'row' }}>
             <Box sx={{
-              width: 40, height: 40, borderRadius: '50%',
-              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              width: 46, height: 46, borderRadius: '50%',
+              background: 'linear-gradient(145deg, #2FBF9F 0%, #0F9F85 100%)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: '8px 8px 16px rgba(47,191,159,.28), -8px -8px 16px rgba(255,255,255,.75)',
             }}>
-              <LockIcon sx={{ color: 'white', fontSize: 20 }} />
+              <LockIcon sx={{ color: 'white', fontSize: 22 }} />
             </Box>
-            <Box>
-              <Typography variant="h6" fontWeight="bold">
+            <Box sx={{ textAlign: isRtl ? 'right' : 'left' }}>
+              <Typography variant="h6" fontWeight={950}>
                 {isRtl ? 'استعادة كلمة المرور' : 'Reset Password'}
               </Typography>
               <Typography variant="caption" color="text.secondary">
@@ -322,7 +419,6 @@ export function LoginPage() {
         </DialogTitle>
 
         <DialogContent sx={{ pt: 2 }}>
-          {/* Step indicators */}
           {forgotStep < 3 && (
             <Stepper activeStep={forgotStep} sx={{ mb: 3, mt: 1 }} alternativeLabel>
               {[
@@ -335,7 +431,6 @@ export function LoginPage() {
             </Stepper>
           )}
 
-          {/* Step 0 — enter email */}
           {forgotStep === 0 && (
             <Box>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
@@ -356,10 +451,9 @@ export function LoginPage() {
             </Box>
           )}
 
-          {/* Step 1 — enter OTP */}
           {forgotStep === 1 && (
             <Box>
-              <Alert severity="info" sx={{ mb: 2, fontSize: '0.8rem' }}>
+              <Alert severity="info" sx={{ mb: 2, fontSize: '0.8rem', borderRadius: 4 }}>
                 {isRtl
                   ? `تم إرسال رمز التحقق إلى ${forgotEmail}. (للتجربة: ${DEMO_CODE})`
                   : `A code was sent to ${forgotEmail}. (Demo code: ${DEMO_CODE})`}
@@ -377,7 +471,6 @@ export function LoginPage() {
             </Box>
           )}
 
-          {/* Step 2 — new password */}
           {forgotStep === 2 && (
             <Box>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
@@ -417,11 +510,10 @@ export function LoginPage() {
             </Box>
           )}
 
-          {/* Step 3 — success */}
           {forgotStep === 3 && (
             <Box sx={{ textAlign: 'center', py: 3 }}>
               <CheckCircleIcon sx={{ fontSize: 64, color: 'success.main', mb: 2 }} />
-              <Typography variant="h6" fontWeight="bold" gutterBottom>
+              <Typography variant="h6" fontWeight={950} gutterBottom>
                 {isRtl ? 'تمت إعادة التعيين بنجاح!' : 'Password Reset Successful!'}
               </Typography>
               <Typography variant="body2" color="text.secondary">
@@ -441,27 +533,23 @@ export function LoginPage() {
           )}
           {forgotStep === 0 && (
             <Button variant="contained" onClick={handleSendCode} disabled={forgotLoading}
-              startIcon={forgotLoading ? <CircularProgress size={16} color="inherit" /> : <EmailIcon />}
-              sx={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
+              startIcon={forgotLoading ? <CircularProgress size={16} color="inherit" /> : <EmailIcon />}>
               {isRtl ? 'إرسال الرمز' : 'Send Code'}
             </Button>
           )}
           {forgotStep === 1 && (
-            <Button variant="contained" onClick={handleVerifyCode}
-              sx={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
+            <Button variant="contained" onClick={handleVerifyCode}>
               {isRtl ? 'تحقق' : 'Verify'}
             </Button>
           )}
           {forgotStep === 2 && (
             <Button variant="contained" onClick={handleResetPassword} disabled={forgotLoading}
-              startIcon={forgotLoading ? <CircularProgress size={16} color="inherit" /> : <LockIcon />}
-              sx={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
+              startIcon={forgotLoading ? <CircularProgress size={16} color="inherit" /> : <LockIcon />}>
               {isRtl ? 'إعادة التعيين' : 'Reset Password'}
             </Button>
           )}
           {forgotStep === 3 && (
-            <Button variant="contained" fullWidth onClick={() => setForgotOpen(false)}
-              sx={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
+            <Button variant="contained" fullWidth onClick={() => setForgotOpen(false)}>
               {isRtl ? 'تسجيل الدخول' : 'Go to Login'}
             </Button>
           )}
