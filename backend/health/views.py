@@ -19,6 +19,10 @@ def truthy(value):
     return str(value).lower() in ('1','true','yes','y','commit')
 
 
+def imported_total_from_summary(summary):
+    return sum(value for key, value in summary.items() if key.startswith('imported_') and isinstance(value, int))
+
+
 class UserViewSet(viewsets.ModelViewSet):
     serializer_class = PlatformUserSerializer
     queryset = get_user_model().objects.select_related('health_profile', 'health_profile__health_center').all().order_by('-date_joined')
@@ -103,7 +107,7 @@ class ExcelImportViewSet(viewsets.ReadOnlyModelViewSet):
                 total_rows=summary.get('total_rows',0),
                 valid_rows=summary.get('valid_rows',0),
                 duplicate_rows=summary.get('duplicate_rows',0),
-                imported_records=summary.get('imported_employees',0)+summary.get('imported_clinic_visits',0),
+                imported_records=imported_total_from_summary(summary),
                 skipped_rows=summary.get('skipped_rows',0),
                 errors_count=summary.get('errors_count',0),
                 summary=result,
