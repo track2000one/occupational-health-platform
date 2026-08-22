@@ -1,676 +1,378 @@
+import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router';
 import {
-  Grid, Paper, Typography, Box, Card, CardContent, Chip, List,
-  ListItem, ListItemText, LinearProgress, Alert, Divider, Avatar
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Chip,
+  Divider,
+  Grid,
+  Stack,
+  Typography,
+  Avatar,
 } from '@mui/material';
 import {
-  People as PeopleIcon, Science as ScienceIcon, Vaccines as VaccinesIcon,
-  Warning as WarningIcon, TrendingUp as TrendingUpIcon,
-  CheckCircle as CheckIcon, Pending as PendingIcon,
-  CalendarMonth as CalendarIcon, Assessment as AssessmentIcon,
-  Security as SecurityIcon, BugReport as BugReportIcon,
-  HealthAndSafety as HealthIcon, LocalHospital as HospitalIcon,
-  PersonSearch as PersonSearchIcon, Campaign as CampaignIcon,
-  NotificationsActive as AlertIcon, DataObject as DataIcon,
+  People as PeopleIcon,
+  Science as ScienceIcon,
+  Vaccines as VaccinesIcon,
+  MedicalServices as MedicalServicesIcon,
+  CalendarMonth as CalendarIcon,
+  NotificationsActive as NotificationsIcon,
+  WarningAmber as WarningIcon,
+  Info as InfoIcon,
+  TrendingUp as TrendingUpIcon,
+  PersonAdd as PersonAddIcon,
+  CloudUpload as CloudUploadIcon,
+  Download as DownloadIcon,
+  Visibility as VisibilityIcon,
+  Edit as EditIcon,
+  Security as SecurityIcon,
+  LocalHospital as HospitalIcon,
+  MonitorHeart as MonitorHeartIcon,
+  Analytics as AnalyticsIcon,
 } from '@mui/icons-material';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-  ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line,
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  PieChart,
+  Pie,
+  Cell,
 } from 'recharts';
 import { useAuth } from '../context/AuthContext';
-import { ROLE_DEFINITIONS } from '../data/roles';
-import {
-  mockLabTests, mockVaccinations, mockNeedleStickInjuries,
-  mockMedicalCommitteeReferrals, mockAppointments, mockNotifications,
-  mockAuditLogs, mockEmployees,
-} from '../data/mockData';
 
-const COLORS = ['#667eea', '#764ba2', '#f093fb', '#4facfe', '#43e97b', '#fa709a'];
+const theme = {
+  teal: '#168B88',
+  tealDark: '#0F6F6D',
+  tealSoft: '#DFF8F1',
+  indigo: '#4F63F6',
+  blue: '#0284C7',
+  orange: '#D97706',
+  red: '#DC2626',
+  navy: '#111827',
+  slate: '#475569',
+  border: 'rgba(148, 163, 184, 0.18)',
+  surface: '#FFFFFF',
+  background: '#F4F7FB',
+};
 
-// ─── Shared Widget Components ──────────────────────────────────────────────────
-function StatCard({
-  title, value, subtitle, icon, color, trend,
-}: {
-  title: string; value: string | number; subtitle?: string;
-  icon: React.ReactNode; color: string; trend?: string;
+const panelSx = {
+  borderRadius: 4,
+  border: `1px solid ${theme.border}`,
+  background: 'linear-gradient(145deg, rgba(255,255,255,.98), rgba(248,250,252,.96))',
+  boxShadow: '0 14px 34px rgba(15, 23, 42, 0.07)',
+};
+
+const appointments = [
+  { time: '09:00 ص', date: '2025/05/26', name: 'سلمان بن خالد', unit: 'عيادة الباطنة', status: 'مراجعة دورية', color: '#DBEAFE', text: '#1D4ED8', avatar: 'س' },
+  { time: '10:30 ص', date: '2025/05/26', name: 'نورة بنت عبدالعزيز', unit: 'عيادة طب العمل', status: 'متابعة حالة', color: '#FEF3C7', text: '#92400E', avatar: 'ن' },
+  { time: '12:00 م', date: '2025/05/26', name: 'محمد بن عبدالله', unit: 'عيادة الفحص الطبي', status: 'فحص ما قبل التوظيف', color: '#DFF8F1', text: '#0F6F6D', avatar: 'م' },
+  { time: '02:30 م', date: '2025/05/26', name: 'فاطمة بنت محمد', unit: 'عيادة الباطنة', status: 'مراجعة نتائج', color: '#E0F2FE', text: '#0369A1', avatar: 'ف' },
+];
+
+const alerts = [
+  { title: 'ارتفاع في حالات الإجهاد الحراري', details: 'تم تسجيل 5 حالات جديدة هذا الأسبوع', time: 'منذ 15 دقيقة', severity: 'danger' as const },
+  { title: 'تحليل غير مكتمل', details: 'هناك 18 تحليل لم تُستكمل النتائج', time: 'منذ 1 ساعة', severity: 'warning' as const },
+  { title: 'تطعيمات منتهية قريباً', details: 'تنتهي صلاحية 23 تطعيماً خلال 7 أيام', time: 'منذ 3 ساعات', severity: 'info' as const },
+];
+
+const trendData = [
+  { month: 'ديسمبر', cases: 42 },
+  { month: 'يناير', cases: 86 },
+  { month: 'فبراير', cases: 92 },
+  { month: 'مارس', cases: 138 },
+  { month: 'أبريل', cases: 104 },
+  { month: 'مايو', cases: 162 },
+];
+
+const donutData = [
+  { name: 'مكتمل', value: 86 },
+  { name: 'متبقي', value: 14 },
+];
+
+const users = [
+  { name: 'أحمد بن سعود القحطاني', role: 'طبيب', badgeColor: '#DFF8F1', textColor: '#0F6F6D', center: 'مركز صحي الشمال', id: 'EMP-1001', avatar: 'أ' },
+  { name: 'نورة بنت محمد العتيبي', role: 'ممرضة', badgeColor: '#F3E8FF', textColor: '#7E22CE', center: 'مركز صحي الوسط', id: 'EMP-1002', avatar: 'ن' },
+  { name: 'عبدالله بن فهد الشهري', role: 'أخصائي صحة مهنية', badgeColor: '#DBEAFE', textColor: '#1D4ED8', center: 'مركز صحي الجنوب', id: 'EMP-1003', avatar: 'ع' },
+  { name: 'مريم بنت خالد الدوسري', role: 'إداري', badgeColor: '#FFEDD5', textColor: '#C2410C', center: 'الإدارة الرئيسية', id: 'EMP-1004', avatar: 'م' },
+];
+
+function StatCard({ title, value, trend, icon, accent, soft }: {
+  title: string;
+  value: string;
+  trend: string;
+  icon: ReactNode;
+  accent: string;
+  soft: string;
 }) {
   return (
-    <Card sx={{ height: '100%' }}>
-      <CardContent>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <Box sx={{ flex: 1 }}>
-            <Typography color="text.secondary" variant="body2" gutterBottom>{title}</Typography>
-            <Typography variant="h4" fontWeight="bold" color={color}>{value}</Typography>
-            {subtitle && <Typography variant="caption" color="text.secondary">{subtitle}</Typography>}
-            {trend && (
-              <Box sx={{ display: 'flex', alignItems: 'center', mt: 0.5, gap: 0.5 }}>
-                <TrendingUpIcon sx={{ fontSize: 14, color: 'success.main' }} />
-                <Typography variant="caption" color="success.main">{trend}</Typography>
-              </Box>
-            )}
+    <Card sx={{ ...panelSx, height: '100%', overflow: 'hidden' }}>
+      <CardContent sx={{ p: 2.35 }}>
+        <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={2}>
+          <Box>
+            <Typography variant="body2" sx={{ color: theme.slate, fontWeight: 760, mb: .5 }}>{title}</Typography>
+            <Typography variant="h4" sx={{ color: theme.navy, fontWeight: 900, lineHeight: 1.05 }}>{value}</Typography>
+            <Stack direction="row" alignItems="center" spacing={.6} sx={{ mt: .85 }}>
+              <TrendingUpIcon sx={{ color: theme.teal, fontSize: 16 }} />
+              <Typography variant="caption" sx={{ color: theme.teal, fontWeight: 850 }}>{trend}</Typography>
+              <Typography variant="caption" sx={{ color: '#64748B' }}>من الشهر الماضي</Typography>
+            </Stack>
           </Box>
-          <Box sx={{ width: 52, height: 52, borderRadius: 2, bgcolor: `${color}18`, display: 'flex', alignItems: 'center', justifyContent: 'center', color, flexShrink: 0 }}>
+          <Box
+            sx={{
+              width: 64,
+              height: 64,
+              borderRadius: '50%',
+              display: 'grid',
+              placeItems: 'center',
+              bgcolor: soft,
+              color: accent,
+              boxShadow: `0 14px 28px ${accent}18`,
+            }}
+          >
             {icon}
           </Box>
-        </Box>
+        </Stack>
       </CardContent>
     </Card>
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const map: Record<string, { label: string; color: 'success' | 'warning' | 'error' | 'info' | 'default' }> = {
-    completed: { label: 'مكتمل', color: 'success' },
-    pending: { label: 'معلق', color: 'warning' },
-    missing: { label: 'مفقود', color: 'error' },
-    new: { label: 'جديد', color: 'info' },
-    underReview: { label: 'قيد المراجعة', color: 'warning' },
-    confirmed: { label: 'مؤكد', color: 'success' },
-    cancelled: { label: 'ملغي', color: 'default' },
-    noShow: { label: 'لم يحضر', color: 'error' },
-    closed: { label: 'مغلق', color: 'default' },
-    immune: { label: 'محصّن', color: 'success' },
-    dose1: { label: 'جرعة 1', color: 'warning' },
-    dose2: { label: 'جرعة 2', color: 'info' },
-    refused: { label: 'رفض', color: 'error' },
-    decisionIssued: { label: 'صدر القرار', color: 'success' },
-    draft: { label: 'مسودة', color: 'default' },
-    submitted: { label: 'مُقدَّم', color: 'info' },
-    followUpRequired: { label: 'متابعة مطلوبة', color: 'warning' },
-  };
-  const s = map[status] ?? { label: status, color: 'default' as const };
-  return <Chip label={s.label} size="small" color={s.color} />;
-}
-
-// ─── Role-specific Dashboard Sections ─────────────────────────────────────────
-
-function AdminDashboard({ isRtl }: { isRtl: boolean }) {
-  const recentLogs = mockAuditLogs.slice(0, 5);
-  const activeUsers = 14;
-  const inactiveUsers = 2;
-  const pendingActivations = 3;
-
+function SectionHeader({ title, icon }: { title: string; icon: ReactNode }) {
   return (
-    <>
-      <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-        <StatCard title={isRtl ? 'إجمالي المستخدمين' : 'Total Users'} value={activeUsers + inactiveUsers} subtitle={`${activeUsers} نشط`} icon={<PeopleIcon sx={{ fontSize: 28 }} />} color="#667eea" />
-      </Grid>
-      <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-        <StatCard title={isRtl ? 'بانتظار التفعيل' : 'Awaiting Activation'} value={pendingActivations} icon={<PendingIcon sx={{ fontSize: 28 }} />} color="#f093fb" />
-      </Grid>
-      <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-        <StatCard title={isRtl ? 'إجمالي الموظفين' : 'Total Employees'} value={mockEmployees.length} icon={<PersonSearchIcon sx={{ fontSize: 28 }} />} color="#43e97b" />
-      </Grid>
-      <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-        <StatCard title={isRtl ? 'عمليات اليوم' : "Today's Actions"} value={mockAuditLogs.length} icon={<SecurityIcon sx={{ fontSize: 28 }} />} color="#fa709a" />
-      </Grid>
-      <Grid size={{ xs: 12 }}>
-        <Paper sx={{ p: 3 }}>
-          <Typography variant="h6" fontWeight="bold" gutterBottom>
-            {isRtl ? 'سجل العمليات الأخيرة' : 'Recent Audit Log'}
-          </Typography>
-          <Divider sx={{ mb: 2 }} />
-          {recentLogs.map((log) => (
-            <Box key={log.id} sx={{ display: 'flex', alignItems: 'center', gap: 2, py: 1, borderBottom: '1px solid', borderColor: 'divider' }}>
-              <Avatar sx={{ width: 32, height: 32, fontSize: '0.75rem', bgcolor: 'primary.main' }}>
-                {log.userName.charAt(0)}
-              </Avatar>
-              <Box sx={{ flex: 1 }}>
-                <Typography variant="body2" fontWeight="medium">{log.description}</Typography>
-                <Typography variant="caption" color="text.secondary">{log.userName} • {log.module} • {log.ipAddress}</Typography>
-              </Box>
-              <Chip label={log.action} size="small" variant="outlined" />
-              <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>
-                {new Date(log.createdAt).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}
-              </Typography>
-            </Box>
-          ))}
-        </Paper>
-      </Grid>
-    </>
+    <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.4 }}>
+      <Typography variant="h6" sx={{ fontWeight: 900, color: theme.navy }}>{title}</Typography>
+      <Box sx={{ color: '#334155', display: 'grid', placeItems: 'center' }}>{icon}</Box>
+    </Stack>
   );
 }
 
-function OhManagerDashboard({ isRtl }: { isRtl: boolean }) {
-  const centerData = [
-    { name: 'المستشفى المركزي', coverage: 85, target: 120, examined: 102 },
-    { name: 'المركز الشرقي', coverage: 72, target: 95, examined: 68 },
-    { name: 'العيادة الغربية', coverage: 91, target: 80, examined: 73 },
-  ];
-  const openNSI = mockNeedleStickInjuries.filter(n => n.status !== 'closed').length;
-  const pendingCommittee = mockMedicalCommitteeReferrals.filter(r => r.status === 'underReview').length;
-
+function QuickAction({ label, icon, color, onClick, variant = 'solid' }: {
+  label: string;
+  icon: ReactNode;
+  color: string;
+  onClick: () => void;
+  variant?: 'solid' | 'soft';
+}) {
+  const solid = variant === 'solid';
   return (
-    <>
-      <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-        <StatCard title={isRtl ? 'الموظفون الكلي' : 'Total Employees'} value="295" subtitle="في جميع المراكز" icon={<PeopleIcon sx={{ fontSize: 28 }} />} color="#667eea" trend="+5% عن الشهر الماضي" />
-      </Grid>
-      <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-        <StatCard title={isRtl ? 'متوسط تغطية الفحص' : 'Avg Exam Coverage'} value="83%" icon={<CheckIcon sx={{ fontSize: 28 }} />} color="#43e97b" />
-      </Grid>
-      <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-        <StatCard title={isRtl ? 'بلاغات وخز مفتوحة' : 'Open Needle Stick'} value={openNSI} icon={<WarningIcon sx={{ fontSize: 28 }} />} color="#fa709a" />
-      </Grid>
-      <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-        <StatCard title={isRtl ? 'إحالات قيد المراجعة' : 'Pending Committee'} value={pendingCommittee} icon={<HospitalIcon sx={{ fontSize: 28 }} />} color="#f093fb" />
-      </Grid>
-      <Grid size={{ xs: 12, lg: 8 }}>
-        <Paper sx={{ p: 3 }}>
-          <Typography variant="h6" fontWeight="bold" gutterBottom>{isRtl ? 'نسبة التغطية بالفحص الدوري' : 'Periodic Exam Coverage by Center'}</Typography>
-          <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={centerData}>
-              <CartesianGrid key="grid" strokeDasharray="3 3" />
-              <XAxis key="xaxis" dataKey="name" tick={{ fontSize: 11 }} />
-              <YAxis key="yaxis" />
-              <Tooltip key="tooltip" />
-              <Legend key="legend" />
-              <Bar key="bar-examined" dataKey="examined" fill="#667eea" name="تم الفحص" radius={[6,6,0,0]} />
-              <Bar key="bar-target" dataKey="target" fill="#e0e7ff" name="المستهدف" radius={[6,6,0,0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </Paper>
-      </Grid>
-      <Grid size={{ xs: 12, lg: 4 }}>
-        <Paper sx={{ p: 3 }}>
-          <Typography variant="h6" fontWeight="bold" gutterBottom>{isRtl ? 'نسبة الإنجاز' : 'Achievement Rate'}</Typography>
-          {centerData.map((c) => (
-            <Box key={c.name} sx={{ mb: 2 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-                <Typography variant="body2">{c.name}</Typography>
-                <Typography variant="body2" fontWeight="bold">{c.coverage}%</Typography>
-              </Box>
-              <LinearProgress variant="determinate" value={c.coverage} sx={{ height: 8, borderRadius: 4, bgcolor: '#e0e7ff', '& .MuiLinearProgress-bar': { borderRadius: 4, bgcolor: c.coverage >= 85 ? 'success.main' : c.coverage >= 70 ? 'warning.main' : 'error.main' } }} />
-            </Box>
-          ))}
-        </Paper>
-      </Grid>
-    </>
+    <Button
+      fullWidth
+      onClick={onClick}
+      startIcon={icon}
+      sx={{
+        minHeight: 48,
+        borderRadius: 2.2,
+        fontWeight: 900,
+        color: solid ? '#fff' : '#1F2937',
+        bgcolor: solid ? color : '#FFFFFF',
+        background: solid ? `linear-gradient(145deg, ${color}, ${color === theme.indigo ? '#2563EB' : theme.tealDark})` : '#FFFFFF',
+        border: solid ? 'none' : `1px solid ${theme.border}`,
+        boxShadow: solid ? `0 12px 24px ${color}35` : '0 10px 22px rgba(15,23,42,.07)',
+        '&:hover': {
+          transform: 'translateY(-2px)',
+          bgcolor: solid ? color : '#F8FAFC',
+          boxShadow: solid ? `0 16px 30px ${color}45` : '0 14px 28px rgba(15,23,42,.10)',
+        },
+      }}
+    >
+      {label}
+    </Button>
   );
 }
 
-function OhDoctorDashboard({ isRtl }: { isRtl: boolean }) {
-  const pendingTests = mockLabTests.filter(t => t.status === 'pending');
-  const todayAppts = mockAppointments.filter(a => a.appointmentType === 'ohVisit' && a.status === 'confirmed');
-  const openReferrals = mockMedicalCommitteeReferrals.filter(r => r.status !== 'closed');
-
-  return (
-    <>
-      <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-        <StatCard title={isRtl ? 'زيارات اليوم' : "Today's Visits"} value={todayAppts.length} icon={<CalendarIcon sx={{ fontSize: 28 }} />} color="#667eea" />
-      </Grid>
-      <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-        <StatCard title={isRtl ? 'تحاليل معلقة' : 'Pending Lab Tests'} value={pendingTests.length} icon={<ScienceIcon sx={{ fontSize: 28 }} />} color="#f093fb" />
-      </Grid>
-      <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-        <StatCard title={isRtl ? 'إحالات مفتوحة' : 'Open Referrals'} value={openReferrals.length} icon={<HospitalIcon sx={{ fontSize: 28 }} />} color="#fa709a" />
-      </Grid>
-      <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-        <StatCard title={isRtl ? 'مواعيد قادمة' : 'Upcoming Appts'} value={mockAppointments.filter(a => a.status === 'new').length} icon={<AlertIcon sx={{ fontSize: 28 }} />} color="#43e97b" />
-      </Grid>
-      <Grid size={{ xs: 12, lg: 7 }}>
-        <Paper sx={{ p: 3 }}>
-          <Typography variant="h6" fontWeight="bold" gutterBottom>{isRtl ? 'التحاليل المعلقة' : 'Pending Lab Tests'}</Typography>
-          <Divider sx={{ mb: 2 }} />
-          {pendingTests.map((test) => (
-            <Box key={test.id} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 1.5, borderBottom: '1px solid', borderColor: 'divider' }}>
-              <Box>
-                <Typography variant="body2" fontWeight="medium">{test.employeeName}</Typography>
-                <Typography variant="caption" color="text.secondary">{test.testType} • {test.requestedDate}</Typography>
-              </Box>
-              <StatusBadge status={test.status} />
-            </Box>
-          ))}
-        </Paper>
-      </Grid>
-      <Grid size={{ xs: 12, lg: 5 }}>
-        <Paper sx={{ p: 3 }}>
-          <Typography variant="h6" fontWeight="bold" gutterBottom>{isRtl ? 'المواعيد القادمة' : 'Upcoming Appointments'}</Typography>
-          <Divider sx={{ mb: 2 }} />
-          {mockAppointments.filter(a => a.status !== 'completed').slice(0, 5).map((apt) => (
-            <Box key={apt.id} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 1, borderBottom: '1px solid', borderColor: 'divider' }}>
-              <Box>
-                <Typography variant="body2" fontWeight="medium">{apt.employeeName}</Typography>
-                <Typography variant="caption" color="text.secondary">{apt.appointmentDate} — {apt.appointmentTime}</Typography>
-              </Box>
-              <StatusBadge status={apt.status} />
-            </Box>
-          ))}
-        </Paper>
-      </Grid>
-    </>
-  );
-}
-
-function LabOfficerDashboard({ isRtl }: { isRtl: boolean }) {
-  const pending = mockLabTests.filter(t => t.status === 'pending');
-  const completed = mockLabTests.filter(t => t.status === 'completed');
-  const missing = mockLabTests.filter(t => t.status === 'missing');
-  const byType = ['Anti-HBs', 'HBsAg', 'HCV', 'HIV', 'PPD', 'Rubella IgG'].map(type => ({
-    name: type,
-    pending: mockLabTests.filter(t => t.testType === type && t.status === 'pending').length,
-    completed: mockLabTests.filter(t => t.testType === type && t.status === 'completed').length,
-  }));
-
-  return (
-    <>
-      <Grid size={{ xs: 12, sm: 4 }}>
-        <StatCard title={isRtl ? 'معلقة — بانتظار الإدخال' : 'Pending — Entry Required'} value={pending.length} icon={<PendingIcon sx={{ fontSize: 28 }} />} color="#f093fb" />
-      </Grid>
-      <Grid size={{ xs: 12, sm: 4 }}>
-        <StatCard title={isRtl ? 'مكتملة' : 'Completed'} value={completed.length} icon={<CheckIcon sx={{ fontSize: 28 }} />} color="#43e97b" />
-      </Grid>
-      <Grid size={{ xs: 12, sm: 4 }}>
-        <StatCard title={isRtl ? 'مفقودة' : 'Missing'} value={missing.length} icon={<WarningIcon sx={{ fontSize: 28 }} />} color="#fa709a" />
-      </Grid>
-      <Grid size={{ xs: 12, lg: 8 }}>
-        <Paper sx={{ p: 3 }}>
-          <Typography variant="h6" fontWeight="bold" gutterBottom>{isRtl ? 'التحاليل حسب النوع' : 'Tests by Type'}</Typography>
-          <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={byType}>
-              <CartesianGrid key="grid" strokeDasharray="3 3" />
-              <XAxis key="xaxis" dataKey="name" tick={{ fontSize: 11 }} />
-              <YAxis key="yaxis" />
-              <Tooltip key="tooltip" />
-              <Legend key="legend" />
-              <Bar key="bar-pending" dataKey="pending" fill="#f093fb" name="معلق" radius={[4,4,0,0]} />
-              <Bar key="bar-completed" dataKey="completed" fill="#43e97b" name="مكتمل" radius={[4,4,0,0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </Paper>
-      </Grid>
-      <Grid size={{ xs: 12, lg: 4 }}>
-        <Paper sx={{ p: 3 }}>
-          <Typography variant="h6" fontWeight="bold" gutterBottom>{isRtl ? 'قائمة الانتظار' : 'Pending Queue'}</Typography>
-          <Divider sx={{ mb: 1.5 }} />
-          {pending.length === 0 ? (
-            <Alert severity="success">{isRtl ? 'لا توجد تحاليل معلقة' : 'No pending tests'}</Alert>
-          ) : pending.map((t) => (
-            <Box key={t.id} sx={{ py: 1, borderBottom: '1px solid', borderColor: 'divider' }}>
-              <Typography variant="body2" fontWeight="medium">{t.employeeName}</Typography>
-              <Typography variant="caption" color="text.secondary">{t.testType} • طُلب: {t.requestedDate}</Typography>
-            </Box>
-          ))}
-        </Paper>
-      </Grid>
-    </>
-  );
-}
-
-function VaccinationOfficerDashboard({ isRtl }: { isRtl: boolean }) {
-  const due = mockVaccinations.filter(v => v.nextDueDate);
-  const refused = mockVaccinations.filter(v => v.status === 'refused');
-  const immune = mockVaccinations.filter(v => v.status === 'immune');
-  const coverage = ((immune.length / mockVaccinations.length) * 100).toFixed(0);
-  const byVaccine = ['HBV', 'Influenza', 'Rubella', 'PPD'].map(v => ({
-    name: v,
-    محصّن: mockVaccinations.filter(x => x.vaccineType === v && x.status === 'immune').length,
-    جزئي: mockVaccinations.filter(x => x.vaccineType === v && ['dose1','dose2'].includes(x.status)).length,
-    رفض: mockVaccinations.filter(x => x.vaccineType === v && x.status === 'refused').length,
-  }));
-
-  return (
-    <>
-      <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-        <StatCard title={isRtl ? 'نسبة التغطية' : 'Coverage Rate'} value={`${coverage}%`} icon={<VaccinesIcon sx={{ fontSize: 28 }} />} color="#43e97b" />
-      </Grid>
-      <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-        <StatCard title={isRtl ? 'جرعات مستحقة' : 'Due Doses'} value={due.length} icon={<AlertIcon sx={{ fontSize: 28 }} />} color="#f093fb" />
-      </Grid>
-      <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-        <StatCard title={isRtl ? 'محصّنون بالكامل' : 'Fully Immune'} value={immune.length} icon={<CheckIcon sx={{ fontSize: 28 }} />} color="#667eea" />
-      </Grid>
-      <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-        <StatCard title={isRtl ? 'حالات رفض' : 'Refusals'} value={refused.length} icon={<WarningIcon sx={{ fontSize: 28 }} />} color="#fa709a" />
-      </Grid>
-      <Grid size={{ xs: 12 }}>
-        <Paper sx={{ p: 3 }}>
-          <Typography variant="h6" fontWeight="bold" gutterBottom>{isRtl ? 'تغطية التطعيم حسب النوع' : 'Vaccination Coverage by Type'}</Typography>
-          <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={byVaccine}>
-              <CartesianGrid key="grid" strokeDasharray="3 3" />
-              <XAxis key="xaxis" dataKey="name" />
-              <YAxis key="yaxis" />
-              <Tooltip key="tooltip" />
-              <Legend key="legend" />
-              <Bar key="bar-immune" dataKey="محصّن" fill="#43e97b" radius={[4,4,0,0]} />
-              <Bar key="bar-partial" dataKey="جزئي" fill="#f093fb" radius={[4,4,0,0]} />
-              <Bar key="bar-refused" dataKey="رفض" fill="#fa709a" radius={[4,4,0,0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </Paper>
-      </Grid>
-    </>
-  );
-}
-
-function NeedleStickDashboard({ isRtl }: { isRtl: boolean }) {
-  const openCases = mockNeedleStickInjuries.filter(n => n.status !== 'closed');
-  const followUp = mockNeedleStickInjuries.filter(n => n.followUpRequired && n.status !== 'closed');
-
-  return (
-    <>
-      <Grid size={{ xs: 12, sm: 4 }}>
-        <StatCard title={isRtl ? 'إجمالي البلاغات' : 'Total Reports'} value={mockNeedleStickInjuries.length} icon={<HealthIcon sx={{ fontSize: 28 }} />} color="#667eea" />
-      </Grid>
-      <Grid size={{ xs: 12, sm: 4 }}>
-        <StatCard title={isRtl ? 'حالات مفتوحة' : 'Open Cases'} value={openCases.length} icon={<WarningIcon sx={{ fontSize: 28 }} />} color="#fa709a" />
-      </Grid>
-      <Grid size={{ xs: 12, sm: 4 }}>
-        <StatCard title={isRtl ? 'متابعة مطلوبة' : 'Follow-up Required'} value={followUp.length} icon={<AlertIcon sx={{ fontSize: 28 }} />} color="#f093fb" />
-      </Grid>
-      <Grid size={{ xs: 12 }}>
-        <Paper sx={{ p: 3 }}>
-          <Typography variant="h6" fontWeight="bold" gutterBottom>{isRtl ? 'بلاغات الوخز' : 'Needle Stick Reports'}</Typography>
-          <Divider sx={{ mb: 2 }} />
-          {mockNeedleStickInjuries.map((nsi) => (
-            <Box key={nsi.id} sx={{ p: 2, mb: 1.5, border: '1px solid', borderColor: 'divider', borderRadius: 2, bgcolor: nsi.status !== 'closed' ? 'warning.50' : 'transparent' }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                <Typography variant="body2" fontWeight="bold">{nsi.id} — {nsi.employeeName}</Typography>
-                <StatusBadge status={nsi.status} />
-              </Box>
-              <Typography variant="caption" color="text.secondary">{nsi.workplace} • {nsi.exposureDate}</Typography>
-              {nsi.followUpRequired && <Chip label={isRtl ? 'متابعة مطلوبة' : 'Follow-up Required'} size="small" color="warning" sx={{ ml: 1 }} />}
-            </Box>
-          ))}
-        </Paper>
-      </Grid>
-    </>
-  );
-}
-
-function CommitteeDashboard({ isRtl }: { isRtl: boolean }) {
-  const pending = mockMedicalCommitteeReferrals.filter(r => r.status === 'underReview' || r.status === 'submitted');
-  const decided = mockMedicalCommitteeReferrals.filter(r => r.status === 'decisionIssued');
-
-  return (
-    <>
-      <Grid size={{ xs: 12, sm: 4 }}>
-        <StatCard title={isRtl ? 'إجمالي الإحالات' : 'Total Referrals'} value={mockMedicalCommitteeReferrals.length} icon={<HospitalIcon sx={{ fontSize: 28 }} />} color="#667eea" />
-      </Grid>
-      <Grid size={{ xs: 12, sm: 4 }}>
-        <StatCard title={isRtl ? 'بانتظار القرار' : 'Awaiting Decision'} value={pending.length} icon={<PendingIcon sx={{ fontSize: 28 }} />} color="#f093fb" />
-      </Grid>
-      <Grid size={{ xs: 12, sm: 4 }}>
-        <StatCard title={isRtl ? 'صدر القرار' : 'Decision Issued'} value={decided.length} icon={<CheckIcon sx={{ fontSize: 28 }} />} color="#43e97b" />
-      </Grid>
-      <Grid size={{ xs: 12 }}>
-        <Paper sx={{ p: 3 }}>
-          <Typography variant="h6" fontWeight="bold" gutterBottom>{isRtl ? 'الإحالات قيد المراجعة' : 'Referrals Under Review'}</Typography>
-          <Divider sx={{ mb: 2 }} />
-          {pending.length === 0 ? (
-            <Alert severity="success">{isRtl ? 'لا توجد إحالات معلقة' : 'No pending referrals'}</Alert>
-          ) : pending.map((r) => (
-            <Box key={r.id} sx={{ p: 2, mb: 1.5, border: '1px solid', borderColor: 'divider', borderRadius: 2 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-                <Typography variant="body2" fontWeight="bold">{r.employeeName}</Typography>
-                <StatusBadge status={r.status} />
-              </Box>
-              <Typography variant="caption" color="text.secondary">{r.transactionNumber} • {r.diagnosis}</Typography>
-            </Box>
-          ))}
-        </Paper>
-      </Grid>
-    </>
-  );
-}
-
-function ExecutiveDashboard({ isRtl }: { isRtl: boolean }) {
-  const kpis = [
-    { label: isRtl ? 'إجمالي الموظفين' : 'Total Employees', value: '295', color: '#667eea' },
-    { label: isRtl ? 'نسبة الفحص الدوري' : 'Periodic Exam Rate', value: '83%', color: '#43e97b' },
-    { label: isRtl ? 'تغطية التطعيم' : 'Vaccination Coverage', value: '67%', color: '#f093fb' },
-    { label: isRtl ? 'إصابات وخز مفتوحة' : 'Open NSI Cases', value: '1', color: '#fa709a' },
-    { label: isRtl ? 'إحالات مفتوحة' : 'Open Referrals', value: '1', color: '#764ba2' },
-    { label: isRtl ? 'معدل الامتثال' : 'Compliance Rate', value: '98%', color: '#4facfe' },
-  ];
-  const centerData = [
-    { name: 'المستشفى المركزي', فحص: 85, تطعيم: 72 },
-    { name: 'المركز الشرقي', فحص: 72, تطعيم: 68 },
-    { name: 'العيادة الغربية', فحص: 91, تطعيم: 79 },
-  ];
-
-  return (
-    <>
-      {kpis.map((kpi) => (
-        <Grid key={kpi.label} size={{ xs: 6, sm: 4, lg: 2 }}>
-          <Card sx={{ textAlign: 'center', p: 2 }}>
-            <Typography variant="h4" fontWeight="bold" color={kpi.color}>{kpi.value}</Typography>
-            <Typography variant="caption" color="text.secondary">{kpi.label}</Typography>
-          </Card>
-        </Grid>
-      ))}
-      <Grid size={{ xs: 12 }}>
-        <Paper sx={{ p: 3 }}>
-          <Typography variant="h6" fontWeight="bold" gutterBottom>{isRtl ? 'مقارنة أداء المراكز' : 'Center Performance Comparison'}</Typography>
-          <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={centerData}>
-              <CartesianGrid key="grid" strokeDasharray="3 3" />
-              <XAxis key="xaxis" dataKey="name" tick={{ fontSize: 11 }} />
-              <YAxis key="yaxis" domain={[0, 100]} unit="%" />
-              <Tooltip key="tooltip" />
-              <Legend key="legend" />
-              <Bar key="bar-exam" dataKey="فحص" fill="#667eea" name="الفحص الدوري %" radius={[4,4,0,0]} />
-              <Bar key="bar-vac" dataKey="تطعيم" fill="#43e97b" name="التطعيم %" radius={[4,4,0,0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </Paper>
-      </Grid>
-    </>
-  );
-}
-
-function EmployeeDashboard({ isRtl }: { isRtl: boolean }) {
-  const myAppts = mockAppointments.filter(a => a.employeeId === '1001').slice(0, 4);
-  const myTests = mockLabTests.filter(t => t.employeeId === '1001');
-  const myVax = mockVaccinations.filter(v => v.employeeId === '1001');
-
-  return (
-    <>
-      <Grid size={{ xs: 12, sm: 4 }}>
-        <StatCard title={isRtl ? 'مواعيدي القادمة' : 'My Upcoming Appts'} value={myAppts.filter(a => a.status !== 'completed').length} icon={<CalendarIcon sx={{ fontSize: 28 }} />} color="#667eea" />
-      </Grid>
-      <Grid size={{ xs: 12, sm: 4 }}>
-        <StatCard title={isRtl ? 'تحاليلي' : 'My Lab Tests'} value={myTests.length} icon={<ScienceIcon sx={{ fontSize: 28 }} />} color="#f093fb" />
-      </Grid>
-      <Grid size={{ xs: 12, sm: 4 }}>
-        <StatCard title={isRtl ? 'تطعيماتي' : 'My Vaccinations'} value={myVax.length} icon={<VaccinesIcon sx={{ fontSize: 28 }} />} color="#43e97b" />
-      </Grid>
-      <Grid size={{ xs: 12, lg: 6 }}>
-        <Paper sx={{ p: 3 }}>
-          <Typography variant="h6" fontWeight="bold" gutterBottom>{isRtl ? 'مواعيدي' : 'My Appointments'}</Typography>
-          <Divider sx={{ mb: 2 }} />
-          {myAppts.map((a) => (
-            <Box key={a.id} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 1.5, borderBottom: '1px solid', borderColor: 'divider' }}>
-              <Box>
-                <Typography variant="body2" fontWeight="medium">{a.appointmentDate} — {a.appointmentTime}</Typography>
-                <Typography variant="caption" color="text.secondary">{a.assignedTo}</Typography>
-              </Box>
-              <StatusBadge status={a.status} />
-            </Box>
-          ))}
-        </Paper>
-      </Grid>
-      <Grid size={{ xs: 12, lg: 6 }}>
-        <Paper sx={{ p: 3 }}>
-          <Typography variant="h6" fontWeight="bold" gutterBottom>{isRtl ? 'حالة تطعيماتي' : 'My Vaccination Status'}</Typography>
-          <Divider sx={{ mb: 2 }} />
-          {myVax.map((v) => (
-            <Box key={v.id} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 1.5, borderBottom: '1px solid', borderColor: 'divider' }}>
-              <Box>
-                <Typography variant="body2" fontWeight="medium">{v.vaccineType}</Typography>
-                {v.nextDueDate && <Typography variant="caption" color="warning.main">الجرعة التالية: {v.nextDueDate}</Typography>}
-              </Box>
-              <StatusBadge status={v.status} />
-            </Box>
-          ))}
-        </Paper>
-      </Grid>
-    </>
-  );
-}
-
-function DataQualityDashboard({ isRtl }: { isRtl: boolean }) {
-  const issues = [
-    { issue: isRtl ? 'موظفون بدون رقم جوال' : 'Missing Mobile', count: 8, color: '#fa709a' },
-    { issue: isRtl ? 'موظفون بدون تاريخ ميلاد' : 'Missing DOB', count: 12, color: '#f093fb' },
-    { issue: isRtl ? 'تكرار رقم الهوية' : 'Duplicate ID', count: 5, color: '#ff6b6b' },
-    { issue: isRtl ? 'تحاليل ناقصة' : 'Incomplete Labs', count: 17, color: '#764ba2' },
-    { issue: isRtl ? 'تطعيمات غير مكتملة' : 'Incomplete Vaccines', count: 9, color: '#4facfe' },
-    { issue: isRtl ? 'تواريخ غير منطقية' : 'Illogical Dates', count: 3, color: '#43e97b' },
-  ];
-
-  return (
-    <>
-      {issues.map((i) => (
-        <Grid key={i.issue} size={{ xs: 6, sm: 4, lg: 2 }}>
-          <Card sx={{ textAlign: 'center', p: 1.5, borderTop: `4px solid ${i.color}` }}>
-            <Typography variant="h4" fontWeight="bold" color={i.color}>{i.count}</Typography>
-            <Typography variant="caption" color="text.secondary">{i.issue}</Typography>
-          </Card>
-        </Grid>
-      ))}
-      <Grid size={{ xs: 12 }}>
-        <Paper sx={{ p: 3 }}>
-          <Typography variant="h6" fontWeight="bold" gutterBottom>{isRtl ? 'توزيع مشكلات جودة البيانات' : 'Data Quality Issues Distribution'}</Typography>
-          <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={issues} layout="vertical">
-              <CartesianGrid key="grid" strokeDasharray="3 3" />
-              <XAxis key="xaxis" type="number" />
-              <YAxis key="yaxis" type="category" dataKey="issue" width={160} tick={{ fontSize: 11 }} />
-              <Tooltip key="tooltip" />
-              <Bar key="bar-count" dataKey="count" fill="#667eea" radius={[0,4,4,0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </Paper>
-      </Grid>
-    </>
-  );
-}
-
-function GenericDashboard({ isRtl }: { isRtl: boolean }) {
-  const activityData = [
-    { month: 'يناير', تحاليل: 45, تطعيمات: 52, زيارات: 38 },
-    { month: 'فبراير', تحاليل: 52, تطعيمات: 61, زيارات: 42 },
-    { month: 'مارس', تحاليل: 48, تطعيمات: 58, زيارات: 39 },
-    { month: 'أبريل', تحاليل: 61, تطعيمات: 72, زيارات: 51 },
-    { month: 'مايو', تحاليل: 55, تطعيمات: 68, زيارات: 47 },
-  ];
-
-  return (
-    <>
-      <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-        <StatCard title={isRtl ? 'إجمالي الموظفين' : 'Total Employees'} value={mockEmployees.length} icon={<PeopleIcon sx={{ fontSize: 28 }} />} color="#667eea" trend="+5%" />
-      </Grid>
-      <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-        <StatCard title={isRtl ? 'تحاليل معلقة' : 'Pending Tests'} value={mockLabTests.filter(t => t.status === 'pending').length} icon={<ScienceIcon sx={{ fontSize: 28 }} />} color="#764ba2" />
-      </Grid>
-      <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-        <StatCard title={isRtl ? 'تطعيمات قادمة' : 'Upcoming Vaccinations'} value={mockVaccinations.filter(v => v.nextDueDate).length} icon={<VaccinesIcon sx={{ fontSize: 28 }} />} color="#f093fb" />
-      </Grid>
-      <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-        <StatCard title={isRtl ? 'مواعيد اليوم' : "Today's Appointments"} value={mockAppointments.filter(a => a.status === 'confirmed').length} icon={<CalendarIcon sx={{ fontSize: 28 }} />} color="#43e97b" />
-      </Grid>
-      <Grid size={{ xs: 12 }}>
-        <Paper sx={{ p: 3 }}>
-          <Typography variant="h6" fontWeight="bold" gutterBottom>{isRtl ? 'النشاط الشهري' : 'Monthly Activity'}</Typography>
-          <ResponsiveContainer width="100%" height={280}>
-            <LineChart data={activityData}>
-              <CartesianGrid key="grid" strokeDasharray="3 3" />
-              <XAxis key="xaxis" dataKey="month" />
-              <YAxis key="yaxis" />
-              <Tooltip key="tooltip" />
-              <Legend key="legend" />
-              <Line key="line-tests" type="monotone" dataKey="تحاليل" stroke="#667eea" strokeWidth={2} />
-              <Line key="line-vax" type="monotone" dataKey="تطعيمات" stroke="#43e97b" strokeWidth={2} />
-              <Line key="line-visits" type="monotone" dataKey="زيارات" stroke="#fa709a" strokeWidth={2} />
-            </LineChart>
-          </ResponsiveContainer>
-        </Paper>
-      </Grid>
-    </>
-  );
-}
-
-// ─── Main Dashboard ────────────────────────────────────────────────────────────
 export function DashboardPage() {
-  const { t, i18n } = useTranslation();
+  const { i18n } = useTranslation();
   const { user } = useAuth();
+  const navigate = useNavigate();
   const isRtl = i18n.language === 'ar';
-  const roleDef = user ? ROLE_DEFINITIONS[user.role] : null;
-
-  const unreadNotifs = mockNotifications.filter(
-    n => !n.isRead && (n.userId === user?.id || n.role === user?.role || n.userId === 'all')
-  ).length;
-
-  const greetingsByRole: Record<string, { en: string; ar: string }> = {
-    systemAdmin: { en: 'System overview and user management', ar: 'نظرة عامة على النظام وإدارة المستخدمين' },
-    ohManager: { en: 'Monitor overall OH performance and center achievement', ar: 'متابعة الأداء العام للصحة المهنية وإنجاز المراكز' },
-    ohDoctor: { en: 'Manage occupational health files and employee evaluations', ar: 'إدارة ملفات الصحة المهنية وتقييمات الموظفين' },
-    clinicDoctor: { en: "Today's clinic visits and follow-up cases", ar: 'زيارات العيادة اليوم وحالات المتابعة' },
-    labOfficer: { en: 'Pending lab tests and result entry queue', ar: 'التحاليل المعلقة وقائمة إدخال النتائج' },
-    vaccinationOfficer: { en: 'Vaccination coverage and dose schedules', ar: 'تغطية التطعيم وجداول الجرعات' },
-    needleStickOfficer: { en: 'Needle stick incident tracking and follow-up', ar: 'متابعة بلاغات الوخز بالإبر' },
-    medicalCommitteeOfficer: { en: 'Referrals and committee decisions', ar: 'الإحالات وقرارات الهيئة الطبية' },
-    campaignOfficer: { en: 'Health campaign management and coverage tracking', ar: 'إدارة الحملات الصحية ومتابعة التغطية' },
-    centerManager: { en: 'Your center performance and employee compliance', ar: 'أداء المركز ومتابعة التزام الموظفين' },
-    executive: { en: 'Key performance indicators and strategic overview', ar: 'مؤشرات الأداء الرئيسية والنظرة الاستراتيجية' },
-    employee: { en: 'Your health file, appointments, and vaccination status', ar: 'ملفك الصحي ومواعيدك وحالة التطعيمات' },
-    dataEntry: { en: 'Data entry tasks and pending records', ar: 'مهام إدخال البيانات والسجلات المعلقة' },
-    dataQuality: { en: 'Data quality issues and missing fields overview', ar: 'مشكلات جودة البيانات والحقول المفقودة' },
-    reportsOfficer: { en: 'Reports, analytics, and export tools', ar: 'التقارير والتحليلات وأدوات التصدير' },
-    techSupport: { en: 'System status and open support tickets', ar: 'حالة النظام وتذاكر الدعم الفني المفتوحة' },
-  };
-
-  const greeting = user ? (greetingsByRole[user.role] ?? { en: 'Welcome', ar: 'مرحباً' }) : { en: 'Welcome', ar: 'مرحباً' };
-
-  function renderRoleDashboard() {
-    if (!user) return <GenericDashboard isRtl={isRtl} />;
-    switch (user.role) {
-      case 'systemAdmin': return <AdminDashboard isRtl={isRtl} />;
-      case 'ohManager': case 'centerManager': return <OhManagerDashboard isRtl={isRtl} />;
-      case 'ohDoctor': case 'clinicDoctor': return <OhDoctorDashboard isRtl={isRtl} />;
-      case 'labOfficer': return <LabOfficerDashboard isRtl={isRtl} />;
-      case 'vaccinationOfficer': return <VaccinationOfficerDashboard isRtl={isRtl} />;
-      case 'needleStickOfficer': return <NeedleStickDashboard isRtl={isRtl} />;
-      case 'medicalCommitteeOfficer': return <CommitteeDashboard isRtl={isRtl} />;
-      case 'executive': case 'reportsOfficer': return <ExecutiveDashboard isRtl={isRtl} />;
-      case 'employee': return <EmployeeDashboard isRtl={isRtl} />;
-      case 'dataQuality': return <DataQualityDashboard isRtl={isRtl} />;
-      default: return <GenericDashboard isRtl={isRtl} />;
-    }
-  }
 
   return (
-    <Box>
-      {/* Header */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 3 }}>
-        <Box>
-          <Typography variant="h4" fontWeight="bold" gutterBottom>
-            {t('dashboard')}
-          </Typography>
-          {roleDef && (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Chip
-                label={isRtl ? roleDef.nameAr : roleDef.nameEn}
-                size="small"
-                sx={{ bgcolor: roleDef.bgColor, color: roleDef.color, fontWeight: 700 }}
-              />
-              <Typography variant="body2" color="text.secondary">
-                {isRtl ? greeting.ar : greeting.en}
-              </Typography>
-            </Box>
-          )}
+    <Box sx={{ direction: isRtl ? 'rtl' : 'ltr', color: theme.navy }}>
+      <Box
+        sx={{
+          borderRadius: 4,
+          minHeight: 176,
+          p: { xs: 3, md: 4 },
+          mb: 2.4,
+          position: 'relative',
+          overflow: 'hidden',
+          background: `linear-gradient(135deg, ${theme.tealDark} 0%, ${theme.teal} 56%, #0FA7A2 100%)`,
+          boxShadow: '0 18px 36px rgba(15, 111, 109, .24)',
+        }}
+      >
+        <Box sx={{ position: 'absolute', inset: 0, opacity: .18, background: 'radial-gradient(circle at 22% 20%, #fff 0, transparent 24%), radial-gradient(circle at 88% 14%, #fff 0, transparent 18%)' }} />
+        <Box sx={{ position: 'absolute', insetInlineStart: { xs: -35, md: 34 }, bottom: -4, width: 260, height: 138, display: { xs: 'none', md: 'block' } }}>
+          <Box sx={{ position: 'absolute', bottom: 18, left: 45, width: 145, height: 92, borderRadius: 3, bgcolor: 'rgba(255,255,255,.88)', boxShadow: '0 18px 36px rgba(15,23,42,.18)' }} />
+          <Box sx={{ position: 'absolute', bottom: 48, left: 78, width: 78, height: 88, borderRadius: 2.4, bgcolor: 'rgba(241,245,249,.96)', boxShadow: '0 14px 28px rgba(15,23,42,.14)' }} />
+          <Box sx={{ position: 'absolute', bottom: 70, left: 100, width: 34, height: 34, borderRadius: '50%', bgcolor: theme.teal, color: '#fff', display: 'grid', placeItems: 'center' }}><MonitorHeartIcon fontSize="small" /></Box>
+          <Box sx={{ position: 'absolute', bottom: 18, left: 24, width: 210, height: 12, borderRadius: 999, bgcolor: 'rgba(255,255,255,.28)' }} />
+          <Box sx={{ position: 'absolute', bottom: 22, right: 0, color: 'rgba(255,255,255,.72)' }}><HospitalIcon sx={{ fontSize: 62 }} /></Box>
         </Box>
-        {unreadNotifs > 0 && (
-          <Alert severity="info" sx={{ py: 0.5 }}>
-            {isRtl ? `لديك ${unreadNotifs} إشعارات غير مقروءة` : `You have ${unreadNotifs} unread notifications`}
-          </Alert>
-        )}
+        <Box sx={{ position: 'relative', maxWidth: 760, mr: 'auto', textAlign: 'right' }}>
+          <Typography variant="h4" sx={{ color: '#fff', fontWeight: 950, mb: 1.2 }}>
+            مرحباً بك في منصة إدارة الصحة المهنية
+          </Typography>
+          <Typography variant="h6" sx={{ color: 'rgba(255,255,255,.92)', fontWeight: 700, lineHeight: 1.8, mb: 2.5 }}>
+            إدارة شاملة لصحة الموظفين، الحالات المهنية، العيادات، التحاليل، التطعيمات والتقارير في مكان واحد.
+          </Typography>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} justifyContent="flex-start">
+            <Button variant="contained" onClick={() => navigate('/reports')} startIcon={<AnalyticsIcon />} sx={{ bgcolor: '#fff', color: theme.tealDark, boxShadow: '0 10px 24px rgba(15,23,42,.18)', '&:hover': { bgcolor: '#F8FAFC' } }}>
+              عرض التقارير
+            </Button>
+            <Button variant="outlined" onClick={() => navigate('/appointments')} startIcon={<CalendarIcon />} sx={{ color: '#fff', borderColor: 'rgba(255,255,255,.55)', bgcolor: 'rgba(255,255,255,.08)', '&:hover': { borderColor: '#fff', bgcolor: 'rgba(255,255,255,.16)' } }}>
+              موعد جديد
+            </Button>
+          </Stack>
+        </Box>
       </Box>
 
-      <Grid container spacing={3}>
-        {renderRoleDashboard()}
+      <Grid container spacing={2.2} sx={{ mb: 2.2 }}>
+        <Grid size={{ xs: 12, sm: 6, lg: 3 }}><StatCard title="إجمالي الموظفين" value="2,458" trend="5.2%" icon={<PeopleIcon sx={{ fontSize: 30 }} />} accent={theme.teal} soft="#DFF8F1" /></Grid>
+        <Grid size={{ xs: 12, sm: 6, lg: 3 }}><StatCard title="الحالات المهنية" value="142" trend="8.7%" icon={<MedicalServicesIcon sx={{ fontSize: 30 }} />} accent={theme.red} soft="#FEE2E2" /></Grid>
+        <Grid size={{ xs: 12, sm: 6, lg: 3 }}><StatCard title="التحاليل" value="3,256" trend="12.4%" icon={<ScienceIcon sx={{ fontSize: 30 }} />} accent={theme.blue} soft="#E0F2FE" /></Grid>
+        <Grid size={{ xs: 12, sm: 6, lg: 3 }}><StatCard title="التطعيمات" value="1,987" trend="6.3%" icon={<VaccinesIcon sx={{ fontSize: 30 }} />} accent="#7C3AED" soft="#F3E8FF" /></Grid>
       </Grid>
+
+      <Grid container spacing={2.2} sx={{ mb: 2.2 }}>
+        <Grid size={{ xs: 12, lg: 4 }}>
+          <Card sx={{ ...panelSx, height: '100%' }}>
+            <CardContent sx={{ p: 2.5 }}>
+              <SectionHeader title="المواعيد القادمة" icon={<CalendarIcon />} />
+              <Divider sx={{ mb: 1 }} />
+              <Stack spacing={0}>
+                {appointments.map((item) => (
+                  <Stack key={`${item.name}-${item.time}`} direction="row" alignItems="center" spacing={1.4} sx={{ py: 1.15, borderBottom: `1px solid ${theme.border}` }}>
+                    <Box sx={{ minWidth: 76, textAlign: 'left' }}>
+                      <Typography variant="caption" sx={{ color: theme.teal, fontWeight: 900 }}>{item.time}</Typography>
+                      <Typography variant="caption" display="block" sx={{ color: '#64748B' }}>{item.date}</Typography>
+                    </Box>
+                    <Chip label={item.status} size="small" sx={{ bgcolor: item.color, color: item.text, fontWeight: 850, minWidth: 96 }} />
+                    <Box sx={{ flex: 1, minWidth: 0, textAlign: 'right' }}>
+                      <Typography variant="body2" noWrap sx={{ fontWeight: 850 }}>{item.name}</Typography>
+                      <Typography variant="caption" color="text.secondary" noWrap>{item.unit}</Typography>
+                    </Box>
+                    <Avatar sx={{ width: 32, height: 32, bgcolor: '#EEF2F7', color: theme.teal, fontWeight: 900 }}>{item.avatar}</Avatar>
+                  </Stack>
+                ))}
+              </Stack>
+              <Button size="small" sx={{ mt: 1.2, color: theme.blue }} endIcon={<span>←</span>}>عرض جميع المواعيد</Button>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        <Grid size={{ xs: 12, lg: 3.4 }}>
+          <Card sx={{ ...panelSx, height: '100%' }}>
+            <CardContent sx={{ p: 2.5 }}>
+              <SectionHeader title="تنبيهات الصحة المهنية" icon={<NotificationsIcon />} />
+              <Divider sx={{ mb: 1 }} />
+              <Stack spacing={0}>
+                {alerts.map((alert) => {
+                  const colors = alert.severity === 'danger'
+                    ? { bg: '#FEE2E2', color: theme.red, icon: <WarningIcon /> }
+                    : alert.severity === 'warning'
+                      ? { bg: '#FEF3C7', color: theme.orange, icon: <WarningIcon /> }
+                      : { bg: '#E0F2FE', color: theme.blue, icon: <InfoIcon /> };
+                  return (
+                    <Stack key={alert.title} direction="row" alignItems="center" spacing={1.3} sx={{ py: 1.35, borderBottom: `1px solid ${theme.border}` }}>
+                      <Box sx={{ width: 36, height: 36, borderRadius: '50%', bgcolor: colors.bg, color: colors.color, display: 'grid', placeItems: 'center', flexShrink: 0 }}>{colors.icon}</Box>
+                      <Box sx={{ flex: 1, textAlign: 'right' }}>
+                        <Typography variant="body2" sx={{ fontWeight: 900 }}>{alert.title}</Typography>
+                        <Typography variant="caption" sx={{ color: '#64748B' }}>{alert.details}</Typography>
+                      </Box>
+                      <Typography variant="caption" sx={{ color: '#94A3B8', whiteSpace: 'nowrap' }}>{alert.time}</Typography>
+                    </Stack>
+                  );
+                })}
+              </Stack>
+              <Button size="small" sx={{ mt: 1.2, color: theme.blue }} endIcon={<span>←</span>}>عرض جميع التنبيهات</Button>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        <Grid size={{ xs: 12, lg: 4.6 }}>
+          <Card sx={{ ...panelSx, height: '100%' }}>
+            <CardContent sx={{ p: 2.5 }}>
+              <SectionHeader title="نظرة تحليلية" icon={<AnalyticsIcon />} />
+              <Grid container spacing={2}>
+                <Grid size={{ xs: 12, md: 4.2 }}>
+                  <Box sx={{ border: `1px solid ${theme.border}`, borderRadius: 3, p: 1.5, height: '100%' }}>
+                    <Typography variant="body2" sx={{ fontWeight: 900, mb: 1 }}>نسبة اكتمال التحاليل</Typography>
+                    <Box sx={{ height: 170, position: 'relative' }}>
+                      <ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={donutData} innerRadius={48} outerRadius={68} paddingAngle={2} dataKey="value"><Cell fill={theme.teal} /><Cell fill="#E5E7EB" /></Pie></PieChart></ResponsiveContainer>
+                      <Box sx={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', textAlign: 'center' }}><Box><Typography variant="h5" sx={{ fontWeight: 950, color: theme.navy }}>86%</Typography><Typography variant="caption" sx={{ color: '#64748B' }}>مكتمل</Typography></Box></Box>
+                    </Box>
+                    <Typography variant="caption" color="text.secondary">3,256 من أصل 3,784 تحليل</Typography>
+                  </Box>
+                </Grid>
+                <Grid size={{ xs: 12, md: 7.8 }}>
+                  <Box sx={{ border: `1px solid ${theme.border}`, borderRadius: 3, p: 1.5, height: '100%' }}>
+                    <Typography variant="body2" sx={{ fontWeight: 900 }}>اتجاه الحالات المهنية</Typography>
+                    <Typography variant="caption" color="text.secondary">آخر 6 أشهر</Typography>
+                    <Box sx={{ height: 190, mt: 1 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={trendData} margin={{ top: 8, right: 8, left: -24, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,.28)" />
+                          <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#64748B' }} axisLine={false} tickLine={false} />
+                          <YAxis tick={{ fontSize: 11, fill: '#64748B' }} axisLine={false} tickLine={false} />
+                          <Tooltip />
+                          <Line type="monotone" dataKey="cases" stroke={theme.teal} strokeWidth={3} dot={{ r: 4, fill: theme.teal }} activeDot={{ r: 6 }} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </Box>
+                  </Box>
+                </Grid>
+              </Grid>
+              <Button size="small" sx={{ mt: 1.2, color: theme.blue }} endIcon={<span>←</span>}>عرض التقرير الكامل</Button>
+            </CardContent>
+          </Card>
+        </Grid>
+      </Grid>
+
+      <Grid container spacing={1.6} sx={{ mb: 2.2 }}>
+        <Grid size={{ xs: 12, sm: 6, lg: 3 }}><QuickAction label="إضافة مستخدم" icon={<PersonAddIcon />} color={theme.indigo} onClick={() => navigate('/admin/users')} /></Grid>
+        <Grid size={{ xs: 12, sm: 6, lg: 3 }}><QuickAction label="استيراد Excel" icon={<CloudUploadIcon />} color="#16A34A" onClick={() => navigate('/data-import')} /></Grid>
+        <Grid size={{ xs: 12, sm: 6, lg: 3 }}><QuickAction label="تصدير تقرير" icon={<DownloadIcon />} color="#2563EB" onClick={() => navigate('/reports')} /></Grid>
+        <Grid size={{ xs: 12, sm: 6, lg: 3 }}><QuickAction label="موعد جديد" icon={<CalendarIcon />} color={theme.teal} onClick={() => navigate('/appointments')} /></Grid>
+      </Grid>
+
+      <Card sx={{ ...panelSx }}>
+        <CardContent sx={{ p: 2.5 }}>
+          <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.7 }}>
+            <Stack direction="row" alignItems="center" spacing={1}><PeopleIcon sx={{ color: '#334155' }} /><Typography variant="h6" sx={{ fontWeight: 900 }}>إدارة المستخدمين</Typography></Stack>
+            <Button size="small" onClick={() => navigate('/admin/users')} sx={{ color: theme.blue }}>عرض جميع المستخدمين</Button>
+          </Stack>
+          <Grid container spacing={1.7}>
+            {users.map((u) => (
+              <Grid key={u.id} size={{ xs: 12, md: 6, xl: 3 }}>
+                <Box sx={{ p: 1.8, borderRadius: 3, border: `1px solid ${theme.border}`, bgcolor: '#FFFFFF', boxShadow: '0 10px 24px rgba(15, 23, 42, .06)', position: 'relative', minHeight: 164 }}>
+                  <Box sx={{ position: 'absolute', top: 14, insetInlineEnd: 14, width: 10, height: 10, borderRadius: '50%', bgcolor: '#22C55E' }} />
+                  <Stack direction="row" alignItems="center" spacing={1.4} sx={{ mb: 1.3 }}>
+                    <Avatar sx={{ width: 58, height: 58, bgcolor: '#EEF2F7', color: theme.teal, fontWeight: 950, fontSize: 24 }}>{u.avatar}</Avatar>
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography variant="body1" noWrap sx={{ fontWeight: 900, color: theme.navy }}>{u.name}</Typography>
+                      <Chip label={u.role} size="small" sx={{ mt: .6, bgcolor: u.badgeColor, color: u.textColor, fontWeight: 850 }} />
+                    </Box>
+                  </Stack>
+                  <Typography variant="body2" sx={{ color: '#64748B', mb: .4 }}>{u.center}</Typography>
+                  <Typography variant="caption" sx={{ color: '#64748B' }}>ID: {u.id}</Typography>
+                  <Stack direction="row" spacing={1} sx={{ mt: 1.6 }}>
+                    <Button size="small" variant="outlined" fullWidth startIcon={<VisibilityIcon fontSize="small" />} sx={{ minHeight: 34 }}>عرض</Button>
+                    <Button size="small" variant="outlined" fullWidth startIcon={<EditIcon fontSize="small" />} sx={{ minHeight: 34 }}>تعديل</Button>
+                    <Button size="small" variant="outlined" fullWidth startIcon={<SecurityIcon fontSize="small" />} sx={{ minHeight: 34 }}>صلاحيات</Button>
+                  </Stack>
+                </Box>
+              </Grid>
+            ))}
+          </Grid>
+        </CardContent>
+      </Card>
     </Box>
   );
 }
