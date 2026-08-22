@@ -3,14 +3,19 @@ from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
-from .models import AuditLog, ClinicVisit, CommitteeReferral, Employee, HealthCenter, InjuryCase, LabTest, Vaccination
-from .serializers import AuditLogSerializer, ClinicVisitSerializer, CommitteeReferralSerializer, EmployeeSerializer, HealthCenterSerializer, InjuryCaseSerializer, LabTestSerializer, PlatformUserSerializer, VaccinationSerializer
+from .importers import process_excel_import
+from .models import AuditLog, ClinicVisit, CommitteeReferral, DataImportBatch, Employee, HealthCenter, InjuryCase, LabTest, Vaccination
+from .serializers import AuditLogSerializer, ClinicVisitSerializer, CommitteeReferralSerializer, DataImportBatchSerializer, EmployeeSerializer, HealthCenterSerializer, InjuryCaseSerializer, LabTestSerializer, PlatformUserSerializer, VaccinationSerializer
 
 
 class IsAdminOrManagerForWrite(permissions.BasePermission):
     def has_permission(self, request, view):
         if request.method in permissions.SAFE_METHODS: return True
         return request.user and request.user.is_staff
+
+
+def truthy(value):
+    return str(value).lower() in ('1','true','yes','y','commit')
 
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -44,6 +49,57 @@ class UserViewSet(viewsets.ModelViewSet):
             raise ValidationError({'detail': 'You cannot delete your current account.'})
         AuditLog.objects.create(user=str(self.request.user), action='delete_user', model_name='User', record_id=str(instance.id))
         instance.delete()
+
+
+class ExcelImportViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset=DataImportBatch.objects.select_related('created_by').all()
+    serializer_class=DataImportBatchSerializer
+    permission_classes=[permissions.IsAdminUser]
+
+    @action(detail=False, methods=['post'])
+    def upload(self, request):
+        uploaded=request.FILES.get('file')
+        if not uploaded:
+            return Response({'file':'Excel file is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        if uploaded.size > 20 * 1024 * 1024:
+            return Response({'file':'Maximum allowed file size is 20 MB.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not uploaded.name.lower().endswith(('.xlsx','.xlsm','.xltx','.xltm')):
+            return Response({'file':'Only Excel .xlsx/.xlsm files are allowed.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        commit=truthy(request.data.get('commit'))
+        sheet_name=str(request.data.get('sheetName') or '').strip()
+        try:
+            result=process_excel_import(uploaded, sheet_name=sheet_name, commit=commit, user=request.user)
+            summary=result['summary']
+            batch=DataImportBatch.objects.create(
+                file_name=uploaded.name,
+                sheet_name=result.get('sheet_name',''),
+                mode='commit' if commit else 'preview',
+                status='committed' if commit else 'validated',
+                total_rows=summary.get('total_rows',0),
+                valid_rows=summary.get('valid_rows',0),
+                duplicate_rows=summary.get('duplicate_rows',0),
+                imported_records=summary.get('imported_employees',0)+summary.get('imported_clinic_visits',0),
+                skipped_rows=summary.get('skipped_rows',0),
+                errors_count=summary.get('errors_count',0),
+                summary=result,
+                created_by=request.user,
+            )
+            AuditLog.objects.create(user=str(request.user), action='excel_import_commit' if commit else 'excel_import_preview', model_name='DataImportBatch', record_id=str(batch.id))
+            result['batch_id']=batch.id
+            return Response(result)
+        except Exception as exc:
+            batch=DataImportBatch.objects.create(
+                file_name=uploaded.name,
+                sheet_name=sheet_name,
+                mode='commit' if commit else 'preview',
+                status='failed',
+                errors_count=1,
+                summary={'error': str(exc)},
+                created_by=request.user,
+            )
+            AuditLog.objects.create(user=str(request.user), action='excel_import_failed', model_name='DataImportBatch', record_id=str(batch.id))
+            return Response({'detail': str(exc), 'batch_id': batch.id}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class HealthCenterViewSet(viewsets.ModelViewSet): queryset=HealthCenter.objects.all().order_by('name'); serializer_class=HealthCenterSerializer; permission_classes=[permissions.IsAuthenticated]
