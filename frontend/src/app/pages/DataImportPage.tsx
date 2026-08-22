@@ -33,7 +33,31 @@ import {
 } from '@mui/icons-material';
 import { getAccessToken } from '../context/AuthContext';
 
-const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000/api').replace(/\/$/, '');
+const PRODUCTION_API_BASE_URL = 'https://occupational-health-platform-production.up.railway.app/api';
+const LOCAL_API_BASE_URL = 'http://localhost:8000/api';
+const API_BASE_URL = (
+  import.meta.env.VITE_API_URL ||
+  (typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
+    ? LOCAL_API_BASE_URL
+    : PRODUCTION_API_BASE_URL)
+).replace(/\/$/, '');
+
+type ImportSummary = Record<string, number> & {
+  total_rows: number;
+  valid_rows: number;
+  duplicate_rows: number;
+  errors_count: number;
+  skipped_rows: number;
+};
+
+type SheetImportResult = {
+  sheet_name: string;
+  processor?: string;
+  summary: ImportSummary;
+  errors?: { row: number; reason: string }[];
+  duplicates?: { row: number; national_id?: string; name?: string; reason: string }[];
+  preview_rows?: Record<string, string | number | null>[];
+};
 
 type ImportResult = {
   batch_id?: number;
@@ -41,22 +65,32 @@ type ImportResult = {
   file_name: string;
   sheet_name: string;
   available_sheets: string[];
-  detected_headers: string[];
-  mapped_fields: Record<string, number>;
-  summary: {
-    total_rows: number;
-    valid_rows: number;
-    duplicate_rows: number;
-    errors_count: number;
-    skipped_rows: number;
-    imported_employees: number;
-    imported_clinic_visits: number;
-  };
-  duplicates: { row: number; national_id: string; name: string; reason: string }[];
+  importable_sheets?: string[];
+  detected_headers?: string[];
+  mapped_fields?: Record<string, number | string>;
+  summary: ImportSummary;
+  sheet_results?: SheetImportResult[];
+  duplicates: { row: number; national_id?: string; name?: string; reason: string }[];
   errors: { row: number; reason: string }[];
   preview_rows: Record<string, string | number | null>[];
   privacy_note: string;
 };
+
+function getImportedTotal(summary: ImportSummary) {
+  return Object.entries(summary)
+    .filter(([key, value]) => key.startsWith('imported_') && typeof value === 'number')
+    .reduce((total, [, value]) => total + value, 0);
+}
+
+function friendlyFetchError(error: unknown, isRtl: boolean) {
+  const rawMessage = error instanceof Error ? error.message : '';
+  if (rawMessage === 'Failed to fetch' || error instanceof TypeError) {
+    return isRtl
+      ? `تعذر الاتصال بالـ Backend. تأكد من إعادة نشر Backend وFrontend وأن رابط API المستخدم هو: ${API_BASE_URL}`
+      : `Could not reach the backend. Redeploy Backend and Frontend and verify API URL: ${API_BASE_URL}`;
+  }
+  return rawMessage || (isRtl ? 'تعذر استيراد الملف' : 'Import failed');
+}
 
 function summaryCard(label: string, value: number | string, color: string) {
   return (
@@ -109,15 +143,17 @@ export function DataImportPage() {
         body: form,
       });
       const body = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(body.detail || body.file || 'Import failed');
+      if (!response.ok) throw new Error(body.detail || body.file || body.password || 'Import failed');
       setResult(body as ImportResult);
       toast.success(commitMode ? (isRtl ? 'تم الحفظ في PostgreSQL بنجاح' : 'Committed to PostgreSQL') : (isRtl ? 'تم فحص الملف بنجاح' : 'File validated successfully'), { id: loadingToast });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : (isRtl ? 'تعذر استيراد الملف' : 'Import failed'), { id: loadingToast });
+      toast.error(friendlyFetchError(error, isRtl), { id: loadingToast, duration: 9000 });
     } finally {
       setLoading(false);
     }
   };
+
+  const importedTotal = result ? getImportedTotal(result.summary) : 0;
 
   return (
     <Box sx={{ direction: isRtl ? 'rtl' : 'ltr' }}>
@@ -133,7 +169,10 @@ export function DataImportPage() {
               {isRtl ? 'ارفع ملف Excel داخل المنصة فقط. يتم فحص الأعمدة، إخفاء أرقام الهوية في المعاينة، التحقق من التكرار، ثم الحفظ في PostgreSQL عند التفعيل.' : 'Upload Excel inside the platform only. Columns are validated, IDs are masked in preview, duplicates are checked, and records are committed to PostgreSQL only when enabled.'}
             </Typography>
           </Box>
-          <Chip color="warning" icon={<WarningIcon />} label={isRtl ? 'لا ترفع ملفات البيانات إلى GitHub' : 'Do not upload data files to GitHub'} sx={{ fontWeight: 800 }} />
+          <Stack spacing={1} alignItems={isRtl ? 'flex-start' : 'flex-end'}>
+            <Chip color="warning" icon={<WarningIcon />} label={isRtl ? 'لا ترفع ملفات البيانات إلى GitHub' : 'Do not upload data files to GitHub'} sx={{ fontWeight: 800 }} />
+            <Typography variant="caption" color="text.secondary" sx={{ direction: 'ltr' }}>{API_BASE_URL}</Typography>
+          </Stack>
         </Stack>
       </Paper>
 
@@ -155,7 +194,7 @@ export function DataImportPage() {
                   label={isRtl ? 'اسم الشيت اختياري' : 'Sheet name optional'}
                   value={sheetName}
                   onChange={(event) => setSheetName(event.target.value)}
-                  placeholder="Database"
+                  placeholder="Database أو ALL"
                   fullWidth
                 />
 
@@ -186,10 +225,10 @@ export function DataImportPage() {
             <CardContent>
               <Typography variant="h6" fontWeight={900} gutterBottom>{isRtl ? 'قواعد الاستيراد' : 'Import Rules'}</Typography>
               <Stack spacing={1.2}>
-                <Typography variant="body2">{isRtl ? '1. يجب وجود اسم الموظف ورقم الهوية/السجل.' : '1. Employee name and National/Registry ID are required.'}</Typography>
+                <Typography variant="body2">{isRtl ? '1. اكتب Database لاستيراد الملف الصحي الرئيسي أو ALL لفحص جميع الشيتات المدعومة.' : '1. Use Database for the main health file or ALL to validate all supported sheets.'}</Typography>
                 <Typography variant="body2">{isRtl ? '2. رقم الهوية يتم التحقق منه لمنع التكرار داخل الملف وقاعدة البيانات.' : '2. National ID is checked for duplicates inside the file and database.'}</Typography>
                 <Typography variant="body2">{isRtl ? '3. يتم إخفاء الهوية والجوال في المعاينة.' : '3. IDs and phone numbers are masked in preview.'}</Typography>
-                <Typography variant="body2">{isRtl ? '4. إذا وُجد تشخيص يتم إنشاء زيارة عيادة مرتبطة بالموظف عند الحفظ.' : '4. If diagnosis exists, a clinic visit is created on commit.'}</Typography>
+                <Typography variant="body2">{isRtl ? '4. الشيتات المدعومة تحفظ في جداولها مثل التحاليل، التطعيمات، الوخز بالإبر، الهيئة الطبية والحملات.' : '4. Supported sheets are routed to their own tables: labs, vaccines, exposures, committee cases, and campaigns.'}</Typography>
                 <Typography variant="body2">{isRtl ? '5. لا يتم تخزين ملف Excel الخام داخل المستودع أو قاعدة البيانات.' : '5. Raw Excel files are not stored in the repository or database.'}</Typography>
               </Stack>
             </CardContent>
@@ -200,15 +239,15 @@ export function DataImportPage() {
       {result && (
         <Box sx={{ mt: 3 }}>
           <Grid container spacing={2} sx={{ mb: 3 }}>
-            <Grid size={{ xs: 12, sm: 6, md: 3 }}>{summaryCard(isRtl ? 'إجمالي الصفوف' : 'Total rows', result.summary.total_rows, '#1e40af')}</Grid>
-            <Grid size={{ xs: 12, sm: 6, md: 3 }}>{summaryCard(isRtl ? 'صفوف صالحة' : 'Valid rows', result.summary.valid_rows, '#16a34a')}</Grid>
-            <Grid size={{ xs: 12, sm: 6, md: 3 }}>{summaryCard(isRtl ? 'مكررة' : 'Duplicates', result.summary.duplicate_rows, '#f59e0b')}</Grid>
-            <Grid size={{ xs: 12, sm: 6, md: 3 }}>{summaryCard(isRtl ? 'أخطاء' : 'Errors', result.summary.errors_count, '#dc2626')}</Grid>
+            <Grid size={{ xs: 12, sm: 6, md: 3 }}>{summaryCard(isRtl ? 'إجمالي الصفوف' : 'Total rows', result.summary.total_rows || 0, '#1e40af')}</Grid>
+            <Grid size={{ xs: 12, sm: 6, md: 3 }}>{summaryCard(isRtl ? 'صفوف صالحة' : 'Valid rows', result.summary.valid_rows || 0, '#16a34a')}</Grid>
+            <Grid size={{ xs: 12, sm: 6, md: 3 }}>{summaryCard(isRtl ? 'مكررة' : 'Duplicates', result.summary.duplicate_rows || 0, '#f59e0b')}</Grid>
+            <Grid size={{ xs: 12, sm: 6, md: 3 }}>{summaryCard(isRtl ? 'أخطاء' : 'Errors', result.summary.errors_count || 0, '#dc2626')}</Grid>
           </Grid>
 
           <Alert icon={<CheckCircleIcon />} severity={result.mode === 'commit' ? 'success' : 'info'} sx={{ mb: 2 }}>
             {result.mode === 'commit'
-              ? (isRtl ? `تم الحفظ: ${result.summary.imported_employees} موظف و ${result.summary.imported_clinic_visits} زيارة عيادة.` : `Committed: ${result.summary.imported_employees} employees and ${result.summary.imported_clinic_visits} clinic visits.`)
+              ? (isRtl ? `تم الحفظ في PostgreSQL. إجمالي السجلات المستوردة: ${importedTotal}` : `Committed to PostgreSQL. Total imported records: ${importedTotal}`)
               : (isRtl ? 'هذه نتيجة معاينة فقط، لم يتم الحفظ في قاعدة البيانات.' : 'Preview only. Nothing was saved to the database.')}
           </Alert>
 
@@ -217,8 +256,36 @@ export function DataImportPage() {
               <Chip label={`${isRtl ? 'الشيت' : 'Sheet'}: ${result.sheet_name}`} />
               <Chip label={`${isRtl ? 'الدفعة' : 'Batch'}: ${result.batch_id || '-'}`} />
               <Chip label={`${isRtl ? 'الوضع' : 'Mode'}: ${result.mode}`} color={result.mode === 'commit' ? 'success' : 'primary'} />
+              {!!result.importable_sheets?.length && <Chip label={`${isRtl ? 'الشيتات المدعومة' : 'Importable'}: ${result.importable_sheets.length}`} />}
             </Stack>
           </Paper>
+
+          {!!result.sheet_results?.length && (
+            <TableContainer component={Paper} sx={{ borderRadius: 3, mb: 2 }}>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>{isRtl ? 'الشيت' : 'Sheet'}</TableCell>
+                    <TableCell>{isRtl ? 'المعالج' : 'Processor'}</TableCell>
+                    <TableCell>{isRtl ? 'الصفوف' : 'Rows'}</TableCell>
+                    <TableCell>{isRtl ? 'صالحة' : 'Valid'}</TableCell>
+                    <TableCell>{isRtl ? 'أخطاء' : 'Errors'}</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {result.sheet_results.map((item) => (
+                    <TableRow key={item.sheet_name}>
+                      <TableCell>{item.sheet_name}</TableCell>
+                      <TableCell>{item.processor || '-'}</TableCell>
+                      <TableCell>{item.summary.total_rows || 0}</TableCell>
+                      <TableCell>{item.summary.valid_rows || 0}</TableCell>
+                      <TableCell>{item.summary.errors_count || 0}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
 
           <TableContainer component={Paper} sx={{ borderRadius: 3, mb: 2 }}>
             <Table size="small">
@@ -234,11 +301,11 @@ export function DataImportPage() {
               <TableBody>
                 {result.preview_rows.map((row, index) => (
                   <TableRow key={index}>
-                    <TableCell>{row.row}</TableCell>
-                    <TableCell>{row.name}</TableCell>
-                    <TableCell>{row.national_id}</TableCell>
-                    <TableCell>{row.health_center}</TableCell>
-                    <TableCell>{row.job_title}</TableCell>
+                    <TableCell>{row.row || '-'}</TableCell>
+                    <TableCell>{row.name || '-'}</TableCell>
+                    <TableCell>{row.national_id || '-'}</TableCell>
+                    <TableCell>{row.health_center || '-'}</TableCell>
+                    <TableCell>{row.job_title || '-'}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -250,7 +317,7 @@ export function DataImportPage() {
               <Grid size={{ xs: 12, md: 6 }}>
                 <Alert severity="warning" sx={{ mb: 1 }}>{isRtl ? 'التكرارات' : 'Duplicates'}</Alert>
                 <Paper sx={{ p: 2, borderRadius: 3, maxHeight: 260, overflow: 'auto' }}>
-                  {result.duplicates.length ? result.duplicates.map((item, index) => <Typography key={index} variant="body2">#{item.row} - {item.name} - {item.national_id} - {item.reason}</Typography>) : <Typography variant="body2">-</Typography>}
+                  {result.duplicates.length ? result.duplicates.map((item, index) => <Typography key={index} variant="body2">#{item.row} - {item.name || '-'} - {item.national_id || '-'} - {item.reason}</Typography>) : <Typography variant="body2">-</Typography>}
                 </Paper>
               </Grid>
               <Grid size={{ xs: 12, md: 6 }}>
