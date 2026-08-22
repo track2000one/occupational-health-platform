@@ -17,6 +17,18 @@ export interface AppPalette {
 export const PALETTES: AppPalette[] = [
   {
     id: 'default',
+    nameEn: 'Neo Health',
+    nameAr: 'الصحة النيو',
+    swatches: ['#E9EDF3', '#FFFFFF', '#2FBF9F', '#6C7EF8'],
+    primary: '#2FBF9F',
+    primaryDark: '#0F9F85',
+    secondary: '#6C7EF8',
+    background: '#E9EDF3',
+    paper: '#F3F6FA',
+    drawerGradient: 'linear-gradient(145deg, #F8FAFC 0%, #E9EDF3 52%, #DDE5EF 100%)',
+  },
+  {
+    id: 'health-premium',
     nameEn: 'Health Premium',
     nameAr: 'الصحة الاحترافي',
     swatches: ['#6C7EF8', '#2FBF9F', '#F8FAFC', '#E0E7FF'],
