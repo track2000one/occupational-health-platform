@@ -48,6 +48,7 @@ import { ClinicVisitsPage } from './pages/ClinicVisitsPage';
 import { OccupationalHealthPage } from './pages/OccupationalHealthPage';
 import { CampaignsPage } from './pages/CampaignsPage';
 import { DataQualityPage } from './pages/DataQualityPage';
+import { DataImportPage } from './pages/DataImportPage';
 import { Toaster } from 'sonner';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -91,6 +92,11 @@ function AppRoutes() {
         <Route path="campaigns" element={<CampaignsPage />} />
         <Route path="reports" element={<ReportsPage />} />
         <Route path="data-quality" element={<DataQualityPage />} />
+        <Route path="data-import" element={
+          <PermissionRoute permission="manage:users">
+            <DataImportPage />
+          </PermissionRoute>
+        } />
         <Route path="notifications" element={<NotificationsPage />} />
         <Route path="appointments" element={<AppointmentsPage />} />
         <Route path="admin" element={
