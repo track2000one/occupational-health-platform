@@ -128,7 +128,7 @@ function buildReportHtml(options: ReportOptions) {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>${escapeHtml(options.titleAr)} - ${escapeHtml(options.title)}</title>
+  <title>${escapeHtml(options.fileName)}</title>
   <style>
     @page { size: ${pageSize}; margin: 12mm; }
     * { box-sizing: border-box; }
@@ -214,6 +214,28 @@ function buildReportHtml(options: ReportOptions) {
     .left { text-align: left; }
     .right { text-align: right; }
     .center { text-align: center; }
+    .print-actions {
+      position: sticky;
+      top: 0;
+      z-index: 99;
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px;
+      background: rgba(255,255,255,.92);
+      border-bottom: 1px solid #e2e8f0;
+      backdrop-filter: blur(10px);
+    }
+    .print-actions button {
+      border: 0;
+      border-radius: 10px;
+      padding: 10px 18px;
+      font-weight: 800;
+      cursor: pointer;
+      color: white;
+      background: ${COLORS.primary};
+      box-shadow: 0 10px 18px rgba(30,64,175,.22);
+    }
     .footer {
       margin-top: 12mm;
       border-top: 1px solid #cbd5e1;
@@ -228,11 +250,14 @@ function buildReportHtml(options: ReportOptions) {
     @media print {
       html, body { background: white; }
       .page { margin: 0; box-shadow: none; width: auto; min-height: auto; }
-      .no-print { display: none !important; }
+      .no-print, .print-actions { display: none !important; }
     }
   </style>
 </head>
 <body>
+  <div class="print-actions no-print">
+    <button onclick="window.print()">طباعة / حفظ PDF</button>
+  </div>
   <div class="page ${options.orientation === 'landscape' ? 'landscape' : ''}">
     <div class="gold-bar"></div>
     <header class="header">
@@ -271,29 +296,71 @@ function buildReportHtml(options: ReportOptions) {
 </html>`;
 }
 
-function openPrintableReport(options: ReportOptions) {
-  const reportWindow = window.open('', '_blank', 'noopener,noreferrer,width=1100,height=850');
-  if (!reportWindow) {
-    throw new Error('تعذر فتح نافذة الطباعة. يرجى السماح بالنوافذ المنبثقة لهذا الموقع.');
+function writeDocument(targetDocument: Document, html: string) {
+  targetDocument.open();
+  targetDocument.write(html);
+  targetDocument.close();
+}
+
+function printWindowSafely(targetWindow: Window) {
+  const runPrint = () => {
+    try {
+      targetWindow.focus();
+      targetWindow.print();
+    } catch (error) {
+      console.warn('Print was not automatically opened. Use the print button in the report window.', error);
+    }
+  };
+  setTimeout(runPrint, 850);
+}
+
+function printFromHiddenFrame(html: string) {
+  const frame = document.createElement('iframe');
+  frame.style.position = 'fixed';
+  frame.style.right = '0';
+  frame.style.bottom = '0';
+  frame.style.width = '0';
+  frame.style.height = '0';
+  frame.style.border = '0';
+  frame.setAttribute('aria-hidden', 'true');
+  document.body.appendChild(frame);
+
+  const frameWindow = frame.contentWindow;
+  const frameDocument = frame.contentDocument || frameWindow?.document;
+  if (!frameWindow || !frameDocument) {
+    frame.remove();
+    throw new Error('تعذر تجهيز نافذة الطباعة.');
   }
 
-  reportWindow.document.open();
-  reportWindow.document.write(buildReportHtml(options));
-  reportWindow.document.close();
+  writeDocument(frameDocument, html);
+  setTimeout(() => {
+    frameWindow.focus();
+    frameWindow.print();
+    setTimeout(() => frame.remove(), 2000);
+  }, 850);
+}
 
-  const printReport = () => {
-    reportWindow.focus();
-    reportWindow.print();
-  };
+function openPrintableReport(options: ReportOptions) {
+  const html = buildReportHtml(options);
 
-  setTimeout(printReport, 650);
+  // Do not use noopener/noreferrer here. Chrome can return null while leaving an empty about:blank window.
+  const reportWindow = window.open('about:blank', '_blank', 'width=1100,height=850,scrollbars=yes,resizable=yes');
+
+  if (reportWindow && reportWindow.document) {
+    writeDocument(reportWindow.document, html);
+    printWindowSafely(reportWindow);
+    return;
+  }
+
+  // Fallback when the browser blocks popups.
+  printFromHiddenFrame(html);
 }
 
 export async function exportEmployeesPdf(rows: EmployeeRow[], isRtl = false) {
   const now = new Date();
-  const male = rows.filter((r) => r.gender === 'male').length;
-  const female = rows.filter((r) => r.gender === 'female').length;
-  const married = rows.filter((r) => r.maritalStatus === 'married').length;
+  const male = rows.filter((row) => row.gender === 'male').length;
+  const female = rows.filter((row) => row.gender === 'female').length;
+  const married = rows.filter((row) => row.maritalStatus === 'married').length;
 
   openPrintableReport({
     title: 'Employee Directory',
