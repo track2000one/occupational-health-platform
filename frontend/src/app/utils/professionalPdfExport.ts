@@ -1,258 +1,26 @@
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import logoImageUrl from '../../imports/ChatGPT_Image_21______2026__10_06_18__.png';
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// PROFESSIONAL PDF REPORT GENERATOR
-// Uses jsPDF + autoTable for reliable, high-quality PDF generation
-// With Arabic font support
+// PROFESSIONAL REPORT EXPORT
+// Arabic-safe print/PDF generator using browser rendering instead of jsPDF fonts.
+// Browser print preserves Unicode, Arabic shaping, and RTL direction correctly.
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// ─── Arabic Font Support ───────────────────────────────────────────────────────
-// NOTE: jsPDF has limited Arabic support out of the box.
-// We need to use a compatible approach for Arabic text rendering.
-
-// Helper to detect if text contains Arabic characters
-function containsArabic(text: string): boolean {
-  return /[؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿]/.test(text);
-}
-
-// Helper to reverse Arabic text for better display in jsPDF
-// Since jsPDF doesn't handle RTL well, we reverse the text
-function processArabicText(text: string): string {
-  if (!containsArabic(text)) return text;
-
-  // For mixed content, split by spaces and process each word
-  const words = text.split(' ');
-  const processedWords = words.map(word => {
-    if (containsArabic(word)) {
-      // Reverse Arabic words for RTL display
-      return word.split('').reverse().join('');
-    }
-    return word;
-  });
-
-  // Reverse the word order for RTL
-  return processedWords.reverse().join(' ');
-}
-
-// ─── Colors ────────────────────────────────────────────────────────────────────
 const COLORS = {
-  primary: [30, 64, 175],      // #1e40af - Blue
-  secondary: [124, 58, 237],   // #7c3aed - Purple
-  success: [22, 163, 74],      // #16a34a - Green
-  warning: [245, 158, 11],     // #f59e0b - Orange
-  danger: [220, 38, 38],       // #dc2626 - Red
-  info: [8, 145, 178],         // #0891b2 - Cyan
-  dark: [15, 23, 42],          // #0f172a - Dark
-  gray: [100, 116, 139],       // #64748b - Gray
-  lightGray: [241, 245, 249],  // #f1f5f9 - Light Gray
-  gold: [251, 191, 36],        // #fbbf24 - Gold
-  white: [255, 255, 255],
-} as const;
+  primary: '#1e40af',
+  primary2: '#2947c7',
+  secondary: '#7c3aed',
+  success: '#16a34a',
+  warning: '#f59e0b',
+  danger: '#dc2626',
+  info: '#0891b2',
+  dark: '#0f172a',
+  gray: '#64748b',
+  lightGray: '#f1f5f9',
+  gold: '#fbbf24',
+  white: '#ffffff',
+};
 
-// ─── Helper: Convert image to base64 ──────────────────────────────────────────
-async function getLogoBase64(): Promise<string> {
-  try {
-    const response = await fetch(logoImageUrl);
-    const blob = await response.blob();
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result as string || '');
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-  } catch (error) {
-    console.warn('Failed to load logo:', error);
-    return '';
-  }
-}
-
-// ─── Helper: Add Page Header ──────────────────────────────────────────────────
-function addHeader(doc: jsPDF, title: string, subtitle: string, logoBase64?: string) {
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
-
-  // Gold bar at top
-  doc.setFillColor(...COLORS.gold);
-  doc.rect(0, 0, pageWidth, 4, 'F');
-
-  // Main gradient header (simulated with blue)
-  doc.setFillColor(...COLORS.primary);
-  doc.rect(0, 4, pageWidth, 55, 'F');
-
-  // Logo (if available)
-  if (logoBase64) {
-    try {
-      doc.addImage(logoBase64, 'PNG', pageWidth / 2 - 15, 8, 30, 12);
-    } catch (e) {
-      console.warn('Could not add logo to PDF');
-    }
-  }
-
-  // System name (English)
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'bold');
-  doc.text('OCCUPATIONAL HEALTH MANAGEMENT SYSTEM', pageWidth / 2, 28, { align: 'center' });
-
-  // System name (Arabic)
-  doc.setFontSize(9);
-  doc.setFont('helvetica', 'normal');
-  doc.text('نظام إدارة الصحة المهنية', pageWidth / 2, 34, { align: 'center' });
-
-  // Ministry info
-  doc.setFontSize(8);
-  doc.text('Ministry of Health - Kingdom of Saudi Arabia', pageWidth / 2, 40, { align: 'center' });
-  doc.text('وزارة الصحة - المملكة العربية السعودية', pageWidth / 2, 45, { align: 'center' });
-
-  // Title
-  doc.setFontSize(16);
-  doc.setFont('helvetica', 'bold');
-  doc.text(title.toUpperCase(), pageWidth / 2, 53, { align: 'center' });
-
-  // Subtitle
-  doc.setFontSize(9);
-  doc.setFont('helvetica', 'normal');
-  doc.text(subtitle, pageWidth / 2, 58, { align: 'center' });
-
-  return 65; // Return Y position after header
-}
-
-// ─── Helper: Add Metadata Section ─────────────────────────────────────────────
-function addMetadata(doc: jsPDF, y: number, items: { label: string; value: string }[]) {
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const boxWidth = (pageWidth - 40) / 4; // 4 columns with margins
-
-  doc.setFillColor(...COLORS.lightGray);
-  doc.rect(10, y, pageWidth - 20, 20, 'F');
-
-  doc.setDrawColor(...COLORS.gray);
-  doc.setLineWidth(0.1);
-
-  items.forEach((item, index) => {
-    const x = 15 + index * boxWidth;
-
-    // Vertical separator
-    if (index > 0) {
-      doc.setDrawColor(200, 200, 200);
-      doc.line(x - 5, y + 3, x - 5, y + 17);
-    }
-
-    // Label
-    doc.setFontSize(7);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(...COLORS.gray);
-    doc.text(item.label.toUpperCase(), x, y + 7);
-
-    // Value
-    doc.setFontSize(11);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(...COLORS.dark);
-    doc.text(item.value, x, y + 15);
-  });
-
-  return y + 25;
-}
-
-// ─── Helper: Add KPI Boxes ────────────────────────────────────────────────────
-function addKPIBoxes(doc: jsPDF, y: number, items: { label: string; value: string; color: number[] }[]) {
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const boxWidth = (pageWidth - 50) / 4;
-  const boxHeight = 28;
-
-  items.forEach((item, index) => {
-    const x = 15 + index * (boxWidth + 5);
-
-    // Box background
-    doc.setFillColor(...item.color);
-    doc.roundedRect(x, y, boxWidth, boxHeight, 3, 3, 'F');
-
-    // White border
-    doc.setDrawColor(255, 255, 255);
-    doc.setLineWidth(0.8);
-    doc.roundedRect(x, y, boxWidth, boxHeight, 3, 3, 'S');
-
-    // Value
-    doc.setFontSize(24);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(255, 255, 255);
-    doc.text(item.value, x + boxWidth / 2, y + 14, { align: 'center' });
-
-    // Label
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'bold');
-    doc.text(item.label.toUpperCase(), x + boxWidth / 2, y + 22, { align: 'center' });
-  });
-
-  return y + boxHeight + 10;
-}
-
-// ─── Helper: Add Section Title ────────────────────────────────────────────────
-function addSectionTitle(doc: jsPDF, y: number, title: string) {
-  const pageWidth = doc.internal.pageSize.getWidth();
-
-  // Background
-  doc.setFillColor(248, 250, 252);
-  doc.rect(10, y, pageWidth - 20, 10, 'F');
-
-  // Left border
-  doc.setFillColor(...COLORS.primary);
-  doc.rect(10, y, 3, 10, 'F');
-
-  // Title
-  doc.setFontSize(11);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(...COLORS.dark);
-  doc.text(title.toUpperCase(), 18, y + 7);
-
-  return y + 15;
-}
-
-// ─── Helper: Add Footer ───────────────────────────────────────────────────────
-function addFooter(doc: jsPDF) {
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
-  const y = pageHeight - 25;
-
-  // Background
-  doc.setFillColor(248, 250, 252);
-  doc.rect(0, y - 5, pageWidth, 30, 'F');
-
-  // Top border
-  doc.setDrawColor(...COLORS.gray);
-  doc.setLineWidth(0.5);
-  doc.line(10, y - 5, pageWidth - 10, y - 5);
-
-  // Date
-  const now = new Date();
-  const dateEn = now.toLocaleString('en-US', { dateStyle: 'long', timeStyle: 'short' });
-  const dateAr = now.toLocaleDateString('ar-SA', { dateStyle: 'long' });
-
-  doc.setFontSize(8);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(...COLORS.gray);
-  doc.text(`Generated: ${dateEn}`, pageWidth / 2, y, { align: 'center' });
-  doc.text(`تاريخ الإنشاء: ${dateAr}`, pageWidth / 2, y + 4, { align: 'center' });
-
-  // Confidential warning
-  doc.setFontSize(7);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(...COLORS.danger);
-  doc.text('⚠ CONFIDENTIAL DOCUMENT', pageWidth / 2, y + 10, { align: 'center' });
-
-  doc.setFontSize(6);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(...COLORS.gray);
-  doc.text('This document contains sensitive health information protected by privacy regulations', pageWidth / 2, y + 14, { align: 'center' });
-  doc.text('هذا المستند يحتوي على معلومات صحية حساسة محمية بموجب لوائح الخصوصية', pageWidth / 2, y + 18, { align: 'center' });
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// EXPORT FUNCTIONS
-// ═══════════════════════════════════════════════════════════════════════════════
-
-// ─── Employee Directory ───────────────────────────────────────────────────────
 export interface EmployeeRow {
   mohId: string;
   name: string;
@@ -264,300 +32,448 @@ export interface EmployeeRow {
   dateOfStart: string;
 }
 
-export async function exportEmployeesPdf(rows: EmployeeRow[], isRtl = false) {
-  const doc = new jsPDF({ orientation: 'landscape', format: 'a4' });
-  const logoBase64 = await getLogoBase64();
+type MetadataItem = { label: string; labelAr: string; value: string };
+type KpiItem = { label: string; labelAr: string; value: string; color: string };
+type TableColumn = { key: string; label: string; labelAr: string; align?: 'left' | 'right' | 'center' };
 
-  let yPos = addHeader(doc, 'Employee Directory', 'Confidential HR Record', logoBase64);
+type ReportOptions = {
+  title: string;
+  titleAr: string;
+  subtitle: string;
+  subtitleAr: string;
+  orientation?: 'portrait' | 'landscape';
+  metadata: MetadataItem[];
+  kpis: KpiItem[];
+  sectionTitle: string;
+  sectionTitleAr: string;
+  columns: TableColumn[];
+  rows: Record<string, string | number>[];
+  fileName: string;
+  classification?: string;
+};
 
-  // Metadata
-  const now = new Date();
-  yPos = addMetadata(doc, yPos, [
-    { label: 'Report Date', value: now.toLocaleDateString('en-US', { dateStyle: 'medium' }) },
-    { label: 'Total Records', value: String(rows.length) },
-    { label: 'Generated By', value: 'OH System' },
-    { label: 'Classification', value: 'CONFIDENTIAL' },
-  ]);
-
-  // KPIs
-  const male = rows.filter(r => r.gender === 'male').length;
-  const female = rows.filter(r => r.gender === 'female').length;
-  const married = rows.filter(r => r.maritalStatus === 'married').length;
-
-  yPos = addKPIBoxes(doc, yPos, [
-    { label: 'Total Employees', value: String(rows.length), color: COLORS.primary },
-    { label: 'Male', value: String(male), color: COLORS.info },
-    { label: 'Female', value: String(female), color: COLORS.secondary },
-    { label: 'Married', value: String(married), color: COLORS.success },
-  ]);
-
-  // Section title
-  yPos = addSectionTitle(doc, yPos, 'Complete Employee Directory Listing');
-
-  // Table
-  autoTable(doc, {
-    startY: yPos,
-    head: [['MOH ID', 'Employee Name', 'National ID', 'Position', 'Health Center', 'Gender', 'Status', 'Start Date']],
-    body: rows.map(r => [
-      r.mohId,
-      r.name,
-      r.nationalId,
-      r.jobTitle,
-      r.healthCenter,
-      r.gender.charAt(0).toUpperCase() + r.gender.slice(1),
-      r.maritalStatus.charAt(0).toUpperCase() + r.maritalStatus.slice(1),
-      r.dateOfStart,
-    ]),
-    headStyles: {
-      fillColor: COLORS.primary,
-      textColor: COLORS.white,
-      fontSize: 9,
-      fontStyle: 'bold',
-      halign: 'center',
-      cellPadding: 4,
-    },
-    bodyStyles: {
-      fontSize: 8,
-      cellPadding: 3,
-      halign: 'center',
-    },
-    alternateRowStyles: {
-      fillColor: [248, 250, 252],
-    },
-    columnStyles: {
-      0: { fontStyle: 'bold', textColor: COLORS.primary },
-      1: { halign: 'left', fontStyle: 'bold' },
-      2: { fontStyle: 'normal', textColor: COLORS.gray },
-      3: { halign: 'left' },
-      4: { halign: 'left' },
-      7: { textColor: COLORS.gray },
-    },
-    margin: { left: 15, right: 15 },
-    didDrawPage: () => addFooter(doc),
-  });
-
-  doc.save(`Employee_Directory_${now.toISOString().slice(0, 10)}.pdf`);
+function escapeHtml(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 
-// ─── Periodic Examination Report ─────────────────────────────────────────────
+function formatDateEn(date = new Date()) {
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function formatDateAr(date = new Date()) {
+  return date.toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' });
+}
+
+function safePercent(numerator: number, denominator: number) {
+  if (!denominator) return 0;
+  return Math.round((numerator / denominator) * 100);
+}
+
+function statusAction(name: string) {
+  if (name === 'Completed') return { status: '✓ Completed', statusAr: 'مكتمل ✓', action: 'Archive results', actionAr: 'أرشفة النتائج' };
+  if (name === 'Pending') return { status: '◐ Pending', statusAr: 'قيد المتابعة ◐', action: 'Follow up in 5 days', actionAr: 'المتابعة خلال 5 أيام' };
+  return { status: '⚠ Missing', statusAr: 'ناقص ⚠', action: 'Immediate action required', actionAr: 'إجراء فوري مطلوب' };
+}
+
+function vaccineStatus(percentage: number) {
+  if (percentage >= 30) return { en: '✓ High', ar: 'مرتفع ✓' };
+  if (percentage >= 10) return { en: '◐ Moderate', ar: 'متوسط ◐' };
+  return { en: '⚠ Low', ar: 'منخفض ⚠' };
+}
+
+function examStatus(percentage: number) {
+  return percentage >= 80 ? { en: '✓ On Track', ar: 'ضمن المسار ✓' } : { en: '⚠ Attention', ar: 'يحتاج متابعة ⚠' };
+}
+
+function buildReportHtml(options: ReportOptions) {
+  const pageSize = options.orientation === 'landscape' ? 'A4 landscape' : 'A4 portrait';
+  const generated = new Date();
+
+  const metadataHtml = options.metadata.map((item) => `
+    <div class="meta-item">
+      <div class="meta-label">${escapeHtml(item.label)}</div>
+      <div class="meta-label ar" dir="rtl">${escapeHtml(item.labelAr)}</div>
+      <div class="meta-value">${escapeHtml(item.value)}</div>
+    </div>
+  `).join('');
+
+  const kpisHtml = options.kpis.map((item) => `
+    <div class="kpi" style="--kpi-color:${item.color}">
+      <div class="kpi-value">${escapeHtml(item.value)}</div>
+      <div class="kpi-label">${escapeHtml(item.label)}</div>
+      <div class="kpi-label ar" dir="rtl">${escapeHtml(item.labelAr)}</div>
+    </div>
+  `).join('');
+
+  const tableHead = options.columns.map((column) => `
+    <th class="${column.align || 'center'}">
+      <div>${escapeHtml(column.label)}</div>
+      <div class="ar" dir="rtl">${escapeHtml(column.labelAr)}</div>
+    </th>
+  `).join('');
+
+  const tableRows = options.rows.map((row) => `
+    <tr>
+      ${options.columns.map((column) => `<td class="${column.align || 'center'}">${escapeHtml(row[column.key])}</td>`).join('')}
+    </tr>
+  `).join('');
+
+  return `<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${escapeHtml(options.titleAr)} - ${escapeHtml(options.title)}</title>
+  <style>
+    @page { size: ${pageSize}; margin: 12mm; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: #eef2f7; color: ${COLORS.dark}; }
+    body {
+      font-family: Tahoma, Arial, "Segoe UI", "Noto Sans Arabic", sans-serif;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+      text-rendering: optimizeLegibility;
+    }
+    .page {
+      width: 210mm;
+      min-height: 297mm;
+      margin: 0 auto;
+      background: ${COLORS.white};
+      box-shadow: 0 18px 55px rgba(15, 23, 42, .18);
+      overflow: hidden;
+    }
+    .landscape { width: 297mm; min-height: 210mm; }
+    .gold-bar { height: 5mm; background: ${COLORS.gold}; }
+    .header {
+      background: linear-gradient(135deg, ${COLORS.primary} 0%, ${COLORS.primary2} 100%);
+      color: white;
+      text-align: center;
+      padding: 11mm 14mm 9mm;
+    }
+    .logo { max-height: 13mm; max-width: 52mm; object-fit: contain; margin-bottom: 5mm; }
+    .system-title { font-size: 15px; font-weight: 800; letter-spacing: .4px; margin: 0 0 2mm; }
+    .system-title-ar { font-size: 14px; font-weight: 800; margin: 0 0 3mm; direction: rtl; unicode-bidi: plaintext; }
+    .ministry { font-size: 11px; opacity: .96; margin: 0 0 1.2mm; }
+    .report-title { font-size: 26px; font-weight: 900; margin: 5mm 0 1mm; text-transform: uppercase; }
+    .report-title-ar { font-size: 24px; font-weight: 900; margin: 0 0 2mm; direction: rtl; unicode-bidi: plaintext; }
+    .subtitle { font-size: 12px; opacity: .94; }
+    .content { padding: 10mm 14mm 12mm; }
+    .metadata {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      background: ${COLORS.lightGray};
+      border: 1px solid #e2e8f0;
+      margin-bottom: 8mm;
+    }
+    .meta-item { padding: 5mm; border-inline-start: 1px solid #cbd5e1; text-align: start; }
+    .meta-item:first-child { border-inline-start: 0; }
+    .meta-label { color: ${COLORS.gray}; font-size: 9px; font-weight: 800; text-transform: uppercase; margin-bottom: 1mm; }
+    .meta-label.ar { font-size: 10px; }
+    .meta-value { font-size: 15px; font-weight: 900; color: #020617; margin-top: 2mm; direction: ltr; unicode-bidi: plaintext; }
+    .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7mm; margin-bottom: 10mm; }
+    .kpi { background: var(--kpi-color); color: white; border-radius: 10px; padding: 7mm 5mm; text-align: center; box-shadow: inset 0 1px 0 rgba(255,255,255,.22); }
+    .kpi-value { font-size: 33px; line-height: 1; font-weight: 950; margin-bottom: 4mm; direction: ltr; unicode-bidi: plaintext; }
+    .kpi-label { font-size: 11px; font-weight: 850; text-transform: uppercase; }
+    .kpi-label.ar { margin-top: 1.5mm; font-size: 12px; text-transform: none; }
+    .section-title {
+      display: flex;
+      align-items: center;
+      gap: 4mm;
+      background: #f8fafc;
+      border-inline-start: 4mm solid ${COLORS.primary};
+      padding: 4mm 5mm;
+      margin-bottom: 6mm;
+      font-size: 17px;
+      font-weight: 900;
+    }
+    .section-title small { color: ${COLORS.gray}; font-size: 12px; font-weight: 700; }
+    table { width: 100%; border-collapse: collapse; direction: ltr; }
+    th {
+      background: ${COLORS.primary};
+      color: white;
+      padding: 4.5mm 3mm;
+      font-size: 11px;
+      font-weight: 900;
+      border: 0;
+      vertical-align: middle;
+    }
+    th .ar { font-size: 11px; opacity: .95; margin-top: 1mm; }
+    td {
+      padding: 4mm 3mm;
+      font-size: 11px;
+      border-bottom: 1px solid #e2e8f0;
+      color: #334155;
+      vertical-align: middle;
+    }
+    tr:nth-child(even) td { background: #f8fafc; }
+    .left { text-align: left; }
+    .right { text-align: right; }
+    .center { text-align: center; }
+    .footer {
+      margin-top: 12mm;
+      border-top: 1px solid #cbd5e1;
+      background: #f8fafc;
+      padding: 5mm;
+      text-align: center;
+      color: ${COLORS.gray};
+      font-size: 9px;
+    }
+    .confidential { color: ${COLORS.danger}; font-weight: 900; margin: 2mm 0; }
+    .ar { font-family: Tahoma, Arial, "Segoe UI", "Noto Sans Arabic", sans-serif; direction: rtl; unicode-bidi: plaintext; }
+    @media print {
+      html, body { background: white; }
+      .page { margin: 0; box-shadow: none; width: auto; min-height: auto; }
+      .no-print { display: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page ${options.orientation === 'landscape' ? 'landscape' : ''}">
+    <div class="gold-bar"></div>
+    <header class="header">
+      <img src="${escapeHtml(logoImageUrl)}" class="logo" alt="Logo" />
+      <p class="system-title">OCCUPATIONAL HEALTH MANAGEMENT SYSTEM</p>
+      <p class="system-title-ar ar" dir="rtl">منصة إدارة الصحة المهنية</p>
+      <p class="ministry">Ministry of Health - Kingdom of Saudi Arabia</p>
+      <p class="ministry ar" dir="rtl">وزارة الصحة - المملكة العربية السعودية</p>
+      <div class="report-title">${escapeHtml(options.title)}</div>
+      <div class="report-title-ar ar" dir="rtl">${escapeHtml(options.titleAr)}</div>
+      <div class="subtitle">${escapeHtml(options.subtitle)}</div>
+      <div class="subtitle ar" dir="rtl">${escapeHtml(options.subtitleAr)}</div>
+    </header>
+
+    <main class="content">
+      <section class="metadata">${metadataHtml}</section>
+      <section class="kpis">${kpisHtml}</section>
+      <section class="section-title">
+        <span class="ar" dir="rtl">${escapeHtml(options.sectionTitleAr)}</span>
+        <small>${escapeHtml(options.sectionTitle)}</small>
+      </section>
+      <table>
+        <thead><tr>${tableHead}</tr></thead>
+        <tbody>${tableRows}</tbody>
+      </table>
+      <footer class="footer">
+        <div>Generated: ${escapeHtml(generated.toLocaleString('en-US', { dateStyle: 'long', timeStyle: 'short' }))}</div>
+        <div class="ar" dir="rtl">تاريخ الإنشاء: ${escapeHtml(formatDateAr(generated))}</div>
+        <div class="confidential">⚠ CONFIDENTIAL DOCUMENT</div>
+        <div>This document contains sensitive health information protected by privacy regulations.</div>
+        <div class="ar" dir="rtl">هذا المستند يحتوي على معلومات صحية حساسة ومحمية بموجب لوائح الخصوصية.</div>
+      </footer>
+    </main>
+  </div>
+</body>
+</html>`;
+}
+
+function openPrintableReport(options: ReportOptions) {
+  const reportWindow = window.open('', '_blank', 'noopener,noreferrer,width=1100,height=850');
+  if (!reportWindow) {
+    throw new Error('تعذر فتح نافذة الطباعة. يرجى السماح بالنوافذ المنبثقة لهذا الموقع.');
+  }
+
+  reportWindow.document.open();
+  reportWindow.document.write(buildReportHtml(options));
+  reportWindow.document.close();
+
+  const printReport = () => {
+    reportWindow.focus();
+    reportWindow.print();
+  };
+
+  setTimeout(printReport, 650);
+}
+
+export async function exportEmployeesPdf(rows: EmployeeRow[], isRtl = false) {
+  const now = new Date();
+  const male = rows.filter((r) => r.gender === 'male').length;
+  const female = rows.filter((r) => r.gender === 'female').length;
+  const married = rows.filter((r) => r.maritalStatus === 'married').length;
+
+  openPrintableReport({
+    title: 'Employee Directory',
+    titleAr: 'دليل الموظفين',
+    subtitle: 'Confidential HR Record',
+    subtitleAr: 'سجل موارد بشرية سري',
+    orientation: 'landscape',
+    fileName: `Employee_Directory_${now.toISOString().slice(0, 10)}.pdf`,
+    metadata: [
+      { label: 'Report Date', labelAr: 'تاريخ التقرير', value: formatDateEn(now) },
+      { label: 'Total Records', labelAr: 'إجمالي السجلات', value: String(rows.length) },
+      { label: 'Generated By', labelAr: 'أُنشئ بواسطة', value: 'OH System' },
+      { label: 'Classification', labelAr: 'التصنيف', value: 'CONFIDENTIAL' },
+    ],
+    kpis: [
+      { label: 'Total Employees', labelAr: 'إجمالي الموظفين', value: String(rows.length), color: COLORS.primary },
+      { label: 'Male', labelAr: 'ذكور', value: String(male), color: COLORS.info },
+      { label: 'Female', labelAr: 'إناث', value: String(female), color: COLORS.secondary },
+      { label: 'Married', labelAr: 'متزوجون', value: String(married), color: COLORS.success },
+    ],
+    sectionTitle: 'Complete Employee Directory Listing',
+    sectionTitleAr: 'القائمة التفصيلية للموظفين',
+    columns: [
+      { key: 'mohId', label: 'MOH ID', labelAr: 'رقم وزارة الصحة' },
+      { key: 'name', label: 'Employee Name', labelAr: 'اسم الموظف', align: isRtl ? 'right' : 'left' },
+      { key: 'nationalId', label: 'National ID', labelAr: 'رقم الهوية' },
+      { key: 'jobTitle', label: 'Position', labelAr: 'الوظيفة', align: isRtl ? 'right' : 'left' },
+      { key: 'healthCenter', label: 'Health Center', labelAr: 'المركز الصحي', align: isRtl ? 'right' : 'left' },
+      { key: 'gender', label: 'Gender', labelAr: 'الجنس' },
+      { key: 'maritalStatus', label: 'Status', labelAr: 'الحالة' },
+      { key: 'dateOfStart', label: 'Start Date', labelAr: 'تاريخ البداية' },
+    ],
+    rows: rows.map((row) => ({
+      mohId: row.mohId,
+      name: row.name,
+      nationalId: row.nationalId,
+      jobTitle: row.jobTitle,
+      healthCenter: row.healthCenter,
+      gender: row.gender.charAt(0).toUpperCase() + row.gender.slice(1),
+      maritalStatus: row.maritalStatus.charAt(0).toUpperCase() + row.maritalStatus.slice(1),
+      dateOfStart: row.dateOfStart,
+    })),
+  });
+}
+
 export async function exportPeriodicExaminationPdf(
   coverageByCenter: { center: string; target: number; examined: number; percentage: number }[]
 ) {
-  const doc = new jsPDF({ format: 'a4' });
-  const logoBase64 = await getLogoBase64();
   const now = new Date();
+  const totalTarget = coverageByCenter.reduce((sum, row) => sum + row.target, 0);
+  const totalExamined = coverageByCenter.reduce((sum, row) => sum + row.examined, 0);
+  const overallPct = safePercent(totalExamined, totalTarget);
 
-  let yPos = addHeader(doc, 'Annual Periodic Examination', 'Health Screening Coverage Analysis', logoBase64);
-
-  const totalTarget = coverageByCenter.reduce((s, r) => s + r.target, 0);
-  const totalExamined = coverageByCenter.reduce((s, r) => s + r.examined, 0);
-  const overallPct = Math.round((totalExamined / totalTarget) * 100);
-
-  // Metadata
-  yPos = addMetadata(doc, yPos, [
-    { label: 'Report Date', value: now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) },
-    { label: 'Period', value: `FY ${now.getFullYear()}` },
-    { label: 'Centers', value: String(coverageByCenter.length) },
-    { label: 'Achievement', value: `${overallPct}%` },
-  ]);
-
-  // KPIs
-  yPos = addKPIBoxes(doc, yPos, [
-    { label: 'Target', value: String(totalTarget), color: COLORS.primary },
-    { label: 'Examined', value: String(totalExamined), color: COLORS.success },
-    { label: 'Remaining', value: String(totalTarget - totalExamined), color: COLORS.danger },
-    { label: 'Coverage', value: `${overallPct}%`, color: overallPct >= 80 ? COLORS.success : COLORS.danger },
-  ]);
-
-  // Section
-  yPos = addSectionTitle(doc, yPos, 'Coverage Breakdown by Health Center');
-
-  // Table
-  autoTable(doc, {
-    startY: yPos,
-    head: [['Health Center', 'Target', 'Examined', 'Remaining', 'Coverage %', 'Status']],
-    body: coverageByCenter.map(r => [
-      r.center,
-      String(r.target),
-      String(r.examined),
-      String(r.target - r.examined),
-      `${r.percentage}%`,
-      r.percentage >= 80 ? '✓ On Track' : '⚠ Attention',
-    ]),
-    headStyles: {
-      fillColor: COLORS.primary,
-      textColor: COLORS.white,
-      fontSize: 9,
-      fontStyle: 'bold',
-      halign: 'center',
-      cellPadding: 4,
-    },
-    bodyStyles: {
-      fontSize: 9,
-      cellPadding: 3.5,
-      halign: 'center',
-    },
-    alternateRowStyles: {
-      fillColor: [248, 250, 252],
-    },
-    columnStyles: {
-      0: { halign: 'left', fontStyle: 'bold' },
-      1: { textColor: COLORS.primary, fontStyle: 'bold' },
-      2: { textColor: COLORS.success, fontStyle: 'bold' },
-      3: { textColor: COLORS.danger, fontStyle: 'bold' },
-      4: { fontStyle: 'bold', fontSize: 10 },
-    },
-    margin: { left: 15, right: 15 },
-    didDrawCell: (data) => {
-      if (data.section === 'body' && data.column.index === 4) {
-        const pct = parseInt(data.cell.text[0]);
-        const color = pct >= 80 ? COLORS.success : COLORS.danger;
-        doc.setTextColor(...color);
-      }
-    },
-    didDrawPage: () => addFooter(doc),
+  openPrintableReport({
+    title: 'Annual Periodic Examination',
+    titleAr: 'الفحص الدوري السنوي',
+    subtitle: 'Health Screening Coverage Analysis',
+    subtitleAr: 'تحليل تغطية الفحص الصحي',
+    fileName: `Periodic_Examination_${now.toISOString().slice(0, 10)}.pdf`,
+    metadata: [
+      { label: 'Report Date', labelAr: 'تاريخ التقرير', value: formatDateEn(now) },
+      { label: 'Period', labelAr: 'الفترة', value: `FY ${now.getFullYear()}` },
+      { label: 'Centers', labelAr: 'المراكز', value: String(coverageByCenter.length) },
+      { label: 'Achievement', labelAr: 'الإنجاز', value: `${overallPct}%` },
+    ],
+    kpis: [
+      { label: 'Target', labelAr: 'المستهدف', value: String(totalTarget), color: COLORS.primary },
+      { label: 'Examined', labelAr: 'تم فحصهم', value: String(totalExamined), color: COLORS.success },
+      { label: 'Remaining', labelAr: 'المتبقي', value: String(totalTarget - totalExamined), color: COLORS.danger },
+      { label: 'Coverage', labelAr: 'التغطية', value: `${overallPct}%`, color: overallPct >= 80 ? COLORS.success : COLORS.danger },
+    ],
+    sectionTitle: 'Coverage Breakdown by Health Center',
+    sectionTitleAr: 'تفصيل التغطية حسب المركز الصحي',
+    columns: [
+      { key: 'center', label: 'Health Center', labelAr: 'المركز الصحي', align: 'left' },
+      { key: 'target', label: 'Target', labelAr: 'المستهدف' },
+      { key: 'examined', label: 'Examined', labelAr: 'تم فحصهم' },
+      { key: 'remaining', label: 'Remaining', labelAr: 'المتبقي' },
+      { key: 'coverage', label: 'Coverage %', labelAr: 'نسبة التغطية' },
+      { key: 'status', label: 'Status', labelAr: 'الحالة' },
+    ],
+    rows: coverageByCenter.map((row) => {
+      const status = examStatus(row.percentage);
+      return {
+        center: row.center,
+        target: row.target,
+        examined: row.examined,
+        remaining: row.target - row.examined,
+        coverage: `${row.percentage}%`,
+        status: `${status.en} / ${status.ar}`,
+      };
+    }),
   });
-
-  doc.save(`Periodic_Examination_${now.toISOString().slice(0, 10)}.pdf`);
 }
 
-// ─── Vaccination Coverage ────────────────────────────────────────────────────
 export async function exportVaccinationCoveragePdf(
   vaccineDistribution: { name: string; value: number; percentage: number }[],
   monthlyTrend: { month: string; vaccines: number }[]
 ) {
-  const doc = new jsPDF({ format: 'a4' });
-  const logoBase64 = await getLogoBase64();
   const now = new Date();
+  const totalDoses = vaccineDistribution.reduce((sum, row) => sum + row.value, 0);
+  const avgMonthly = monthlyTrend.length ? Math.round(monthlyTrend.reduce((sum, row) => sum + row.vaccines, 0) / monthlyTrend.length) : 0;
 
-  let yPos = addHeader(doc, 'Vaccination Coverage Report', 'Employee Immunization Program Statistics', logoBase64);
-
-  const totalDoses = vaccineDistribution.reduce((s, v) => s + v.value, 0);
-  const avgMonthly = Math.round(monthlyTrend.reduce((s, m) => s + m.vaccines, 0) / monthlyTrend.length);
-
-  yPos = addMetadata(doc, yPos, [
-    { label: 'Report Date', value: now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) },
-    { label: 'Period', value: `Year ${now.getFullYear()}` },
-    { label: 'Vaccine Types', value: String(vaccineDistribution.length) },
-    { label: 'Total Doses', value: String(totalDoses) },
-  ]);
-
-  yPos = addKPIBoxes(doc, yPos, [
-    { label: 'Total Doses', value: String(totalDoses), color: COLORS.primary },
-    { label: 'Vaccine Types', value: String(vaccineDistribution.length), color: COLORS.secondary },
-    { label: 'Avg Monthly', value: String(avgMonthly), color: COLORS.success },
-    { label: 'Target', value: '≥90%', color: COLORS.info },
-  ]);
-
-  yPos = addSectionTitle(doc, yPos, 'Vaccine Distribution by Type');
-
-  autoTable(doc, {
-    startY: yPos,
-    head: [['Vaccine Type', 'Doses', 'Share %', 'Status']],
-    body: vaccineDistribution.map(v => [
-      v.name,
-      String(v.value),
-      `${v.percentage}%`,
-      v.percentage >= 30 ? '✓ High' : v.percentage >= 10 ? '◐ Moderate' : '⚠ Low',
-    ]),
-    headStyles: {
-      fillColor: COLORS.primary,
-      textColor: COLORS.white,
-      fontSize: 9,
-      fontStyle: 'bold',
-      halign: 'center',
-      cellPadding: 4,
-    },
-    bodyStyles: {
-      fontSize: 9,
-      cellPadding: 3.5,
-      halign: 'center',
-    },
-    alternateRowStyles: {
-      fillColor: [248, 250, 252],
-    },
-    columnStyles: {
-      0: { halign: 'left', fontStyle: 'bold' },
-      1: { textColor: COLORS.primary, fontStyle: 'bold' },
-      2: { fontStyle: 'bold' },
-    },
-    margin: { left: 15, right: 15 },
-    didDrawPage: () => addFooter(doc),
+  openPrintableReport({
+    title: 'Vaccination Coverage Report',
+    titleAr: 'تقرير تغطية التطعيمات',
+    subtitle: 'Employee Immunization Program Statistics',
+    subtitleAr: 'إحصائيات برنامج تحصين الموظفين',
+    fileName: `Vaccination_Coverage_${now.toISOString().slice(0, 10)}.pdf`,
+    metadata: [
+      { label: 'Report Date', labelAr: 'تاريخ التقرير', value: formatDateEn(now) },
+      { label: 'Period', labelAr: 'الفترة', value: `Year ${now.getFullYear()}` },
+      { label: 'Vaccine Types', labelAr: 'أنواع التطعيمات', value: String(vaccineDistribution.length) },
+      { label: 'Total Doses', labelAr: 'إجمالي الجرعات', value: String(totalDoses) },
+    ],
+    kpis: [
+      { label: 'Total Doses', labelAr: 'إجمالي الجرعات', value: String(totalDoses), color: COLORS.primary },
+      { label: 'Vaccine Types', labelAr: 'أنواع التطعيمات', value: String(vaccineDistribution.length), color: COLORS.secondary },
+      { label: 'Avg Monthly', labelAr: 'المعدل الشهري', value: String(avgMonthly), color: COLORS.success },
+      { label: 'Target', labelAr: 'المستهدف', value: '≥90%', color: COLORS.info },
+    ],
+    sectionTitle: 'Vaccine Distribution by Type',
+    sectionTitleAr: 'توزيع التطعيمات حسب النوع',
+    columns: [
+      { key: 'name', label: 'Vaccine Type', labelAr: 'نوع التطعيم', align: 'left' },
+      { key: 'value', label: 'Doses', labelAr: 'الجرعات' },
+      { key: 'percentage', label: 'Share %', labelAr: 'النسبة' },
+      { key: 'status', label: 'Status', labelAr: 'الحالة' },
+    ],
+    rows: vaccineDistribution.map((row) => {
+      const status = vaccineStatus(row.percentage);
+      return { name: row.name, value: row.value, percentage: `${row.percentage}%`, status: `${status.en} / ${status.ar}` };
+    }),
   });
-
-  doc.save(`Vaccination_Coverage_${now.toISOString().slice(0, 10)}.pdf`);
 }
 
-// ─── Lab Completion Report ───────────────────────────────────────────────────
 export async function exportLabCompletionPdf(
   testStatus: { name: string; value: number; percentage: number }[],
   monthlyTrend: { month: string; tests: number }[]
 ) {
-  const doc = new jsPDF({ format: 'a4' });
-  const logoBase64 = await getLogoBase64();
   const now = new Date();
+  const total = testStatus.reduce((sum, row) => sum + row.value, 0);
+  const completed = testStatus.find((row) => row.name === 'Completed');
+  const pending = testStatus.find((row) => row.name === 'Pending');
+  const missing = testStatus.find((row) => row.name === 'Missing');
 
-  let yPos = addHeader(doc, 'Laboratory Test Completion', 'Test Status & Performance Analysis', logoBase64);
-
-  const total = testStatus.reduce((s, t) => s + t.value, 0);
-  const completed = testStatus.find(t => t.name === 'Completed');
-  const pending = testStatus.find(t => t.name === 'Pending');
-  const missing = testStatus.find(t => t.name === 'Missing');
-
-  yPos = addMetadata(doc, yPos, [
-    { label: 'Report Date', value: now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) },
-    { label: 'Period', value: `Year ${now.getFullYear()}` },
-    { label: 'Categories', value: String(testStatus.length) },
-    { label: 'Completion', value: `${completed?.percentage ?? 0}%` },
-  ]);
-
-  yPos = addKPIBoxes(doc, yPos, [
-    { label: 'Total Tests', value: String(total), color: COLORS.primary },
-    { label: 'Completed', value: String(completed?.value ?? 0), color: COLORS.success },
-    { label: 'Pending', value: String(pending?.value ?? 0), color: COLORS.warning },
-    { label: 'Missing', value: String(missing?.value ?? 0), color: COLORS.danger },
-  ]);
-
-  yPos = addSectionTitle(doc, yPos, 'Test Completion Status Breakdown');
-
-  autoTable(doc, {
-    startY: yPos,
-    head: [['Status', 'Count', 'Percentage', 'Recommended Action']],
-    body: testStatus.map(s => [
-      s.name === 'Completed' ? '✓ Completed' : s.name === 'Pending' ? '◐ Pending' : '⚠ Missing',
-      String(s.value),
-      `${s.percentage}%`,
-      s.name === 'Completed'
-        ? 'Archive results'
-        : s.name === 'Pending'
-        ? 'Follow up in 5 days'
-        : 'Immediate action required',
-    ]),
-    headStyles: {
-      fillColor: COLORS.primary,
-      textColor: COLORS.white,
-      fontSize: 9,
-      fontStyle: 'bold',
-      halign: 'center',
-      cellPadding: 4,
-    },
-    bodyStyles: {
-      fontSize: 9,
-      cellPadding: 3.5,
-      halign: 'center',
-    },
-    alternateRowStyles: {
-      fillColor: [248, 250, 252],
-    },
-    columnStyles: {
-      0: { fontStyle: 'bold' },
-      1: { textColor: COLORS.primary, fontStyle: 'bold' },
-      2: { fontStyle: 'bold' },
-      3: { halign: 'left', fontSize: 8, textColor: COLORS.gray },
-    },
-    margin: { left: 15, right: 15 },
-    didDrawPage: () => addFooter(doc),
+  openPrintableReport({
+    title: 'Laboratory Test Completion',
+    titleAr: 'اكتمال التحاليل المخبرية',
+    subtitle: 'Test Status & Performance Analysis',
+    subtitleAr: 'تحليل حالة التحاليل والأداء',
+    fileName: `Lab_Completion_${now.toISOString().slice(0, 10)}.pdf`,
+    metadata: [
+      { label: 'Report Date', labelAr: 'تاريخ التقرير', value: formatDateEn(now) },
+      { label: 'Period', labelAr: 'الفترة', value: `Year ${now.getFullYear()}` },
+      { label: 'Categories', labelAr: 'التصنيفات', value: String(testStatus.length) },
+      { label: 'Completion', labelAr: 'الاكتمال', value: `${completed?.percentage ?? 0}%` },
+    ],
+    kpis: [
+      { label: 'Total Tests', labelAr: 'إجمالي التحاليل', value: String(total), color: COLORS.primary },
+      { label: 'Completed', labelAr: 'مكتملة', value: String(completed?.value ?? 0), color: COLORS.success },
+      { label: 'Pending', labelAr: 'قيد المتابعة', value: String(pending?.value ?? 0), color: COLORS.warning },
+      { label: 'Missing', labelAr: 'ناقصة', value: String(missing?.value ?? 0), color: COLORS.danger },
+    ],
+    sectionTitle: 'Test Completion Status Breakdown',
+    sectionTitleAr: 'تفصيل حالة اكتمال التحاليل',
+    columns: [
+      { key: 'status', label: 'Status', labelAr: 'الحالة' },
+      { key: 'count', label: 'Count', labelAr: 'العدد' },
+      { key: 'percentage', label: 'Percentage', labelAr: 'النسبة' },
+      { key: 'action', label: 'Recommended Action', labelAr: 'الإجراء الموصى به', align: 'left' },
+    ],
+    rows: testStatus.map((row) => {
+      const action = statusAction(row.name);
+      return {
+        status: `${action.status} / ${action.statusAr}`,
+        count: row.value,
+        percentage: `${row.percentage}%`,
+        action: `${action.action} / ${action.actionAr}`,
+      };
+    }),
   });
-
-  doc.save(`Lab_Completion_${now.toISOString().slice(0, 10)}.pdf`);
 }
