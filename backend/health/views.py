@@ -23,6 +23,75 @@ def imported_total_from_summary(summary):
     return sum(value for key, value in summary.items() if key.startswith('imported_') and isinstance(value, int))
 
 
+def _is_missing_identity_error(error):
+    reason = str(error.get('reason', '')).lower()
+    return 'missing employee name or national id' in reason or 'missing employee name or national id.' in reason
+
+
+def _cleanup_sheet_result(result):
+    """Treat trailing worksheet artifacts as ignored rows instead of blocking errors.
+
+    Excel exports often contain formulas, notes, or summary rows after the real data.
+    If all visible errors are only missing name/national ID and they start after the
+    detected valid data region, they are classified as ignored_non_data_rows.
+    """
+    summary = result.get('summary') or {}
+    errors = result.get('errors') or []
+    errors_count = int(summary.get('errors_count') or 0)
+    valid_rows = int(summary.get('valid_rows') or 0)
+    duplicate_rows = int(summary.get('duplicate_rows') or 0)
+
+    if not errors_count or not errors:
+        return result
+
+    first_error_row = min((int(error.get('row') or 0) for error in errors), default=0)
+    is_tail_region = first_error_row > 0 and first_error_row >= max(valid_rows, valid_rows + duplicate_rows - 5)
+    only_missing_identity = all(_is_missing_identity_error(error) for error in errors)
+
+    if only_missing_identity and is_tail_region:
+        ignored = errors_count
+        summary['ignored_non_data_rows'] = int(summary.get('ignored_non_data_rows') or 0) + ignored
+        summary['errors_count'] = 0
+        summary['skipped_rows'] = max(0, int(summary.get('skipped_rows') or 0) - ignored)
+        result['errors'] = []
+        result['ignored_errors'] = errors[:50]
+        result['data_quality_note'] = (
+            'Trailing worksheet rows without employee identity were ignored as non-data rows. '
+            'Duplicates are still shown separately for review before commit.'
+        )
+        result['data_quality_note_ar'] = (
+            'تم تجاهل صفوف نهاية الشيت التي لا تحتوي على اسم أو رقم هوية باعتبارها صفوف غير بيانات. '
+            'التكرارات ما زالت ظاهرة للمراجعة قبل الحفظ.'
+        )
+    return result
+
+
+def normalize_import_result(result):
+    if result.get('sheet_results'):
+        cleaned_items = []
+        aggregate = result.get('summary') or {}
+        aggregate_ignored = 0
+        aggregate_errors = 0
+        aggregate_skipped = 0
+        for item in result.get('sheet_results', []):
+            cleaned = _cleanup_sheet_result(item)
+            cleaned_items.append(cleaned)
+            item_summary = cleaned.get('summary') or {}
+            aggregate_ignored += int(item_summary.get('ignored_non_data_rows') or 0)
+            aggregate_errors += int(item_summary.get('errors_count') or 0)
+            aggregate_skipped += int(item_summary.get('skipped_rows') or 0)
+        result['sheet_results'] = cleaned_items
+        if aggregate_ignored:
+            aggregate['ignored_non_data_rows'] = aggregate_ignored
+            aggregate['errors_count'] = aggregate_errors
+            aggregate['skipped_rows'] = aggregate_skipped
+            result['errors'] = [err for item in cleaned_items for err in item.get('errors', [])][:50]
+            result['data_quality_note'] = 'Non-data worksheet rows were ignored. Review duplicates before committing.'
+            result['data_quality_note_ar'] = 'تم تجاهل صفوف غير البيانات داخل الشيتات. راجع التكرارات قبل الحفظ.'
+        return result
+    return _cleanup_sheet_result(result)
+
+
 class UserViewSet(viewsets.ModelViewSet):
     serializer_class = PlatformUserSerializer
     queryset = get_user_model().objects.select_related('health_profile', 'health_profile__health_center').all().order_by('-date_joined')
@@ -98,6 +167,7 @@ class ExcelImportViewSet(viewsets.ReadOnlyModelViewSet):
         sheet_name=str(request.data.get('sheetName') or '').strip()
         try:
             result=process_excel_import(uploaded, sheet_name=sheet_name, commit=commit, user=request.user)
+            result=normalize_import_result(result)
             summary=result['summary']
             batch=DataImportBatch.objects.create(
                 file_name=uploaded.name,
