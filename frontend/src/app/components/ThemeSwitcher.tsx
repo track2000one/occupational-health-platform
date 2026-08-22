@@ -21,9 +21,9 @@ export function ThemeSwitcher() {
     <Box
       sx={{
         position: 'fixed',
-        bottom: 24,
-        [isRtl ? 'left' : 'right']: 24,
-        zIndex: 1400,
+        bottom: 18,
+        [isRtl ? 'left' : 'right']: 18,
+        zIndex: 1300,
         display: 'flex',
         flexDirection: 'column',
         alignItems: isRtl ? 'flex-start' : 'flex-end',
@@ -32,24 +32,29 @@ export function ThemeSwitcher() {
     >
       <Collapse in={open} unmountOnExit>
         <Paper
-          elevation={8}
+          elevation={0}
           sx={{
-            p: 2,
-            borderRadius: 3,
-            minWidth: 220,
+            p: 1.25,
+            borderRadius: 4,
+            width: 245,
+            maxHeight: 390,
+            overflowY: 'auto',
             mb: 1,
-            background: '#fff',
+            background: 'rgba(248,250,252,.94)',
+            border: '1px solid rgba(255,255,255,.72)',
+            backdropFilter: 'blur(18px)',
+            boxShadow: '10px 10px 24px rgba(156,169,184,.28), -8px -8px 22px rgba(255,255,255,.82)',
           }}
         >
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
-            <Typography variant="subtitle2" fontWeight="bold">
-              {isRtl ? 'لون الواجهة' : 'Interface Color'}
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.75, px: 0.5 }}>
+            <Typography variant="subtitle2" fontWeight={850} sx={{ color: '#111827' }}>
+              {isRtl ? 'الثيم' : 'Theme'}
             </Typography>
-            <IconButton size="small" onClick={() => setOpen(false)}>
+            <IconButton size="small" onClick={() => setOpen(false)} sx={{ width: 28, height: 28 }}>
               <CloseIcon fontSize="small" />
             </IconButton>
           </Box>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.55 }}>
             {PALETTES.map((p) => (
               <Box
                 key={p.id}
@@ -57,34 +62,49 @@ export function ThemeSwitcher() {
                 sx={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: 1,
-                  p: 1,
-                  borderRadius: 2,
+                  gap: 0.85,
+                  minHeight: 34,
+                  px: 0.9,
+                  py: 0.55,
+                  borderRadius: 999,
                   cursor: 'pointer',
-                  border: '2px solid',
-                  borderColor: current.id === p.id ? p.primary : 'transparent',
-                  bgcolor: current.id === p.id ? `${p.background}88` : 'transparent',
-                  transition: 'all 0.2s',
+                  border: '1px solid',
+                  borderColor: current.id === p.id ? p.primary : 'rgba(148,163,184,.18)',
+                  bgcolor: current.id === p.id ? '#FFFFFF' : 'rgba(248,250,252,.52)',
+                  boxShadow: current.id === p.id
+                    ? `4px 4px 10px ${p.primary}22, -4px -4px 10px rgba(255,255,255,.9)`
+                    : 'none',
+                  transition: 'all 0.18s ease',
                   '&:hover': {
-                    bgcolor: `${p.background}66`,
+                    bgcolor: '#FFFFFF',
+                    transform: 'translateY(-1px)',
+                    borderColor: `${p.primary}88`,
                   },
                 }}
               >
-                <Box sx={{ display: 'flex', gap: 0.5 }}>
+                <Box sx={{ display: 'flex', gap: 0.35, flexShrink: 0 }}>
                   {p.swatches.map((color, i) => (
                     <Box
                       key={i}
                       sx={{
-                        width: 16,
-                        height: 16,
+                        width: 12,
+                        height: 12,
                         borderRadius: '50%',
                         bgcolor: color,
-                        border: '1px solid rgba(0,0,0,0.1)',
+                        border: '1px solid rgba(15,23,42,0.12)',
                       }}
                     />
                   ))}
                 </Box>
-                <Typography variant="caption" fontWeight={current.id === p.id ? 'bold' : 'normal'}>
+                <Typography
+                  variant="caption"
+                  noWrap
+                  sx={{
+                    color: current.id === p.id ? '#111827' : '#475569',
+                    fontWeight: current.id === p.id ? 850 : 650,
+                    fontSize: '0.72rem',
+                  }}
+                >
                   {isRtl ? p.nameAr : p.nameEn}
                 </Typography>
               </Box>
@@ -93,22 +113,24 @@ export function ThemeSwitcher() {
         </Paper>
       </Collapse>
 
-      <Tooltip title={isRtl ? 'تغيير اللون' : 'Change theme'} placement={isRtl ? 'right' : 'left'}>
+      <Tooltip title={isRtl ? 'تغيير الثيم' : 'Change theme'} placement={isRtl ? 'right' : 'left'}>
         <IconButton
           onClick={() => setOpen(v => !v)}
           sx={{
-            width: 48,
-            height: 48,
+            width: 42,
+            height: 42,
             background: current.drawerGradient,
             color: 'white',
-            boxShadow: 4,
+            border: '1px solid rgba(255,255,255,.58)',
+            boxShadow: `7px 7px 16px ${current.primary}30, -6px -6px 14px rgba(255,255,255,.82)`,
             '&:hover': {
               background: current.drawerGradient,
-              opacity: 0.9,
+              transform: 'translateY(-1px)',
+              boxShadow: `9px 9px 20px ${current.primary}38, -7px -7px 16px rgba(255,255,255,.9)`,
             },
           }}
         >
-          <PaletteIcon />
+          <PaletteIcon fontSize="small" />
         </IconButton>
       </Tooltip>
     </Box>
