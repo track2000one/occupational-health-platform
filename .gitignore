@@ -10,3 +10,11 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+
+# Sensitive health/employee data files must be uploaded through the secure importer only.
+*.xlsx
+*.xls
+*.csv
+*.ods
+*.tsv
+!backend/health/migrations/*.py
