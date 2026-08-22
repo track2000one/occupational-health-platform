@@ -23,11 +23,13 @@ CSRF_TRUSTED_ORIGINS = [
     if origin.strip()
 ]
 
+_default_cors_origins = 'http://localhost:5173,https://occupational-health-platform-frontend-production.up.railway.app'
 CORS_ALLOWED_ORIGINS = [
     origin.strip()
-    for origin in os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:5173').split(',')
+    for origin in os.getenv('CORS_ALLOWED_ORIGINS', _default_cors_origins).split(',')
     if origin.strip()
 ]
+CORS_ALLOWED_ORIGIN_REGEXES = [r'^https://.*\.up\.railway\.app$']
 
 INSTALLED_APPS = [
     'django.contrib.admin',
