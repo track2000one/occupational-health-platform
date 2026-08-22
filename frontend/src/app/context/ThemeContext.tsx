@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useMemo } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 
 export interface AppPalette {
   id: string;
@@ -173,10 +173,74 @@ const ThemeCtx = createContext<ThemeContextValue>({
 
 const STORAGE_KEY = 'app-palette-id';
 
+function hexToRgb(hex: string) {
+  const normalized = hex.replace('#', '');
+  const value = normalized.length === 3
+    ? normalized.split('').map(char => char + char).join('')
+    : normalized;
+
+  const numeric = Number.parseInt(value, 16);
+  if (Number.isNaN(numeric)) return '22, 139, 136';
+
+  return [
+    (numeric >> 16) & 255,
+    (numeric >> 8) & 255,
+    numeric & 255,
+  ].join(', ');
+}
+
+function setCssVariable(name: string, value: string) {
+  document.documentElement.style.setProperty(name, value);
+}
+
+function applyPaletteCssVariables(palette: AppPalette) {
+  if (typeof document === 'undefined') return;
+
+  const primaryRgb = hexToRgb(palette.primary);
+  const primaryDarkRgb = hexToRgb(palette.primaryDark);
+  const secondaryRgb = hexToRgb(palette.secondary);
+  const paperRgb = hexToRgb(palette.paper);
+
+  const vars: Record<string, string> = {
+    '--oh-primary': palette.primary,
+    '--oh-primary-dark': palette.primaryDark,
+    '--oh-primary-rgb': primaryRgb,
+    '--oh-primary-dark-rgb': primaryDarkRgb,
+    '--oh-secondary': palette.secondary,
+    '--oh-secondary-rgb': secondaryRgb,
+    '--oh-success': palette.primary,
+    '--oh-soft': palette.background,
+    '--oh-surface': palette.paper,
+    '--oh-glass': `rgba(${paperRgb}, 0.72)`,
+    '--oh-card-gradient': `linear-gradient(145deg, ${palette.paper} 0%, ${palette.background} 100%)`,
+    '--oh-main-gradient': `radial-gradient(circle at 8% 10%, rgba(${primaryRgb}, .12) 0, transparent 28%), radial-gradient(circle at 95% 0%, rgba(${secondaryRgb}, .10) 0, transparent 30%), linear-gradient(180deg, ${palette.paper} 0%, ${palette.background} 100%)`,
+    '--oh-button-shadow': `7px 7px 15px rgba(${primaryRgb}, 0.30), -6px -6px 14px rgba(255, 255, 255, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.32)`,
+    '--background': palette.background,
+    '--foreground': '#111827',
+    '--card': palette.paper,
+    '--popover': palette.paper,
+    '--primary': palette.primary,
+    '--ring': palette.primary,
+    '--input': palette.paper,
+    '--input-background': palette.paper,
+    '--chart-1': palette.primary,
+    '--chart-2': palette.secondary,
+    '--sidebar': palette.background,
+    '--sidebar-primary': palette.primary,
+    '--sidebar-ring': palette.primary,
+  };
+
+  Object.entries(vars).forEach(([name, value]) => setCssVariable(name, value));
+}
+
 export function AppThemeProvider({ children }: { children: React.ReactNode }) {
   const stored = localStorage.getItem(STORAGE_KEY);
   const initial = PALETTES.find(p => p.id === stored) ?? PALETTES[0];
   const [palette, setPalette] = useState<AppPalette>(initial);
+
+  useEffect(() => {
+    applyPaletteCssVariables(palette);
+  }, [palette]);
 
   const setPaletteId = (id: string) => {
     const found = PALETTES.find(p => p.id === id);
