@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
@@ -44,11 +45,34 @@ class UserViewSet(viewsets.ModelViewSet):
         AuditLog.objects.create(user=str(request.user), action='reset_password', model_name='User', record_id=str(target.id))
         return Response({'status': 'password_reset'})
 
-    def perform_destroy(self, instance):
-        if instance == self.request.user:
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if instance == request.user:
             raise ValidationError({'detail': 'You cannot delete your current account.'})
-        AuditLog.objects.create(user=str(self.request.user), action='delete_user', model_name='User', record_id=str(instance.id))
-        instance.delete()
+
+        deleted_id = str(instance.id)
+        deleted_username = instance.username
+        deleted_email = instance.email
+
+        with transaction.atomic():
+            AuditLog.objects.create(
+                user=str(request.user),
+                action='delete_user',
+                model_name='User',
+                record_id=deleted_id,
+            )
+            instance.delete()
+
+        return Response(
+            {
+                'status': 'deleted',
+                'id': deleted_id,
+                'username': deleted_username,
+                'email': deleted_email,
+                'message': 'User was deleted from Django auth_user and related UserProfile data.',
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class ExcelImportViewSet(viewsets.ReadOnlyModelViewSet):
