@@ -315,93 +315,42 @@ function localizedMarital(input: unknown) {
   return map[String(input || '').toLowerCase()] || value(input);
 }
 
-async function blobToDataUrl(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ''));
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
-}
-
-async function inlineCloneImages(clone: HTMLElement) {
-  const images = Array.from(clone.querySelectorAll('img'));
-  await Promise.all(images.map(async image => {
-    if (!image.src || image.src.startsWith('data:')) return;
-    try {
-      const response = await fetch(image.src);
-      if (!response.ok) return;
-      image.src = await blobToDataUrl(await response.blob());
-    } catch {
-      // The card remains exportable even if an optional logo cannot be inlined.
-    }
-  }));
-}
-
-function collectPageCss() {
-  return Array.from(document.styleSheets).map(sheet => {
-    try {
-      return Array.from(sheet.cssRules).map(rule => rule.cssText).join('\n');
-    } catch {
-      return '';
-    }
-  }).join('\n');
-}
-
-function escapeXmlText(value: string) {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-}
-
-function loadExportImage(source: string) {
-  return new Promise<HTMLImageElement>((resolve, reject) => {
-    const image = new Image();
-    image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error('تعذر تحويل البطاقة إلى صورة. يرجى تحديث الصفحة والمحاولة مرة أخرى.'));
-    image.src = source;
-  });
-}
-
 async function elementToPng(element: HTMLElement, pixelRatio = 2): Promise<string> {
   const width = Math.ceil(Math.max(element.scrollWidth, element.getBoundingClientRect().width));
   const height = Math.ceil(Math.max(element.scrollHeight, element.getBoundingClientRect().height));
-  const clone = element.cloneNode(true) as HTMLElement;
-  clone.style.width = `${width}px`;
-  clone.style.maxWidth = 'none';
-  clone.style.margin = '0';
-  await inlineCloneImages(clone);
+  const { default: html2canvas } = await import('html2canvas');
+  const canvas = await html2canvas(element, {
+    width,
+    height,
+    scale: pixelRatio,
+    backgroundColor: '#ffffff',
+    useCORS: true,
+    allowTaint: false,
+    imageTimeout: 12_000,
+    logging: false,
+    foreignObjectRendering: false,
+    onclone: clonedDocument => {
+      const clonedCard = clonedDocument.querySelector<HTMLElement>('.ohc-card-sheet');
+      if (clonedCard) {
+        clonedCard.style.width = `${width}px`;
+        clonedCard.style.maxWidth = 'none';
+        clonedCard.style.margin = '0';
+      }
 
-  const serialized = new XMLSerializer().serializeToString(clone);
-  // Stylesheets can contain XML-sensitive text such as Tailwind's `&` nested
-  // selectors. Inserting raw CSS into an SVG makes the whole source invalid,
-  // which causes Chromium's "The source image cannot be decoded" error.
-  const safeCss = escapeXmlText(collectPageCss());
-  const svg = `<?xml version="1.0" encoding="UTF-8"?>
-    <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
-      <foreignObject width="100%" height="100%">
-        <div xmlns="http://www.w3.org/1999/xhtml">
-          <style>${safeCss}</style>
-          ${serialized}
-        </div>
-      </foreignObject>
-    </svg>`;
-  const svgUrl = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }));
+      // html2canvas 1.x does not parse CSS color-mix(). Replace the two card
+      // declarations that use it with stable inline colors in the export clone.
+      clonedDocument.querySelectorAll<HTMLElement>('.ohc-section').forEach(section => {
+        const sectionColor = section.style.getPropertyValue('--section-color').trim() || '#0b76b7';
+        section.style.borderColor = sectionColor;
+        const tab = section.querySelector<HTMLElement>('.ohc-section-tab');
+        if (tab) tab.style.background = sectionColor;
+      });
+    },
+  });
   try {
-    const image = await loadExportImage(svgUrl);
-    const canvas = document.createElement('canvas');
-    canvas.width = width * pixelRatio;
-    canvas.height = height * pixelRatio;
-    const context = canvas.getContext('2d');
-    if (!context) throw new Error('تعذر إنشاء Canvas لصورة البطاقة.');
-    context.scale(pixelRatio, pixelRatio);
-    context.fillStyle = '#ffffff';
-    context.fillRect(0, 0, width, height);
-    context.drawImage(image, 0, 0, width, height);
     return canvas.toDataURL('image/png', 1);
-  } finally {
-    URL.revokeObjectURL(svgUrl);
+  } catch {
+    throw new Error('تعذر إنشاء ملف PNG آمن للبطاقة. يرجى تحديث الصفحة والمحاولة مرة أخرى.');
   }
 }
 
