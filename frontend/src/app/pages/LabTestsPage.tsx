@@ -16,8 +16,10 @@ import { mockLabTests, type LabTest } from '../data/mockData';
 import { useAuth } from '../context/AuthContext';
 import { PERMISSIONS } from '../data/roles';
 import { EmployeeQuickSearch, type EmployeeSearchOption } from '../components/EmployeeQuickSearch';
+import { CalendarDateField } from '../components/CalendarDateField';
+import { DateText } from '../context/DatePreferenceContext';
 
-const EMPTY_REQUEST_FORM = { employeeId: '', employeeName: '', testType: '', notes: '' };
+const EMPTY_REQUEST_FORM = { employeeId: '', employeeName: '', testType: '', requestedDate: '', notes: '' };
 
 export function LabTestsPage() {
   const { t, i18n } = useTranslation();
@@ -33,7 +35,7 @@ export function LabTestsPage() {
 
   const [resultOpen, setResultOpen] = useState(false);
   const [editTest, setEditTest] = useState<LabTest | null>(null);
-  const [resultForm, setResultForm] = useState({ result: '', notes: '' });
+  const [resultForm, setResultForm] = useState({ result: '', completedDate: '', notes: '' });
 
   const filteredTests = labTests.filter(test => {
     const matchesSearch = test.employeeName.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -53,7 +55,11 @@ export function LabTestsPage() {
 
   function openResult(test: LabTest) {
     setEditTest(test);
-    setResultForm({ result: test.result ?? '', notes: test.notes ?? '' });
+    setResultForm({
+      result: test.result ?? '',
+      completedDate: test.completedDate || new Date().toISOString().slice(0, 10),
+      notes: test.notes ?? '',
+    });
     setResultOpen(true);
   }
 
@@ -66,13 +72,13 @@ export function LabTestsPage() {
   }
 
   function openRequestDialog() {
-    setReqForm(EMPTY_REQUEST_FORM);
+    setReqForm({ ...EMPTY_REQUEST_FORM, requestedDate: new Date().toISOString().slice(0, 10) });
     setRequestOpen(true);
   }
 
   function submitRequest() {
-    if (!reqForm.employeeId || !reqForm.testType) {
-      toast.error(isRtl ? 'يرجى اختيار الموظف ونوع التحليل' : 'Please select employee and test type');
+    if (!reqForm.employeeId || !reqForm.testType || !reqForm.requestedDate) {
+      toast.error(isRtl ? 'يرجى اختيار الموظف ونوع التحليل وتاريخ الطلب' : 'Please select employee, test type, and request date');
       return;
     }
     const newTest: LabTest = {
@@ -82,7 +88,7 @@ export function LabTestsPage() {
       testType: reqForm.testType,
       status: 'pending',
       requestedBy: isRtl ? 'المستخدم الحالي' : 'Current User',
-      requestedDate: new Date().toISOString().split('T')[0],
+      requestedDate: reqForm.requestedDate,
       notes: reqForm.notes,
     };
     setLabTests(prev => [newTest, ...prev]);
@@ -92,12 +98,12 @@ export function LabTestsPage() {
   }
 
   function submitResult() {
-    if (!resultForm.result) {
-      toast.error(isRtl ? 'يرجى إدخال النتيجة' : 'Please enter the result');
+    if (!resultForm.result || !resultForm.completedDate) {
+      toast.error(isRtl ? 'يرجى إدخال النتيجة وتاريخها' : 'Please enter the result and completion date');
       return;
     }
     setLabTests(prev => prev.map(t => t.id === editTest?.id
-      ? { ...t, result: resultForm.result, notes: resultForm.notes, status: 'completed', completedDate: new Date().toISOString().split('T')[0] }
+      ? { ...t, result: resultForm.result, notes: resultForm.notes, status: 'completed', completedDate: resultForm.completedDate }
       : t
     ));
     setResultOpen(false);
@@ -189,7 +195,7 @@ export function LabTestsPage() {
                   <Chip label={t(test.status)} size="small" color={getStatusColor(test.status) as any} />
                 </TableCell>
                 <TableCell>{test.requestedBy}</TableCell>
-                <TableCell>{test.requestedDate}</TableCell>
+                <TableCell><DateText value={test.requestedDate} /></TableCell>
                 <TableCell align="center">
                   {test.status === 'pending' && can(PERMISSIONS.UPDATE_LAB_RESULT) && (
                     <Tooltip title={isRtl ? 'إدخال النتيجة' : 'Enter Result'}>
@@ -236,6 +242,10 @@ export function LabTestsPage() {
               </TextField>
             </Grid>
             <Grid size={{ xs: 12 }}>
+              <CalendarDateField required label={isRtl ? 'تاريخ طلب التحليل' : 'Request Date'}
+                value={reqForm.requestedDate} onChange={value => setReqForm(p => ({ ...p, requestedDate: value }))} />
+            </Grid>
+            <Grid size={{ xs: 12 }}>
               <TextField fullWidth multiline rows={2} label={t('notes')}
                 value={reqForm.notes} onChange={e => setReqForm(p => ({ ...p, notes: e.target.value }))} />
             </Grid>
@@ -267,6 +277,10 @@ export function LabTestsPage() {
               <TextField fullWidth required label={t('result')} value={resultForm.result}
                 onChange={e => setResultForm(p => ({ ...p, result: e.target.value }))}
                 placeholder={isRtl ? 'أدخل نتيجة التحليل...' : 'Enter test result...'} />
+            </Grid>
+            <Grid size={{ xs: 12 }}>
+              <CalendarDateField required label={isRtl ? 'تاريخ اكتمال النتيجة' : 'Completion Date'}
+                value={resultForm.completedDate} onChange={value => setResultForm(p => ({ ...p, completedDate: value }))} />
             </Grid>
             <Grid size={{ xs: 12 }}>
               <TextField fullWidth multiline rows={2} label={t('notes')} value={resultForm.notes}

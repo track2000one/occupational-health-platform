@@ -12,6 +12,7 @@ import {
 } from '@mui/icons-material';
 import { toast } from 'sonner';
 import { getAccessToken, useAuth } from '../context/AuthContext';
+import { useDatePreference } from '../context/DatePreferenceContext';
 
 const PRODUCTION_API_BASE_URL = 'https://occupational-health-platform-production.up.railway.app/api';
 const LOCAL_API_BASE_URL = 'http://localhost:8000/api';
@@ -62,19 +63,11 @@ function maskedNationalId(value?: string | null) {
   return `${digits.slice(0, 2)}****${digits.slice(-4)}`;
 }
 
-function formatUpdated(value?: string | null, isRtl = true) {
-  if (!value) return '—';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '—';
-  return new Intl.DateTimeFormat(isRtl ? 'ar-SA' : 'en-GB', {
-    year: 'numeric', month: '2-digit', day: '2-digit',
-  }).format(date);
-}
-
 export function OccupationalHealthPage() {
   const navigate = useNavigate();
   const { i18n } = useTranslation();
   const { user } = useAuth();
+  const { formatDate } = useDatePreference();
   const isRtl = i18n.language === 'ar';
   const canEdit = Boolean(user?.role && EDITABLE_ROLES.has(user.role));
 
@@ -260,7 +253,7 @@ export function OccupationalHealthPage() {
                     [isRtl ? 'الهوية' : 'National ID', maskedNationalId(employee.national_id)],
                     [isRtl ? 'المركز الصحي' : 'Health Center', employee.health_center_name || '—'],
                     [isRtl ? 'الجوال' : 'Mobile', employee.mobile || '—'],
-                    [isRtl ? 'آخر تحديث' : 'Last Update', formatUpdated(employee.health_card_updated_at, isRtl)],
+                    [isRtl ? 'آخر تحديث' : 'Last Update', formatDate(employee.health_card_updated_at)],
                   ].map(([label, fieldValue]) => (
                     <Stack key={label} direction="row" justifyContent="space-between" spacing={2}
                       sx={{ py: .48, borderBottom: '1px dashed rgba(100,116,139,.16)', '&:last-child': { borderBottom: 0 } }}>

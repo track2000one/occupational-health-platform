@@ -16,6 +16,8 @@ import { mockNeedleStickInjuries, type NeedleStickInjury } from '../data/mockDat
 import { useAuth } from '../context/AuthContext';
 import { PERMISSIONS } from '../data/roles';
 import { EmployeeQuickSearch, type EmployeeSearchOption } from '../components/EmployeeQuickSearch';
+import { CalendarDateField } from '../components/CalendarDateField';
+import { DateText } from '../context/DatePreferenceContext';
 
 const EMPTY_REPORT_FORM = {
   employeeId: '', employeeName: '', exposureDate: '', workplace: '', injuryMethod: '',
@@ -166,7 +168,7 @@ export function NeedleStickInjuriesPage() {
               <TableRow key={injury.id} hover>
                 <TableCell><Typography variant="body2" fontFamily="monospace">{injury.id}</Typography></TableCell>
                 <TableCell><Typography variant="body2" fontWeight="medium">{injury.employeeName}</Typography></TableCell>
-                <TableCell>{injury.exposureDate}</TableCell>
+                <TableCell><DateText value={injury.exposureDate} /></TableCell>
                 <TableCell>{injury.workplace}</TableCell>
                 <TableCell><Typography variant="body2" sx={{ maxWidth: 180 }}>{injury.injuryMethod}</Typography></TableCell>
                 <TableCell>
@@ -212,9 +214,8 @@ export function NeedleStickInjuriesPage() {
               />
             </Grid>
             <Grid size={{ xs: 12, sm: 6 }}>
-              <TextField fullWidth required label={t('exposureDate')} type="date"
-                value={form.exposureDate} onChange={e => setForm(p => ({ ...p, exposureDate: e.target.value }))}
-                slotProps={{ inputLabel: { shrink: true } }} />
+              <CalendarDateField required label={t('exposureDate')}
+                value={form.exposureDate} onChange={value => setForm(p => ({ ...p, exposureDate: value }))} />
             </Grid>
             <Grid size={{ xs: 12, sm: 6 }}>
               <TextField fullWidth required label={t('workplace')}

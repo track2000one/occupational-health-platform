@@ -41,6 +41,7 @@ import {
   Work as WorkIcon,
 } from '@mui/icons-material';
 import { getAccessToken, type User, useAuth } from '../context/AuthContext';
+import { useDatePreference } from '../context/DatePreferenceContext';
 import { PERMISSIONS, ROLE_DEFINITIONS, type Permission, type UserRole } from '../data/roles';
 import { mockHealthCenters } from '../data/mockData';
 
@@ -172,6 +173,7 @@ function RoleChip({ role, isRtl }: { role: UserRole; isRtl: boolean }) {
 }
 
 export function AdminUsersPage() {
+  const { formatDateTime } = useDatePreference();
   const { i18n } = useTranslation();
   const { user: currentUser } = useAuth();
   const isRtl = i18n.language === 'ar';
@@ -610,7 +612,7 @@ export function AdminUsersPage() {
                 [isRtl ? 'المسمى الوظيفي' : 'Job Title', selectedUser.jobTitle || '-'],
                 [isRtl ? 'التخصص' : 'Specialty', selectedUser.specialty || '-'],
                 [isRtl ? 'رقم الترخيص' : 'License No.', selectedUser.licenseNumber || '-'],
-                [isRtl ? 'آخر دخول' : 'Last Login', selectedUser.lastLogin ? new Date(selectedUser.lastLogin).toLocaleString() : '-'],
+                [isRtl ? 'آخر دخول' : 'Last Login', formatDateTime(selectedUser.lastLogin)],
               ].map(([label, value]) => <Grid key={label} size={{ xs: 12, md: 4 }}><Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}><Typography variant="caption" color="text.secondary">{label}</Typography><Typography fontWeight={800}>{value}</Typography></Paper></Grid>)}
             </Grid>
             <Paper variant="outlined" sx={{ p: 2, borderRadius: 3 }}>

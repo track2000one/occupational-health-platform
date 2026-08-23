@@ -28,8 +28,6 @@ if (typeof console !== 'undefined') {
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AppThemeProvider, useAppTheme } from './context/ThemeContext';
 import { DatePreferenceProvider } from './context/DatePreferenceContext';
-import { DatePreferenceFloating } from './components/DatePreferenceFloating';
-import { DateCalendarDomFormatter } from './components/DateCalendarDomFormatter';
 import { type Permission } from './data/roles';
 import './i18n/config';
 import { LoginPage } from './pages/LoginPage';
@@ -324,8 +322,6 @@ function ThemedShell({ children }: { children: React.ReactNode }) {
       <ThemeProvider theme={muiTheme}>
         <CssBaseline />
         {children}
-        <DatePreferenceFloating />
-        <DateCalendarDomFormatter />
         <Toaster position="top-right" richColors />
       </ThemeProvider>
     </div>

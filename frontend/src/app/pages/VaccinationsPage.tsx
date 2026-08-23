@@ -14,6 +14,8 @@ import { mockVaccinations, type Vaccination } from '../data/mockData';
 import { useAuth } from '../context/AuthContext';
 import { PERMISSIONS } from '../data/roles';
 import { EmployeeQuickSearch, type EmployeeSearchOption } from '../components/EmployeeQuickSearch';
+import { CalendarDateField } from '../components/CalendarDateField';
+import { DateText } from '../context/DatePreferenceContext';
 
 const EMPTY_VACCINATION_FORM = {
   employeeId: '', employeeName: '', vaccineType: '', doseNumber: '1' as '1' | '2' | '3',
@@ -183,10 +185,10 @@ export function VaccinationsPage() {
                   <Chip label={t(vaccination.status)} size="small"
                     color={getStatusColor(vaccination.status) as any} />
                 </TableCell>
-                <TableCell>{vaccination.doseDate || '-'}</TableCell>
+                <TableCell><DateText value={vaccination.doseDate} /></TableCell>
                 <TableCell>
                   {vaccination.nextDueDate
-                    ? <Typography variant="body2" color="warning.main">{vaccination.nextDueDate}</Typography>
+                    ? <Typography variant="body2" color="warning.main"><DateText value={vaccination.nextDueDate} /></Typography>
                     : '-'}
                 </TableCell>
               </TableRow>
@@ -227,14 +229,12 @@ export function VaccinationsPage() {
               </TextField>
             </Grid>
             <Grid size={{ xs: 12, sm: 6 }}>
-              <TextField fullWidth required label={isRtl ? 'تاريخ الجرعة' : 'Dose Date'} type="date"
-                value={form.doseDate} onChange={e => setForm(p => ({ ...p, doseDate: e.target.value }))}
-                slotProps={{ inputLabel: { shrink: true } }} />
+              <CalendarDateField required label={isRtl ? 'تاريخ الجرعة' : 'Dose Date'}
+                value={form.doseDate} onChange={value => setForm(p => ({ ...p, doseDate: value }))} />
             </Grid>
             <Grid size={{ xs: 12, sm: 6 }}>
-              <TextField fullWidth label={isRtl ? 'تاريخ الجرعة القادمة' : 'Next Dose Date'} type="date"
-                value={form.nextDueDate} onChange={e => setForm(p => ({ ...p, nextDueDate: e.target.value }))}
-                slotProps={{ inputLabel: { shrink: true } }} />
+              <CalendarDateField label={isRtl ? 'تاريخ الجرعة القادمة' : 'Next Dose Date'}
+                value={form.nextDueDate} onChange={value => setForm(p => ({ ...p, nextDueDate: value }))} />
             </Grid>
             <Grid size={{ xs: 12 }}>
               <TextField fullWidth multiline rows={2} label={t('notes')}

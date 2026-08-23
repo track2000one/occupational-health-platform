@@ -32,7 +32,9 @@ import {
 import { toast } from 'sonner';
 import logoImg from '@/imports/ChatGPT_Image_21______2026__10_06_18__.png';
 import { EmployeeQuickSearch, type EmployeeSearchOption } from '../components/EmployeeQuickSearch';
+import { CalendarDateField } from '../components/CalendarDateField';
 import { getAccessToken, useAuth } from '../context/AuthContext';
+import { useDatePreference } from '../context/DatePreferenceContext';
 import '../../styles/employee-health-card.css';
 
 const PRODUCTION_API_BASE_URL = 'https://occupational-health-platform-production.up.railway.app/api';
@@ -302,14 +304,6 @@ function value(input: unknown, fallback = '—') {
   return text || fallback;
 }
 
-function formatDate(input: unknown) {
-  const raw = stringifyValue(input);
-  if (!raw) return '—';
-  const date = new Date(`${raw.slice(0, 10)}T12:00:00`);
-  if (Number.isNaN(date.getTime())) return raw;
-  return new Intl.DateTimeFormat('ar-SA-u-ca-gregory', { year: 'numeric', month: 'short', day: '2-digit' }).format(date);
-}
-
 function localizedGender(input: unknown) {
   return String(input).toLowerCase() === 'female' ? 'أنثى / Female' : 'ذكر / Male';
 }
@@ -454,6 +448,7 @@ function Section({ number, title, subtitle, color, children }: { number: string;
 }
 
 function HealthCardSheet({ card, form }: { card: HealthCardData; form: SectionData }) {
+  const { formatDate } = useDatePreference();
   const employee = card.employee || {};
   const conditionRows = CONDITION_FIELDS.filter(field => !['surgical_details', 'family_history', 'allergy_history', 'medical_restrictions', 'other_conditions', 'regular_medication'].includes(field.key));
   const vaccineRows = VACCINATION_FIELDS.filter(field => field.key !== 'notes');
@@ -469,7 +464,7 @@ function HealthCardSheet({ card, form }: { card: HealthCardData; form: SectionDa
         <div className="ohc-title-box">
           <HealthAndSafetyIcon />
           <h1>البطاقة الصحية للموظف</h1>
-          <p>Employee Occupational Health Card {String(card.issue_date || '').slice(0, 4)}</p>
+          <p>Employee Occupational Health Card {formatDate(card.issue_date, { year: 'numeric' })}</p>
         </div>
         <div className="ohc-employee-name">
           <span>اسم الموظف / Employee Name</span>
@@ -625,19 +620,26 @@ function FormSection({
         <Grid container spacing={1.5}>
           {fields.map(field => (
             <Grid key={field.key} size={{ xs: 12, sm: field.kind === 'textarea' ? 12 : 6, lg: field.kind === 'textarea' ? 6 : 4 }}>
-              <TextField
-                fullWidth
-                select={field.kind === 'select'}
-                type={field.kind === 'date' ? 'date' : field.kind === 'number' ? 'number' : 'text'}
-                multiline={field.kind === 'textarea'}
-                minRows={field.kind === 'textarea' ? 2 : undefined}
-                label={field.en ? `${field.label} / ${field.en}` : field.label}
-                value={values[field.key] || ''}
-                onChange={event => onChange(field.key, event.target.value)}
-                slotProps={field.kind === 'date' ? { inputLabel: { shrink: true } } : undefined}
-              >
-                {field.options?.map(option => <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>)}
-              </TextField>
+              {field.kind === 'date' ? (
+                <CalendarDateField
+                  label={field.en ? `${field.label} / ${field.en}` : field.label}
+                  value={values[field.key] || ''}
+                  onChange={fieldValue => onChange(field.key, fieldValue)}
+                />
+              ) : (
+                <TextField
+                  fullWidth
+                  select={field.kind === 'select'}
+                  type={field.kind === 'number' ? 'number' : 'text'}
+                  multiline={field.kind === 'textarea'}
+                  minRows={field.kind === 'textarea' ? 2 : undefined}
+                  label={field.en ? `${field.label} / ${field.en}` : field.label}
+                  value={values[field.key] || ''}
+                  onChange={event => onChange(field.key, event.target.value)}
+                >
+                  {field.options?.map(option => <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>)}
+                </TextField>
+              )}
             </Grid>
           ))}
         </Grid>
@@ -651,6 +653,7 @@ export function EmployeeHealthCardPage() {
   const { employeeId } = useParams();
   const [searchParams] = useSearchParams();
   const { user } = useAuth();
+  const { formatDate } = useDatePreference();
   const requestedEditMode = searchParams.get('mode') === 'edit';
   const cardRef = useRef<HTMLElement | null>(null);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState(employeeId || '');
@@ -880,8 +883,8 @@ export function EmployeeHealthCardPage() {
           </Paper>
 
           <Grid container spacing={1.5} sx={{ my: 2 }}>
-            <Grid size={{ xs: 12, md: 4 }}><TextField fullWidth required type="date" label="تاريخ إصدار البطاقة" value={issueDate} onChange={event => setIssueDate(event.target.value)} slotProps={{ inputLabel: { shrink: true } }} /></Grid>
-            <Grid size={{ xs: 12, md: 4 }}><TextField fullWidth type="date" label="تاريخ المراجعة القادمة" value={nextReviewDate} onChange={event => setNextReviewDate(event.target.value)} slotProps={{ inputLabel: { shrink: true } }} /></Grid>
+            <Grid size={{ xs: 12, md: 4 }}><CalendarDateField required label="تاريخ إصدار البطاقة" value={issueDate} onChange={setIssueDate} /></Grid>
+            <Grid size={{ xs: 12, md: 4 }}><CalendarDateField label="تاريخ المراجعة القادمة" value={nextReviewDate} onChange={setNextReviewDate} /></Grid>
             <Grid size={{ xs: 12, md: 4 }}><TextField fullWidth label="مراجعة واعتماد من قبل" value={reviewedBy} onChange={event => setReviewedBy(event.target.value)} /></Grid>
             <Grid size={{ xs: 12 }}><FormControlLabel control={<Switch checked={isApproved} onChange={event => setIsApproved(event.target.checked)} />} label="تمت مراجعة واعتماد البطاقة" /></Grid>
           </Grid>

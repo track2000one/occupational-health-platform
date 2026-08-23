@@ -16,6 +16,8 @@ import { mockMedicalCommitteeReferrals, type MedicalCommitteeReferral } from '..
 import { useAuth } from '../context/AuthContext';
 import { PERMISSIONS } from '../data/roles';
 import { EmployeeQuickSearch, type EmployeeSearchOption } from '../components/EmployeeQuickSearch';
+import { CalendarDateField } from '../components/CalendarDateField';
+import { DateText } from '../context/DatePreferenceContext';
 
 const STEPS = ['Draft', 'Submitted', 'Under Review', 'Decision Issued', 'Closed'];
 const EMPTY_REFERRAL_FORM = { employeeId: '', employeeName: '', diagnosis: '', recommendation: '', notes: '' };
@@ -31,7 +33,7 @@ export function MedicalCommitteePage() {
   const [editReferral, setEditReferral] = useState<MedicalCommitteeReferral | null>(null);
 
   const [form, setForm] = useState(EMPTY_REFERRAL_FORM);
-  const [decisionForm, setDecisionForm] = useState({ decision: '', status: 'underReview' as MedicalCommitteeReferral['status'] });
+  const [decisionForm, setDecisionForm] = useState({ decision: '', decisionDate: '', status: 'underReview' as MedicalCommitteeReferral['status'] });
 
   function getStatusColor(status: string) {
     switch (status) {
@@ -72,13 +74,21 @@ export function MedicalCommitteePage() {
 
   function openDecision(referral: MedicalCommitteeReferral) {
     setEditReferral(referral);
-    setDecisionForm({ decision: referral.decision ?? '', status: referral.status });
+    setDecisionForm({
+      decision: referral.decision ?? '',
+      decisionDate: referral.decisionDate || new Date().toISOString().slice(0, 10),
+      status: referral.status,
+    });
     setDecisionOpen(true);
   }
 
   function saveDecision() {
+    if (!decisionForm.decisionDate) {
+      toast.error(isRtl ? 'يرجى إدخال تاريخ القرار' : 'Please enter the decision date');
+      return;
+    }
     setReferrals(prev => prev.map(r => r.id === editReferral?.id
-      ? { ...r, decision: decisionForm.decision, status: decisionForm.status, decisionDate: new Date().toISOString().split('T')[0] }
+      ? { ...r, decision: decisionForm.decision, status: decisionForm.status, decisionDate: decisionForm.decisionDate }
       : r
     ));
     setDecisionOpen(false);
@@ -145,7 +155,7 @@ export function MedicalCommitteePage() {
                 <TableCell><Typography variant="body2" sx={{ maxWidth: 180 }}>{referral.diagnosis}</Typography></TableCell>
                 <TableCell><Typography variant="body2" color={referral.recommendation ? 'text.primary' : 'text.secondary'} sx={{ maxWidth: 180 }}>{referral.recommendation || (isRtl ? 'قيد الانتظار' : 'Pending')}</Typography></TableCell>
                 <TableCell><Typography variant="body2" color={referral.decision ? 'text.primary' : 'text.secondary'} sx={{ maxWidth: 180 }}>{referral.decision || (isRtl ? 'قيد الانتظار' : 'Pending')}</Typography></TableCell>
-                <TableCell>{referral.decisionDate || '-'}</TableCell>
+                <TableCell><DateText value={referral.decisionDate} /></TableCell>
                 <TableCell><Chip label={t(referral.status)} size="small" color={getStatusColor(referral.status) as any} /></TableCell>
                 <TableCell align="center">
                   <Tooltip title={isRtl ? 'إدخال القرار' : 'Enter Decision'}>
@@ -226,6 +236,10 @@ export function MedicalCommitteePage() {
             <Grid size={{ xs: 12 }}>
               <TextField fullWidth multiline rows={3} label={t('decision')} value={decisionForm.decision}
                 onChange={e => setDecisionForm(p => ({ ...p, decision: e.target.value }))} />
+            </Grid>
+            <Grid size={{ xs: 12 }}>
+              <CalendarDateField required label={isRtl ? 'تاريخ القرار' : 'Decision Date'}
+                value={decisionForm.decisionDate} onChange={value => setDecisionForm(p => ({ ...p, decisionDate: value }))} />
             </Grid>
           </Grid>
         </DialogContent>

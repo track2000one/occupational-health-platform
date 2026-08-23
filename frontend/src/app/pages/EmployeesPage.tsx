@@ -40,6 +40,7 @@ import {
 import { toast } from 'sonner';
 import { getAccessToken, useAuth } from '../context/AuthContext';
 import { PERMISSIONS } from '../data/roles';
+import { CalendarDateField } from '../components/CalendarDateField';
 
 const PRODUCTION_API_BASE_URL = 'https://occupational-health-platform-production.up.railway.app/api';
 const LOCAL_API_BASE_URL = 'http://localhost:8000/api';
@@ -588,9 +589,8 @@ export function EmployeesPage() {
                 onChange={event => updateForm('national_address', event.target.value)} disabled={isReadOnly} />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
-              <TextField fullWidth required label={isRtl ? 'تاريخ الميلاد' : 'Date of Birth'} type="date" value={form.date_of_birth}
-                onChange={event => updateForm('date_of_birth', event.target.value)} disabled={isReadOnly}
-                slotProps={{ inputLabel: { shrink: true } }} />
+              <CalendarDateField required label={isRtl ? 'تاريخ الميلاد' : 'Date of Birth'} value={form.date_of_birth}
+                onChange={value => updateForm('date_of_birth', value)} disabled={isReadOnly} />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
               <TextField fullWidth label={isRtl ? 'العمر محسوب تلقائيًا' : 'Calculated Age'} value={computedAge || selectedEmployee?.age || ''} disabled />
@@ -619,9 +619,8 @@ export function EmployeesPage() {
                 onChange={event => updateForm('job_title', event.target.value)} disabled={isReadOnly} />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
-              <TextField fullWidth required label={isRtl ? 'تاريخ التعيين' : 'Appointment Date'} type="date" value={form.appointment_date}
-                onChange={event => updateForm('appointment_date', event.target.value)} disabled={isReadOnly}
-                slotProps={{ inputLabel: { shrink: true } }} />
+              <CalendarDateField required label={isRtl ? 'تاريخ التعيين' : 'Appointment Date'} value={form.appointment_date}
+                onChange={value => updateForm('appointment_date', value)} disabled={isReadOnly} />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
               <TextField fullWidth label={isRtl ? 'سنوات الخبرة محسوبة تلقائيًا' : 'Calculated Years of Experience'} value={computedExperience || selectedEmployee?.years_of_experience || ''} disabled />

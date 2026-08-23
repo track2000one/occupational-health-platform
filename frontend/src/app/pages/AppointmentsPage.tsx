@@ -15,6 +15,8 @@ import { useAuth } from '../context/AuthContext';
 import { PERMISSIONS } from '../data/roles';
 import { mockAppointments, type Appointment } from '../data/mockData';
 import { EmployeeQuickSearch, type EmployeeSearchOption } from '../components/EmployeeQuickSearch';
+import { CalendarDateField } from '../components/CalendarDateField';
+import { DateText } from '../context/DatePreferenceContext';
 
 const APPT_TYPE_LABELS: Record<Appointment['appointmentType'], { ar: string; en: string; color: string }> = {
   periodicExam: { ar: 'فحص دوري', en: 'Periodic Exam', color: '#667eea' },
@@ -180,7 +182,7 @@ export function AppointmentsPage() {
                       sx={{ bgcolor: `${typeConf.color}20`, color: typeConf.color, fontWeight: 600 }} />
                   </TableCell>
                   <TableCell>
-                    <Typography variant="body2">{appt.appointmentDate}</Typography>
+                    <Typography variant="body2"><DateText value={appt.appointmentDate} /></Typography>
                     <Typography variant="caption" color="text.secondary">{appt.appointmentTime}</Typography>
                   </TableCell>
                   <TableCell><Typography variant="body2">{appt.assignedTo}</Typography></TableCell>
@@ -249,9 +251,8 @@ export function AppointmentsPage() {
               </TextField>
             </Grid>
             <Grid size={{ xs: 12, sm: 6 }}>
-              <TextField fullWidth label={isRtl ? 'التاريخ' : 'Date'} type="date"
-                value={apptForm.appointmentDate} onChange={e => setApptForm(p => ({ ...p, appointmentDate: e.target.value }))}
-                slotProps={{ inputLabel: { shrink: true } }} />
+              <CalendarDateField label={isRtl ? 'التاريخ' : 'Date'}
+                value={apptForm.appointmentDate} onChange={value => setApptForm(p => ({ ...p, appointmentDate: value }))} />
             </Grid>
             <Grid size={{ xs: 12, sm: 6 }}>
               <TextField fullWidth label={isRtl ? 'الوقت' : 'Time'} type="time"

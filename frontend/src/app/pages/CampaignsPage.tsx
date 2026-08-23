@@ -14,6 +14,8 @@ import {
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
 import { PERMISSIONS } from '../data/roles';
+import { CalendarDateField } from '../components/CalendarDateField';
+import { DateText } from '../context/DatePreferenceContext';
 
 interface Campaign {
   id: string;
@@ -186,8 +188,8 @@ export function CampaignsPage() {
                   </TableCell>
                   <TableCell><Chip label={campaign.campaignType} size="small" variant="outlined" /></TableCell>
                   <TableCell>
-                    <Typography variant="body2">{campaign.startDate}</Typography>
-                    <Typography variant="caption" color="text.secondary">→ {campaign.endDate}</Typography>
+                    <Typography variant="body2"><DateText value={campaign.startDate} /></Typography>
+                    <Typography variant="caption" color="text.secondary">→ <DateText value={campaign.endDate} /></Typography>
                   </TableCell>
                   <TableCell sx={{ minWidth: 150 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -231,12 +233,12 @@ export function CampaignsPage() {
               </TextField>
             </Grid>
             <Grid size={{ xs: 12, sm: 6 }}>
-              <TextField fullWidth required label={isRtl ? 'تاريخ البدء' : 'Start Date'} type="date" value={form.startDate}
-                onChange={e => setForm(p => ({ ...p, startDate: e.target.value }))} slotProps={{ inputLabel: { shrink: true } }} />
+              <CalendarDateField required label={isRtl ? 'تاريخ البدء' : 'Start Date'} value={form.startDate}
+                onChange={value => setForm(p => ({ ...p, startDate: value }))} />
             </Grid>
             <Grid size={{ xs: 12, sm: 6 }}>
-              <TextField fullWidth required label={isRtl ? 'تاريخ الانتهاء' : 'End Date'} type="date" value={form.endDate}
-                onChange={e => setForm(p => ({ ...p, endDate: e.target.value }))} slotProps={{ inputLabel: { shrink: true } }} />
+              <CalendarDateField required label={isRtl ? 'تاريخ الانتهاء' : 'End Date'} value={form.endDate}
+                onChange={value => setForm(p => ({ ...p, endDate: value }))} />
             </Grid>
             <Grid size={{ xs: 12 }}>
               <TextField fullWidth required label={isRtl ? 'العدد المستهدف' : 'Target Count'} type="number" value={form.targetCount}

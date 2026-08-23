@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import type { DateCalendar } from '../utils/calendarDate';
 
-type DateCalendar = 'gregorian' | 'hijri';
+export type { DateCalendar } from '../utils/calendarDate';
 
 type DatePreferenceContextValue = {
   calendar: DateCalendar;

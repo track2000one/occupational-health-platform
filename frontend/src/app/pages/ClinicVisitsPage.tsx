@@ -14,6 +14,8 @@ import { mockClinicVisits, type ClinicVisit } from '../data/mockData';
 import { useAuth } from '../context/AuthContext';
 import { PERMISSIONS } from '../data/roles';
 import { EmployeeQuickSearch, type EmployeeSearchOption } from '../components/EmployeeQuickSearch';
+import { CalendarDateField } from '../components/CalendarDateField';
+import { DateText } from '../context/DatePreferenceContext';
 
 const EMPTY_FORM = {
   employeeId: '', employeeName: '', visitDate: '', clinicType: '', diagnosis: '',
@@ -154,7 +156,7 @@ export function ClinicVisitsPage() {
                     <Typography variant="body2" fontWeight="medium">{visit.employeeName}</Typography>
                   </Box>
                 </TableCell>
-                <TableCell>{visit.visitDate}</TableCell>
+                <TableCell><DateText value={visit.visitDate} /></TableCell>
                 <TableCell>
                   <Chip label={visit.clinicType} size="small" variant="outlined" />
                 </TableCell>
@@ -166,7 +168,7 @@ export function ClinicVisitsPage() {
                 </TableCell>
                 <TableCell>
                   {visit.followUpDate
-                    ? <Typography variant="body2" color="info.main">{visit.followUpDate}</Typography>
+                    ? <Typography variant="body2" color="info.main"><DateText value={visit.followUpDate} /></Typography>
                     : <Typography variant="body2" color="text.secondary">—</Typography>}
                 </TableCell>
                 <TableCell><Typography variant="body2">{visit.doctorName}</Typography></TableCell>
@@ -194,9 +196,8 @@ export function ClinicVisitsPage() {
               />
             </Grid>
             <Grid size={{ xs: 12, sm: 6 }}>
-              <TextField fullWidth required label={isRtl ? 'تاريخ الزيارة' : 'Visit Date'} type="date"
-                value={form.visitDate} onChange={e => setForm(p => ({ ...p, visitDate: e.target.value }))}
-                slotProps={{ inputLabel: { shrink: true } }} />
+              <CalendarDateField required label={isRtl ? 'تاريخ الزيارة' : 'Visit Date'}
+                value={form.visitDate} onChange={value => setForm(p => ({ ...p, visitDate: value }))} />
             </Grid>
             <Grid size={{ xs: 12, sm: 6 }}>
               <TextField fullWidth select label={isRtl ? 'نوع العيادة' : 'Clinic Type'}
@@ -224,9 +225,8 @@ export function ClinicVisitsPage() {
                 value={form.sickLeaveDays} onChange={e => setForm(p => ({ ...p, sickLeaveDays: e.target.value }))} />
             </Grid>
             <Grid size={{ xs: 12, sm: 6 }}>
-              <TextField fullWidth label={isRtl ? 'تاريخ المتابعة' : 'Follow-up Date'} type="date"
-                value={form.followUpDate} onChange={e => setForm(p => ({ ...p, followUpDate: e.target.value }))}
-                slotProps={{ inputLabel: { shrink: true } }} />
+              <CalendarDateField label={isRtl ? 'تاريخ المتابعة' : 'Follow-up Date'}
+                value={form.followUpDate} onChange={value => setForm(p => ({ ...p, followUpDate: value }))} />
             </Grid>
           </Grid>
         </DialogContent>

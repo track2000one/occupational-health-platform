@@ -13,6 +13,7 @@ import {
   FileDownload as ExportIcon, CheckCircle as ApproveIcon, Cancel as RejectIcon,
 } from '@mui/icons-material';
 import { mockAuditLogs, type AuditLog } from '../data/mockData';
+import { DateText } from '../context/DatePreferenceContext';
 
 const ACTION_CONFIG: Record<AuditLog['action'], { icon: React.ReactNode; color: string; labelAr: string; labelEn: string }> = {
   create: { icon: <AddIcon sx={{ fontSize: 16 }} />, color: '#43e97b', labelAr: 'إنشاء', labelEn: 'Create' },
@@ -135,13 +136,7 @@ export function AuditLogPage() {
               return (
                 <TableRow key={log.id} hover>
                   <TableCell sx={{ whiteSpace: 'nowrap' }}>
-                    <Typography variant="caption">
-                      {new Date(log.createdAt).toLocaleDateString(isRtl ? 'ar-SA' : 'en-US')}
-                    </Typography>
-                    <br />
-                    <Typography variant="caption" color="text.secondary">
-                      {new Date(log.createdAt).toLocaleTimeString(isRtl ? 'ar-SA' : 'en-US', { hour: '2-digit', minute: '2-digit' })}
-                    </Typography>
+                    <Typography variant="caption"><DateText value={log.createdAt} withTime /></Typography>
                   </TableCell>
                   <TableCell>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>

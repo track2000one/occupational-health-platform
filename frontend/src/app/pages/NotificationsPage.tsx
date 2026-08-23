@@ -15,6 +15,7 @@ import {
 } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
 import { mockNotifications, type Notification } from '../data/mockData';
+import { DateText } from '../context/DatePreferenceContext';
 
 function moduleIcon(module: Notification['module']) {
   const icons: Record<Notification['module'], React.ReactNode> = {
@@ -170,7 +171,7 @@ export function NotificationsPage() {
                           {isRtl ? notif.messageAr : notif.message}
                         </Typography>
                         <Typography variant="caption" color="text.disabled" sx={{ mt: 0.5, display: 'block' }}>
-                          {new Date(notif.createdAt).toLocaleString(isRtl ? 'ar-SA' : 'en-US')}
+                          <DateText value={notif.createdAt} withTime />
                         </Typography>
                       </Box>
                     }
