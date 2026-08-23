@@ -10,9 +10,15 @@ import {
   Search as SearchIcon, Add as AddIcon, Vaccines as VaccinesIcon,
 } from '@mui/icons-material';
 import { toast } from 'sonner';
-import { mockVaccinations, mockEmployees, type Vaccination } from '../data/mockData';
+import { mockVaccinations, type Vaccination } from '../data/mockData';
 import { useAuth } from '../context/AuthContext';
 import { PERMISSIONS } from '../data/roles';
+import { EmployeeQuickSearch, type EmployeeSearchOption } from '../components/EmployeeQuickSearch';
+
+const EMPTY_VACCINATION_FORM = {
+  employeeId: '', employeeName: '', vaccineType: '', doseNumber: '1' as '1' | '2' | '3',
+  doseDate: '', nextDueDate: '', notes: '',
+};
 
 export function VaccinationsPage() {
   const { t, i18n } = useTranslation();
@@ -23,10 +29,7 @@ export function VaccinationsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterVaccine, setFilterVaccine] = useState('all');
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [form, setForm] = useState({
-    employeeId: '', vaccineType: '', doseNumber: '1' as '1' | '2' | '3',
-    doseDate: '', nextDueDate: '', notes: '',
-  });
+  const [form, setForm] = useState(EMPTY_VACCINATION_FORM);
 
   const filteredVaccinations = vaccinations.filter(vac => {
     const matchesSearch = vac.employeeName.toLowerCase().includes(searchTerm.toLowerCase());
@@ -56,18 +59,26 @@ export function VaccinationsPage() {
     }
   }
 
+  function handleEmployeeSelect(employeeId: string, employee: EmployeeSearchOption | null) {
+    setForm(prev => ({ ...prev, employeeId, employeeName: employee?.name || '' }));
+  }
+
+  function openDialog() {
+    setForm(EMPTY_VACCINATION_FORM);
+    setDialogOpen(true);
+  }
+
   function handleSave() {
     if (!form.employeeId || !form.vaccineType || !form.doseDate) {
-      toast.error(isRtl ? 'يرجى تعبئة الحقول المطلوبة' : 'Please fill required fields');
+      toast.error(isRtl ? 'يرجى اختيار الموظف واللقاح وتاريخ الجرعة' : 'Please select employee, vaccine, and dose date');
       return;
     }
-    const emp = mockEmployees.find(e => e.id === form.employeeId);
     const doseNum = Number(form.doseNumber) as 1 | 2 | 3;
     const doseStatus = doseNum === 1 ? 'dose1' : doseNum === 2 ? 'dose2' : 'dose3';
     const newVac: Vaccination = {
       id: `VAC-${Date.now()}`,
       employeeId: form.employeeId,
-      employeeName: emp?.name ?? form.employeeId,
+      employeeName: form.employeeName || form.employeeId,
       vaccineType: form.vaccineType,
       doseNumber: doseNum,
       doseDate: form.doseDate,
@@ -77,12 +88,12 @@ export function VaccinationsPage() {
     };
     setVaccinations(prev => [newVac, ...prev]);
     setDialogOpen(false);
-    setForm({ employeeId: '', vaccineType: '', doseNumber: '1', doseDate: '', nextDueDate: '', notes: '' });
+    setForm(EMPTY_VACCINATION_FORM);
     toast.success(isRtl ? 'تم تسجيل التطعيم بنجاح' : 'Vaccination recorded successfully');
   }
 
   const immuneCount = vaccinations.filter(v => v.status === 'immune' || v.status === 'dose3').length;
-  const coverageRate = ((immuneCount / vaccinations.length) * 100).toFixed(1);
+  const coverageRate = vaccinations.length ? ((immuneCount / vaccinations.length) * 100).toFixed(1) : '0.0';
 
   return (
     <Box>
@@ -98,7 +109,7 @@ export function VaccinationsPage() {
         </Box>
         {can(PERMISSIONS.CREATE_VACCINATION) && (
           <Button variant="contained" startIcon={<AddIcon />}
-            onClick={() => setDialogOpen(true)}
+            onClick={openDialog}
             sx={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
             {isRtl ? 'تسجيل تطعيم' : 'Record Vaccination'}
           </Button>
@@ -184,7 +195,6 @@ export function VaccinationsPage() {
         </Table>
       </TableContainer>
 
-      {/* Record Vaccination Dialog */}
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle component="div">
           <Typography variant="h6" component="span" fontWeight="bold">
@@ -194,11 +204,12 @@ export function VaccinationsPage() {
         <DialogContent dividers>
           <Grid container spacing={2}>
             <Grid size={{ xs: 12 }}>
-              <TextField fullWidth select required label={isRtl ? 'الموظف' : 'Employee'}
-                value={form.employeeId} onChange={e => setForm(p => ({ ...p, employeeId: e.target.value }))}>
-                <MenuItem value="">{isRtl ? 'اختر موظفاً' : 'Select Employee'}</MenuItem>
-                {mockEmployees.map(emp => <MenuItem key={emp.id} value={emp.id}>{emp.name}</MenuItem>)}
-              </TextField>
+              <EmployeeQuickSearch
+                required
+                value={form.employeeId}
+                onChange={handleEmployeeSelect}
+                label={isRtl ? 'بحث الموظف' : 'Employee quick search'}
+              />
             </Grid>
             <Grid size={{ xs: 12, sm: 6 }}>
               <TextField fullWidth select required label={t('vaccineType')}
