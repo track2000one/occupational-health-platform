@@ -12,11 +12,13 @@ import {
   Edit as EditIcon,
 } from '@mui/icons-material';
 import { toast } from 'sonner';
-import { mockMedicalCommitteeReferrals, mockEmployees, type MedicalCommitteeReferral } from '../data/mockData';
+import { mockMedicalCommitteeReferrals, type MedicalCommitteeReferral } from '../data/mockData';
 import { useAuth } from '../context/AuthContext';
 import { PERMISSIONS } from '../data/roles';
+import { EmployeeQuickSearch, type EmployeeSearchOption } from '../components/EmployeeQuickSearch';
 
 const STEPS = ['Draft', 'Submitted', 'Under Review', 'Decision Issued', 'Closed'];
+const EMPTY_REFERRAL_FORM = { employeeId: '', employeeName: '', diagnosis: '', recommendation: '', notes: '' };
 
 export function MedicalCommitteePage() {
   const { t, i18n } = useTranslation();
@@ -28,9 +30,7 @@ export function MedicalCommitteePage() {
   const [decisionOpen, setDecisionOpen] = useState(false);
   const [editReferral, setEditReferral] = useState<MedicalCommitteeReferral | null>(null);
 
-  const [form, setForm] = useState({
-    employeeId: '', diagnosis: '', recommendation: '', notes: '',
-  });
+  const [form, setForm] = useState(EMPTY_REFERRAL_FORM);
   const [decisionForm, setDecisionForm] = useState({ decision: '', status: 'underReview' as MedicalCommitteeReferral['status'] });
 
   function getStatusColor(status: string) {
@@ -44,15 +44,8 @@ export function MedicalCommitteePage() {
     }
   }
 
-  function getStatusStep(status: string) {
-    switch (status) {
-      case 'draft': return 0;
-      case 'submitted': return 1;
-      case 'underReview': return 2;
-      case 'decisionIssued': return 3;
-      case 'closed': return 4;
-      default: return 0;
-    }
+  function handleEmployeeSelect(employeeId: string, employee: EmployeeSearchOption | null) {
+    setForm(prev => ({ ...prev, employeeId, employeeName: employee?.name || '' }));
   }
 
   function submitReferral() {
@@ -60,11 +53,10 @@ export function MedicalCommitteePage() {
       toast.error(isRtl ? 'يرجى تعبئة الحقول المطلوبة' : 'Please fill required fields');
       return;
     }
-    const emp = mockEmployees.find(e => e.id === form.employeeId);
     const newRef: MedicalCommitteeReferral = {
       id: `MC-${Date.now()}`,
       employeeId: form.employeeId,
-      employeeName: emp?.name ?? form.employeeId,
+      employeeName: form.employeeName || form.employeeId,
       transactionNumber: `TXN-${Date.now()}`,
       diagnosis: form.diagnosis,
       recommendation: form.recommendation,
@@ -74,7 +66,7 @@ export function MedicalCommitteePage() {
     };
     setReferrals(prev => [newRef, ...prev]);
     setReferOpen(false);
-    setForm({ employeeId: '', diagnosis: '', recommendation: '', notes: '' });
+    setForm(EMPTY_REFERRAL_FORM);
     toast.success(isRtl ? 'تم إحالة الموظف للهيئة الطبية' : 'Employee referred to medical committee');
   }
 
@@ -151,25 +143,13 @@ export function MedicalCommitteePage() {
                 <TableCell><Typography variant="body2" fontFamily="monospace">{referral.transactionNumber}</Typography></TableCell>
                 <TableCell><Typography variant="body2" fontWeight="medium">{referral.employeeName}</Typography></TableCell>
                 <TableCell><Typography variant="body2" sx={{ maxWidth: 180 }}>{referral.diagnosis}</Typography></TableCell>
-                <TableCell>
-                  <Typography variant="body2" color={referral.recommendation ? 'text.primary' : 'text.secondary'} sx={{ maxWidth: 180 }}>
-                    {referral.recommendation || (isRtl ? 'قيد الانتظار' : 'Pending')}
-                  </Typography>
-                </TableCell>
-                <TableCell>
-                  <Typography variant="body2" color={referral.decision ? 'text.primary' : 'text.secondary'} sx={{ maxWidth: 180 }}>
-                    {referral.decision || (isRtl ? 'قيد الانتظار' : 'Pending')}
-                  </Typography>
-                </TableCell>
+                <TableCell><Typography variant="body2" color={referral.recommendation ? 'text.primary' : 'text.secondary'} sx={{ maxWidth: 180 }}>{referral.recommendation || (isRtl ? 'قيد الانتظار' : 'Pending')}</Typography></TableCell>
+                <TableCell><Typography variant="body2" color={referral.decision ? 'text.primary' : 'text.secondary'} sx={{ maxWidth: 180 }}>{referral.decision || (isRtl ? 'قيد الانتظار' : 'Pending')}</Typography></TableCell>
                 <TableCell>{referral.decisionDate || '-'}</TableCell>
-                <TableCell>
-                  <Chip label={t(referral.status)} size="small" color={getStatusColor(referral.status) as any} />
-                </TableCell>
+                <TableCell><Chip label={t(referral.status)} size="small" color={getStatusColor(referral.status) as any} /></TableCell>
                 <TableCell align="center">
                   <Tooltip title={isRtl ? 'إدخال القرار' : 'Enter Decision'}>
-                    <IconButton size="small" color="primary" onClick={() => openDecision(referral)}>
-                      <EditIcon fontSize="small" />
-                    </IconButton>
+                    <IconButton size="small" color="primary" onClick={() => openDecision(referral)}><EditIcon fontSize="small" /></IconButton>
                   </Tooltip>
                 </TableCell>
               </TableRow>
@@ -183,13 +163,10 @@ export function MedicalCommitteePage() {
           {isRtl ? 'مسار سير عملية الإحالة' : 'Referral Process Workflow'}
         </Typography>
         <Stepper activeStep={2} alternativeLabel sx={{ mt: 3 }}>
-          {STEPS.map(label => (
-            <Step key={label}><StepLabel>{label}</StepLabel></Step>
-          ))}
+          {STEPS.map(label => <Step key={label}><StepLabel>{label}</StepLabel></Step>)}
         </Stepper>
       </Paper>
 
-      {/* Refer to Committee Dialog */}
       <Dialog open={referOpen} onClose={() => setReferOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle component="div">
           <Typography variant="h6" component="span" fontWeight="bold">
@@ -199,11 +176,13 @@ export function MedicalCommitteePage() {
         <DialogContent dividers>
           <Grid container spacing={2}>
             <Grid size={{ xs: 12 }}>
-              <TextField fullWidth select required label={isRtl ? 'الموظف' : 'Employee'}
-                value={form.employeeId} onChange={e => setForm(p => ({ ...p, employeeId: e.target.value }))}>
-                <MenuItem value="">{isRtl ? 'اختر موظفاً' : 'Select Employee'}</MenuItem>
-                {mockEmployees.map(emp => <MenuItem key={emp.id} value={emp.id}>{emp.name}</MenuItem>)}
-              </TextField>
+              <EmployeeQuickSearch
+                required
+                value={form.employeeId}
+                onChange={handleEmployeeSelect}
+                label={isRtl ? 'بحث الموظف' : 'Employee quick search'}
+                helperText={isRtl ? 'بحث بالاسم أو الهوية أو الرقم الوظيفي أو الجوال' : 'Search by name, ID, employee number, or mobile'}
+              />
             </Grid>
             <Grid size={{ xs: 12 }}>
               <TextField fullWidth required multiline rows={2} label={t('diagnosis')}
@@ -225,7 +204,6 @@ export function MedicalCommitteePage() {
         </DialogActions>
       </Dialog>
 
-      {/* Decision Dialog */}
       <Dialog open={decisionOpen} onClose={() => setDecisionOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle component="div">
           <Typography variant="h6" component="span" fontWeight="bold">
