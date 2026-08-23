@@ -38,9 +38,13 @@ class UserProfileAdmin(admin.ModelAdmin):
 
 @admin.register(Employee)
 class EmployeeAdmin(admin.ModelAdmin):
-    list_display = ('name', 'national_id', 'mobile', 'health_center', 'job_title', 'periodic_exam_status', 'vaccination_status', 'risk_level')
-    list_filter = ('health_center', 'gender', 'periodic_exam_status', 'vaccination_status', 'risk_level')
-    search_fields = ('name', 'national_id', 'mobile', 'job_title')
+    list_display = (
+        'name', 'employee_number', 'email', 'national_id', 'mobile', 'health_center',
+        'job_title', 'date_of_birth', 'age', 'appointment_date', 'years_of_experience'
+    )
+    list_filter = ('health_center', 'gender', 'marital_status', 'periodic_exam_status', 'vaccination_status', 'risk_level')
+    search_fields = ('name', 'email', 'employee_number', 'national_id', 'mobile', 'job_title', 'birth_place', 'national_address')
+    readonly_fields = ('age', 'years_of_experience', 'created_at', 'updated_at')
 
 
 @admin.register(EmployeeHealthProfile)
