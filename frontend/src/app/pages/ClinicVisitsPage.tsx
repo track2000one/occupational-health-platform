@@ -8,12 +8,17 @@ import {
 import { Grid } from '@mui/material';
 import {
   LocalHospital as HospitalIcon, Add as AddIcon, Search as SearchIcon,
-  MedicalServices as MedIcon,
 } from '@mui/icons-material';
 import { toast } from 'sonner';
-import { mockClinicVisits, mockEmployees, type ClinicVisit } from '../data/mockData';
+import { mockClinicVisits, type ClinicVisit } from '../data/mockData';
 import { useAuth } from '../context/AuthContext';
 import { PERMISSIONS } from '../data/roles';
+import { EmployeeQuickSearch, type EmployeeSearchOption } from '../components/EmployeeQuickSearch';
+
+const EMPTY_FORM = {
+  employeeId: '', employeeName: '', visitDate: '', clinicType: '', diagnosis: '',
+  actionTaken: '', sickLeaveDays: '', followUpDate: '', doctorName: '', notes: '',
+};
 
 export function ClinicVisitsPage() {
   const { t, i18n } = useTranslation();
@@ -24,10 +29,7 @@ export function ClinicVisitsPage() {
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState('all');
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [form, setForm] = useState({
-    employeeId: '', visitDate: '', clinicType: '', diagnosis: '',
-    actionTaken: '', sickLeaveDays: '', followUpDate: '', doctorName: '', notes: '',
-  });
+  const [form, setForm] = useState(EMPTY_FORM);
 
   const filtered = visits.filter(v => {
     const matchSearch = v.employeeName.toLowerCase().includes(search.toLowerCase()) ||
@@ -36,16 +38,23 @@ export function ClinicVisitsPage() {
     return matchSearch && matchType;
   });
 
+  function handleEmployeeSelect(employeeId: string, employee: EmployeeSearchOption | null) {
+    setForm(prev => ({
+      ...prev,
+      employeeId,
+      employeeName: employee?.name || '',
+    }));
+  }
+
   function handleSave() {
     if (!form.employeeId || !form.visitDate || !form.diagnosis) {
       toast.error(isRtl ? 'يرجى تعبئة الحقول المطلوبة' : 'Please fill required fields');
       return;
     }
-    const emp = mockEmployees.find(e => e.id === form.employeeId);
     const newVisit: ClinicVisit = {
       id: `CV-${Date.now()}`,
       employeeId: form.employeeId,
-      employeeName: emp?.name ?? form.employeeId,
+      employeeName: form.employeeName || form.employeeId,
       visitDate: form.visitDate,
       clinicType: form.clinicType || 'Employee Clinic',
       diagnosis: form.diagnosis,
@@ -57,7 +66,7 @@ export function ClinicVisitsPage() {
     };
     setVisits(prev => [newVisit, ...prev]);
     setDialogOpen(false);
-    setForm({ employeeId: '', visitDate: '', clinicType: '', diagnosis: '', actionTaken: '', sickLeaveDays: '', followUpDate: '', doctorName: '', notes: '' });
+    setForm(EMPTY_FORM);
     toast.success(isRtl ? 'تم تسجيل الزيارة بنجاح' : 'Visit recorded successfully');
   }
 
@@ -176,11 +185,13 @@ export function ClinicVisitsPage() {
         <DialogContent dividers>
           <Grid container spacing={2}>
             <Grid size={{ xs: 12, sm: 6 }}>
-              <TextField fullWidth select required label={isRtl ? 'الموظف' : 'Employee'}
-                value={form.employeeId} onChange={e => setForm(p => ({ ...p, employeeId: e.target.value }))}>
-                <MenuItem value="">{isRtl ? 'اختر موظفاً' : 'Select Employee'}</MenuItem>
-                {mockEmployees.map(emp => <MenuItem key={emp.id} value={emp.id}>{emp.name}</MenuItem>)}
-              </TextField>
+              <EmployeeQuickSearch
+                required
+                value={form.employeeId}
+                onChange={handleEmployeeSelect}
+                label={isRtl ? 'بحث الموظف' : 'Employee quick search'}
+                helperText={isRtl ? 'بحث بالاسم أو الهوية أو الرقم الوظيفي أو الجوال' : 'Search by name, ID, employee number, or mobile'}
+              />
             </Grid>
             <Grid size={{ xs: 12, sm: 6 }}>
               <TextField fullWidth required label={isRtl ? 'تاريخ الزيارة' : 'Visit Date'} type="date"
