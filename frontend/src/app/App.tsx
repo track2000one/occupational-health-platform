@@ -27,6 +27,8 @@ if (typeof console !== 'undefined') {
 
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AppThemeProvider, useAppTheme } from './context/ThemeContext';
+import { DatePreferenceProvider } from './context/DatePreferenceContext';
+import { DatePreferenceFloating } from './components/DatePreferenceFloating';
 import { type Permission } from './data/roles';
 import './i18n/config';
 import { LoginPage } from './pages/LoginPage';
@@ -321,6 +323,7 @@ function ThemedShell({ children }: { children: React.ReactNode }) {
       <ThemeProvider theme={muiTheme}>
         <CssBaseline />
         {children}
+        <DatePreferenceFloating />
         <Toaster position="top-right" richColors />
       </ThemeProvider>
     </div>
@@ -330,13 +333,15 @@ function ThemedShell({ children }: { children: React.ReactNode }) {
 export default function App(_props: Record<string, unknown>) {
   return (
     <AppThemeProvider>
-      <ThemedShell>
-        <BrowserRouter>
-          <AuthProvider>
-            <AppRoutes />
-          </AuthProvider>
-        </BrowserRouter>
-      </ThemedShell>
+      <DatePreferenceProvider>
+        <ThemedShell>
+          <BrowserRouter>
+            <AuthProvider>
+              <AppRoutes />
+            </AuthProvider>
+          </BrowserRouter>
+        </ThemedShell>
+      </DatePreferenceProvider>
     </AppThemeProvider>
   );
 }
