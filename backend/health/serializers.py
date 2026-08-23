@@ -1,3 +1,5 @@
+from datetime import date
+
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 from .models import AuditLog, ClinicVisit, CommitteeReferral, DataImportBatch, Employee, HealthCenter, InjuryCase, LabTest, UserProfile, Vaccination
@@ -226,25 +228,99 @@ class PlatformUserSerializer(serializers.ModelSerializer):
 
 
 class HealthCenterSerializer(serializers.ModelSerializer):
-    class Meta: model=HealthCenter; fields='__all__'
+    class Meta: model = HealthCenter; fields = '__all__'
+
+
 class EmployeeSerializer(serializers.ModelSerializer):
-    health_center_name=serializers.CharField(source='health_center.name',read_only=True)
-    class Meta: model=Employee; fields='__all__'
-class LabTestSerializer(serializers.ModelSerializer):
-    class Meta: model=LabTest; fields='__all__'
-class VaccinationSerializer(serializers.ModelSerializer):
-    class Meta: model=Vaccination; fields='__all__'
-class ClinicVisitSerializer(serializers.ModelSerializer):
-    class Meta: model=ClinicVisit; fields='__all__'
-class CommitteeReferralSerializer(serializers.ModelSerializer):
-    class Meta: model=CommitteeReferral; fields='__all__'
-class InjuryCaseSerializer(serializers.ModelSerializer):
-    class Meta: model=InjuryCase; fields='__all__'
-class AuditLogSerializer(serializers.ModelSerializer):
-    class Meta: model=AuditLog; fields='__all__'
-class DataImportBatchSerializer(serializers.ModelSerializer):
-    created_by_name=serializers.CharField(source='created_by.username',read_only=True)
+    health_center_name = serializers.CharField(source='health_center.name', read_only=True)
+    age = serializers.IntegerField(read_only=True)
+    years_of_experience = serializers.DecimalField(max_digits=5, decimal_places=2, read_only=True)
+
     class Meta:
-        model=DataImportBatch
-        fields=['id','file_name','sheet_name','mode','status','total_rows','valid_rows','duplicate_rows','imported_records','skipped_rows','errors_count','summary','created_by_name','created_at']
-        read_only_fields=fields
+        model = Employee
+        fields = '__all__'
+        extra_kwargs = {
+            'name': {'required': True, 'allow_blank': False},
+            'email': {'required': True, 'allow_blank': False},
+            'national_id': {'required': True, 'allow_blank': False},
+            'employee_number': {'required': True, 'allow_blank': False},
+            'mobile': {'required': True, 'allow_blank': False},
+            'date_of_birth': {'required': True},
+            'birth_place': {'required': True, 'allow_blank': False},
+            'national_address': {'required': True, 'allow_blank': False},
+            'marital_status': {'required': True, 'allow_blank': False},
+            'job_title': {'required': True, 'allow_blank': False},
+            'appointment_date': {'required': True},
+            'health_center': {'required': True},
+        }
+
+    def _normalize_identity(self, attrs):
+        if 'email' in attrs and attrs.get('email'):
+            attrs['email'] = str(attrs['email']).strip().lower()
+        if 'national_id' in attrs and attrs.get('national_id'):
+            attrs['national_id'] = ''.join(ch for ch in str(attrs['national_id']) if ch.isdigit())
+        if 'employee_number' in attrs and attrs.get('employee_number'):
+            attrs['employee_number'] = str(attrs['employee_number']).strip()
+        if 'mobile' in attrs and attrs.get('mobile'):
+            attrs['mobile'] = str(attrs['mobile']).strip()
+        return attrs
+
+    def _require_for_create(self, attrs, field_name, message):
+        if self.instance is None and not attrs.get(field_name):
+            raise serializers.ValidationError({field_name: message})
+
+    def _check_unique_employee_field(self, field_name, value, message):
+        if not value:
+            return
+        qs = Employee.objects.filter(**{field_name: value})
+        if self.instance is not None:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError({field_name: message})
+
+    def validate(self, attrs):
+        attrs = self._normalize_identity(attrs)
+
+        self._require_for_create(attrs, 'email', 'Email is required and must be unique.')
+        self._require_for_create(attrs, 'national_id', 'National ID is required and must be unique.')
+        self._require_for_create(attrs, 'employee_number', 'Employee number is required and must be unique.')
+        self._require_for_create(attrs, 'mobile', 'Mobile number is required.')
+        self._require_for_create(attrs, 'date_of_birth', 'Date of birth is required.')
+        self._require_for_create(attrs, 'birth_place', 'Birth place is required.')
+        self._require_for_create(attrs, 'national_address', 'National address is required.')
+        self._require_for_create(attrs, 'marital_status', 'Marital status is required.')
+        self._require_for_create(attrs, 'job_title', 'Job title is required.')
+        self._require_for_create(attrs, 'appointment_date', 'Appointment date is required.')
+
+        self._check_unique_employee_field('email', attrs.get('email'), 'Email already exists for another employee.')
+        self._check_unique_employee_field('national_id', attrs.get('national_id'), 'National ID already exists for another employee.')
+        self._check_unique_employee_field('employee_number', attrs.get('employee_number'), 'Employee number already exists for another employee.')
+
+        today = date.today()
+        dob = attrs.get('date_of_birth')
+        appointment = attrs.get('appointment_date')
+        if dob and dob > today:
+            raise serializers.ValidationError({'date_of_birth': 'Date of birth cannot be in the future.'})
+        if appointment and appointment > today:
+            raise serializers.ValidationError({'appointment_date': 'Appointment date cannot be in the future.'})
+        return attrs
+
+
+class LabTestSerializer(serializers.ModelSerializer):
+    class Meta: model = LabTest; fields = '__all__'
+class VaccinationSerializer(serializers.ModelSerializer):
+    class Meta: model = Vaccination; fields = '__all__'
+class ClinicVisitSerializer(serializers.ModelSerializer):
+    class Meta: model = ClinicVisit; fields = '__all__'
+class CommitteeReferralSerializer(serializers.ModelSerializer):
+    class Meta: model = CommitteeReferral; fields = '__all__'
+class InjuryCaseSerializer(serializers.ModelSerializer):
+    class Meta: model = InjuryCase; fields = '__all__'
+class AuditLogSerializer(serializers.ModelSerializer):
+    class Meta: model = AuditLog; fields = '__all__'
+class DataImportBatchSerializer(serializers.ModelSerializer):
+    created_by_name = serializers.CharField(source='created_by.username', read_only=True)
+    class Meta:
+        model = DataImportBatch
+        fields = ['id','file_name','sheet_name','mode','status','total_rows','valid_rows','duplicate_rows','imported_records','skipped_rows','errors_count','summary','created_by_name','created_at']
+        read_only_fields = fields
