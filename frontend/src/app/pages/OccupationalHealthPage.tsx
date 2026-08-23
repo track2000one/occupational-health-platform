@@ -11,9 +11,9 @@ import {
   CheckCircle as CheckIcon, Warning as WarnIcon,
 } from '@mui/icons-material';
 import { toast } from 'sonner';
-import { mockEmployees } from '../data/mockData';
 import { useAuth } from '../context/AuthContext';
 import { PERMISSIONS } from '../data/roles';
+import { EmployeeQuickSearch, type EmployeeSearchOption } from '../components/EmployeeQuickSearch';
 
 interface OhAssessment {
   id: string;
@@ -38,6 +38,12 @@ const FITNESS_COLORS = { fit: 'success', fitWithRestrictions: 'warning', tempora
 const FITNESS_LABELS_EN = { fit: 'Fit', fitWithRestrictions: 'Fit with Restrictions', temporarilyUnfit: 'Temporarily Unfit', permanentlyUnfit: 'Permanently Unfit' };
 const FITNESS_LABELS_AR = { fit: 'لائق', fitWithRestrictions: 'لائق مع قيود', temporarilyUnfit: 'غير لائق مؤقتاً', permanentlyUnfit: 'غير لائق دائماً' };
 
+const EMPTY_ASSESSMENT_FORM = {
+  employeeId: '', employeeName: '', assessmentDate: '', assessmentType: '',
+  fitnessDecision: 'fit' as OhAssessment['fitnessDecision'],
+  restrictions: '', nextAssessmentDate: '', assessorName: '', notes: '',
+};
+
 export function OccupationalHealthPage() {
   const { i18n } = useTranslation();
   const { can } = useAuth();
@@ -47,11 +53,7 @@ export function OccupationalHealthPage() {
   const [search, setSearch] = useState('');
   const [filterDecision, setFilterDecision] = useState('all');
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [form, setForm] = useState({
-    employeeId: '', assessmentDate: '', assessmentType: '',
-    fitnessDecision: 'fit' as OhAssessment['fitnessDecision'],
-    restrictions: '', nextAssessmentDate: '', assessorName: '', notes: '',
-  });
+  const [form, setForm] = useState(EMPTY_ASSESSMENT_FORM);
 
   const filtered = assessments.filter(a => {
     const matchSearch = a.employeeName.toLowerCase().includes(search.toLowerCase());
@@ -59,16 +61,19 @@ export function OccupationalHealthPage() {
     return matchSearch && matchDecision;
   });
 
+  function handleEmployeeSelect(employeeId: string, employee: EmployeeSearchOption | null) {
+    setForm(prev => ({ ...prev, employeeId, employeeName: employee?.name || '' }));
+  }
+
   function handleSave() {
     if (!form.employeeId || !form.assessmentDate) {
       toast.error(isRtl ? 'يرجى تعبئة الحقول المطلوبة' : 'Please fill required fields');
       return;
     }
-    const emp = mockEmployees.find(e => e.id === form.employeeId);
     const newAssessment: OhAssessment = {
       id: `OHA-${Date.now()}`,
       employeeId: form.employeeId,
-      employeeName: emp?.name ?? form.employeeId,
+      employeeName: form.employeeName || form.employeeId,
       assessmentDate: form.assessmentDate,
       assessmentType: form.assessmentType || 'Periodic',
       fitnessDecision: form.fitnessDecision,
@@ -79,7 +84,7 @@ export function OccupationalHealthPage() {
     };
     setAssessments(prev => [newAssessment, ...prev]);
     setDialogOpen(false);
-    setForm({ employeeId: '', assessmentDate: '', assessmentType: '', fitnessDecision: 'fit', restrictions: '', nextAssessmentDate: '', assessorName: '', notes: '' });
+    setForm(EMPTY_ASSESSMENT_FORM);
     toast.success(isRtl ? 'تم تسجيل تقييم الصحة المهنية' : 'OH assessment recorded');
   }
 
@@ -171,24 +176,10 @@ export function OccupationalHealthPage() {
                 <TableCell><Typography variant="body2" fontFamily="monospace">{assessment.id}</Typography></TableCell>
                 <TableCell><Typography variant="body2" fontWeight="medium">{assessment.employeeName}</Typography></TableCell>
                 <TableCell>{assessment.assessmentDate}</TableCell>
-                <TableCell>
-                  <Chip label={assessment.assessmentType} size="small" variant="outlined" />
-                </TableCell>
-                <TableCell>
-                  <Chip
-                    label={isRtl ? FITNESS_LABELS_AR[assessment.fitnessDecision] : FITNESS_LABELS_EN[assessment.fitnessDecision]}
-                    size="small" color={FITNESS_COLORS[assessment.fitnessDecision]} />
-                </TableCell>
-                <TableCell>
-                  <Typography variant="body2" color={assessment.restrictions ? 'warning.main' : 'text.secondary'}>
-                    {assessment.restrictions ?? '—'}
-                  </Typography>
-                </TableCell>
-                <TableCell>
-                  {assessment.nextAssessmentDate
-                    ? <Typography variant="body2" color="info.main">{assessment.nextAssessmentDate}</Typography>
-                    : <Typography variant="body2" color="text.secondary">—</Typography>}
-                </TableCell>
+                <TableCell><Chip label={assessment.assessmentType} size="small" variant="outlined" /></TableCell>
+                <TableCell><Chip label={isRtl ? FITNESS_LABELS_AR[assessment.fitnessDecision] : FITNESS_LABELS_EN[assessment.fitnessDecision]} size="small" color={FITNESS_COLORS[assessment.fitnessDecision]} /></TableCell>
+                <TableCell><Typography variant="body2" color={assessment.restrictions ? 'warning.main' : 'text.secondary'}>{assessment.restrictions ?? '—'}</Typography></TableCell>
+                <TableCell>{assessment.nextAssessmentDate ? <Typography variant="body2" color="info.main">{assessment.nextAssessmentDate}</Typography> : <Typography variant="body2" color="text.secondary">—</Typography>}</TableCell>
                 <TableCell><Typography variant="body2">{assessment.assessorName}</Typography></TableCell>
               </TableRow>
             ))}
@@ -205,11 +196,13 @@ export function OccupationalHealthPage() {
         <DialogContent dividers>
           <Grid container spacing={2}>
             <Grid size={{ xs: 12 }}>
-              <TextField fullWidth select required label={isRtl ? 'الموظف' : 'Employee'}
-                value={form.employeeId} onChange={e => setForm(p => ({ ...p, employeeId: e.target.value }))}>
-                <MenuItem value="">{isRtl ? 'اختر موظفاً' : 'Select Employee'}</MenuItem>
-                {mockEmployees.map(emp => <MenuItem key={emp.id} value={emp.id}>{emp.name}</MenuItem>)}
-              </TextField>
+              <EmployeeQuickSearch
+                required
+                value={form.employeeId}
+                onChange={handleEmployeeSelect}
+                label={isRtl ? 'بحث الموظف' : 'Employee quick search'}
+                helperText={isRtl ? 'بحث بالاسم أو الهوية أو الرقم الوظيفي أو الجوال' : 'Search by name, ID, employee number, or mobile'}
+              />
             </Grid>
             <Grid size={{ xs: 12, sm: 6 }}>
               <TextField fullWidth required label={isRtl ? 'تاريخ التقييم' : 'Assessment Date'} type="date"
