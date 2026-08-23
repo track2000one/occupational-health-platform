@@ -12,9 +12,12 @@ import {
   Upload as UploadIcon, Science as ScienceIcon,
 } from '@mui/icons-material';
 import { toast } from 'sonner';
-import { mockLabTests, mockEmployees, type LabTest } from '../data/mockData';
+import { mockLabTests, type LabTest } from '../data/mockData';
 import { useAuth } from '../context/AuthContext';
 import { PERMISSIONS } from '../data/roles';
+import { EmployeeQuickSearch, type EmployeeSearchOption } from '../components/EmployeeQuickSearch';
+
+const EMPTY_REQUEST_FORM = { employeeId: '', employeeName: '', testType: '', notes: '' };
 
 export function LabTestsPage() {
   const { t, i18n } = useTranslation();
@@ -26,7 +29,7 @@ export function LabTestsPage() {
   const [filterStatus, setFilterStatus] = useState('all');
 
   const [requestOpen, setRequestOpen] = useState(false);
-  const [reqForm, setReqForm] = useState({ employeeId: '', testType: '', notes: '' });
+  const [reqForm, setReqForm] = useState(EMPTY_REQUEST_FORM);
 
   const [resultOpen, setResultOpen] = useState(false);
   const [editTest, setEditTest] = useState<LabTest | null>(null);
@@ -54,16 +57,28 @@ export function LabTestsPage() {
     setResultOpen(true);
   }
 
+  function handleEmployeeSelect(employeeId: string, employee: EmployeeSearchOption | null) {
+    setReqForm(prev => ({
+      ...prev,
+      employeeId,
+      employeeName: employee?.name || '',
+    }));
+  }
+
+  function openRequestDialog() {
+    setReqForm(EMPTY_REQUEST_FORM);
+    setRequestOpen(true);
+  }
+
   function submitRequest() {
     if (!reqForm.employeeId || !reqForm.testType) {
-      toast.error(isRtl ? 'يرجى تعبئة الحقول المطلوبة' : 'Please fill required fields');
+      toast.error(isRtl ? 'يرجى اختيار الموظف ونوع التحليل' : 'Please select employee and test type');
       return;
     }
-    const emp = mockEmployees.find(e => e.id === reqForm.employeeId);
     const newTest: LabTest = {
       id: `LAB-${Date.now()}`,
       employeeId: reqForm.employeeId,
-      employeeName: emp?.name ?? reqForm.employeeId,
+      employeeName: reqForm.employeeName || reqForm.employeeId,
       testType: reqForm.testType,
       status: 'pending',
       requestedBy: isRtl ? 'المستخدم الحالي' : 'Current User',
@@ -72,7 +87,7 @@ export function LabTestsPage() {
     };
     setLabTests(prev => [newTest, ...prev]);
     setRequestOpen(false);
-    setReqForm({ employeeId: '', testType: '', notes: '' });
+    setReqForm(EMPTY_REQUEST_FORM);
     toast.success(isRtl ? 'تم إرسال طلب التحليل' : 'Lab test requested successfully');
   }
 
@@ -103,7 +118,7 @@ export function LabTestsPage() {
         </Box>
         {can(PERMISSIONS.CREATE_LAB_REQUEST) && (
           <Button variant="contained" startIcon={<AddIcon />}
-            onClick={() => setRequestOpen(true)}
+            onClick={openRequestDialog}
             sx={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
             {isRtl ? 'طلب تحليل' : 'Request Lab Test'}
           </Button>
@@ -195,7 +210,6 @@ export function LabTestsPage() {
         </Table>
       </TableContainer>
 
-      {/* Request Lab Test Dialog */}
       <Dialog open={requestOpen} onClose={() => setRequestOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle component="div">
           <Typography variant="h6" component="span" fontWeight="bold">
@@ -205,11 +219,12 @@ export function LabTestsPage() {
         <DialogContent dividers>
           <Grid container spacing={2}>
             <Grid size={{ xs: 12 }}>
-              <TextField fullWidth select required label={isRtl ? 'الموظف' : 'Employee'}
-                value={reqForm.employeeId} onChange={e => setReqForm(p => ({ ...p, employeeId: e.target.value }))}>
-                <MenuItem value="">{isRtl ? 'اختر موظفاً' : 'Select Employee'}</MenuItem>
-                {mockEmployees.map(emp => <MenuItem key={emp.id} value={emp.id}>{emp.name}</MenuItem>)}
-              </TextField>
+              <EmployeeQuickSearch
+                required
+                value={reqForm.employeeId}
+                onChange={handleEmployeeSelect}
+                label={isRtl ? 'بحث الموظف' : 'Employee quick search'}
+              />
             </Grid>
             <Grid size={{ xs: 12 }}>
               <TextField fullWidth select required label={t('testType')}
@@ -232,7 +247,6 @@ export function LabTestsPage() {
         </DialogActions>
       </Dialog>
 
-      {/* Enter Result Dialog */}
       <Dialog open={resultOpen} onClose={() => setResultOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle component="div">
           <Typography variant="h6" component="span" fontWeight="bold">
