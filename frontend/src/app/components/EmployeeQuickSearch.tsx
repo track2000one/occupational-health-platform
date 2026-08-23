@@ -122,6 +122,51 @@ async function fetchEmployees(query: string): Promise<EmployeeSearchOption[]> {
   return getList<EmployeeSearchOption>(payload).slice(0, 25);
 }
 
+function EmployeeInfoLine({ label, value }: { label: string; value: string }) {
+  return (
+    <Typography variant="caption" sx={{ color: '#334155', fontWeight: 700 }}>
+      <Box component="span" sx={{ color: '#64748B', fontWeight: 600 }}>{label}: </Box>{value || '-'}
+    </Typography>
+  );
+}
+
+function SelectedEmployeeSummary({ employee }: { employee: EmployeeSearchOption }) {
+  return (
+    <Paper
+      variant="outlined"
+      sx={{
+        mt: 1.25,
+        p: 1.35,
+        borderRadius: 2.5,
+        direction: 'rtl',
+        borderColor: 'rgba(20, 127, 123, 0.25)',
+        background: 'linear-gradient(145deg, rgba(240,253,250,.95), rgba(248,250,252,.98))',
+      }}
+    >
+      <Stack direction="row" spacing={1.25} alignItems="flex-start">
+        <Avatar sx={{ width: 38, height: 38, bgcolor: '#148F8B', fontSize: '.9rem', fontWeight: 900 }}>
+          {String(employee.name || getEmployeeNumber(employee) || '?').charAt(0)}
+        </Avatar>
+        <Box sx={{ minWidth: 0, flex: 1 }}>
+          <Typography variant="body2" sx={{ fontWeight: 900, color: '#0F172A', mb: 0.45 }}>
+            {employee.name || '-'}
+          </Typography>
+          <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap>
+            <EmployeeInfoLine label="رقم الموظف" value={getEmployeeNumber(employee)} />
+            <EmployeeInfoLine label="الهوية" value={maskNationalId(getNationalId(employee))} />
+            <EmployeeInfoLine label="الجوال" value={getMobile(employee)} />
+            <EmployeeInfoLine label="المركز" value={getHealthCenterName(employee)} />
+            <EmployeeInfoLine label="المسمى" value={getJobTitle(employee)} />
+          </Stack>
+          <Typography variant="caption" sx={{ display: 'block', mt: 0.65, color: '#0F766E', fontWeight: 800 }}>
+            سيتم حفظ رقم الموظف الداخلي في المعاملة وربطها بسجل الموظف في PostgreSQL.
+          </Typography>
+        </Box>
+      </Stack>
+    </Paper>
+  );
+}
+
 export function EmployeeQuickSearch({
   value,
   onChange,
@@ -292,6 +337,8 @@ export function EmployeeQuickSearch({
           )}
         </Paper>
       )}
+
+      {selectedEmployee && <SelectedEmployeeSummary employee={selectedEmployee} />}
     </Box>
   );
 }
