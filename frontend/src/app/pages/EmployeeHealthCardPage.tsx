@@ -348,6 +348,22 @@ function collectPageCss() {
   }).join('\n');
 }
 
+function escapeXmlText(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function loadExportImage(source: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('تعذر تحويل البطاقة إلى صورة. يرجى تحديث الصفحة والمحاولة مرة أخرى.'));
+    image.src = source;
+  });
+}
+
 async function elementToPng(element: HTMLElement, pixelRatio = 2): Promise<string> {
   const width = Math.ceil(Math.max(element.scrollWidth, element.getBoundingClientRect().width));
   const height = Math.ceil(Math.max(element.scrollHeight, element.getBoundingClientRect().height));
@@ -358,21 +374,22 @@ async function elementToPng(element: HTMLElement, pixelRatio = 2): Promise<strin
   await inlineCloneImages(clone);
 
   const serialized = new XMLSerializer().serializeToString(clone);
+  // Stylesheets can contain XML-sensitive text such as Tailwind's `&` nested
+  // selectors. Inserting raw CSS into an SVG makes the whole source invalid,
+  // which causes Chromium's "The source image cannot be decoded" error.
+  const safeCss = escapeXmlText(collectPageCss());
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
     <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
       <foreignObject width="100%" height="100%">
         <div xmlns="http://www.w3.org/1999/xhtml">
-          <style>${collectPageCss().replace(/<\/style/gi, '<\\/style')}</style>
+          <style>${safeCss}</style>
           ${serialized}
         </div>
       </foreignObject>
     </svg>`;
   const svgUrl = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }));
   try {
-    const image = new Image();
-    image.decoding = 'async';
-    image.src = svgUrl;
-    await image.decode();
+    const image = await loadExportImage(svgUrl);
     const canvas = document.createElement('canvas');
     canvas.width = width * pixelRatio;
     canvas.height = height * pixelRatio;
