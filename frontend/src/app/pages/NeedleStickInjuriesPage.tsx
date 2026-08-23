@@ -12,9 +12,15 @@ import {
   HourglassEmpty as HourglassEmptyIcon, Edit as EditIcon,
 } from '@mui/icons-material';
 import { toast } from 'sonner';
-import { mockNeedleStickInjuries, mockEmployees, type NeedleStickInjury } from '../data/mockData';
+import { mockNeedleStickInjuries, type NeedleStickInjury } from '../data/mockData';
 import { useAuth } from '../context/AuthContext';
 import { PERMISSIONS } from '../data/roles';
+import { EmployeeQuickSearch, type EmployeeSearchOption } from '../components/EmployeeQuickSearch';
+
+const EMPTY_REPORT_FORM = {
+  employeeId: '', employeeName: '', exposureDate: '', workplace: '', injuryMethod: '',
+  sourceKnown: 'false', actionTaken: '', notes: '',
+};
 
 export function NeedleStickInjuriesPage() {
   const { t, i18n } = useTranslation();
@@ -25,10 +31,7 @@ export function NeedleStickInjuriesPage() {
   const [reportOpen, setReportOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editInjury, setEditInjury] = useState<NeedleStickInjury | null>(null);
-  const [form, setForm] = useState({
-    employeeId: '', exposureDate: '', workplace: '', injuryMethod: '',
-    sourceKnown: 'false', actionTaken: '', notes: '',
-  });
+  const [form, setForm] = useState(EMPTY_REPORT_FORM);
   const [statusForm, setStatusForm] = useState<NeedleStickInjury['status']>('underReview');
 
   function getStatusColor(status: string) {
@@ -49,16 +52,19 @@ export function NeedleStickInjuriesPage() {
     }
   }
 
+  function handleEmployeeSelect(employeeId: string, employee: EmployeeSearchOption | null) {
+    setForm(prev => ({ ...prev, employeeId, employeeName: employee?.name || '' }));
+  }
+
   function submitReport() {
     if (!form.employeeId || !form.exposureDate || !form.workplace) {
       toast.error(isRtl ? 'يرجى تعبئة الحقول المطلوبة' : 'Please fill required fields');
       return;
     }
-    const emp = mockEmployees.find(e => e.id === form.employeeId);
     const newInjury: NeedleStickInjury = {
       id: `NSI-${Date.now()}`,
       employeeId: form.employeeId,
-      employeeName: emp?.name ?? form.employeeId,
+      employeeName: form.employeeName || form.employeeId,
       exposureDate: form.exposureDate,
       workplace: form.workplace,
       injuryMethod: form.injuryMethod,
@@ -70,7 +76,7 @@ export function NeedleStickInjuriesPage() {
     };
     setInjuries(prev => [newInjury, ...prev]);
     setReportOpen(false);
-    setForm({ employeeId: '', exposureDate: '', workplace: '', injuryMethod: '', sourceKnown: 'false', actionTaken: '', notes: '' });
+    setForm(EMPTY_REPORT_FORM);
     toast.success(isRtl ? 'تم تسجيل حادثة الوخز بنجاح' : 'Needle stick injury reported successfully');
   }
 
@@ -188,7 +194,6 @@ export function NeedleStickInjuriesPage() {
         </Table>
       </TableContainer>
 
-      {/* Report Injury Dialog */}
       <Dialog open={reportOpen} onClose={() => setReportOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle component="div">
           <Typography variant="h6" component="span" fontWeight="bold">
@@ -198,11 +203,13 @@ export function NeedleStickInjuriesPage() {
         <DialogContent dividers>
           <Grid container spacing={2}>
             <Grid size={{ xs: 12 }}>
-              <TextField fullWidth select required label={isRtl ? 'الموظف المصاب' : 'Affected Employee'}
-                value={form.employeeId} onChange={e => setForm(p => ({ ...p, employeeId: e.target.value }))}>
-                <MenuItem key="" value="">{isRtl ? 'اختر موظفاً' : 'Select Employee'}</MenuItem>
-                {mockEmployees.map(emp => <MenuItem key={emp.id} value={emp.id}>{emp.name}</MenuItem>)}
-              </TextField>
+              <EmployeeQuickSearch
+                required
+                value={form.employeeId}
+                onChange={handleEmployeeSelect}
+                label={isRtl ? 'بحث الموظف المصاب' : 'Affected employee quick search'}
+                helperText={isRtl ? 'بحث بالاسم أو الهوية أو الرقم الوظيفي أو الجوال' : 'Search by name, ID, employee number, or mobile'}
+              />
             </Grid>
             <Grid size={{ xs: 12, sm: 6 }}>
               <TextField fullWidth required label={t('exposureDate')} type="date"
@@ -238,7 +245,6 @@ export function NeedleStickInjuriesPage() {
         </DialogActions>
       </Dialog>
 
-      {/* Update Status Dialog */}
       <Dialog open={editOpen} onClose={() => setEditOpen(false)} maxWidth="xs" fullWidth>
         <DialogTitle component="div">
           <Typography variant="h6" component="span" fontWeight="bold">
