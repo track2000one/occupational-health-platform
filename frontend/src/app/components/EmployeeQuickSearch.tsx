@@ -25,11 +25,17 @@ export type EmployeeSearchOption = {
   name: string;
   email?: string | null;
   national_id?: string | null;
+  nationalId?: string | null;
   employee_number?: string | null;
+  employeeNumber?: string | null;
   mobile?: string | null;
+  phone?: string | null;
   job_title?: string | null;
+  jobTitle?: string | null;
   health_center?: string | number | null;
+  healthCenterId?: string | number | null;
   health_center_name?: string | null;
+  healthCenterName?: string | null;
 };
 
 type EmployeeQuickSearchProps = {
@@ -51,6 +57,26 @@ function getList<T>(payload: unknown): T[] {
   return [];
 }
 
+function getNationalId(employee: EmployeeSearchOption) {
+  return employee.national_id || employee.nationalId || '';
+}
+
+function getEmployeeNumber(employee: EmployeeSearchOption) {
+  return employee.employee_number || employee.employeeNumber || '';
+}
+
+function getMobile(employee: EmployeeSearchOption) {
+  return employee.mobile || employee.phone || '';
+}
+
+function getJobTitle(employee: EmployeeSearchOption) {
+  return employee.job_title || employee.jobTitle || '';
+}
+
+function getHealthCenterName(employee: EmployeeSearchOption) {
+  return employee.health_center_name || employee.healthCenterName || '';
+}
+
 function maskNationalId(value?: string | null) {
   const digits = String(value || '').replace(/\D/g, '');
   if (!digits) return '-';
@@ -66,18 +92,19 @@ function employeeSearchText(employee: EmployeeSearchOption) {
   return [
     employee.name,
     employee.email,
-    employee.national_id,
-    employee.employee_number,
-    employee.mobile,
-    employee.job_title,
-    employee.health_center_name,
+    getNationalId(employee),
+    getEmployeeNumber(employee),
+    getMobile(employee),
+    getJobTitle(employee),
+    getHealthCenterName(employee),
   ].map(normalize).join(' ');
 }
 
-async function fetchEmployees(): Promise<EmployeeSearchOption[]> {
+async function fetchEmployees(query = ''): Promise<EmployeeSearchOption[]> {
   const token = getAccessToken();
   if (!token) return [];
-  const response = await fetch(`${API_BASE_URL}/employees/`, {
+  const searchParam = query.trim() ? `?search=${encodeURIComponent(query.trim())}` : '';
+  const response = await fetch(`${API_BASE_URL}/employees/${searchParam}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!response.ok) return [];
@@ -108,6 +135,24 @@ export function EmployeeQuickSearch({
     return () => { alive = false; };
   }, []);
 
+  useEffect(() => {
+    const query = inputValue.trim();
+    const digits = query.replace(/\D/g, '');
+    const shouldSearch = query.replace(/\s/g, '').length >= minSearchLength || digits.length >= 4;
+    if (!shouldSearch) return;
+
+    const timer = window.setTimeout(() => {
+      let alive = true;
+      setLoading(true);
+      fetchEmployees(query)
+        .then(items => { if (alive) setEmployees(items); })
+        .finally(() => { if (alive) setLoading(false); });
+      return () => { alive = false; };
+    }, 300);
+
+    return () => window.clearTimeout(timer);
+  }, [inputValue, minSearchLength]);
+
   const selected = useMemo(
     () => employees.find(employee => String(employee.id) === String(value)) || null,
     [employees, value]
@@ -127,7 +172,7 @@ export function EmployeeQuickSearch({
       onChange={(_, employee) => onChange(employee ? String(employee.id) : '', employee)}
       getOptionLabel={option => option.name || String(option.id)}
       isOptionEqualToValue={(option, selectedOption) => String(option.id) === String(selectedOption.id)}
-      noOptionsText={canSearch ? 'لا توجد نتائج مطابقة' : 'اكتب الاسم أو الهوية أو الرقم الوظيفي للبحث'}
+      noOptionsText={canSearch ? 'لا توجد نتائج مطابقة أو لم يتم إدخال موظفين بعد' : 'اكتب الاسم أو الهوية أو الرقم الوظيفي للبحث'}
       filterOptions={(options, state) => {
         const query = state.inputValue.trim().toLowerCase();
         if (!query) return options.slice(0, 10);
@@ -138,7 +183,7 @@ export function EmployeeQuickSearch({
             const searchText = employeeSearchText(employee);
             return searchText.includes(query) || (
               normalizedDigits.length >= 4 &&
-              [employee.national_id, employee.employee_number, employee.mobile]
+              [getNationalId(employee), getEmployeeNumber(employee), getMobile(employee)]
                 .some(value => String(value || '').replace(/\D/g, '').includes(normalizedDigits))
             );
           })
@@ -147,17 +192,17 @@ export function EmployeeQuickSearch({
       renderOption={(props, employee) => (
         <Box component="li" {...props} key={employee.id} sx={{ direction: 'rtl', alignItems: 'flex-start !important', gap: 1.25, py: 1 }}>
           <Avatar sx={{ width: 34, height: 34, bgcolor: 'primary.main', fontSize: '.85rem' }}>
-            {String(employee.name || employee.employee_number || '?').charAt(0)}
+            {String(employee.name || getEmployeeNumber(employee) || '?').charAt(0)}
           </Avatar>
           <Box sx={{ minWidth: 0 }}>
             <Typography variant="body2" fontWeight={800}>{employee.name}</Typography>
             <Stack direction="row" spacing={1} flexWrap="wrap" sx={{ mt: 0.25 }}>
-              <Typography variant="caption" color="text.secondary">الرقم الوظيفي: {employee.employee_number || '-'}</Typography>
-              <Typography variant="caption" color="text.secondary">الهوية: {maskNationalId(employee.national_id)}</Typography>
-              <Typography variant="caption" color="text.secondary">الجوال: {employee.mobile || '-'}</Typography>
+              <Typography variant="caption" color="text.secondary">الرقم الوظيفي: {getEmployeeNumber(employee) || '-'}</Typography>
+              <Typography variant="caption" color="text.secondary">الهوية: {maskNationalId(getNationalId(employee))}</Typography>
+              <Typography variant="caption" color="text.secondary">الجوال: {getMobile(employee) || '-'}</Typography>
             </Stack>
             <Typography variant="caption" color="text.secondary">
-              {employee.health_center_name || '-'}{employee.job_title ? ` — ${employee.job_title}` : ''}
+              {getHealthCenterName(employee) || '-'}{getJobTitle(employee) ? ` — ${getJobTitle(employee)}` : ''}
             </Typography>
           </Box>
         </Box>
