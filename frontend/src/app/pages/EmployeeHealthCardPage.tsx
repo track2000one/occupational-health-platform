@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router';
+import { useNavigate, useParams, useSearchParams } from 'react-router';
 import {
   Accordion,
   AccordionDetails,
@@ -649,7 +649,9 @@ function FormSection({
 export function EmployeeHealthCardPage() {
   const navigate = useNavigate();
   const { employeeId } = useParams();
+  const [searchParams] = useSearchParams();
   const { user } = useAuth();
+  const requestedEditMode = searchParams.get('mode') === 'edit';
   const cardRef = useRef<HTMLElement | null>(null);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState(employeeId || '');
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeSearchOption | null>(null);
@@ -701,7 +703,9 @@ export function EmployeeHealthCardPage() {
         job_title: payload.employee.job_title,
         health_center_name: payload.employee.health_center_name,
       });
-      setEditing(!payload.exists);
+      // View always renders the complete visual card, even before its optional
+      // clinical fields are saved. The explicit Edit action opens the form.
+      setEditing(requestedEditMode);
     } catch (loadError) {
       const message = loadError instanceof Error ? loadError.message : 'تعذر تحميل البطاقة الصحية.';
       setError(message);
@@ -710,7 +714,7 @@ export function EmployeeHealthCardPage() {
     } finally {
       setLoading(false);
     }
-  }, [applyCard]);
+  }, [applyCard, requestedEditMode]);
 
   useEffect(() => {
     if (selectedEmployeeId) void loadCard(selectedEmployeeId);
@@ -807,7 +811,7 @@ export function EmployeeHealthCardPage() {
     setCard(null);
     setCardImage('');
     setEditing(false);
-    if (id) navigate(`/employees/${id}/health-card`, { replace: true });
+    if (id) navigate(`/employees/${id}/health-card${requestedEditMode ? '?mode=edit' : ''}`, { replace: true });
     else navigate('/employee-health-card', { replace: true });
   }
 

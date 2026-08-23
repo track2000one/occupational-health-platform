@@ -235,6 +235,9 @@ class EmployeeSerializer(serializers.ModelSerializer):
     health_center_name = serializers.CharField(source='health_center.name', read_only=True)
     age = serializers.IntegerField(read_only=True)
     years_of_experience = serializers.DecimalField(max_digits=5, decimal_places=2, read_only=True)
+    health_card_exists = serializers.SerializerMethodField()
+    health_card_number = serializers.SerializerMethodField()
+    health_card_updated_at = serializers.SerializerMethodField()
 
     class Meta:
         model = Employee
@@ -253,6 +256,23 @@ class EmployeeSerializer(serializers.ModelSerializer):
             'appointment_date': {'required': True},
             'health_center': {'required': True},
         }
+
+    def _health_card(self, obj):
+        try:
+            return obj.health_card
+        except EmployeeHealthCard.DoesNotExist:
+            return None
+
+    def get_health_card_exists(self, obj):
+        return self._health_card(obj) is not None
+
+    def get_health_card_number(self, obj):
+        card = self._health_card(obj)
+        return card.card_number if card else ''
+
+    def get_health_card_updated_at(self, obj):
+        card = self._health_card(obj)
+        return card.updated_at if card else None
 
     def _normalize_identity(self, attrs):
         if 'email' in attrs and attrs.get('email'):

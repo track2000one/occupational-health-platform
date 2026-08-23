@@ -273,7 +273,7 @@ class HealthCenterViewSet(viewsets.ModelViewSet):
 
 
 class EmployeeViewSet(viewsets.ModelViewSet):
-    queryset=Employee.objects.select_related('health_center').all().order_by('-created_at')
+    queryset=Employee.objects.select_related('health_center', 'health_card').all().order_by('-created_at')
     serializer_class=EmployeeSerializer
     permission_classes=[permissions.IsAuthenticated,IsAdminOrManagerForWrite]
     search_fields=['name','email','employee_number','national_id','mobile','job_title','birth_place','national_address']
@@ -310,7 +310,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             'systemAdmin', 'ohManager', 'ohDoctor', 'clinicDoctor', 'dataEntry'
         }
 
-    @action(detail=True, methods=['get', 'put', 'patch'])
+    @action(detail=True, methods=['get', 'put', 'patch', 'delete'])
     def health_card(self, request, pk=None):
         employee = self.get_object()
         if not self._can_view_health_card(request, employee):
@@ -320,6 +320,23 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             )
 
         card = EmployeeHealthCard.objects.filter(employee=employee).first()
+        if request.method == 'DELETE':
+            if not self._can_write_health_card(request):
+                return Response(
+                    {'detail': 'You do not have permission to delete this health card.'},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+            if card:
+                deleted_id = str(card.id)
+                card.delete()
+                AuditLog.objects.create(
+                    user=str(request.user),
+                    action='delete_employee_health_card',
+                    model_name='EmployeeHealthCard',
+                    record_id=deleted_id,
+                )
+            return Response(status=status.HTTP_204_NO_CONTENT)
+
         was_created = False
         if request.method in ('PUT', 'PATCH'):
             if not self._can_write_health_card(request):

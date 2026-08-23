@@ -1,132 +1,89 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import {
-  Alert,
-  Box,
-  Button,
-  CircularProgress,
-  Chip,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  MenuItem,
-  Paper,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  TextField,
-  Typography,
+  Alert, Avatar, Box, Button, Chip, CircularProgress, Dialog, DialogActions,
+  DialogContent, DialogTitle, Paper, Stack, TextField, Typography,
 } from '@mui/material';
-import { Grid } from '@mui/material';
 import {
-  Add as AddIcon,
-  CheckCircle as CheckIcon,
-  HealthAndSafety as OhIcon,
-  Search as SearchIcon,
-  Warning as WarnIcon,
+  Add as AddIcon, Delete as DeleteIcon, Edit as EditIcon,
+  HealthAndSafety as HealthIcon, Refresh as RefreshIcon, Search as SearchIcon,
+  Visibility as ViewIcon,
 } from '@mui/icons-material';
 import { toast } from 'sonner';
 import { getAccessToken, useAuth } from '../context/AuthContext';
-import { PERMISSIONS } from '../data/roles';
-import { EmployeeQuickSearch, type EmployeeSearchOption } from '../components/EmployeeQuickSearch';
-
-interface OhAssessment {
-  id: string;
-  employeeId: string;
-  employeeName: string;
-  assessmentDate: string;
-  assessmentType: string;
-  fitnessDecision: 'fit' | 'fitWithRestrictions' | 'temporarilyUnfit' | 'permanentlyUnfit';
-  restrictions?: string;
-  nextAssessmentDate?: string;
-  assessorName: string;
-  notes?: string;
-}
-
-type OhAssessmentApiRecord = {
-  id: string | number;
-  employee: string | number;
-  employee_name?: string;
-  assessment_date: string;
-  assessment_type: string;
-  fitness_decision: OhAssessment['fitnessDecision'];
-  restrictions?: string | null;
-  next_assessment_date?: string | null;
-  assessor_name?: string | null;
-  notes?: string | null;
-};
 
 const PRODUCTION_API_BASE_URL = 'https://occupational-health-platform-production.up.railway.app/api';
 const LOCAL_API_BASE_URL = 'http://localhost:8000/api';
 const API_BASE_URL = (
   import.meta.env.VITE_API_URL ||
   (typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
-    ? LOCAL_API_BASE_URL
-    : PRODUCTION_API_BASE_URL)
+    ? LOCAL_API_BASE_URL : PRODUCTION_API_BASE_URL)
 ).replace(/\/$/, '');
 
-function getList<T>(payload: unknown): T[] {
-  if (Array.isArray(payload)) return payload as T[];
-  if (payload && typeof payload === 'object' && Array.isArray((payload as { results?: unknown }).results)) {
-    return (payload as { results: T[] }).results;
-  }
-  return [];
-}
+const EDITABLE_ROLES = new Set(['systemAdmin', 'ohManager', 'ohDoctor', 'clinicDoctor', 'dataEntry']);
 
-function mapAssessment(record: OhAssessmentApiRecord): OhAssessment {
-  return {
-    id: String(record.id),
-    employeeId: String(record.employee),
-    employeeName: record.employee_name || String(record.employee),
-    assessmentDate: record.assessment_date,
-    assessmentType: record.assessment_type || 'Periodic',
-    fitnessDecision: record.fitness_decision,
-    restrictions: record.restrictions || undefined,
-    nextAssessmentDate: record.next_assessment_date || undefined,
-    assessorName: record.assessor_name || '',
-    notes: record.notes || '',
-  };
-}
+type EmployeeHealthCardSummary = {
+  id: string | number;
+  name: string;
+  email?: string | null;
+  national_id?: string | null;
+  employee_number?: string | null;
+  mobile?: string | null;
+  job_title?: string | null;
+  health_center_name?: string | null;
+  health_card_exists?: boolean;
+  health_card_number?: string | null;
+  health_card_updated_at?: string | null;
+};
 
-async function readApiError(response: Response) {
+type PaginatedEmployees = {
+  results?: EmployeeHealthCardSummary[];
+  next?: string | null;
+};
+
+async function apiError(response: Response) {
   try {
     const payload = await response.json() as Record<string, unknown>;
     if (typeof payload.detail === 'string') return payload.detail;
-    const firstValue = Object.values(payload)[0];
-    if (Array.isArray(firstValue) && firstValue.length) return String(firstValue[0]);
-    if (typeof firstValue === 'string') return firstValue;
+    const first = Object.values(payload)[0];
+    if (Array.isArray(first) && first.length) return String(first[0]);
+    if (typeof first === 'string') return first;
   } catch {
-    // The API may return an empty body for upstream deployment failures.
+    // Deployment failures may return an empty response body.
   }
   return `Request failed (${response.status})`;
 }
 
-const EMPTY_ASSESSMENTS: OhAssessment[] = [];
-const FITNESS_COLORS = { fit: 'success', fitWithRestrictions: 'warning', temporarilyUnfit: 'info', permanentlyUnfit: 'error' } as const;
-const FITNESS_LABELS_EN = { fit: 'Fit', fitWithRestrictions: 'Fit with Restrictions', temporarilyUnfit: 'Temporarily Unfit', permanentlyUnfit: 'Permanently Unfit' };
-const FITNESS_LABELS_AR = { fit: 'لائق', fitWithRestrictions: 'لائق مع قيود', temporarilyUnfit: 'غير لائق مؤقتاً', permanentlyUnfit: 'غير لائق دائماً' };
-const EMPTY_ASSESSMENT_FORM = {
-  employeeId: '', employeeName: '', assessmentDate: '', assessmentType: '',
-  fitnessDecision: 'fit' as OhAssessment['fitnessDecision'],
-  restrictions: '', nextAssessmentDate: '', assessorName: '', notes: '',
-};
+function maskedNationalId(value?: string | null) {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (!digits) return '—';
+  if (digits.length <= 4) return digits;
+  return `${digits.slice(0, 2)}****${digits.slice(-4)}`;
+}
+
+function formatUpdated(value?: string | null, isRtl = true) {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return new Intl.DateTimeFormat(isRtl ? 'ar-SA' : 'en-GB', {
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(date);
+}
 
 export function OccupationalHealthPage() {
+  const navigate = useNavigate();
   const { i18n } = useTranslation();
-  const { can } = useAuth();
+  const { user } = useAuth();
   const isRtl = i18n.language === 'ar';
+  const canEdit = Boolean(user?.role && EDITABLE_ROLES.has(user.role));
 
-  const [assessments, setAssessments] = useState<OhAssessment[]>(EMPTY_ASSESSMENTS);
+  const [employees, setEmployees] = useState<EmployeeHealthCardSummary[]>([]);
   const [search, setSearch] = useState('');
-  const [filterDecision, setFilterDecision] = useState('all');
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [form, setForm] = useState(EMPTY_ASSESSMENT_FORM);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [loadVersion, setLoadVersion] = useState(0);
+  const [deleteTarget, setDeleteTarget] = useState<EmployeeHealthCardSummary | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     const token = getAccessToken();
@@ -136,267 +93,209 @@ export function OccupationalHealthPage() {
     }
 
     let active = true;
-    setLoading(true);
     const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 15000);
+    const timeout = window.setTimeout(() => controller.abort(), 30000);
+    setLoading(true);
 
-    async function loadAssessments() {
+    async function loadEmployees() {
       try {
-        const response = await fetch(`${API_BASE_URL}/occupational-health-assessments/`, {
-          headers: { Authorization: `Bearer ${token}` },
-          signal: controller.signal,
-        });
-        if (!response.ok) throw new Error(await readApiError(response));
-        const payload = await response.json();
-        setAssessments(getList<OhAssessmentApiRecord>(payload).map(mapAssessment));
+        const items: EmployeeHealthCardSummary[] = [];
+        const visited = new Set<string>();
+        let nextUrl: string | null = `${API_BASE_URL}/employees/`;
+
+        while (nextUrl && !visited.has(nextUrl) && visited.size < 200) {
+          visited.add(nextUrl);
+          const response = await fetch(nextUrl, {
+            headers: { Authorization: `Bearer ${token}` }, signal: controller.signal,
+          });
+          if (!response.ok) throw new Error(await apiError(response));
+          const payload = await response.json() as PaginatedEmployees | EmployeeHealthCardSummary[];
+          if (Array.isArray(payload)) {
+            items.push(...payload);
+            nextUrl = null;
+          } else {
+            items.push(...(payload.results || []));
+            nextUrl = payload.next || null;
+          }
+        }
+        if (active) setEmployees(items);
       } catch (error) {
         if (!active) return;
-        if (controller.signal.aborted) {
-          toast.error(isRtl ? 'انتهت مهلة الاتصال بالخادم أثناء تحميل التقييمات' : 'Loading assessments timed out');
-        } else {
-          toast.error(error instanceof Error ? error.message : (isRtl ? 'تعذر تحميل التقييمات' : 'Could not load assessments'));
-        }
+        const message = controller.signal.aborted
+          ? (isRtl ? 'انتهت مهلة تحميل بطاقات الموظفين' : 'Loading employee cards timed out')
+          : error instanceof Error ? error.message : (isRtl ? 'تعذر تحميل الموظفين' : 'Could not load employees');
+        toast.error(message);
       } finally {
         window.clearTimeout(timeout);
         if (active) setLoading(false);
       }
     }
 
-    void loadAssessments();
+    void loadEmployees();
     return () => {
       active = false;
       window.clearTimeout(timeout);
       controller.abort();
     };
-  }, [isRtl]);
+  }, [isRtl, loadVersion]);
 
-  const filtered = assessments.filter(a => {
-    const matchSearch = a.employeeName.toLowerCase().includes(search.toLowerCase());
-    const matchDecision = filterDecision === 'all' || a.fitnessDecision === filterDecision;
-    return matchSearch && matchDecision;
-  });
+  const filteredEmployees = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    const digits = query.replace(/\D/g, '');
+    if (!query) return employees;
+    return employees.filter(employee => {
+      const text = [employee.name, employee.email, employee.employee_number, employee.national_id,
+        employee.mobile, employee.job_title, employee.health_center_name]
+        .map(value => String(value || '').toLowerCase()).join(' ');
+      return text.includes(query) || (digits.length >= 3 &&
+        [employee.employee_number, employee.national_id, employee.mobile]
+          .some(value => String(value || '').replace(/\D/g, '').includes(digits)));
+    });
+  }, [employees, search]);
 
-  function handleEmployeeSelect(employeeId: string, employee: EmployeeSearchOption | null) {
-    setForm(prev => ({ ...prev, employeeId, employeeName: employee?.name || '' }));
-  }
-
-  async function handleSave() {
-    if (!form.employeeId || !form.assessmentDate) {
-      toast.error(isRtl ? 'يرجى تعبئة الحقول المطلوبة' : 'Please fill required fields');
-      return;
-    }
-    if (saving) return;
-
+  async function deleteHealthCard() {
+    if (!deleteTarget || deleting) return;
     const token = getAccessToken();
     if (!token) {
-      toast.error(isRtl ? 'انتهت جلسة الدخول. سجل الدخول مرة أخرى ثم أعد المحاولة.' : 'Your session has expired. Please sign in again.');
+      toast.error(isRtl ? 'انتهت جلسة الدخول. سجل الدخول مرة أخرى.' : 'Your session has expired.');
       return;
     }
 
-    setSaving(true);
+    setDeleting(true);
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 20000);
     try {
-      const response = await fetch(`${API_BASE_URL}/occupational-health-assessments/`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          employee: Number(form.employeeId),
-          assessment_date: form.assessmentDate,
-          assessment_type: form.assessmentType || 'Periodic',
-          fitness_decision: form.fitnessDecision,
-          restrictions: form.restrictions.trim(),
-          next_assessment_date: form.nextAssessmentDate || null,
-          assessor_name: form.assessorName.trim(),
-          notes: form.notes.trim(),
-        }),
-        signal: controller.signal,
+      const response = await fetch(`${API_BASE_URL}/employees/${deleteTarget.id}/health_card/`, {
+        method: 'DELETE', headers: { Authorization: `Bearer ${token}` }, signal: controller.signal,
       });
-      if (!response.ok) throw new Error(await readApiError(response));
-      const savedAssessment = mapAssessment(await response.json() as OhAssessmentApiRecord);
-      setAssessments(prev => [savedAssessment, ...prev.filter(item => item.id !== savedAssessment.id)]);
-      setDialogOpen(false);
-      setForm(EMPTY_ASSESSMENT_FORM);
-      toast.success(isRtl ? 'تم حفظ تقييم الصحة المهنية في قاعدة البيانات' : 'OH assessment saved to the database');
+      if (!response.ok && response.status !== 404) throw new Error(await apiError(response));
+      setEmployees(previous => previous.map(employee => employee.id === deleteTarget.id ? {
+        ...employee, health_card_exists: false, health_card_number: '', health_card_updated_at: null,
+      } : employee));
+      toast.success(isRtl
+        ? 'تم حذف بيانات البطاقة الصحية فقط، وبقي سجل الموظف محفوظًا'
+        : 'Health card data deleted; the employee record was kept');
+      setDeleteTarget(null);
     } catch (error) {
-      if (controller.signal.aborted) {
-        toast.error(isRtl ? 'انتهت مهلة الحفظ. تحقق من اتصال الخادم ثم أعد المحاولة.' : 'Save timed out. Check the server connection and try again.');
-      } else {
-        toast.error(error instanceof Error ? error.message : (isRtl ? 'تعذر حفظ التقييم' : 'Could not save assessment'));
-      }
+      const message = controller.signal.aborted
+        ? (isRtl ? 'انتهت مهلة الحذف. أعد المحاولة.' : 'Delete timed out. Please try again.')
+        : error instanceof Error ? error.message : (isRtl ? 'تعذر حذف البطاقة' : 'Could not delete the card');
+      toast.error(message);
     } finally {
       window.clearTimeout(timeout);
-      setSaving(false);
+      setDeleting(false);
     }
   }
 
-  const fitCount = assessments.filter(a => a.fitnessDecision === 'fit').length;
-  const restrictedCount = assessments.filter(a => a.fitnessDecision === 'fitWithRestrictions').length;
-  const unfitCount = assessments.filter(a => a.fitnessDecision === 'temporarilyUnfit' || a.fitnessDecision === 'permanentlyUnfit').length;
-
   return (
-    <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-          <OhIcon sx={{ fontSize: 32, color: 'primary.main' }} />
+    <Box dir={isRtl ? 'rtl' : 'ltr'}>
+      <Stack direction={{ xs: 'column', lg: 'row' }} spacing={2} justifyContent="space-between" alignItems={{ xs: 'stretch', lg: 'center' }} sx={{ mb: 3 }}>
+        <Stack direction="row" spacing={1.5} alignItems="center">
+          <Avatar sx={{ width: 50, height: 50, bgcolor: '#0C5B86' }}><HealthIcon /></Avatar>
           <Box>
-            <Typography variant="h4" fontWeight="bold">{isRtl ? 'الصحة المهنية' : 'Occupational Health'}</Typography>
+            <Typography variant="h4" fontWeight={950}>{isRtl ? 'الصحة المهنية' : 'Occupational Health'}</Typography>
             <Typography variant="body2" color="text.secondary">
-              {isRtl ? 'تقييمات اللياقة للعمل وقرارات الصحة المهنية' : 'Fitness for work assessments and OH decisions'}
+              {isRtl ? 'بطاقة صحة مهنية شاملة ومستقلة لكل موظف' : 'A comprehensive occupational health card for every employee'}
             </Typography>
           </Box>
-        </Box>
-        {can(PERMISSIONS.CREATE_OH_VISIT) && (
-          <Button variant="contained" startIcon={<AddIcon />} onClick={() => setDialogOpen(true)}>
-            {isRtl ? 'تقييم جديد' : 'New Assessment'}
+        </Stack>
+        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+          <Button variant="outlined" startIcon={<RefreshIcon />} onClick={() => setLoadVersion(version => version + 1)} disabled={loading}>
+            {isRtl ? 'تحديث' : 'Refresh'}
           </Button>
-        )}
-      </Box>
+          {canEdit && <Button variant="contained" startIcon={<AddIcon />} onClick={() => navigate('/employee-health-card?mode=edit')}>
+            {isRtl ? 'إنشاء بطاقة' : 'Create Card'}
+          </Button>}
+        </Stack>
+      </Stack>
 
-      <Alert severity="info" sx={{ mb: 3 }}>
+      <Alert severity="info" sx={{ mb: 2.5 }}>
         {isRtl
-          ? 'يتم حفظ تقييمات الصحة المهنية وربطها بسجل الموظف مباشرة في PostgreSQL.'
-          : 'Occupational health assessments are saved to PostgreSQL and linked to the employee record.'}
+          ? 'زر عرض يفتح البطاقة الشاملة، وتعديل يفتح جميع أقسامها، وحذف يزيل بيانات البطاقة فقط دون حذف الموظف.'
+          : 'View opens the full card, Edit opens all sections, and Delete removes only card data—not the employee.'}
       </Alert>
 
-      <Grid container spacing={2} sx={{ mb: 3 }}>
-        {[
-          { label: isRtl ? 'إجمالي التقييمات' : 'Total Assessments', value: assessments.length, color: 'primary.main' },
-          { label: isRtl ? 'لائق' : 'Fit for Work', value: fitCount, color: 'success.main', icon: <CheckIcon /> },
-          { label: isRtl ? 'لائق مع قيود' : 'With Restrictions', value: restrictedCount, color: 'warning.main' },
-          { label: isRtl ? 'غير لائق' : 'Unfit', value: unfitCount, color: 'error.main', icon: <WarnIcon /> },
-        ].map(s => (
-          <Grid key={s.label} size={{ xs: 6, sm: 3 }}>
-            <Paper sx={{ p: 2, textAlign: 'center' }}>
-              <Typography variant="h4" fontWeight="bold" color={s.color}>{s.value}</Typography>
-              <Typography variant="body2" color="text.secondary">{s.label}</Typography>
-            </Paper>
-          </Grid>
-        ))}
-      </Grid>
-
       <Paper sx={{ p: 2, mb: 3 }}>
-        <Grid container spacing={2}>
-          <Grid size={{ xs: 12, md: 7 }}>
-            <TextField fullWidth placeholder={(isRtl ? 'بحث باسم الموظف' : 'Search employee') + '...'}
-              value={search} onChange={e => setSearch(e.target.value)}
-              slotProps={{ input: { startAdornment: <SearchIcon /> } }} />
-          </Grid>
-          <Grid size={{ xs: 12, md: 5 }}>
-            <TextField fullWidth select label={isRtl ? 'قرار اللياقة' : 'Fitness Decision'} value={filterDecision}
-              onChange={e => setFilterDecision(e.target.value)}>
-              <MenuItem value="all">{isRtl ? 'الكل' : 'All'}</MenuItem>
-              {Object.entries(FITNESS_LABELS_EN).map(([key, label]) => (
-                <MenuItem key={key} value={key}>{isRtl ? FITNESS_LABELS_AR[key as keyof typeof FITNESS_LABELS_AR] : label}</MenuItem>
-              ))}
-            </TextField>
-          </Grid>
-        </Grid>
+        <TextField fullWidth value={search} onChange={event => setSearch(event.target.value)}
+          placeholder={isRtl ? 'بحث بالاسم، الهوية، الرقم الوظيفي، الجوال أو البريد...' : 'Search by name, ID, employee number, mobile or email...'}
+          slotProps={{ input: { startAdornment: <SearchIcon sx={{ mx: 1, color: 'text.secondary' }} /> } }} />
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+          {isRtl ? `عدد الموظفين: ${filteredEmployees.length}` : `Employees: ${filteredEmployees.length}`}
+        </Typography>
       </Paper>
 
-      <TableContainer component={Paper}>
-        <Table>
-          <TableHead>
-            <TableRow sx={{ bgcolor: 'grey.50' }}>
-              <TableCell sx={{ fontWeight: 'bold' }}>{isRtl ? 'رقم' : 'ID'}</TableCell>
-              <TableCell sx={{ fontWeight: 'bold' }}>{isRtl ? 'الموظف' : 'Employee'}</TableCell>
-              <TableCell sx={{ fontWeight: 'bold' }}>{isRtl ? 'تاريخ التقييم' : 'Assessment Date'}</TableCell>
-              <TableCell sx={{ fontWeight: 'bold' }}>{isRtl ? 'نوع التقييم' : 'Type'}</TableCell>
-              <TableCell sx={{ fontWeight: 'bold' }}>{isRtl ? 'قرار اللياقة' : 'Fitness Decision'}</TableCell>
-              <TableCell sx={{ fontWeight: 'bold' }}>{isRtl ? 'القيود' : 'Restrictions'}</TableCell>
-              <TableCell sx={{ fontWeight: 'bold' }}>{isRtl ? 'التقييم القادم' : 'Next Assessment'}</TableCell>
-              <TableCell sx={{ fontWeight: 'bold' }}>{isRtl ? 'المقيِّم' : 'Assessor'}</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {loading && (
-              <TableRow>
-                <TableCell colSpan={8} align="center" sx={{ py: 4 }}>
-                  <CircularProgress size={26} />
-                  <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                    {isRtl ? 'جاري تحميل التقييمات...' : 'Loading assessments...'}
-                  </Typography>
-                </TableCell>
-              </TableRow>
-            )}
-            {!loading && filtered.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={8} align="center" sx={{ py: 4, color: 'text.secondary' }}>
-                  {isRtl ? 'لا توجد تقييمات محفوظة حتى الآن' : 'No saved assessments yet'}
-                </TableCell>
-              </TableRow>
-            )}
-            {!loading && filtered.map(assessment => (
-              <TableRow key={assessment.id} hover>
-                <TableCell>{assessment.id}</TableCell>
-                <TableCell>{assessment.employeeName}</TableCell>
-                <TableCell>{assessment.assessmentDate}</TableCell>
-                <TableCell><Chip label={assessment.assessmentType} size="small" variant="outlined" /></TableCell>
-                <TableCell><Chip label={isRtl ? FITNESS_LABELS_AR[assessment.fitnessDecision] : FITNESS_LABELS_EN[assessment.fitnessDecision]} size="small" color={FITNESS_COLORS[assessment.fitnessDecision]} /></TableCell>
-                <TableCell>{assessment.restrictions || '—'}</TableCell>
-                <TableCell>{assessment.nextAssessmentDate || '—'}</TableCell>
-                <TableCell>{assessment.assessorName}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </TableContainer>
+      {loading ? (
+        <Paper sx={{ p: 6, textAlign: 'center' }}><CircularProgress />
+          <Typography sx={{ mt: 2 }}>{isRtl ? 'جاري تحميل بطاقات الموظفين...' : 'Loading employee cards...'}</Typography>
+        </Paper>
+      ) : filteredEmployees.length === 0 ? (
+        <Alert severity="warning">{isRtl ? 'لا توجد نتائج مطابقة' : 'No matching employees found'}</Alert>
+      ) : (
+        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 360px), 420px))',
+          gap: 2.5, justifyContent: { xs: 'center', md: 'start' }, alignItems: 'start' }}>
+          {filteredEmployees.map(employee => (
+            <Paper key={employee.id} sx={{ width: '100%', maxWidth: 420, overflow: 'hidden',
+              border: '1px solid rgba(12,91,134,.22)', borderTop: '5px solid #0C5B86',
+              background: 'linear-gradient(160deg,#fbfdff 0%,#eef7fa 100%)' }}>
+              <Box sx={{ p: 2.2 }}>
+                <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1.5}>
+                  <Stack direction="row" spacing={1.2} alignItems="center" sx={{ minWidth: 0 }}>
+                    <Avatar sx={{ bgcolor: '#0B8F8A', width: 46, height: 46, fontWeight: 900 }}>
+                      {String(employee.name || '?').charAt(0)}
+                    </Avatar>
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography fontWeight={950} noWrap title={employee.name}>{employee.name}</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {employee.employee_number || '—'} · {employee.job_title || (isRtl ? 'بدون مسمى وظيفي' : 'No job title')}
+                      </Typography>
+                    </Box>
+                  </Stack>
+                  <Chip size="small" color={employee.health_card_exists ? 'success' : 'default'}
+                    label={employee.health_card_exists ? (isRtl ? 'محفوظة' : 'Saved') : (isRtl ? 'غير منشأة' : 'Not created')} />
+                </Stack>
 
-      <Dialog open={dialogOpen} onClose={() => { if (!saving) setDialogOpen(false); }} maxWidth="sm" fullWidth>
-        <DialogTitle>{isRtl ? 'تسجيل تقييم الصحة المهنية' : 'Record OH Assessment'}</DialogTitle>
-        <DialogContent dividers>
-          <Grid container spacing={2}>
-            <Grid size={{ xs: 12 }}>
-              <EmployeeQuickSearch value={form.employeeId} onChange={handleEmployeeSelect} required label={isRtl ? 'بحث الموظف' : 'Employee Search'} />
-            </Grid>
-            <Grid size={{ xs: 12, sm: 6 }}>
-              <TextField fullWidth required label={isRtl ? 'تاريخ التقييم' : 'Assessment Date'} type="date" value={form.assessmentDate}
-                onChange={e => setForm(p => ({ ...p, assessmentDate: e.target.value }))} slotProps={{ inputLabel: { shrink: true } }} />
-            </Grid>
-            <Grid size={{ xs: 12, sm: 6 }}>
-              <TextField fullWidth select label={isRtl ? 'نوع التقييم' : 'Assessment Type'} value={form.assessmentType}
-                onChange={e => setForm(p => ({ ...p, assessmentType: e.target.value }))}>
-                {['Pre-employment', 'Periodic', 'Return to Work', 'Special', 'Exit'].map(t => <MenuItem key={t} value={t}>{t}</MenuItem>)}
-              </TextField>
-            </Grid>
-            <Grid size={{ xs: 12 }}>
-              <TextField fullWidth select required label={isRtl ? 'قرار اللياقة' : 'Fitness Decision'} value={form.fitnessDecision}
-                onChange={e => setForm(p => ({ ...p, fitnessDecision: e.target.value as OhAssessment['fitnessDecision'] }))}>
-                {Object.entries(FITNESS_LABELS_EN).map(([key, label]) => (
-                  <MenuItem key={key} value={key}>{isRtl ? FITNESS_LABELS_AR[key as keyof typeof FITNESS_LABELS_AR] : label}</MenuItem>
-                ))}
-              </TextField>
-            </Grid>
-            <Grid size={{ xs: 12 }}>
-              <TextField fullWidth label={isRtl ? 'القيود' : 'Restrictions'} value={form.restrictions}
-                onChange={e => setForm(p => ({ ...p, restrictions: e.target.value }))} />
-            </Grid>
-            <Grid size={{ xs: 12, sm: 6 }}>
-              <TextField fullWidth label={isRtl ? 'التقييم القادم' : 'Next Assessment Date'} type="date" value={form.nextAssessmentDate}
-                onChange={e => setForm(p => ({ ...p, nextAssessmentDate: e.target.value }))} slotProps={{ inputLabel: { shrink: true } }} />
-            </Grid>
-            <Grid size={{ xs: 12, sm: 6 }}>
-              <TextField fullWidth label={isRtl ? 'اسم المقيِّم' : 'Assessor Name'} value={form.assessorName}
-                onChange={e => setForm(p => ({ ...p, assessorName: e.target.value }))} />
-            </Grid>
-            <Grid size={{ xs: 12 }}>
-              <TextField fullWidth multiline minRows={2} label={isRtl ? 'ملاحظات' : 'Notes'} value={form.notes}
-                onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} />
-            </Grid>
-          </Grid>
-        </DialogContent>
+                <Box sx={{ mt: 2, p: 1.5, borderRadius: 2.5, bgcolor: 'rgba(255,255,255,.72)', border: '1px solid rgba(12,91,134,.12)' }}>
+                  {[
+                    [isRtl ? 'رقم البطاقة' : 'Card No.', employee.health_card_number || '—'],
+                    [isRtl ? 'الهوية' : 'National ID', maskedNationalId(employee.national_id)],
+                    [isRtl ? 'المركز الصحي' : 'Health Center', employee.health_center_name || '—'],
+                    [isRtl ? 'الجوال' : 'Mobile', employee.mobile || '—'],
+                    [isRtl ? 'آخر تحديث' : 'Last Update', formatUpdated(employee.health_card_updated_at, isRtl)],
+                  ].map(([label, fieldValue]) => (
+                    <Stack key={label} direction="row" justifyContent="space-between" spacing={2}
+                      sx={{ py: .48, borderBottom: '1px dashed rgba(100,116,139,.16)', '&:last-child': { borderBottom: 0 } }}>
+                      <Typography variant="caption" color="text.secondary" fontWeight={700}>{label}</Typography>
+                      <Typography variant="caption" fontWeight={850} textAlign="end">{fieldValue}</Typography>
+                    </Stack>
+                  ))}
+                </Box>
+              </Box>
+
+              <Stack direction="row" spacing={1} sx={{ p: 1.5, pt: 0 }}>
+                <Button fullWidth variant="outlined" color="primary" startIcon={<ViewIcon />}
+                  onClick={() => navigate(`/employees/${employee.id}/health-card`)}>{isRtl ? 'عرض' : 'View'}</Button>
+                {canEdit && <Button fullWidth variant="outlined" color="secondary" startIcon={<EditIcon />}
+                  onClick={() => navigate(`/employees/${employee.id}/health-card?mode=edit`)}>{isRtl ? 'تعديل' : 'Edit'}</Button>}
+                {canEdit && <Button fullWidth variant="outlined" color="error" startIcon={<DeleteIcon />}
+                  disabled={!employee.health_card_exists} onClick={() => setDeleteTarget(employee)}>{isRtl ? 'حذف' : 'Delete'}</Button>}
+              </Stack>
+            </Paper>
+          ))}
+        </Box>
+      )}
+
+      <Dialog open={Boolean(deleteTarget)} onClose={() => { if (!deleting) setDeleteTarget(null); }} maxWidth="xs" fullWidth>
+        <DialogTitle>{isRtl ? 'حذف البطاقة الصحية' : 'Delete Health Card'}</DialogTitle>
+        <DialogContent dividers><Typography>
+          {isRtl ? `سيتم حذف بيانات بطاقة ${deleteTarget?.name || ''} فقط. لن يتم حذف الموظف أو بياناته الأساسية.`
+            : `Only ${deleteTarget?.name || ''}'s health card data will be deleted. The employee record will remain.`}
+        </Typography></DialogContent>
         <DialogActions>
-          <Button disabled={saving} onClick={() => setDialogOpen(false)}>{isRtl ? 'إلغاء' : 'Cancel'}</Button>
-          <Button
-            variant="contained"
-            disabled={saving}
-            onClick={() => { void handleSave(); }}
-            startIcon={saving ? <CircularProgress size={17} color="inherit" /> : undefined}
-          >
-            {saving ? (isRtl ? 'جارٍ الحفظ...' : 'Saving...') : (isRtl ? 'حفظ' : 'Save')}
+          <Button disabled={deleting} onClick={() => setDeleteTarget(null)}>{isRtl ? 'إلغاء' : 'Cancel'}</Button>
+          <Button color="error" variant="contained" disabled={deleting}
+            startIcon={deleting ? <CircularProgress size={17} color="inherit" /> : <DeleteIcon />}
+            onClick={() => { void deleteHealthCard(); }}>
+            {deleting ? (isRtl ? 'جارٍ الحذف...' : 'Deleting...') : (isRtl ? 'تأكيد الحذف' : 'Confirm Delete')}
           </Button>
         </DialogActions>
       </Dialog>
