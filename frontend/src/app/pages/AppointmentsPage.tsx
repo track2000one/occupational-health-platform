@@ -14,6 +14,7 @@ import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
 import { PERMISSIONS } from '../data/roles';
 import { mockAppointments, type Appointment } from '../data/mockData';
+import { EmployeeQuickSearch, type EmployeeSearchOption } from '../components/EmployeeQuickSearch';
 
 const APPT_TYPE_LABELS: Record<Appointment['appointmentType'], { ar: string; en: string; color: string }> = {
   periodicExam: { ar: 'فحص دوري', en: 'Periodic Exam', color: '#667eea' },
@@ -32,6 +33,11 @@ const STATUS_CONFIG: Record<Appointment['status'], { ar: string; en: string; col
   noShow: { ar: 'لم يحضر', en: 'No Show', color: 'warning' },
 };
 
+const EMPTY_APPOINTMENT_FORM = {
+  employeeId: '', employeeName: '', appointmentType: '', healthCenterId: '1',
+  appointmentDate: '', appointmentTime: '', assignedTo: '', notes: '',
+};
+
 export function AppointmentsPage() {
   const { i18n } = useTranslation();
   const { can } = useAuth();
@@ -43,15 +49,13 @@ export function AppointmentsPage() {
   const [filterType, setFilterType] = useState<string>('all');
   const [openDialog, setOpenDialog] = useState(false);
   const [editAppt, setEditAppt] = useState<Appointment | null>(null);
-  const [apptForm, setApptForm] = useState({
-    employeeId: '', appointmentType: '', healthCenterId: '1',
-    appointmentDate: '', appointmentTime: '', assignedTo: '', notes: '',
-  });
+  const [apptForm, setApptForm] = useState(EMPTY_APPOINTMENT_FORM);
 
   useEffect(() => {
     if (editAppt) {
       setApptForm({
         employeeId: editAppt.employeeId,
+        employeeName: editAppt.employeeName,
         appointmentType: editAppt.appointmentType,
         healthCenterId: editAppt.healthCenterId,
         appointmentDate: editAppt.appointmentDate,
@@ -60,7 +64,7 @@ export function AppointmentsPage() {
         notes: editAppt.notes ?? '',
       });
     } else {
-      setApptForm({ employeeId: '', appointmentType: '', healthCenterId: '1', appointmentDate: '', appointmentTime: '', assignedTo: '', notes: '' });
+      setApptForm(EMPTY_APPOINTMENT_FORM);
     }
   }, [editAppt, openDialog]);
 
@@ -75,6 +79,15 @@ export function AppointmentsPage() {
     setAppointments(prev => prev.map(a => a.id === id ? { ...a, status } : a));
   }
 
+  function handleEmployeeSelect(employeeId: string, employee: EmployeeSearchOption | null) {
+    setApptForm(prev => ({
+      ...prev,
+      employeeId,
+      employeeName: employee?.name || '',
+      healthCenterId: employee?.health_center ? String(employee.health_center) : prev.healthCenterId,
+    }));
+  }
+
   const stats = {
     new: appointments.filter(a => a.status === 'new').length,
     confirmed: appointments.filter(a => a.status === 'confirmed').length,
@@ -84,7 +97,6 @@ export function AppointmentsPage() {
 
   return (
     <Box>
-      {/* Header */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
           <CalendarIcon sx={{ fontSize: 32, color: 'primary.main' }} />
@@ -105,7 +117,6 @@ export function AppointmentsPage() {
         )}
       </Box>
 
-      {/* Stats */}
       <Grid container spacing={2} sx={{ mb: 3 }}>
         {([['new', isRtl ? 'جديد' : 'New', '#4facfe'], ['confirmed', isRtl ? 'مؤكد' : 'Confirmed', '#43e97b'], ['completed', isRtl ? 'مكتمل' : 'Completed', '#667eea'], ['noShow', isRtl ? 'لم يحضر' : 'No Show', '#fa709a']] as const).map(([key, label, color]) => (
           <Grid key={key} size={{ xs: 6, sm: 3 }}>
@@ -117,7 +128,6 @@ export function AppointmentsPage() {
         ))}
       </Grid>
 
-      {/* Filters */}
       <Paper sx={{ p: 2, mb: 3 }}>
         <Grid container spacing={2}>
           <Grid size={{ xs: 12, md: 5 }}>
@@ -144,7 +154,6 @@ export function AppointmentsPage() {
         </Grid>
       </Paper>
 
-      {/* Table */}
       <TableContainer component={Paper}>
         <Table>
           <TableHead>
@@ -164,12 +173,8 @@ export function AppointmentsPage() {
               const statConf = STATUS_CONFIG[appt.status];
               return (
                 <TableRow key={appt.id} hover>
-                  <TableCell>
-                    <Typography variant="body2" fontFamily="monospace">{appt.id}</Typography>
-                  </TableCell>
-                  <TableCell>
-                    <Typography variant="body2" fontWeight="medium">{appt.employeeName}</Typography>
-                  </TableCell>
+                  <TableCell><Typography variant="body2" fontFamily="monospace">{appt.id}</Typography></TableCell>
+                  <TableCell><Typography variant="body2" fontWeight="medium">{appt.employeeName}</Typography></TableCell>
                   <TableCell>
                     <Chip label={isRtl ? typeConf.ar : typeConf.en} size="small"
                       sx={{ bgcolor: `${typeConf.color}20`, color: typeConf.color, fontWeight: 600 }} />
@@ -178,39 +183,27 @@ export function AppointmentsPage() {
                     <Typography variant="body2">{appt.appointmentDate}</Typography>
                     <Typography variant="caption" color="text.secondary">{appt.appointmentTime}</Typography>
                   </TableCell>
-                  <TableCell>
-                    <Typography variant="body2">{appt.assignedTo}</Typography>
-                  </TableCell>
-                  <TableCell>
-                    <Chip label={isRtl ? statConf.ar : statConf.en} size="small" color={statConf.color} />
-                  </TableCell>
+                  <TableCell><Typography variant="body2">{appt.assignedTo}</Typography></TableCell>
+                  <TableCell><Chip label={isRtl ? statConf.ar : statConf.en} size="small" color={statConf.color} /></TableCell>
                   <TableCell align="center">
                     <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>
                       {appt.status === 'new' && (
                         <Tooltip title={isRtl ? 'تأكيد' : 'Confirm'}>
-                          <IconButton size="small" color="success" onClick={() => updateStatus(appt.id, 'confirmed')}>
-                            <ConfirmIcon fontSize="small" />
-                          </IconButton>
+                          <IconButton size="small" color="success" onClick={() => updateStatus(appt.id, 'confirmed')}><ConfirmIcon fontSize="small" /></IconButton>
                         </Tooltip>
                       )}
                       {appt.status === 'confirmed' && (
                         <Tooltip title={isRtl ? 'تحديد كمكتمل' : 'Mark Completed'}>
-                          <IconButton size="small" color="primary" onClick={() => updateStatus(appt.id, 'completed')}>
-                            <ConfirmIcon fontSize="small" />
-                          </IconButton>
+                          <IconButton size="small" color="primary" onClick={() => updateStatus(appt.id, 'completed')}><ConfirmIcon fontSize="small" /></IconButton>
                         </Tooltip>
                       )}
                       {(appt.status === 'new' || appt.status === 'confirmed') && (
                         <Tooltip title={isRtl ? 'إلغاء' : 'Cancel'}>
-                          <IconButton size="small" color="error" onClick={() => updateStatus(appt.id, 'cancelled')}>
-                            <CancelIcon fontSize="small" />
-                          </IconButton>
+                          <IconButton size="small" color="error" onClick={() => updateStatus(appt.id, 'cancelled')}><CancelIcon fontSize="small" /></IconButton>
                         </Tooltip>
                       )}
                       <Tooltip title={isRtl ? 'تعديل' : 'Edit'}>
-                        <IconButton size="small" color="secondary" onClick={() => { setEditAppt(appt); setOpenDialog(true); }}>
-                          <EditIcon fontSize="small" />
-                        </IconButton>
+                        <IconButton size="small" color="secondary" onClick={() => { setEditAppt(appt); setOpenDialog(true); }}><EditIcon fontSize="small" /></IconButton>
                       </Tooltip>
                     </Box>
                   </TableCell>
@@ -221,7 +214,6 @@ export function AppointmentsPage() {
         </Table>
       </TableContainer>
 
-      {/* Add/Edit Dialog */}
       <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="sm" fullWidth>
         <DialogTitle component="div">
           <Typography variant="h6" component="span">
@@ -231,15 +223,13 @@ export function AppointmentsPage() {
         <DialogContent dividers>
           <Grid container spacing={2}>
             <Grid size={{ xs: 12 }}>
-              <TextField fullWidth select label={isRtl ? 'الموظف' : 'Employee'}
-                value={apptForm.employeeId} onChange={e => setApptForm(p => ({ ...p, employeeId: e.target.value }))}>
-                <MenuItem value="">—</MenuItem>
-                <MenuItem value="1001">أحمد عبدالله</MenuItem>
-                <MenuItem value="1002">فاطمة حسن</MenuItem>
-                <MenuItem value="1003">محمد علي</MenuItem>
-                <MenuItem value="1004">سارة إبراهيم</MenuItem>
-                <MenuItem value="1005">عمر خالد</MenuItem>
-              </TextField>
+              <EmployeeQuickSearch
+                required
+                value={apptForm.employeeId}
+                onChange={handleEmployeeSelect}
+                label={isRtl ? 'بحث الموظف' : 'Employee quick search'}
+                helperText={isRtl ? 'بحث بالاسم أو الهوية أو الرقم الوظيفي أو الجوال' : 'Search by name, ID, employee number, or mobile'}
+              />
             </Grid>
             <Grid size={{ xs: 12, sm: 6 }}>
               <TextField fullWidth select label={isRtl ? 'نوع الموعد' : 'Appointment Type'}
@@ -281,15 +271,19 @@ export function AppointmentsPage() {
         <DialogActions>
           <Button onClick={() => setOpenDialog(false)}>{isRtl ? 'إلغاء' : 'Cancel'}</Button>
           <Button variant="contained" onClick={() => {
-            const employeeNames: Record<string, string> = { '1001': 'أحمد عبدالله', '1002': 'فاطمة حسن', '1003': 'محمد علي', '1004': 'سارة إبراهيم', '1005': 'عمر خالد' };
             if (editAppt) {
-              setAppointments(prev => prev.map(a => a.id === editAppt.id ? { ...a, ...apptForm, appointmentType: (apptForm.appointmentType || a.appointmentType) as Appointment['appointmentType'] } : a));
+              setAppointments(prev => prev.map(a => a.id === editAppt.id ? {
+                ...a,
+                ...apptForm,
+                employeeName: apptForm.employeeName || a.employeeName,
+                appointmentType: (apptForm.appointmentType || a.appointmentType) as Appointment['appointmentType'],
+              } : a));
               toast.success(isRtl ? 'تم تحديث الموعد' : 'Appointment updated');
             } else {
               const newAppt: Appointment = {
                 id: `APT-${Date.now()}`,
-                employeeId: apptForm.employeeId || '1001',
-                employeeName: employeeNames[apptForm.employeeId] ?? (isRtl ? 'موظف' : 'Employee'),
+                employeeId: apptForm.employeeId,
+                employeeName: apptForm.employeeName || (isRtl ? 'موظف' : 'Employee'),
                 appointmentType: (apptForm.appointmentType || 'clinicVisit') as Appointment['appointmentType'],
                 appointmentDate: apptForm.appointmentDate || new Date().toISOString().split('T')[0],
                 appointmentTime: apptForm.appointmentTime || '09:00',
