@@ -1,3 +1,5 @@
+from datetime import date, timedelta
+
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from rest_framework import permissions, status, viewsets
@@ -21,6 +23,20 @@ def truthy(value):
 
 def imported_total_from_summary(summary):
     return sum(value for key, value in summary.items() if key.startswith('imported_') and isinstance(value, int))
+
+
+def serialize_date(value):
+    return value.isoformat() if value else None
+
+
+def serialize_decimal(value):
+    return str(value) if value is not None else ''
+
+
+def safe_text(value, default=''):
+    if value is None:
+        return default
+    return str(value)
 
 
 def _is_missing_identity_error(error):
@@ -48,10 +64,6 @@ def _cleanup_sheet_result(result):
     first_error_row = min((int(error.get('row') or 0) for error in errors), default=0)
     only_missing_identity = all(_is_missing_identity_error(error) for error in errors)
 
-    # In the user's current Database sheet the usable data ends around row 1700+,
-    # while formula/blank worksheet artifacts continue after that. The old rule
-    # expected errors to start after valid+duplicates, which was too strict because
-    # duplicates are reported separately and can be interleaved near the tail.
     data_rows = max(valid_rows + duplicate_rows, valid_rows, 1)
     tail_by_valid_region = first_error_row >= int(data_rows * 0.92)
     tail_by_total_region = total_rows > 0 and first_error_row >= int(total_rows * 0.75)
@@ -138,12 +150,7 @@ class UserViewSet(viewsets.ModelViewSet):
         deleted_email = instance.email
 
         with transaction.atomic():
-            AuditLog.objects.create(
-                user=str(request.user),
-                action='delete_user',
-                model_name='User',
-                record_id=deleted_id,
-            )
+            AuditLog.objects.create(user=str(request.user), action='delete_user', model_name='User', record_id=deleted_id)
             instance.delete()
 
         return Response(
@@ -210,8 +217,146 @@ class ExcelImportViewSet(viewsets.ReadOnlyModelViewSet):
             return Response({'detail': str(exc), 'batch_id': batch.id}, status=status.HTTP_400_BAD_REQUEST)
 
 
-class HealthCenterViewSet(viewsets.ModelViewSet): queryset=HealthCenter.objects.all().order_by('name'); serializer_class=HealthCenterSerializer; permission_classes=[permissions.IsAuthenticated]
-class EmployeeViewSet(viewsets.ModelViewSet): queryset=Employee.objects.select_related('health_center').all().order_by('-created_at'); serializer_class=EmployeeSerializer; permission_classes=[permissions.IsAuthenticated,IsAdminOrManagerForWrite]; search_fields=['name','email','employee_number','national_id','mobile','job_title','birth_place','national_address']
+class HealthCenterViewSet(viewsets.ModelViewSet):
+    queryset=HealthCenter.objects.all().order_by('name')
+    serializer_class=HealthCenterSerializer
+    permission_classes=[permissions.IsAuthenticated]
+
+
+class EmployeeViewSet(viewsets.ModelViewSet):
+    queryset=Employee.objects.select_related('health_center').all().order_by('-created_at')
+    serializer_class=EmployeeSerializer
+    permission_classes=[permissions.IsAuthenticated,IsAdminOrManagerForWrite]
+    search_fields=['name','email','employee_number','national_id','mobile','job_title','birth_place','national_address']
+
+    @action(detail=True, methods=['get'])
+    def health_card(self, request, pk=None):
+        employee = self.get_object()
+        try:
+            profile = employee.detailed_health_profile
+        except Exception:
+            profile = None
+
+        latest_lab = employee.lab_screenings.order_by('-request_date', '-created_at').first()
+        latest_employee_visit = employee.employee_clinic_visits.order_by('-visit_date', '-created_at').first()
+        latest_occupational_visit = employee.occupational_clinic_visits.order_by('-visit_date', '-created_at').first()
+        latest_exposure = employee.needle_stick_exposures.order_by('-exposure_date', '-created_at').first()
+        first_vaccine = employee.vaccination_records.order_by('-created_at').first()
+
+        def p(field, default=''):
+            return safe_text(getattr(profile, field, default), default) if profile else default
+
+        def pd(field):
+            return serialize_date(getattr(profile, field, None)) if profile else None
+
+        vaccination_rows = []
+        for record in employee.vaccination_records.all().order_by('vaccine_type', '-created_at')[:24]:
+            dose = record.doses.order_by('-dose_date', '-created_at').first()
+            vaccination_rows.append({
+                'label': record.vaccine_type,
+                'result': record.status,
+                'date': serialize_date(dose.dose_date if dose else (record.booster_date or record.third_dose_date or record.second_dose_date or record.first_dose_date)),
+                'notes': record.notes or record.post_vaccine_result or record.campaign_name,
+            })
+
+        if latest_lab:
+            lab_rows = [
+                ('Anti-HBs', latest_lab.anti_hbs),
+                ('HBsAg', latest_lab.hbsag),
+                ('HCV', latest_lab.hcv),
+                ('HIV Test', latest_lab.hiv),
+                ('Rubella IgG', latest_lab.rubella_igg),
+                ('Measles IgG', latest_lab.measles_igg),
+                ('Varicella IgG', latest_lab.varicella_igg),
+                ('PPD Test', latest_lab.ppd_test),
+            ]
+            for label, result in lab_rows:
+                vaccination_rows.append({'label': label, 'result': result, 'date': serialize_date(latest_lab.result_checked_date), 'notes': ''})
+
+        next_review_date = date.today() + timedelta(days=180)
+        payload = {
+            'card_number': f'OHC-2025-{employee.id:05d}' if isinstance(employee.id, int) else f'OHC-2025-{employee.id}',
+            'issue_date': date.today().isoformat(),
+            'next_review_date': next_review_date.isoformat(),
+            'reviewed_by': str(request.user.get_full_name() or request.user.username),
+            'employee': {
+                'id': employee.id,
+                'name': employee.name,
+                'email': employee.email,
+                'national_id': employee.national_id,
+                'employee_number': employee.employee_number,
+                'national_address': employee.national_address,
+                'mobile': employee.mobile,
+                'date_of_birth': serialize_date(employee.date_of_birth),
+                'birth_place': employee.birth_place,
+                'age': employee.age,
+                'gender': employee.gender,
+                'marital_status': employee.marital_status,
+                'health_center_name': employee.health_center.name if employee.health_center_id else '',
+                'job_title': employee.job_title,
+                'appointment_date': serialize_date(employee.appointment_date),
+                'years_of_experience': serialize_decimal(employee.years_of_experience),
+                'periodic_exam_status': employee.periodic_exam_status,
+                'vaccination_status': employee.vaccination_status,
+                'risk_level': employee.risk_level,
+            },
+            'physical': {
+                'weight_kg': p('weight_kg'),
+                'height_cm': p('height_cm'),
+                'bmi': p('bmi'),
+                'obesity_status': p('obesity_status'),
+                'physical_activity': p('physical_activity'),
+                'current_position': p('current_position'),
+            },
+            'conditions': {
+                'diabetes': getattr(profile, 'diabetes', None) if profile else None,
+                'hypertension': getattr(profile, 'hypertension', None) if profile else None,
+                'thyroid_disease': getattr(profile, 'thyroid_disease', None) if profile else None,
+                'asthma': getattr(profile, 'asthma', None) if profile else None,
+                'blood_disease': getattr(profile, 'blood_disease', None) if profile else None,
+                'smoking_status': p('smoking_status'),
+                'surgical_history': p('surgical_history'),
+                'family_history': p('family_history'),
+                'medical_restrictions': p('medical_restrictions'),
+                'notes': p('notes'),
+            },
+            'mental': {
+                'phq_result': '',
+                'phq_status': '',
+                'gad_result': '',
+                'gad_status': '',
+                'mbi_result': '',
+                'mbi_status': '',
+                'notes': '',
+            },
+            'follow_up': {
+                'latest_virtual_visit': serialize_date(latest_employee_visit.follow_up_date) if latest_employee_visit else None,
+                'joined': True,
+                'latest_field_visit': serialize_date(latest_occupational_visit.visit_date) if latest_occupational_visit else None,
+                'lab_request': latest_lab.request_status if latest_lab else '',
+                'lab_request_date': serialize_date(latest_lab.request_date) if latest_lab else None,
+                'lab_result': latest_lab.result_status if latest_lab else '',
+                'result_checked_date': serialize_date(latest_lab.result_checked_date) if latest_lab else None,
+                'ppd_date': serialize_date(latest_lab.request_date) if latest_lab else None,
+                'ppd_test': latest_lab.ppd_test if latest_lab else '',
+                'colon_cancer_screening': '',
+                'flu_vaccine': first_vaccine.status if first_vaccine else '',
+                'covid_19': '',
+                'other_vaccine': first_vaccine.vaccine_type if first_vaccine else '',
+                'latest_exposure': serialize_date(latest_exposure.exposure_date) if latest_exposure else None,
+                'notes': p('notes') or (latest_employee_visit.notes if latest_employee_visit else ''),
+            },
+            'vaccinations': vaccination_rows,
+            'recommendations': {
+                'medical': 'المتابعة الدورية حسب حالة الموظف ونتائج الفحوصات.',
+                'vaccination': 'استكمال التطعيمات المستحقة حسب سياسة الصحة المهنية.',
+                'next_review_date': next_review_date.isoformat(),
+                'reviewed_by': str(request.user.get_full_name() or request.user.username),
+            },
+        }
+        return Response(payload)
+
+
 class LabTestViewSet(viewsets.ModelViewSet): queryset=LabTest.objects.select_related('employee').all().order_by('-id'); serializer_class=LabTestSerializer; permission_classes=[permissions.IsAuthenticated]
 class VaccinationViewSet(viewsets.ModelViewSet): queryset=Vaccination.objects.select_related('employee').all().order_by('-id'); serializer_class=VaccinationSerializer; permission_classes=[permissions.IsAuthenticated]
 class ClinicVisitViewSet(viewsets.ModelViewSet): queryset=ClinicVisit.objects.select_related('employee').all().order_by('-id'); serializer_class=ClinicVisitSerializer; permission_classes=[permissions.IsAuthenticated]
