@@ -127,11 +127,7 @@ export function EmployeeQuickSearch({
       onChange={(_, employee) => onChange(employee ? String(employee.id) : '', employee)}
       getOptionLabel={option => option.name || String(option.id)}
       isOptionEqualToValue={(option, selectedOption) => String(option.id) === String(selectedOption.id)}
-      noOptionsText={
-        canSearch
-          ? 'لا توجد نتائج مطابقة'
-          : 'اكتب الاسم أو الهوية أو الرقم الوظيفي للبحث'
-      }
+      noOptionsText={canSearch ? 'لا توجد نتائج مطابقة' : 'اكتب الاسم أو الهوية أو الرقم الوظيفي للبحث'}
       filterOptions={(options, state) => {
         const query = state.inputValue.trim().toLowerCase();
         if (!query) return options.slice(0, 10);
@@ -173,17 +169,20 @@ export function EmployeeQuickSearch({
           label={label}
           placeholder={placeholder}
           helperText={helperText}
-          slotProps={{
-            input: {
-              ...params.InputProps,
-              startAdornment: <SearchIcon fontSize="small" sx={{ mr: 1, color: 'text.secondary' }} />,
-              endAdornment: (
-                <>
-                  {loading ? <CircularProgress color="inherit" size={18} /> : null}
-                  {params.InputProps.endAdornment}
-                </>
-              ),
-            },
+          InputProps={{
+            ...params.InputProps,
+            startAdornment: (
+              <>
+                <SearchIcon fontSize="small" sx={{ mx: 1, color: 'text.secondary' }} />
+                {params.InputProps.startAdornment}
+              </>
+            ),
+            endAdornment: (
+              <>
+                {loading ? <CircularProgress color="inherit" size={18} /> : null}
+                {params.InputProps.endAdornment}
+              </>
+            ),
           }}
         />
       )}
