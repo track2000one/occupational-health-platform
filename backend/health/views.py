@@ -211,7 +211,7 @@ class ExcelImportViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class HealthCenterViewSet(viewsets.ModelViewSet): queryset=HealthCenter.objects.all().order_by('name'); serializer_class=HealthCenterSerializer; permission_classes=[permissions.IsAuthenticated]
-class EmployeeViewSet(viewsets.ModelViewSet): queryset=Employee.objects.select_related('health_center').all().order_by('-created_at'); serializer_class=EmployeeSerializer; permission_classes=[permissions.IsAuthenticated,IsAdminOrManagerForWrite]; search_fields=['name','national_id','mobile','job_title']
+class EmployeeViewSet(viewsets.ModelViewSet): queryset=Employee.objects.select_related('health_center').all().order_by('-created_at'); serializer_class=EmployeeSerializer; permission_classes=[permissions.IsAuthenticated,IsAdminOrManagerForWrite]; search_fields=['name','email','employee_number','national_id','mobile','job_title','birth_place','national_address']
 class LabTestViewSet(viewsets.ModelViewSet): queryset=LabTest.objects.select_related('employee').all().order_by('-id'); serializer_class=LabTestSerializer; permission_classes=[permissions.IsAuthenticated]
 class VaccinationViewSet(viewsets.ModelViewSet): queryset=Vaccination.objects.select_related('employee').all().order_by('-id'); serializer_class=VaccinationSerializer; permission_classes=[permissions.IsAuthenticated]
 class ClinicVisitViewSet(viewsets.ModelViewSet): queryset=ClinicVisit.objects.select_related('employee').all().order_by('-id'); serializer_class=ClinicVisitSerializer; permission_classes=[permissions.IsAuthenticated]
