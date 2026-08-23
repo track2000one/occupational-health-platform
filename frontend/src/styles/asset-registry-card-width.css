@@ -1,0 +1,42 @@
+/* Asset registry card width control
+   Prevent a single record card from stretching across the page.
+   Keeps operational cards close to IAU Deeds / Assets card proportions. */
+
+:root {
+  --ohp-registry-card-min: 340px;
+  --ohp-registry-card-max: 430px;
+}
+
+.MuiTableContainer-root .MuiTableBody-root {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--ohp-registry-card-min)), var(--ohp-registry-card-max))) !important;
+  justify-content: center !important;
+  align-items: start !important;
+}
+
+.MuiTableContainer-root .MuiTableBody-root .MuiTableRow-root {
+  width: 100% !important;
+  max-width: var(--ohp-registry-card-max) !important;
+  justify-self: center !important;
+}
+
+/* Keep cards readable on medium screens while maintaining a fixed registry-card feel. */
+@media (min-width: 1280px) {
+  .MuiTableContainer-root .MuiTableBody-root {
+    grid-template-columns: repeat(auto-fill, minmax(360px, 430px)) !important;
+  }
+}
+
+@media (max-width: 760px) {
+  .MuiTableContainer-root {
+    padding: 12px !important;
+  }
+
+  .MuiTableContainer-root .MuiTableBody-root {
+    grid-template-columns: minmax(0, 1fr) !important;
+    justify-content: stretch !important;
+  }
+
+  .MuiTableContainer-root .MuiTableBody-root .MuiTableRow-root {
+    max-width: none !important;
+  }
+}
