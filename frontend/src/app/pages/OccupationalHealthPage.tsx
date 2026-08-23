@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Alert,
   Box,
   Button,
+  CircularProgress,
   Chip,
   Dialog,
   DialogActions,
@@ -29,7 +30,7 @@ import {
   Warning as WarnIcon,
 } from '@mui/icons-material';
 import { toast } from 'sonner';
-import { useAuth } from '../context/AuthContext';
+import { getAccessToken, useAuth } from '../context/AuthContext';
 import { PERMISSIONS } from '../data/roles';
 import { EmployeeQuickSearch, type EmployeeSearchOption } from '../components/EmployeeQuickSearch';
 
@@ -44,6 +45,64 @@ interface OhAssessment {
   nextAssessmentDate?: string;
   assessorName: string;
   notes?: string;
+}
+
+type OhAssessmentApiRecord = {
+  id: string | number;
+  employee: string | number;
+  employee_name?: string;
+  assessment_date: string;
+  assessment_type: string;
+  fitness_decision: OhAssessment['fitnessDecision'];
+  restrictions?: string | null;
+  next_assessment_date?: string | null;
+  assessor_name?: string | null;
+  notes?: string | null;
+};
+
+const PRODUCTION_API_BASE_URL = 'https://occupational-health-platform-production.up.railway.app/api';
+const LOCAL_API_BASE_URL = 'http://localhost:8000/api';
+const API_BASE_URL = (
+  import.meta.env.VITE_API_URL ||
+  (typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
+    ? LOCAL_API_BASE_URL
+    : PRODUCTION_API_BASE_URL)
+).replace(/\/$/, '');
+
+function getList<T>(payload: unknown): T[] {
+  if (Array.isArray(payload)) return payload as T[];
+  if (payload && typeof payload === 'object' && Array.isArray((payload as { results?: unknown }).results)) {
+    return (payload as { results: T[] }).results;
+  }
+  return [];
+}
+
+function mapAssessment(record: OhAssessmentApiRecord): OhAssessment {
+  return {
+    id: String(record.id),
+    employeeId: String(record.employee),
+    employeeName: record.employee_name || String(record.employee),
+    assessmentDate: record.assessment_date,
+    assessmentType: record.assessment_type || 'Periodic',
+    fitnessDecision: record.fitness_decision,
+    restrictions: record.restrictions || undefined,
+    nextAssessmentDate: record.next_assessment_date || undefined,
+    assessorName: record.assessor_name || '',
+    notes: record.notes || '',
+  };
+}
+
+async function readApiError(response: Response) {
+  try {
+    const payload = await response.json() as Record<string, unknown>;
+    if (typeof payload.detail === 'string') return payload.detail;
+    const firstValue = Object.values(payload)[0];
+    if (Array.isArray(firstValue) && firstValue.length) return String(firstValue[0]);
+    if (typeof firstValue === 'string') return firstValue;
+  } catch {
+    // The API may return an empty body for upstream deployment failures.
+  }
+  return `Request failed (${response.status})`;
 }
 
 const EMPTY_ASSESSMENTS: OhAssessment[] = [];
@@ -66,6 +125,50 @@ export function OccupationalHealthPage() {
   const [filterDecision, setFilterDecision] = useState('all');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState(EMPTY_ASSESSMENT_FORM);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    const token = getAccessToken();
+    if (!token) {
+      setLoading(false);
+      return;
+    }
+
+    let active = true;
+    setLoading(true);
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 15000);
+
+    async function loadAssessments() {
+      try {
+        const response = await fetch(`${API_BASE_URL}/occupational-health-assessments/`, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error(await readApiError(response));
+        const payload = await response.json();
+        setAssessments(getList<OhAssessmentApiRecord>(payload).map(mapAssessment));
+      } catch (error) {
+        if (!active) return;
+        if (controller.signal.aborted) {
+          toast.error(isRtl ? 'انتهت مهلة الاتصال بالخادم أثناء تحميل التقييمات' : 'Loading assessments timed out');
+        } else {
+          toast.error(error instanceof Error ? error.message : (isRtl ? 'تعذر تحميل التقييمات' : 'Could not load assessments'));
+        }
+      } finally {
+        window.clearTimeout(timeout);
+        if (active) setLoading(false);
+      }
+    }
+
+    void loadAssessments();
+    return () => {
+      active = false;
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [isRtl]);
 
   const filtered = assessments.filter(a => {
     const matchSearch = a.employeeName.toLowerCase().includes(search.toLowerCase());
@@ -77,27 +180,57 @@ export function OccupationalHealthPage() {
     setForm(prev => ({ ...prev, employeeId, employeeName: employee?.name || '' }));
   }
 
-  function handleSave() {
+  async function handleSave() {
     if (!form.employeeId || !form.assessmentDate) {
       toast.error(isRtl ? 'يرجى تعبئة الحقول المطلوبة' : 'Please fill required fields');
       return;
     }
-    const newAssessment: OhAssessment = {
-      id: `OHA-${Date.now()}`,
-      employeeId: form.employeeId,
-      employeeName: form.employeeName || form.employeeId,
-      assessmentDate: form.assessmentDate,
-      assessmentType: form.assessmentType || 'Periodic',
-      fitnessDecision: form.fitnessDecision,
-      restrictions: form.restrictions || undefined,
-      nextAssessmentDate: form.nextAssessmentDate || undefined,
-      assessorName: form.assessorName || (isRtl ? 'طبيب الصحة المهنية' : 'OH Physician'),
-      notes: form.notes,
-    };
-    setAssessments(prev => [newAssessment, ...prev]);
-    setDialogOpen(false);
-    setForm(EMPTY_ASSESSMENT_FORM);
-    toast.success(isRtl ? 'تم تسجيل تقييم الصحة المهنية' : 'OH assessment recorded');
+    if (saving) return;
+
+    const token = getAccessToken();
+    if (!token) {
+      toast.error(isRtl ? 'انتهت جلسة الدخول. سجل الدخول مرة أخرى ثم أعد المحاولة.' : 'Your session has expired. Please sign in again.');
+      return;
+    }
+
+    setSaving(true);
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 20000);
+    try {
+      const response = await fetch(`${API_BASE_URL}/occupational-health-assessments/`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          employee: Number(form.employeeId),
+          assessment_date: form.assessmentDate,
+          assessment_type: form.assessmentType || 'Periodic',
+          fitness_decision: form.fitnessDecision,
+          restrictions: form.restrictions.trim(),
+          next_assessment_date: form.nextAssessmentDate || null,
+          assessor_name: form.assessorName.trim(),
+          notes: form.notes.trim(),
+        }),
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new Error(await readApiError(response));
+      const savedAssessment = mapAssessment(await response.json() as OhAssessmentApiRecord);
+      setAssessments(prev => [savedAssessment, ...prev.filter(item => item.id !== savedAssessment.id)]);
+      setDialogOpen(false);
+      setForm(EMPTY_ASSESSMENT_FORM);
+      toast.success(isRtl ? 'تم حفظ تقييم الصحة المهنية في قاعدة البيانات' : 'OH assessment saved to the database');
+    } catch (error) {
+      if (controller.signal.aborted) {
+        toast.error(isRtl ? 'انتهت مهلة الحفظ. تحقق من اتصال الخادم ثم أعد المحاولة.' : 'Save timed out. Check the server connection and try again.');
+      } else {
+        toast.error(error instanceof Error ? error.message : (isRtl ? 'تعذر حفظ التقييم' : 'Could not save assessment'));
+      }
+    } finally {
+      window.clearTimeout(timeout);
+      setSaving(false);
+    }
   }
 
   const fitCount = assessments.filter(a => a.fitnessDecision === 'fit').length;
@@ -125,8 +258,8 @@ export function OccupationalHealthPage() {
 
       <Alert severity="info" sx={{ mb: 3 }}>
         {isRtl
-          ? 'تم تصفير التقييمات التجريبية. سجّل تقييمًا جديدًا بعد اختيار الموظف من البحث السريع.'
-          : 'Demo assessments have been cleared. Record a new assessment after selecting an employee from quick search.'}
+          ? 'يتم حفظ تقييمات الصحة المهنية وربطها بسجل الموظف مباشرة في PostgreSQL.'
+          : 'Occupational health assessments are saved to PostgreSQL and linked to the employee record.'}
       </Alert>
 
       <Grid container spacing={2} sx={{ mb: 3 }}>
@@ -179,7 +312,24 @@ export function OccupationalHealthPage() {
             </TableRow>
           </TableHead>
           <TableBody>
-            {filtered.map(assessment => (
+            {loading && (
+              <TableRow>
+                <TableCell colSpan={8} align="center" sx={{ py: 4 }}>
+                  <CircularProgress size={26} />
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                    {isRtl ? 'جاري تحميل التقييمات...' : 'Loading assessments...'}
+                  </Typography>
+                </TableCell>
+              </TableRow>
+            )}
+            {!loading && filtered.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={8} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                  {isRtl ? 'لا توجد تقييمات محفوظة حتى الآن' : 'No saved assessments yet'}
+                </TableCell>
+              </TableRow>
+            )}
+            {!loading && filtered.map(assessment => (
               <TableRow key={assessment.id} hover>
                 <TableCell>{assessment.id}</TableCell>
                 <TableCell>{assessment.employeeName}</TableCell>
@@ -195,7 +345,7 @@ export function OccupationalHealthPage() {
         </Table>
       </TableContainer>
 
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
+      <Dialog open={dialogOpen} onClose={() => { if (!saving) setDialogOpen(false); }} maxWidth="sm" fullWidth>
         <DialogTitle>{isRtl ? 'تسجيل تقييم الصحة المهنية' : 'Record OH Assessment'}</DialogTitle>
         <DialogContent dividers>
           <Grid container spacing={2}>
@@ -232,11 +382,22 @@ export function OccupationalHealthPage() {
               <TextField fullWidth label={isRtl ? 'اسم المقيِّم' : 'Assessor Name'} value={form.assessorName}
                 onChange={e => setForm(p => ({ ...p, assessorName: e.target.value }))} />
             </Grid>
+            <Grid size={{ xs: 12 }}>
+              <TextField fullWidth multiline minRows={2} label={isRtl ? 'ملاحظات' : 'Notes'} value={form.notes}
+                onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} />
+            </Grid>
           </Grid>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDialogOpen(false)}>{isRtl ? 'إلغاء' : 'Cancel'}</Button>
-          <Button variant="contained" onClick={handleSave}>{isRtl ? 'حفظ' : 'Save'}</Button>
+          <Button disabled={saving} onClick={() => setDialogOpen(false)}>{isRtl ? 'إلغاء' : 'Cancel'}</Button>
+          <Button
+            variant="contained"
+            disabled={saving}
+            onClick={() => { void handleSave(); }}
+            startIcon={saving ? <CircularProgress size={17} color="inherit" /> : undefined}
+          >
+            {saving ? (isRtl ? 'جارٍ الحفظ...' : 'Saving...') : (isRtl ? 'حفظ' : 'Save')}
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>

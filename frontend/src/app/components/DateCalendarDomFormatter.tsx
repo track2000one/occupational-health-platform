@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useDatePreference } from '../context/DatePreferenceContext';
 
 const ISO_DATE_PATTERN = /\b\d{4}-\d{2}-\d{2}\b/g;
+const HAS_ISO_DATE_PATTERN = /\b\d{4}-\d{2}-\d{2}\b/;
 const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'TEXTAREA', 'INPUT', 'SELECT', 'OPTION', 'SVG', 'PATH']);
 
 function shouldSkipNode(node: Node) {
@@ -20,10 +21,17 @@ export function DateCalendarDomFormatter() {
       if (shouldSkipNode(node)) return;
       const currentText = node.textContent || '';
       const originalText = originals.current.get(node) || currentText;
-      if (!ISO_DATE_PATTERN.test(originalText)) return;
-      ISO_DATE_PATTERN.lastIndex = 0;
+      if (!HAS_ISO_DATE_PATTERN.test(originalText)) return;
       originals.current.set(node, originalText);
-      node.textContent = originalText.replace(ISO_DATE_PATTERN, match => formatDate(match));
+      const formattedText = originalText.replace(ISO_DATE_PATTERN, match => formatDate(match));
+
+      // MutationObserver sees writes performed by this formatter too. Writing the
+      // same value again creates another characterData mutation and previously
+      // caused an endless callback loop whenever a newly saved row contained an
+      // ISO date. Only update the node when the rendered value actually changes.
+      if (currentText !== formattedText) {
+        node.textContent = formattedText;
+      }
     }
 
     function scan(root: Node) {

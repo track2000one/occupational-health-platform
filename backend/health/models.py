@@ -215,6 +215,50 @@ class EmployeeHealthCard(models.Model):
         return f'{self.card_number or "Health card"} - {self.employee}'
 
 
+class OccupationalHealthAssessment(models.Model):
+    ASSESSMENT_TYPES = (
+        ('Pre-employment', 'Pre-employment'),
+        ('Periodic', 'Periodic'),
+        ('Return to Work', 'Return to Work'),
+        ('Special', 'Special'),
+        ('Exit', 'Exit'),
+    )
+    FITNESS_DECISIONS = (
+        ('fit', 'Fit'),
+        ('fitWithRestrictions', 'Fit with Restrictions'),
+        ('temporarilyUnfit', 'Temporarily Unfit'),
+        ('permanentlyUnfit', 'Permanently Unfit'),
+    )
+
+    employee = models.ForeignKey(
+        Employee,
+        on_delete=models.CASCADE,
+        related_name='occupational_health_assessments',
+    )
+    assessment_date = models.DateField(db_index=True)
+    assessment_type = models.CharField(max_length=40, choices=ASSESSMENT_TYPES, default='Periodic')
+    fitness_decision = models.CharField(max_length=40, choices=FITNESS_DECISIONS, default='fit', db_index=True)
+    restrictions = models.TextField(blank=True)
+    next_assessment_date = models.DateField(null=True, blank=True)
+    assessor_name = models.CharField(max_length=200, blank=True)
+    notes = models.TextField(blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_occupational_health_assessments',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-assessment_date', '-created_at']
+
+    def __str__(self):
+        return f'{self.employee} - {self.assessment_date} - {self.fitness_decision}'
+
+
 class LabTest(models.Model):
     STATUS = (('pending', 'Pending'), ('completed', 'Completed'), ('missing', 'Missing'))
     employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name='lab_tests')

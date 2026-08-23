@@ -2,7 +2,7 @@ from datetime import date
 
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
-from .models import AuditLog, ClinicVisit, CommitteeReferral, DataImportBatch, Employee, EmployeeHealthCard, HealthCenter, InjuryCase, LabTest, UserProfile, Vaccination
+from .models import AuditLog, ClinicVisit, CommitteeReferral, DataImportBatch, Employee, EmployeeHealthCard, HealthCenter, InjuryCase, LabTest, OccupationalHealthAssessment, UserProfile, Vaccination
 
 
 ROLE_PERMISSIONS = {
@@ -340,6 +340,39 @@ class EmployeeHealthCardSerializer(serializers.ModelSerializer):
                 )
             cleaned[section] = section_value
         return cleaned
+
+
+class OccupationalHealthAssessmentSerializer(serializers.ModelSerializer):
+    employee_name = serializers.CharField(source='employee.name', read_only=True)
+    employee_number = serializers.CharField(source='employee.employee_number', read_only=True)
+    health_center_name = serializers.CharField(source='employee.health_center.name', read_only=True, default='')
+    created_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = OccupationalHealthAssessment
+        fields = [
+            'id', 'employee', 'employee_name', 'employee_number', 'health_center_name',
+            'assessment_date', 'assessment_type', 'fitness_decision', 'restrictions',
+            'next_assessment_date', 'assessor_name', 'notes', 'created_by_name',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'created_by_name', 'created_at', 'updated_at']
+
+    def get_created_by_name(self, obj):
+        if not obj.created_by_id:
+            return ''
+        return obj.created_by.get_full_name() or obj.created_by.username
+
+    def validate(self, attrs):
+        assessment_date = attrs.get('assessment_date') or getattr(self.instance, 'assessment_date', None)
+        next_assessment_date = attrs.get('next_assessment_date')
+        if next_assessment_date is None and self.instance is not None:
+            next_assessment_date = self.instance.next_assessment_date
+        if assessment_date and assessment_date > date.today():
+            raise serializers.ValidationError({'assessment_date': 'Assessment date cannot be in the future.'})
+        if assessment_date and next_assessment_date and next_assessment_date < assessment_date:
+            raise serializers.ValidationError({'next_assessment_date': 'Next assessment date cannot be before the assessment date.'})
+        return attrs
 
 
 class LabTestSerializer(serializers.ModelSerializer):

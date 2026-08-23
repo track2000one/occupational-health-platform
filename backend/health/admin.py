@@ -16,6 +16,7 @@ from .models import (
     MedicalCommitteeCase,
     NeedleStickExposure,
     OccupationalClinicVisit,
+    OccupationalHealthAssessment,
     ReferenceLookup,
     ScreeningProgramRecord,
     TraineeRotation,
@@ -102,6 +103,14 @@ class OccupationalClinicVisitAdmin(admin.ModelAdmin):
     list_filter = ('visit_date', 'contract_type')
     search_fields = ('employee__name', 'employee__national_id', 'physician', 'action')
     readonly_fields = ('raw_payload', 'created_at', 'updated_at')
+
+
+@admin.register(OccupationalHealthAssessment)
+class OccupationalHealthAssessmentAdmin(admin.ModelAdmin):
+    list_display = ('employee', 'assessment_date', 'assessment_type', 'fitness_decision', 'next_assessment_date', 'assessor_name')
+    list_filter = ('assessment_type', 'fitness_decision', 'assessment_date')
+    search_fields = ('employee__name', 'employee__national_id', 'employee__employee_number', 'assessor_name', 'restrictions')
+    readonly_fields = ('created_by', 'created_at', 'updated_at')
 
 
 @admin.register(EmployeeClinicVisit)

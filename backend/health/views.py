@@ -7,8 +7,8 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from .importers import process_excel_import
-from .models import AuditLog, ClinicVisit, CommitteeReferral, DataImportBatch, Employee, EmployeeHealthCard, HealthCenter, InjuryCase, LabTest, Vaccination
-from .serializers import AuditLogSerializer, ClinicVisitSerializer, CommitteeReferralSerializer, DataImportBatchSerializer, EmployeeHealthCardSerializer, EmployeeSerializer, HealthCenterSerializer, InjuryCaseSerializer, LabTestSerializer, PlatformUserSerializer, VaccinationSerializer
+from .models import AuditLog, ClinicVisit, CommitteeReferral, DataImportBatch, Employee, EmployeeHealthCard, HealthCenter, InjuryCase, LabTest, OccupationalHealthAssessment, Vaccination
+from .serializers import AuditLogSerializer, ClinicVisitSerializer, CommitteeReferralSerializer, DataImportBatchSerializer, EmployeeHealthCardSerializer, EmployeeSerializer, HealthCenterSerializer, InjuryCaseSerializer, LabTestSerializer, OccupationalHealthAssessmentSerializer, PlatformUserSerializer, VaccinationSerializer
 
 
 class IsAdminOrManagerForWrite(permissions.BasePermission):
@@ -28,6 +28,23 @@ class IsAdminOrManagerForWrite(permissions.BasePermission):
                 'ohManager', 'ohDoctor', 'clinicDoctor', 'dataEntry'
             }
         return request.user.is_staff
+
+
+class CanManageOccupationalHealthAssessments(permissions.BasePermission):
+    """Allow authenticated reads and restrict clinical writes to approved roles."""
+
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        if request.user.is_superuser or request.user.is_staff:
+            return True
+        try:
+            role = request.user.health_profile.role
+        except Exception:
+            role = ''
+        return role in {'ohManager', 'ohDoctor', 'clinicDoctor', 'dataEntry'}
 
 
 def truthy(value):
@@ -534,6 +551,41 @@ class EmployeeViewSet(viewsets.ModelViewSet):
 
 
 class LabTestViewSet(viewsets.ModelViewSet): queryset=LabTest.objects.select_related('employee').all().order_by('-id'); serializer_class=LabTestSerializer; permission_classes=[permissions.IsAuthenticated]
+class OccupationalHealthAssessmentViewSet(viewsets.ModelViewSet):
+    queryset = OccupationalHealthAssessment.objects.select_related('employee', 'employee__health_center', 'created_by').all()
+    serializer_class = OccupationalHealthAssessmentSerializer
+    permission_classes = [CanManageOccupationalHealthAssessments]
+    search_fields = ['employee__name', 'employee__national_id', 'employee__employee_number', 'assessor_name', 'restrictions']
+
+    def perform_create(self, serializer):
+        assessor_name = serializer.validated_data.get('assessor_name') or self.request.user.get_full_name() or self.request.user.username
+        assessment = serializer.save(created_by=self.request.user, assessor_name=assessor_name)
+        AuditLog.objects.create(
+            user=str(self.request.user),
+            action='create_occupational_health_assessment',
+            model_name='OccupationalHealthAssessment',
+            record_id=str(assessment.id),
+        )
+
+    def perform_update(self, serializer):
+        assessment = serializer.save()
+        AuditLog.objects.create(
+            user=str(self.request.user),
+            action='update_occupational_health_assessment',
+            model_name='OccupationalHealthAssessment',
+            record_id=str(assessment.id),
+        )
+
+    def perform_destroy(self, instance):
+        record_id = str(instance.id)
+        instance.delete()
+        AuditLog.objects.create(
+            user=str(self.request.user),
+            action='delete_occupational_health_assessment',
+            model_name='OccupationalHealthAssessment',
+            record_id=record_id,
+        )
+
 class VaccinationViewSet(viewsets.ModelViewSet): queryset=Vaccination.objects.select_related('employee').all().order_by('-id'); serializer_class=VaccinationSerializer; permission_classes=[permissions.IsAuthenticated]
 class ClinicVisitViewSet(viewsets.ModelViewSet): queryset=ClinicVisit.objects.select_related('employee').all().order_by('-id'); serializer_class=ClinicVisitSerializer; permission_classes=[permissions.IsAuthenticated]
 class CommitteeReferralViewSet(viewsets.ModelViewSet): queryset=CommitteeReferral.objects.select_related('employee').all().order_by('-id'); serializer_class=CommitteeReferralSerializer; permission_classes=[permissions.IsAuthenticated]
