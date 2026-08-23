@@ -2,7 +2,7 @@ from datetime import date
 
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
-from .models import AuditLog, ClinicVisit, CommitteeReferral, DataImportBatch, Employee, HealthCenter, InjuryCase, LabTest, UserProfile, Vaccination
+from .models import AuditLog, ClinicVisit, CommitteeReferral, DataImportBatch, Employee, EmployeeHealthCard, HealthCenter, InjuryCase, LabTest, UserProfile, Vaccination
 
 
 ROLE_PERMISSIONS = {
@@ -304,6 +304,42 @@ class EmployeeSerializer(serializers.ModelSerializer):
         if appointment and appointment > today:
             raise serializers.ValidationError({'appointment_date': 'Appointment date cannot be in the future.'})
         return attrs
+
+
+class EmployeeHealthCardSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EmployeeHealthCard
+        fields = [
+            'id', 'employee', 'card_number', 'issue_date', 'next_review_date',
+            'reviewed_by', 'is_approved', 'data', 'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'employee', 'card_number', 'created_at', 'updated_at']
+
+    def validate_data(self, value):
+        if not isinstance(value, dict):
+            raise serializers.ValidationError('Health card data must be a JSON object.')
+
+        allowed_sections = {
+            'personal', 'employment', 'physical', 'conditions', 'mental',
+            'follow_up', 'vaccinations', 'recommendations', 'additional',
+        }
+        unknown = sorted(set(value) - allowed_sections)
+        if unknown:
+            raise serializers.ValidationError(
+                f'Unknown health card sections: {", ".join(unknown)}'
+            )
+
+        cleaned = {}
+        for section in allowed_sections:
+            section_value = value.get(section, {})
+            if section_value is None:
+                section_value = {}
+            if not isinstance(section_value, dict):
+                raise serializers.ValidationError(
+                    f'The {section} section must be a JSON object.'
+                )
+            cleaned[section] = section_value
+        return cleaned
 
 
 class LabTestSerializer(serializers.ModelSerializer):

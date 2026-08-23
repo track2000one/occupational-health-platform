@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router';
 import {
   Alert,
   Box,
@@ -34,6 +35,7 @@ import {
   Refresh as RefreshIcon,
   Search as SearchIcon,
   Visibility as VisibilityIcon,
+  BadgeOutlined as HealthCardIcon,
 } from '@mui/icons-material';
 import { toast } from 'sonner';
 import { getAccessToken, useAuth } from '../context/AuthContext';
@@ -234,6 +236,7 @@ async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T
 export function EmployeesPage() {
   const { t, i18n } = useTranslation();
   const { can } = useAuth();
+  const navigate = useNavigate();
   const isRtl = i18n.language === 'ar';
 
   const [employees, setEmployees] = useState<ApiEmployee[]>([]);
@@ -522,6 +525,9 @@ export function EmployeesPage() {
                   </TableCell>
                   <TableCell>{employee.mobile || '-'}</TableCell>
                   <TableCell align="center">
+                    <Button size="small" variant="outlined" color="primary" startIcon={<HealthCardIcon />} onClick={() => navigate(`/employees/${employee.id}/health-card`)}>
+                      {isRtl ? 'البطاقة الصحية' : 'Health Card'}
+                    </Button>
                     <Button size="small" variant="outlined" startIcon={<VisibilityIcon />} onClick={() => openView(employee)}>
                       {isRtl ? 'عرض' : 'View'}
                     </Button>

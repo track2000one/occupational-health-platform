@@ -7,6 +7,7 @@ from .models import (
     DataImportBatch,
     Employee,
     EmployeeClinicVisit,
+    EmployeeHealthCard,
     EmployeeHealthProfile,
     HealthCenter,
     InjuryCase,
@@ -53,6 +54,14 @@ class EmployeeHealthProfileAdmin(admin.ModelAdmin):
     list_filter = ('diabetes', 'hypertension', 'asthma', 'smoking_status')
     search_fields = ('employee__name', 'employee__national_id', 'moh_id', 'current_position')
     readonly_fields = ('raw_payload', 'created_at', 'updated_at')
+
+
+@admin.register(EmployeeHealthCard)
+class EmployeeHealthCardAdmin(admin.ModelAdmin):
+    list_display = ('card_number', 'employee', 'issue_date', 'next_review_date', 'reviewed_by', 'is_approved', 'updated_at')
+    list_filter = ('is_approved', 'issue_date', 'next_review_date')
+    search_fields = ('card_number', 'employee__name', 'employee__national_id', 'employee__employee_number', 'reviewed_by')
+    readonly_fields = ('card_number', 'data', 'created_by', 'updated_by', 'created_at', 'updated_at')
 
 
 @admin.register(LabScreening)

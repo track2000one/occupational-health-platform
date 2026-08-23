@@ -27,6 +27,7 @@ export const en = {
   // Navigation
   dashboard: 'Dashboard',
   employees: 'Employees',
+  employeeHealthCard: 'Health Card',
   medicalProfile: 'Medical Profile',
   labTests: 'Lab Tests',
   vaccinations: 'Vaccinations',

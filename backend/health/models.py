@@ -167,6 +167,54 @@ class EmployeeHealthProfile(ImportTraceModel):
         return f'Health profile - {self.employee}'
 
 
+class EmployeeHealthCard(models.Model):
+    """A saved, employee-specific occupational health card.
+
+    Identity and employment fields remain sourced from ``Employee`` so they never
+    drift from the master employee record.  The Excel health-card sections are
+    stored as structured JSON because several source fields accept clinical text,
+    dates, Yes/No values, or legacy spreadsheet codes.
+    """
+
+    employee = models.OneToOneField(Employee, on_delete=models.CASCADE, related_name='health_card')
+    card_number = models.CharField(max_length=40, unique=True, blank=True)
+    issue_date = models.DateField(default=date.today)
+    next_review_date = models.DateField(null=True, blank=True)
+    reviewed_by = models.CharField(max_length=200, blank=True)
+    is_approved = models.BooleanField(default=False)
+    data = models.JSONField(default=dict, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_employee_health_cards',
+    )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='updated_employee_health_cards',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-updated_at']
+        verbose_name = 'Employee health card'
+        verbose_name_plural = 'Employee health cards'
+
+    def save(self, *args, **kwargs):
+        if not self.card_number and self.employee_id:
+            year = (self.issue_date or date.today()).year
+            self.card_number = f'EHC-{year}-{self.employee_id:05d}'
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f'{self.card_number or "Health card"} - {self.employee}'
+
+
 class LabTest(models.Model):
     STATUS = (('pending', 'Pending'), ('completed', 'Completed'), ('missing', 'Missing'))
     employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name='lab_tests')

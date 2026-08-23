@@ -46,6 +46,7 @@ import {
   CalendarMonth as CalendarIcon,
   Security as SecurityIcon,
   CloudUpload as CloudUploadIcon,
+  BadgeOutlined as HealthCardIcon,
 } from '@mui/icons-material';
 import { Badge } from '@mui/material';
 import { mockNotifications } from '../../data/mockData';
@@ -74,6 +75,7 @@ export function DashboardLayout() {
   const navItems: NavItem[] = [
     { key: 'dashboard',          label: t('dashboard'),          icon: <DashboardIcon />,          path: '/dashboard',              permission: PERMISSIONS.VIEW_DASHBOARD },
     { key: 'employees',          label: t('employees'),          icon: <PeopleIcon />,              path: '/employees',              permission: PERMISSIONS.VIEW_EMPLOYEES },
+    { key: 'employeeHealthCard', label: isRtl ? 'البطاقة الصحية' : 'Health Card', icon: <HealthCardIcon />, path: '/employee-health-card', permission: PERMISSIONS.VIEW_EMPLOYEES },
     { key: 'labTests',           label: t('labTests'),           icon: <ScienceIcon />,             path: '/lab-tests',              permission: PERMISSIONS.VIEW_LAB_TESTS },
     { key: 'vaccinations',       label: t('vaccinations'),       icon: <VaccinesIcon />,            path: '/vaccinations',           permission: PERMISSIONS.VIEW_VACCINATIONS },
     { key: 'clinicVisits',       label: t('clinicVisits'),       icon: <LocalHospitalIcon />,       path: '/clinic-visits',          permission: PERMISSIONS.VIEW_CLINIC_VISITS },

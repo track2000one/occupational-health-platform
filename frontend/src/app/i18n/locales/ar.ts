@@ -27,6 +27,7 @@ export const ar = {
   // Navigation
   dashboard: 'لوحة التحكم',
   employees: 'الموظفون',
+  employeeHealthCard: 'البطاقة الصحية',
   medicalProfile: 'الملف الطبي',
   labTests: 'التحاليل المخبرية',
   vaccinations: 'التطعيمات',

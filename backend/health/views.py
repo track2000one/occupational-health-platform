@@ -7,14 +7,27 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from .importers import process_excel_import
-from .models import AuditLog, ClinicVisit, CommitteeReferral, DataImportBatch, Employee, HealthCenter, InjuryCase, LabTest, Vaccination
-from .serializers import AuditLogSerializer, ClinicVisitSerializer, CommitteeReferralSerializer, DataImportBatchSerializer, EmployeeSerializer, HealthCenterSerializer, InjuryCaseSerializer, LabTestSerializer, PlatformUserSerializer, VaccinationSerializer
+from .models import AuditLog, ClinicVisit, CommitteeReferral, DataImportBatch, Employee, EmployeeHealthCard, HealthCenter, InjuryCase, LabTest, Vaccination
+from .serializers import AuditLogSerializer, ClinicVisitSerializer, CommitteeReferralSerializer, DataImportBatchSerializer, EmployeeHealthCardSerializer, EmployeeSerializer, HealthCenterSerializer, InjuryCaseSerializer, LabTestSerializer, PlatformUserSerializer, VaccinationSerializer
 
 
 class IsAdminOrManagerForWrite(permissions.BasePermission):
     def has_permission(self, request, view):
-        if request.method in permissions.SAFE_METHODS: return True
-        return request.user and request.user.is_staff
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        if not request.user:
+            return False
+        if getattr(view, 'action', '') == 'health_card':
+            if request.user.is_superuser:
+                return True
+            try:
+                role = request.user.health_profile.role
+            except Exception:
+                role = ''
+            return request.user.is_staff or role in {
+                'ohManager', 'ohDoctor', 'clinicDoctor', 'dataEntry'
+            }
+        return request.user.is_staff
 
 
 def truthy(value):
@@ -37,6 +50,25 @@ def safe_text(value, default=''):
     if value is None:
         return default
     return str(value)
+
+
+HEALTH_CARD_SECTIONS = (
+    'personal', 'employment', 'physical', 'conditions', 'mental',
+    'follow_up', 'vaccinations', 'recommendations', 'additional',
+)
+
+
+def merge_health_card_data(defaults, saved):
+    merged = {}
+    saved = saved if isinstance(saved, dict) else {}
+    for section in HEALTH_CARD_SECTIONS:
+        base = defaults.get(section, {})
+        override = saved.get(section, {})
+        merged[section] = {
+            **(base if isinstance(base, dict) else {}),
+            **(override if isinstance(override, dict) else {}),
+        }
+    return merged
 
 
 def _is_missing_identity_error(error):
@@ -229,9 +261,79 @@ class EmployeeViewSet(viewsets.ModelViewSet):
     permission_classes=[permissions.IsAuthenticated,IsAdminOrManagerForWrite]
     search_fields=['name','email','employee_number','national_id','mobile','job_title','birth_place','national_address']
 
-    @action(detail=True, methods=['get'])
+    def _health_card_role(self, request):
+        if request.user.is_superuser:
+            return 'systemAdmin'
+        try:
+            return request.user.health_profile.role
+        except Exception:
+            return 'systemAdmin' if request.user.is_staff else ''
+
+    def _can_view_health_card(self, request, employee):
+        role = self._health_card_role(request)
+        if role in {
+            'systemAdmin', 'ohManager', 'ohDoctor', 'clinicDoctor', 'labOfficer',
+            'vaccinationOfficer', 'needleStickOfficer', 'medicalCommitteeOfficer',
+            'centerManager', 'executive', 'dataEntry', 'dataQuality', 'reportsOfficer',
+        }:
+            return True
+        if role == 'employee':
+            try:
+                profile = request.user.health_profile
+                return (
+                    (profile.employee_number and profile.employee_number == employee.employee_number)
+                    or (profile.national_id and profile.national_id == employee.national_id)
+                )
+            except Exception:
+                return False
+        return False
+
+    def _can_write_health_card(self, request):
+        return self._health_card_role(request) in {
+            'systemAdmin', 'ohManager', 'ohDoctor', 'clinicDoctor', 'dataEntry'
+        }
+
+    @action(detail=True, methods=['get', 'put', 'patch'])
     def health_card(self, request, pk=None):
         employee = self.get_object()
+        if not self._can_view_health_card(request, employee):
+            return Response(
+                {'detail': 'You do not have permission to view this health card.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        card = EmployeeHealthCard.objects.filter(employee=employee).first()
+        was_created = False
+        if request.method in ('PUT', 'PATCH'):
+            if not self._can_write_health_card(request):
+                return Response(
+                    {'detail': 'You do not have permission to edit this health card.'},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+            was_created = card is None
+            instance = card or EmployeeHealthCard(employee=employee, created_by=request.user)
+            serializer = EmployeeHealthCardSerializer(
+                instance,
+                data={
+                    'data': request.data.get('data', {}),
+                    'issue_date': request.data.get('issue_date') or date.today().isoformat(),
+                    'next_review_date': request.data.get('next_review_date') or None,
+                    'reviewed_by': request.data.get('reviewed_by', ''),
+                    'is_approved': request.data.get('is_approved', False),
+                },
+                partial=request.method == 'PATCH',
+            )
+            serializer.is_valid(raise_exception=True)
+            card = serializer.save(employee=employee, updated_by=request.user)
+            if not card.created_by_id:
+                card.created_by = request.user
+                card.save(update_fields=['created_by', 'updated_at'])
+            AuditLog.objects.create(
+                user=str(request.user),
+                action='create_employee_health_card' if was_created else 'update_employee_health_card',
+                model_name='EmployeeHealthCard',
+                record_id=str(card.id),
+            )
         try:
             profile = employee.detailed_health_profile
         except Exception:
@@ -273,12 +375,18 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             for label, result in lab_rows:
                 vaccination_rows.append({'label': label, 'result': result, 'date': serialize_date(latest_lab.result_checked_date), 'notes': ''})
 
-        next_review_date = date.today() + timedelta(days=180)
+        next_review_date = card.next_review_date if card and card.next_review_date else date.today() + timedelta(days=180)
+        issue_date = card.issue_date if card else date.today()
+        reviewer = card.reviewed_by if card and card.reviewed_by else str(request.user.get_full_name() or request.user.username)
         payload = {
-            'card_number': f'OHC-2025-{employee.id:05d}' if isinstance(employee.id, int) else f'OHC-2025-{employee.id}',
-            'issue_date': date.today().isoformat(),
+            'id': card.id if card else None,
+            'exists': bool(card),
+            'card_number': card.card_number if card else f'EHC-{issue_date.year}-{employee.id:05d}',
+            'issue_date': issue_date.isoformat(),
             'next_review_date': next_review_date.isoformat(),
-            'reviewed_by': str(request.user.get_full_name() or request.user.username),
+            'reviewed_by': reviewer,
+            'is_approved': card.is_approved if card else False,
+            'updated_at': card.updated_at.isoformat() if card else None,
             'employee': {
                 'id': employee.id,
                 'name': employee.name,
@@ -351,10 +459,78 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 'medical': 'المتابعة الدورية حسب حالة الموظف ونتائج الفحوصات.',
                 'vaccination': 'استكمال التطعيمات المستحقة حسب سياسة الصحة المهنية.',
                 'next_review_date': next_review_date.isoformat(),
-                'reviewed_by': str(request.user.get_full_name() or request.user.username),
+                'reviewed_by': reviewer,
             },
         }
-        return Response(payload)
+        default_data = {
+            'personal': {
+                'children_count': getattr(profile, 'children_count', '') if profile else '',
+                'spouse_name': '',
+            },
+            'employment': {
+                'moh_id': p('moh_id'),
+                'current_position': p('current_position') or employee.job_title,
+            },
+            'physical': {
+                **{key: value for key, value in payload['physical'].items() if key != 'current_position'},
+                'activity_level': '',
+            },
+            'conditions': {
+                **{key: value for key, value in payload['conditions'].items() if key != 'notes'},
+                'ms_disorder': '',
+                'chronic_disease': '',
+                'surgical_details': '',
+                'allergy_history': '',
+                'colon_cancer_history': '',
+                'breast_cancer_history': '',
+                'other_cancer_history': '',
+                'needle_stick_history': 'Yes' if latest_exposure else '',
+                'other_conditions': p('notes'),
+                'metabolic_syndrome': '',
+                'regular_medication': '',
+            },
+            'mental': {
+                'phq_result': '', 'gad_result': '', 'mbi_result': '',
+                'other_psychological': '', 'depression': '', 'anxiety': '',
+                'burnout': '', 'sleep_disorder': '', 'other_risks': '',
+            },
+            'follow_up': {
+                key: value for key, value in payload['follow_up'].items() if key != 'latest_exposure'
+            },
+            'vaccinations': {
+                'anti_hbs': latest_lab.anti_hbs if latest_lab else '',
+                'hbv_vaccine': '', 'hbv_dose_1': '', 'hbv_dose_2': '', 'hbv_dose_3': '',
+                'post_vaccine_anti_hbs': '', 'post_vaccine_anti_hbs_date': '',
+                'rubella_igg': latest_lab.rubella_igg if latest_lab else '',
+                'mmr_vaccine': '', 'mmr_dose_1': '', 'mmr_dose_2': '',
+                'influenza_vaccine': payload['follow_up'].get('flu_vaccine', ''),
+                'hpv_vaccine': '',
+                'hbsag': latest_lab.hbsag if latest_lab else '',
+                'hcv': latest_lab.hcv if latest_lab else '',
+                'hiv': latest_lab.hiv if latest_lab else '',
+                'measles_igg': latest_lab.measles_igg if latest_lab else '',
+                'mumps_igg': '',
+                'varicella_igg': latest_lab.varicella_igg if latest_lab else '',
+                'tetanus_vaccine': '', 'covid_booster': '',
+                'other_immunization': '', 'notes': '',
+            },
+            'recommendations': {
+                'medical': payload['recommendations']['medical'],
+                'vaccination': payload['recommendations']['vaccination'],
+            },
+            'additional': {
+                'pi_spare_1': '', 'pi_spare_2': '', 'ei_spare_1': '',
+                'ei_spare_2': '', 'physical_spare': '', 'medical_spare_1': '',
+                'nsi': '', 'medical_spare_3': '', 'mental_spare': '',
+                'follow_up_spare_1': '', 'follow_up_spare_2': '',
+                'follow_up_spare_3': '', 'comments': '',
+            },
+        }
+        data = merge_health_card_data(default_data, card.data if card else {})
+        payload['data'] = data
+        payload.update(data)
+        response_status = status.HTTP_201_CREATED if request.method in ('PUT', 'PATCH') and was_created else status.HTTP_200_OK
+        return Response(payload, status=response_status)
 
 
 class LabTestViewSet(viewsets.ModelViewSet): queryset=LabTest.objects.select_related('employee').all().order_by('-id'); serializer_class=LabTestSerializer; permission_classes=[permissions.IsAuthenticated]

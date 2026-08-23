@@ -122,6 +122,16 @@ async function fetchEmployees(query: string): Promise<EmployeeSearchOption[]> {
   return getList<EmployeeSearchOption>(payload).slice(0, 25);
 }
 
+async function fetchEmployeeById(employeeId: string): Promise<EmployeeSearchOption | null> {
+  const token = getAccessToken();
+  if (!token || !employeeId) return null;
+  const response = await fetch(`${API_BASE_URL}/employees/${encodeURIComponent(employeeId)}/`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) return null;
+  return response.json() as Promise<EmployeeSearchOption>;
+}
+
 function EmployeeInfoLine({ label, value }: { label: string; value: string }) {
   return (
     <Typography variant="caption" sx={{ color: '#334155', fontWeight: 700 }}>
@@ -194,7 +204,16 @@ export function EmployeeQuickSearch({
     if (existing) {
       setSelectedEmployee(existing);
       setInputValue(existing.name || '');
+      return;
     }
+    let active = true;
+    void fetchEmployeeById(value).then(employee => {
+      if (!active || !employee) return;
+      setEmployees(previous => previous.some(item => String(item.id) === String(employee.id)) ? previous : [employee, ...previous]);
+      setSelectedEmployee(employee);
+      setInputValue(employee.name || '');
+    });
+    return () => { active = false; };
   }, [employees, value]);
 
   useEffect(() => {
