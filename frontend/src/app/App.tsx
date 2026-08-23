@@ -33,6 +33,7 @@ import { LoginPage } from './pages/LoginPage';
 import { DashboardLayout } from './components/layout/DashboardLayout';
 import { DashboardPage } from './pages/DashboardPage';
 import { EmployeesPage } from './pages/EmployeesPage';
+import { EmployeeHealthCardPage } from './pages/EmployeeHealthCardPage';
 import { LabTestsPage } from './pages/LabTestsPage';
 import { VaccinationsPage } from './pages/VaccinationsPage';
 import { NeedleStickInjuriesPage } from './pages/NeedleStickInjuriesPage';
@@ -83,6 +84,8 @@ function AppRoutes() {
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="employees" element={<EmployeesPage />} />
+        <Route path="employee-health-card" element={<EmployeeHealthCardPage />} />
+        <Route path="employees/:employeeId/health-card" element={<EmployeeHealthCardPage />} />
         <Route path="lab-tests" element={<LabTestsPage />} />
         <Route path="vaccinations" element={<VaccinationsPage />} />
         <Route path="clinic-visits" element={<ClinicVisitsPage />} />
