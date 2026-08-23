@@ -1,5 +1,26 @@
+from datetime import date
+from decimal import Decimal, ROUND_HALF_UP
+
 from django.conf import settings
 from django.db import models
+
+
+def full_years_between(start_date, end_date=None):
+    if not start_date:
+        return 0
+    end_date = end_date or date.today()
+    years = end_date.year - start_date.year
+    if (end_date.month, end_date.day) < (start_date.month, start_date.day):
+        years -= 1
+    return max(years, 0)
+
+
+def decimal_years_between(start_date, end_date=None):
+    if not start_date:
+        return None
+    end_date = end_date or date.today()
+    days = max((end_date - start_date).days, 0)
+    return (Decimal(days) / Decimal('365.25')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
 
 class HealthCenter(models.Model):
@@ -58,22 +79,45 @@ class UserProfile(models.Model):
 
 class Employee(models.Model):
     GENDER = (('male', 'Male'), ('female', 'Female'))
+    MARITAL_STATUS = (
+        ('single', 'Single'),
+        ('married', 'Married'),
+        ('divorced', 'Divorced'),
+        ('widowed', 'Widowed'),
+    )
     STATUS = (('completed', 'Completed'), ('incomplete', 'Incomplete'), ('overdue', 'Overdue'))
     VACCINE = (('completed', 'Completed'), ('due', 'Due'), ('refused', 'Refused'))
     RISK = (('low', 'Low'), ('medium', 'Medium'), ('high', 'High'))
 
     name = models.CharField(max_length=200)
+    email = models.EmailField(max_length=254, unique=True, null=True, blank=True)
     national_id = models.CharField(max_length=30, unique=True)
+    employee_number = models.CharField(max_length=40, unique=True, null=True, blank=True)
+    national_address = models.CharField(max_length=255, blank=True)
     mobile = models.CharField(max_length=30, blank=True)
+    date_of_birth = models.DateField(null=True, blank=True)
+    birth_place = models.CharField(max_length=120, blank=True)
+    age = models.PositiveIntegerField(default=0)
     gender = models.CharField(max_length=10, choices=GENDER, default='male')
+    marital_status = models.CharField(max_length=20, choices=MARITAL_STATUS, blank=True)
     health_center = models.ForeignKey(HealthCenter, on_delete=models.PROTECT, related_name='employees')
     job_title = models.CharField(max_length=150, blank=True)
-    age = models.PositiveIntegerField(default=0)
+    appointment_date = models.DateField(null=True, blank=True)
+    years_of_experience = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
     periodic_exam_status = models.CharField(max_length=20, choices=STATUS, default='incomplete')
     vaccination_status = models.CharField(max_length=20, choices=VACCINE, default='due')
     risk_level = models.CharField(max_length=20, choices=RISK, default='low')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    def save(self, *args, **kwargs):
+        if self.email:
+            self.email = self.email.strip().lower()
+        if self.date_of_birth:
+            self.age = full_years_between(self.date_of_birth)
+        if self.appointment_date:
+            self.years_of_experience = decimal_years_between(self.appointment_date)
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.name
