@@ -28,12 +28,7 @@ interface Campaign {
   description?: string;
 }
 
-const MOCK_CAMPAIGNS: Campaign[] = [
-  { id: 'CAM-001', name: 'Influenza Vaccination 2024', nameAr: 'حملة تطعيم الإنفلونزا 2024', campaignType: 'Vaccination', startDate: '2024-01-15', endDate: '2024-02-15', targetCount: 295, completedCount: 210, status: 'active' },
-  { id: 'CAM-002', name: 'Annual Periodic Examination', nameAr: 'الفحص الدوري السنوي 2024', campaignType: 'Periodic Exam', startDate: '2024-01-01', endDate: '2024-03-31', targetCount: 295, completedCount: 243, status: 'active' },
-  { id: 'CAM-003', name: 'HBV Booster Campaign', nameAr: 'حملة جرعة التعزيز لالتهاب الكبد B', campaignType: 'Vaccination', startDate: '2023-10-01', endDate: '2023-12-31', targetCount: 80, completedCount: 80, status: 'completed' },
-  { id: 'CAM-004', name: 'TB Screening Drive', nameAr: 'حملة فحص السل', campaignType: 'Lab Screening', startDate: '2024-03-01', endDate: '2024-04-30', targetCount: 295, completedCount: 0, status: 'planned' },
-];
+const EMPTY_CAMPAIGNS: Campaign[] = [];
 
 const STATUS_CONFIG = {
   planned: { color: 'info' as const, labelEn: 'Planned', labelAr: 'مخطط' },
@@ -47,7 +42,7 @@ export function CampaignsPage() {
   const { can } = useAuth();
   const isRtl = i18n.language === 'ar';
 
-  const [campaigns, setCampaigns] = useState<Campaign[]>(MOCK_CAMPAIGNS);
+  const [campaigns, setCampaigns] = useState<Campaign[]>(EMPTY_CAMPAIGNS);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -86,26 +81,28 @@ export function CampaignsPage() {
     setCampaigns(prev => [newCampaign, ...prev]);
     setDialogOpen(false);
     setForm({ name: '', nameAr: '', campaignType: '', startDate: '', endDate: '', targetCount: '', description: '' });
-    toast.success(isRtl ? 'تم إنشاء الحملة بنجاح' : 'Campaign created successfully');
+    toast.success(isRtl ? 'تم إنشاء الحملة' : 'Campaign created');
   }
 
-  function updateProgress() {
-    const val = Number(progressValue);
-    if (isNaN(val) || val < 0) return;
+  function openProgress(campaign: Campaign) {
+    setEditCampaign(campaign);
+    setProgressValue(String(campaign.completedCount));
+    setProgressOpen(true);
+  }
+
+  function saveProgress() {
     setCampaigns(prev => prev.map(c => c.id === editCampaign?.id
-      ? { ...c, completedCount: Math.min(val, c.targetCount), status: val >= c.targetCount ? 'completed' : 'active' }
+      ? { ...c, completedCount: Number(progressValue), status: Number(progressValue) >= c.targetCount ? 'completed' : c.status }
       : c
     ));
     setProgressOpen(false);
-    toast.success(isRtl ? 'تم تحديث تقدم الحملة' : 'Campaign progress updated');
+    toast.success(isRtl ? 'تم تحديث التقدم' : 'Progress updated');
   }
 
-  const stats = {
-    active: campaigns.filter(c => c.status === 'active').length,
-    planned: campaigns.filter(c => c.status === 'planned').length,
-    completed: campaigns.filter(c => c.status === 'completed').length,
-    totalTarget: campaigns.filter(c => c.status === 'active').reduce((sum, c) => sum + c.targetCount, 0),
-  };
+  const totalTarget = campaigns.reduce((sum, c) => sum + c.targetCount, 0);
+  const activeCount = campaigns.filter(c => c.status === 'active').length;
+  const plannedCount = campaigns.filter(c => c.status === 'planned').length;
+  const completedCount = campaigns.filter(c => c.status === 'completed').length;
 
   return (
     <Box>
@@ -114,17 +111,16 @@ export function CampaignsPage() {
           <CampaignIcon sx={{ fontSize: 32, color: 'primary.main' }} />
           <Box>
             <Typography variant="h4" fontWeight="bold">
-              {isRtl ? 'إدارة الحملات' : 'Campaigns'}
+              {isRtl ? 'إدارة الحملات' : 'Health Campaigns'}
             </Typography>
             <Typography variant="body2" color="text.secondary">
               {isRtl ? 'إدارة ومتابعة حملات الصحة المهنية' : 'Manage and track occupational health campaigns'}
             </Typography>
           </Box>
         </Box>
-        {can(PERMISSIONS.CREATE_CAMPAIGN) && (
-          <Button variant="contained" startIcon={<AddIcon />}
-            onClick={() => setDialogOpen(true)}
-            sx={{ background: 'linear-gradient(135deg, #f9a825 0%, #f57f17 100%)' }}>
+        {can(PERMISSIONS.MANAGE_CAMPAIGNS) && (
+          <Button variant="contained" startIcon={<AddIcon />} onClick={() => setDialogOpen(true)}
+            sx={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
             {isRtl ? 'حملة جديدة' : 'New Campaign'}
           </Button>
         )}
@@ -132,13 +128,14 @@ export function CampaignsPage() {
 
       <Grid container spacing={2} sx={{ mb: 3 }}>
         {[
-          { label: isRtl ? 'حملات نشطة' : 'Active Campaigns', value: stats.active, color: 'success.main' },
-          { label: isRtl ? 'مخططة' : 'Planned', value: stats.planned, color: 'info.main' },
-          { label: isRtl ? 'مكتملة' : 'Completed', value: stats.completed, color: 'text.secondary' },
-          { label: isRtl ? 'المستهدف الإجمالي' : 'Total Target', value: stats.totalTarget, color: 'primary.main' },
+          { label: isRtl ? 'حملات نشطة' : 'Active Campaigns', value: activeCount, icon: <CampaignIcon />, color: 'primary.main' },
+          { label: isRtl ? 'مخططة' : 'Planned', value: plannedCount, icon: null, color: 'info.main' },
+          { label: isRtl ? 'مكتملة' : 'Completed', value: completedCount, icon: null, color: 'success.main' },
+          { label: isRtl ? 'المستهدف الإجمالي' : 'Total Target', value: totalTarget, icon: <GroupIcon />, color: 'warning.main' },
         ].map(s => (
           <Grid key={s.label} size={{ xs: 6, sm: 3 }}>
             <Paper sx={{ p: 2, textAlign: 'center' }}>
+              {s.icon && <Box sx={{ color: s.color }}>{s.icon}</Box>}
               <Typography variant="h4" fontWeight="bold" color={s.color}>{s.value}</Typography>
               <Typography variant="body2" color="text.secondary">{s.label}</Typography>
             </Paper>
@@ -148,17 +145,17 @@ export function CampaignsPage() {
 
       <Paper sx={{ p: 2, mb: 3 }}>
         <Grid container spacing={2}>
-          <Grid size={{ xs: 12, md: 7 }}>
+          <Grid size={{ xs: 12, md: 8 }}>
             <TextField fullWidth placeholder={(isRtl ? 'بحث باسم الحملة' : 'Search campaigns') + '...'}
               value={search} onChange={e => setSearch(e.target.value)}
               slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchIcon /></InputAdornment> } }} />
           </Grid>
-          <Grid size={{ xs: 12, md: 5 }}>
+          <Grid size={{ xs: 12, md: 4 }}>
             <TextField fullWidth select label={isRtl ? 'الحالة' : 'Status'} value={filterStatus}
               onChange={e => setFilterStatus(e.target.value)}>
-              <MenuItem value="all">{isRtl ? 'الكل' : 'All'}</MenuItem>
-              {Object.entries(STATUS_CONFIG).map(([key, val]) => (
-                <MenuItem key={key} value={key}>{isRtl ? val.labelAr : val.labelEn}</MenuItem>
+              <MenuItem value="all">{isRtl ? 'الكل' : 'All Statuses'}</MenuItem>
+              {Object.entries(STATUS_CONFIG).map(([key, config]) => (
+                <MenuItem key={key} value={key}>{isRtl ? config.labelAr : config.labelEn}</MenuItem>
               ))}
             </TextField>
           </Grid>
@@ -171,8 +168,7 @@ export function CampaignsPage() {
             <TableRow sx={{ bgcolor: 'grey.50' }}>
               <TableCell sx={{ fontWeight: 'bold' }}>{isRtl ? 'اسم الحملة' : 'Campaign Name'}</TableCell>
               <TableCell sx={{ fontWeight: 'bold' }}>{isRtl ? 'النوع' : 'Type'}</TableCell>
-              <TableCell sx={{ fontWeight: 'bold' }}>{isRtl ? 'التاريخ' : 'Period'}</TableCell>
-              <TableCell sx={{ fontWeight: 'bold' }}>{isRtl ? 'الهدف' : 'Target'}</TableCell>
+              <TableCell sx={{ fontWeight: 'bold' }}>{isRtl ? 'الفترة' : 'Period'}</TableCell>
               <TableCell sx={{ fontWeight: 'bold' }}>{isRtl ? 'التقدم' : 'Progress'}</TableCell>
               <TableCell sx={{ fontWeight: 'bold' }}>{isRtl ? 'الحالة' : 'Status'}</TableCell>
               <TableCell sx={{ fontWeight: 'bold' }} align="center">{isRtl ? 'إجراءات' : 'Actions'}</TableCell>
@@ -180,7 +176,8 @@ export function CampaignsPage() {
           </TableHead>
           <TableBody>
             {filtered.map(campaign => {
-              const pct = campaign.targetCount > 0 ? Math.round((campaign.completedCount / campaign.targetCount) * 100) : 0;
+              const progress = campaign.targetCount > 0 ? Math.round((campaign.completedCount / campaign.targetCount) * 100) : 0;
+              const status = STATUS_CONFIG[campaign.status];
               return (
                 <TableRow key={campaign.id} hover>
                   <TableCell>
@@ -189,32 +186,20 @@ export function CampaignsPage() {
                   </TableCell>
                   <TableCell><Chip label={campaign.campaignType} size="small" variant="outlined" /></TableCell>
                   <TableCell>
-                    <Typography variant="caption">{campaign.startDate}</Typography>
-                    <Typography variant="caption" color="text.secondary"> → {campaign.endDate}</Typography>
+                    <Typography variant="body2">{campaign.startDate}</Typography>
+                    <Typography variant="caption" color="text.secondary">→ {campaign.endDate}</Typography>
                   </TableCell>
-                  <TableCell>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                      <GroupIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
-                      <Typography variant="body2">{campaign.completedCount} / {campaign.targetCount}</Typography>
-                    </Box>
-                  </TableCell>
-                  <TableCell sx={{ minWidth: 140 }}>
+                  <TableCell sx={{ minWidth: 150 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <Box sx={{ flex: 1 }}>
-                        <LinearProgress variant="determinate" value={pct} sx={{ height: 8, borderRadius: 4 }} />
-                      </Box>
-                      <Typography variant="caption">{pct}%</Typography>
+                      <Box sx={{ flex: 1 }}><LinearProgress variant="determinate" value={Math.min(progress, 100)} /></Box>
+                      <Typography variant="caption">{progress}%</Typography>
                     </Box>
+                    <Typography variant="caption" color="text.secondary">{campaign.completedCount} / {campaign.targetCount}</Typography>
                   </TableCell>
-                  <TableCell>
-                    <Chip label={isRtl ? STATUS_CONFIG[campaign.status].labelAr : STATUS_CONFIG[campaign.status].labelEn}
-                      size="small" color={STATUS_CONFIG[campaign.status].color} />
-                  </TableCell>
+                  <TableCell><Chip label={isRtl ? status.labelAr : status.labelEn} size="small" color={status.color} /></TableCell>
                   <TableCell align="center">
                     <Tooltip title={isRtl ? 'تحديث التقدم' : 'Update Progress'}>
-                      <IconButton size="small" color="primary" onClick={() => { setEditCampaign(campaign); setProgressValue(String(campaign.completedCount)); setProgressOpen(true); }}>
-                        <EditIcon fontSize="small" />
-                      </IconButton>
+                      <IconButton size="small" onClick={() => openProgress(campaign)}><EditIcon fontSize="small" /></IconButton>
                     </Tooltip>
                   </TableCell>
                 </TableRow>
@@ -224,44 +209,38 @@ export function CampaignsPage() {
         </Table>
       </TableContainer>
 
-      {/* Create Campaign Dialog */}
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle component="div">
-          <Typography variant="h6" component="span" fontWeight="bold">
-            {isRtl ? 'إنشاء حملة جديدة' : 'Create New Campaign'}
-          </Typography>
-        </DialogTitle>
+        <DialogTitle>{isRtl ? 'إنشاء حملة جديدة' : 'Create New Campaign'}</DialogTitle>
         <DialogContent dividers>
           <Grid container spacing={2}>
             <Grid size={{ xs: 12 }}>
-              <TextField fullWidth required label={isRtl ? 'اسم الحملة (إنجليزي)' : 'Campaign Name (English)'}
-                value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} />
+              <TextField fullWidth required label={isRtl ? 'اسم الحملة (إنجليزي)' : 'Campaign Name'} value={form.name}
+                onChange={e => setForm(p => ({ ...p, name: e.target.value }))} />
             </Grid>
             <Grid size={{ xs: 12 }}>
-              <TextField fullWidth label={isRtl ? 'اسم الحملة (عربي)' : 'Campaign Name (Arabic)'}
-                value={form.nameAr} onChange={e => setForm(p => ({ ...p, nameAr: e.target.value }))} />
+              <TextField fullWidth label={isRtl ? 'اسم الحملة (عربي)' : 'Arabic Name'} value={form.nameAr}
+                onChange={e => setForm(p => ({ ...p, nameAr: e.target.value }))} />
             </Grid>
             <Grid size={{ xs: 12 }}>
-              <TextField fullWidth select label={isRtl ? 'نوع الحملة' : 'Campaign Type'}
-                value={form.campaignType} onChange={e => setForm(p => ({ ...p, campaignType: e.target.value }))}>
-                {['Vaccination', 'Periodic Exam', 'Lab Screening', 'Health Awareness', 'Blood Drive'].map(t => (
-                  <MenuItem key={t} value={t}>{t}</MenuItem>
-                ))}
+              <TextField fullWidth select label={isRtl ? 'نوع الحملة' : 'Campaign Type'} value={form.campaignType}
+                onChange={e => setForm(p => ({ ...p, campaignType: e.target.value }))}>
+                <MenuItem value="Vaccination">{isRtl ? 'تطعيم' : 'Vaccination'}</MenuItem>
+                <MenuItem value="Lab Screening">{isRtl ? 'فحص مخبري' : 'Lab Screening'}</MenuItem>
+                <MenuItem value="Periodic Exam">{isRtl ? 'فحص دوري' : 'Periodic Exam'}</MenuItem>
+                <MenuItem value="Awareness">{isRtl ? 'توعية' : 'Awareness'}</MenuItem>
               </TextField>
             </Grid>
             <Grid size={{ xs: 12, sm: 6 }}>
-              <TextField fullWidth required label={isRtl ? 'تاريخ البدء' : 'Start Date'} type="date"
-                value={form.startDate} onChange={e => setForm(p => ({ ...p, startDate: e.target.value }))}
-                slotProps={{ inputLabel: { shrink: true } }} />
+              <TextField fullWidth required label={isRtl ? 'تاريخ البدء' : 'Start Date'} type="date" value={form.startDate}
+                onChange={e => setForm(p => ({ ...p, startDate: e.target.value }))} slotProps={{ inputLabel: { shrink: true } }} />
             </Grid>
             <Grid size={{ xs: 12, sm: 6 }}>
-              <TextField fullWidth required label={isRtl ? 'تاريخ الانتهاء' : 'End Date'} type="date"
-                value={form.endDate} onChange={e => setForm(p => ({ ...p, endDate: e.target.value }))}
-                slotProps={{ inputLabel: { shrink: true } }} />
+              <TextField fullWidth required label={isRtl ? 'تاريخ الانتهاء' : 'End Date'} type="date" value={form.endDate}
+                onChange={e => setForm(p => ({ ...p, endDate: e.target.value }))} slotProps={{ inputLabel: { shrink: true } }} />
             </Grid>
-            <Grid size={{ xs: 12, sm: 6 }}>
-              <TextField fullWidth required label={isRtl ? 'العدد المستهدف' : 'Target Count'} type="number"
-                value={form.targetCount} onChange={e => setForm(p => ({ ...p, targetCount: e.target.value }))} />
+            <Grid size={{ xs: 12 }}>
+              <TextField fullWidth required label={isRtl ? 'العدد المستهدف' : 'Target Count'} type="number" value={form.targetCount}
+                onChange={e => setForm(p => ({ ...p, targetCount: e.target.value }))} />
             </Grid>
           </Grid>
         </DialogContent>
@@ -271,24 +250,18 @@ export function CampaignsPage() {
         </DialogActions>
       </Dialog>
 
-      {/* Update Progress Dialog */}
       <Dialog open={progressOpen} onClose={() => setProgressOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle component="div">
-          <Typography variant="h6" component="span" fontWeight="bold">
-            {isRtl ? 'تحديث التقدم' : 'Update Progress'}
-          </Typography>
-        </DialogTitle>
+        <DialogTitle>{isRtl ? 'تحديث تقدم الحملة' : 'Update Campaign Progress'}</DialogTitle>
         <DialogContent dividers>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            {isRtl ? editCampaign?.nameAr : editCampaign?.name}
+            {editCampaign && (isRtl ? editCampaign.nameAr : editCampaign.name)}
           </Typography>
-          <TextField fullWidth label={isRtl ? 'عدد المكتملين' : 'Completed Count'} type="number"
-            value={progressValue} onChange={e => setProgressValue(e.target.value)}
-            helperText={`${isRtl ? 'الهدف' : 'Target'}: ${editCampaign?.targetCount}`} />
+          <TextField fullWidth type="number" label={isRtl ? 'عدد المكتمل' : 'Completed Count'} value={progressValue}
+            onChange={e => setProgressValue(e.target.value)} />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setProgressOpen(false)}>{isRtl ? 'إلغاء' : 'Cancel'}</Button>
-          <Button variant="contained" onClick={updateProgress}>{isRtl ? 'تحديث' : 'Update'}</Button>
+          <Button variant="contained" onClick={saveProgress}>{isRtl ? 'حفظ' : 'Save'}</Button>
         </DialogActions>
       </Dialog>
     </Box>
