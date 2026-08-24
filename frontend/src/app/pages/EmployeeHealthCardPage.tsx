@@ -30,6 +30,16 @@ import {
   Save as SaveIcon,
 } from '@mui/icons-material';
 import { toast } from 'sonner';
+import {
+  Brain,
+  BriefcaseBusiness,
+  ClipboardList,
+  Cross,
+  HeartPulse,
+  ShieldPlus,
+  Stethoscope,
+  UserRound,
+} from 'lucide-react';
 import logoImg from '@/imports/ChatGPT_Image_21______2026__10_06_18__.png';
 import { EmployeeQuickSearch, type EmployeeSearchOption } from '../components/EmployeeQuickSearch';
 import { CalendarDateField } from '../components/CalendarDateField';
@@ -400,11 +410,12 @@ function StatusField({ label, fieldValue }: { label: string; fieldValue: unknown
   );
 }
 
-function Section({ number, title, subtitle, color, children }: { number: string; title: string; subtitle: string; color: string; children: React.ReactNode }) {
+function Section({ number, title, subtitle, color, icon, children }: { number: string; title: string; subtitle: string; color: string; icon: React.ReactNode; children: React.ReactNode }) {
   return (
     <section className="ohc-section" style={{ '--section-color': color } as React.CSSProperties}>
       <div className="ohc-section-tab">
         <span>{number}</span>
+        <div className="ohc-section-icon" aria-hidden="true">{icon}</div>
         <b>{title}</b>
         <small>{subtitle}</small>
       </div>
@@ -446,7 +457,7 @@ function HealthCardSheet({ card, form }: { card: HealthCardData; form: SectionDa
 
       <main className="ohc-grid">
         <div className="ohc-left">
-          <Section number="1" title="المعلومات الشخصية" subtitle="Personal Information" color="#0b76b7">
+          <Section number="1" title="المعلومات الشخصية" subtitle="Personal Information" color="#0b76b7" icon={<UserRound />}>
             <div className="ohc-fields-grid four">
               <Field label="رقم الهوية / National ID">{value(employee.national_id)}</Field>
               <Field label="الاسم / Name">{value(employee.name)}</Field>
@@ -463,7 +474,7 @@ function HealthCardSheet({ card, form }: { card: HealthCardData; form: SectionDa
             </div>
           </Section>
 
-          <Section number="2" title="معلومات العمل" subtitle="Employment Information" color="#0f9189">
+          <Section number="2" title="معلومات العمل" subtitle="Employment Information" color="#0f9189" icon={<BriefcaseBusiness />}>
             <div className="ohc-fields-grid four">
               <Field label="المركز الصحي / Health Center">{value(employee.health_center_name)}</Field>
               <Field label="الرقم الوظيفي / Employee ID">{value(employee.employee_number)}</Field>
@@ -475,13 +486,13 @@ function HealthCardSheet({ card, form }: { card: HealthCardData; form: SectionDa
             </div>
           </Section>
 
-          <Section number="3" title="المعلومات البدنية" subtitle="Physical Information" color="#68a844">
+          <Section number="3" title="المعلومات البدنية" subtitle="Physical Information" color="#68a844" icon={<HeartPulse />}>
             <div className="ohc-fields-grid three">
               {PHYSICAL_FIELDS.map(field => <Field key={field.key} label={`${field.label} / ${field.en || ''}`}>{value(form.physical[field.key])}</Field>)}
             </div>
           </Section>
 
-          <Section number="4" title="الحالات الطبية" subtitle="Medical Conditions" color="#f59b3b">
+          <Section number="4" title="الحالات الطبية" subtitle="Medical Conditions" color="#f59b3b" icon={<Cross />}>
             <div className="ohc-conditions-grid">
               {conditionRows.map(field => <StatusField key={field.key} label={field.label} fieldValue={form.conditions[field.key]} />)}
             </div>
@@ -497,7 +508,7 @@ function HealthCardSheet({ card, form }: { card: HealthCardData; form: SectionDa
         </div>
 
         <div className="ohc-center">
-          <Section number="5" title="الصحة النفسية" subtitle="Mental Health" color="#8652a8">
+          <Section number="5" title="الصحة النفسية" subtitle="Mental Health" color="#8652a8" icon={<Brain />}>
             <div className="ohc-mini-table">
               {MENTAL_FIELDS.map(field => (
                 <div key={field.key}><b>{field.label}</b><span>{value(form.mental[field.key])}</span><i>●</i></div>
@@ -505,7 +516,7 @@ function HealthCardSheet({ card, form }: { card: HealthCardData; form: SectionDa
             </div>
           </Section>
 
-          <Section number="6" title="المتابعة الصحية" subtitle="Health Follow-up" color="#2389c9">
+          <Section number="6" title="المتابعة الصحية" subtitle="Health Follow-up" color="#2389c9" icon={<Stethoscope />}>
             <div className="ohc-follow-table">
               {FOLLOW_UP_FIELDS.map(field => (
                 <Field key={field.key} label={`${field.label}${field.en ? ` / ${field.en}` : ''}`}>
@@ -517,7 +528,7 @@ function HealthCardSheet({ card, form }: { card: HealthCardData; form: SectionDa
         </div>
 
         <aside className="ohc-right">
-          <Section number="7" title="التطعيمات والمناعة" subtitle="Vaccinations & Immunity" color="#22b7bb">
+          <Section number="7" title="التطعيمات والمناعة" subtitle="Vaccinations & Immunity" color="#22b7bb" icon={<ShieldPlus />}>
             <div className="ohc-vaccine-table">
               <div className="head"><b>الفحص / اللقاح</b><b>النتيجة أو التاريخ</b><b>الحالة</b></div>
               {vaccineRows.map(field => {
@@ -537,7 +548,7 @@ function HealthCardSheet({ card, form }: { card: HealthCardData; form: SectionDa
       </main>
 
       <footer className="ohc-card-footer">
-        <Section number="8" title="التوصيات" subtitle="Recommendations" color="#0b5f94">
+        <Section number="8" title="التوصيات" subtitle="Recommendations" color="#0b5f94" icon={<ClipboardList />}>
           <div className="ohc-recommendations">
             <Field label="التوصيات الطبية / Medical Recommendations">{value(form.recommendations.medical)}</Field>
             <Field label="توصيات التطعيم / Vaccination Recommendations">{value(form.recommendations.vaccination)}</Field>

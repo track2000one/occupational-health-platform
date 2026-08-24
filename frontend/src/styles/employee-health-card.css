@@ -209,6 +209,24 @@
   font-size: 1.05rem;
 }
 
+.ohc-section-icon {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  filter: drop-shadow(0 2px 2px rgba(0, 0, 0, .12));
+}
+
+.ohc-section-icon svg {
+  width: 36px;
+  height: 36px;
+  stroke: currentColor;
+  stroke-width: 2.35;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .ohc-section-tab b {
   font-size: .88rem;
   line-height: 1.25;
@@ -536,6 +554,8 @@
   }
   .ohc-section { grid-template-columns: 66px 1fr; box-shadow: none; }
   .ohc-section-tab { padding: 6px 4px; }
+  .ohc-section-icon { width: 28px; height: 28px; }
+  .ohc-section-icon svg { width: 25px; height: 25px; stroke-width: 2.4; }
   .ohc-section-tab b { font-size: .62rem; }
   .ohc-section-tab small { font-size: .48rem; }
   .ohc-section-content { padding: 5px; }
