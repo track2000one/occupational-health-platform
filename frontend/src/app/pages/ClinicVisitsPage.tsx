@@ -10,7 +10,7 @@ import {
 import { Grid } from '@mui/material';
 import {
   Add, CalendarMonth, Clear, DeleteOutlined as DeleteOutline, EditOutlined, Groups, History,
-  LocalHospital, PersonAddAlt1, Refresh, Search, Today, VisibilityOutlined,
+  LocalHospital, PersonAddAlt1, PictureAsPdf, Print, Refresh, Search, Today, VisibilityOutlined,
 } from '@mui/icons-material';
 import { toast } from 'sonner';
 import { authFetch, getAccessToken, useAuth } from '../context/AuthContext';
@@ -18,6 +18,7 @@ import { PERMISSIONS } from '../data/roles';
 import { EmployeeQuickSearch, type EmployeeSearchOption } from '../components/EmployeeQuickSearch';
 import { CalendarDateField } from '../components/CalendarDateField';
 import { DateText, useDatePreference } from '../context/DatePreferenceContext';
+import { exportClinicVisitsReport } from '../utils/professionalPdfExport';
 
 const PROD_API = 'https://occupational-health-platform-production.up.railway.app/api';
 const LOCAL_API = 'http://localhost:8000/api';
@@ -200,6 +201,35 @@ export function ClinicVisitsPage() {
   }
   function showHistory(id: string) { setEmployeeId(id); setSearch(''); setMode('history'); }
 
+  function exportVisibleVisits(asPdf: boolean) {
+    if (!filtered.length) {
+      toast.error(rtl ? 'لا توجد زيارات مطابقة للطباعة.' : 'There are no matching visits to print.');
+      return;
+    }
+    if (asPdf) {
+      toast.info(rtl ? 'اختر «حفظ بصيغة PDF» من نافذة الطباعة.' : 'Choose “Save as PDF” in the print dialog.');
+    }
+    const scope = employeeId
+      ? `${rtl ? 'الموظف' : 'Employee'}: ${selectedEmployee?.employee_name || employeeId}`
+      : mode === 'today' ? (rtl ? 'زيارات اليوم' : "Today's visits") : (rtl ? 'سجل الزيارات العام' : 'General visit register');
+    const period = from || to
+      ? `${from ? formatDate(from) : '—'} — ${to ? formatDate(to) : '—'}`
+      : mode === 'today' ? formatDate(todayIso()) : (rtl ? 'جميع التواريخ ضمن النتائج' : 'All dates in results');
+    exportClinicVisitsReport(filtered.map(visit => ({
+      visitNumber: visit.visit_number,
+      visitDate: formatDate(visit.visit_date),
+      visitTime: visit.visit_time?.slice(0, 5) || '—',
+      employeeName: visit.employee_name || '—',
+      employeeNumber: visit.employee_number || '—',
+      healthCenter: visit.health_center_name || '—',
+      clinicType: visit.clinic_type || '—',
+      doctorName: visit.doctor_name || '—',
+      status: `${STATUSES[visit.status].ar} / ${STATUSES[visit.status].en}`,
+      followUpDate: visit.follow_up_date ? formatDate(visit.follow_up_date) : '—',
+      statusCode: visit.status,
+    })), { scope, period });
+  }
+
   const stats = [
     { label: rtl ? 'إجمالي الزيارات' : 'Total visits', value: visits.length, icon: <History />, color: '#0F5C7A' },
     { label: rtl ? 'زيارات اليوم' : "Today's visits", value: todayCount, icon: <Today />, color: '#148F8B' },
@@ -210,7 +240,7 @@ export function ClinicVisitsPage() {
   return <Box>
     <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ md: 'center' }} spacing={2} sx={{ mb: 3 }}>
       <Stack direction="row" spacing={1.5} alignItems="center"><LocalHospital sx={{ fontSize: 36, color: '#148F8B' }} /><Box><Typography variant="h4" fontWeight={900}>{rtl ? 'زيارات العيادة' : 'Clinic Visits'}</Typography><Typography variant="body2" color="text.secondary">{rtl ? 'بطاقة زيارات لكل موظف وسجل عام مرتب حسب الأيام والتواريخ' : 'Employee cards and a chronological visit register'}</Typography></Box></Stack>
-      <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap><Button variant="outlined" startIcon={<Refresh />} onClick={() => setReload(v => v + 1)} disabled={loading}>{rtl ? 'تحديث' : 'Refresh'}</Button>{canCreate && <Button variant="contained" startIcon={<Add />} onClick={() => createVisit()}>{rtl ? 'تسجيل زيارة' : 'Record visit'}</Button>}</Stack>
+      <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>{mode !== 'employees' && <><Button variant="outlined" startIcon={<Print />} onClick={() => exportVisibleVisits(false)} disabled={!filtered.length}>{rtl ? 'طباعة' : 'Print'}</Button><Button variant="outlined" color="error" startIcon={<PictureAsPdf />} onClick={() => exportVisibleVisits(true)} disabled={!filtered.length}>{rtl ? 'PDF' : 'PDF'}</Button></>}<Button variant="outlined" startIcon={<Refresh />} onClick={() => setReload(v => v + 1)} disabled={loading}>{rtl ? 'تحديث' : 'Refresh'}</Button>{canCreate && <Button variant="contained" startIcon={<Add />} onClick={() => createVisit()}>{rtl ? 'تسجيل زيارة' : 'Record visit'}</Button>}</Stack>
     </Stack>
 
     <Grid container spacing={2} sx={{ mb: 3 }}>{stats.map(card => <Grid key={card.label} size={{ xs: 6, md: 3 }}><Paper variant="outlined" sx={{ p: 2, borderRadius: 3, borderTop: `4px solid ${card.color}`, height: '100%' }}><Stack direction="row" justifyContent="space-between" alignItems="center"><Box><Typography variant="h4" fontWeight={900}>{card.value}</Typography><Typography variant="body2" color="text.secondary">{card.label}</Typography></Box><Avatar sx={{ bgcolor: `${card.color}18`, color: card.color }}>{card.icon}</Avatar></Stack></Paper></Grid>)}</Grid>

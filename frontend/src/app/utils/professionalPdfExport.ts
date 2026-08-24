@@ -544,3 +544,63 @@ export async function exportLabCompletionPdf(
     }),
   });
 }
+
+export type ClinicVisitReportRow = {
+  visitNumber: string;
+  visitDate: string;
+  visitTime: string;
+  employeeName: string;
+  employeeNumber: string;
+  healthCenter: string;
+  clinicType: string;
+  doctorName: string;
+  status: string;
+  followUpDate: string;
+  statusCode: 'open' | 'completed' | 'follow_up';
+};
+
+export function exportClinicVisitsReport(
+  rows: ClinicVisitReportRow[],
+  options: { scope: string; period: string },
+) {
+  const now = new Date();
+  const completed = rows.filter((row) => row.statusCode === 'completed').length;
+  const open = rows.filter((row) => row.statusCode === 'open').length;
+  const followUp = rows.filter((row) => row.statusCode === 'follow_up').length;
+
+  openPrintableReport({
+    title: 'Clinic Visit Register',
+    titleAr: 'السجل العام لزيارات العيادة',
+    subtitle: 'Filtered employee clinic visit history',
+    subtitleAr: 'سجل زيارات الموظفين وفق نطاق العرض والفلاتر المحددة',
+    orientation: 'landscape',
+    fileName: `Clinic_Visits_${now.toISOString().slice(0, 10)}.pdf`,
+    metadata: [
+      { label: 'Report Date', labelAr: 'تاريخ التقرير', value: formatDateEn(now) },
+      { label: 'Scope', labelAr: 'نطاق التقرير', value: options.scope },
+      { label: 'Period', labelAr: 'الفترة', value: options.period },
+      { label: 'Classification', labelAr: 'التصنيف', value: 'CONFIDENTIAL / سري' },
+    ],
+    kpis: [
+      { label: 'Total Visits', labelAr: 'إجمالي الزيارات', value: String(rows.length), color: COLORS.primary },
+      { label: 'Completed', labelAr: 'مكتملة', value: String(completed), color: COLORS.success },
+      { label: 'Open', labelAr: 'مفتوحة', value: String(open), color: COLORS.info },
+      { label: 'Follow-up', labelAr: 'تحتاج متابعة', value: String(followUp), color: COLORS.warning },
+    ],
+    sectionTitle: 'Chronological Visit History',
+    sectionTitleAr: 'سجل الزيارات مرتب حسب التاريخ',
+    columns: [
+      { key: 'visitNumber', label: 'Visit No.', labelAr: 'رقم الزيارة' },
+      { key: 'visitDate', label: 'Date', labelAr: 'التاريخ' },
+      { key: 'visitTime', label: 'Time', labelAr: 'الوقت' },
+      { key: 'employeeName', label: 'Employee', labelAr: 'الموظف', align: 'right' },
+      { key: 'employeeNumber', label: 'Employee No.', labelAr: 'الرقم الوظيفي' },
+      { key: 'healthCenter', label: 'Health Center', labelAr: 'المركز الصحي', align: 'right' },
+      { key: 'clinicType', label: 'Clinic Type', labelAr: 'نوع العيادة' },
+      { key: 'doctorName', label: 'Doctor', labelAr: 'الطبيب', align: 'right' },
+      { key: 'status', label: 'Status', labelAr: 'الحالة' },
+      { key: 'followUpDate', label: 'Follow-up', labelAr: 'المتابعة' },
+    ],
+    rows: rows.map(({ statusCode: _statusCode, ...row }) => row),
+  });
+}
