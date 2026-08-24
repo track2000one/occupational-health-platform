@@ -11,7 +11,6 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  IconButton,
   InputAdornment,
   MenuItem,
   Paper,
@@ -23,7 +22,6 @@ import {
   TableHead,
   TableRow,
   TextField,
-  Tooltip,
   Typography,
 } from '@mui/material';
 import { Grid } from '@mui/material';
@@ -531,7 +529,7 @@ export function EmployeesPage() {
                     </Typography>
                   </TableCell>
                   <TableCell>{employee.mobile || '-'}</TableCell>
-                  <TableCell align="center">
+                  <TableCell align="center" className="employee-registry-actions">
                     <Button size="small" variant="outlined" color="primary" startIcon={<HealthCardIcon />} onClick={() => navigate(`/employees/${employee.id}/health-card`)}>
                       {isRtl ? 'البطاقة الصحية' : 'Health Card'}
                     </Button>
@@ -544,11 +542,9 @@ export function EmployeesPage() {
                       </Button>
                     )}
                     {can(PERMISSIONS.DELETE_EMPLOYEE) && (
-                      <Tooltip title={isRtl ? 'حذف من قاعدة البيانات' : 'Delete from database'}>
-                        <IconButton size="small" color="error" onClick={() => void handleDelete(employee)}>
-                          <DeleteIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
+                      <Button size="small" variant="outlined" color="error" startIcon={<DeleteIcon />} onClick={() => void handleDelete(employee)}>
+                        {isRtl ? 'حذف' : 'Delete'}
+                      </Button>
                     )}
                   </TableCell>
                 </TableRow>

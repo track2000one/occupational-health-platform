@@ -98,3 +98,55 @@ html[dir='ltr'] .MuiTableBody-root .MuiTableRow-root .MuiTableCell-root:last-of-
     padding-inline: 8px !important;
   }
 }
+
+/* Employee cards have four actions, so keep their footer compact and balanced. */
+.MuiTableBody-root .MuiTableRow-root .MuiTableCell-root.employee-registry-actions {
+  inset-inline: 14px !important;
+  gap: 6px !important;
+}
+
+.MuiTableBody-root .MuiTableRow-root .MuiTableCell-root.employee-registry-actions .MuiButton-root {
+  min-width: 0 !important;
+  height: 36px !important;
+  padding: 4px 6px !important;
+  gap: 3px !important;
+  font-size: 10.5px !important;
+  font-weight: 800 !important;
+  line-height: 1.15 !important;
+  letter-spacing: 0 !important;
+  white-space: nowrap !important;
+}
+
+.MuiTableBody-root .MuiTableRow-root .MuiTableCell-root.employee-registry-actions .MuiButton-root:first-of-type {
+  flex-grow: 1.35 !important;
+}
+
+.MuiTableBody-root .MuiTableRow-root .MuiTableCell-root.employee-registry-actions .MuiButton-colorError {
+  flex-grow: 0.82 !important;
+}
+
+.MuiTableBody-root .MuiTableRow-root .MuiTableCell-root.employee-registry-actions .MuiButton-startIcon,
+.MuiTableBody-root .MuiTableRow-root .MuiTableCell-root.employee-registry-actions .MuiButton-endIcon {
+  margin: 0 !important;
+}
+
+.MuiTableBody-root .MuiTableRow-root .MuiTableCell-root.employee-registry-actions .MuiButton-root svg {
+  font-size: 15px !important;
+}
+
+@media (max-width: 520px) {
+  .MuiTableBody-root .MuiTableRow-root .MuiTableCell-root.employee-registry-actions {
+    inset-inline: 10px !important;
+    gap: 4px !important;
+  }
+
+  .MuiTableBody-root .MuiTableRow-root .MuiTableCell-root.employee-registry-actions .MuiButton-root {
+    height: 34px !important;
+    padding-inline: 4px !important;
+    font-size: 9.5px !important;
+  }
+
+  .MuiTableBody-root .MuiTableRow-root .MuiTableCell-root.employee-registry-actions .MuiButton-root svg {
+    font-size: 14px !important;
+  }
+}
