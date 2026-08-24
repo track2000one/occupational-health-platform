@@ -9,6 +9,7 @@ from .models import (
     EmployeeClinicVisit,
     EmployeeHealthCard,
     EmployeeHealthProfile,
+    EmployeeImportReview,
     HealthCenter,
     InjuryCase,
     LabScreening,
@@ -167,6 +168,14 @@ class DataImportBatchAdmin(admin.ModelAdmin):
     list_filter = ('mode', 'status', 'created_at')
     search_fields = ('file_name', 'sheet_name', 'created_by__username')
     readonly_fields = ('summary', 'created_at')
+
+
+@admin.register(EmployeeImportReview)
+class EmployeeImportReviewAdmin(admin.ModelAdmin):
+    list_display = ('source_file', 'source_row', 'status', 'conflict_employee', 'activated_employee', 'created_by', 'created_at')
+    list_filter = ('status', 'created_at')
+    search_fields = ('source_file',)
+    readonly_fields = ('raw_payload', 'employee_payload', 'issues', 'warnings', 'fingerprint', 'created_at', 'updated_at', 'resolved_at')
 
 
 for model in [HealthCenter, LabTest, Vaccination, ClinicVisit, CommitteeReferral, InjuryCase, AuditLog]:

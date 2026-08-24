@@ -2,13 +2,14 @@ from datetime import date, timedelta
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
+from django.utils import timezone
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from .importers import process_excel_import
-from .models import AuditLog, ClinicVisit, CommitteeReferral, DataImportBatch, Employee, EmployeeHealthCard, HealthCenter, InjuryCase, LabTest, OccupationalHealthAssessment, Vaccination
-from .serializers import AuditLogSerializer, ClinicVisitSerializer, CommitteeReferralSerializer, DataImportBatchSerializer, EmployeeHealthCardSerializer, EmployeeSerializer, HealthCenterSerializer, InjuryCaseSerializer, LabTestSerializer, OccupationalHealthAssessmentSerializer, PlatformUserSerializer, VaccinationSerializer
+from .models import AuditLog, ClinicVisit, CommitteeReferral, DataImportBatch, Employee, EmployeeHealthCard, EmployeeImportReview, HealthCenter, InjuryCase, LabTest, OccupationalHealthAssessment, Vaccination
+from .serializers import AuditLogSerializer, ClinicVisitSerializer, CommitteeReferralSerializer, DataImportBatchSerializer, EmployeeHealthCardSerializer, EmployeeImportReviewSerializer, EmployeeSerializer, HealthCenterSerializer, InjuryCaseSerializer, LabTestSerializer, OccupationalHealthAssessmentSerializer, PlatformUserSerializer, VaccinationSerializer
 
 
 class IsAdminOrManagerForWrite(permissions.BasePermission):
@@ -254,6 +255,9 @@ class ExcelImportViewSet(viewsets.ReadOnlyModelViewSet):
                 summary=result,
                 created_by=request.user,
             )
+            review_ids = result.get('review_ids') or []
+            if review_ids:
+                EmployeeImportReview.objects.filter(id__in=review_ids, batch__isnull=True).update(batch=batch)
             AuditLog.objects.create(user=str(request.user), action='excel_import_commit' if commit else 'excel_import_preview', model_name='DataImportBatch', record_id=str(batch.id))
             result['batch_id']=batch.id
             return Response(result)
@@ -269,6 +273,78 @@ class ExcelImportViewSet(viewsets.ReadOnlyModelViewSet):
             )
             AuditLog.objects.create(user=str(request.user), action='excel_import_failed', model_name='DataImportBatch', record_id=str(batch.id))
             return Response({'detail': str(exc), 'batch_id': batch.id}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class EmployeeImportReviewViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = EmployeeImportReview.objects.select_related(
+        'batch', 'conflict_employee', 'activated_employee', 'created_by'
+    ).all()
+    serializer_class = EmployeeImportReviewSerializer
+    permission_classes = [permissions.IsAdminUser]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        requested_statuses = [
+            value.strip()
+            for value in str(self.request.query_params.get('status') or '').split(',')
+            if value.strip()
+        ]
+        if requested_statuses:
+            queryset = queryset.filter(status__in=requested_statuses)
+        return queryset
+
+    @action(detail=True, methods=['post'])
+    def activate(self, request, pk=None):
+        review = self.get_object()
+        if review.status not in ('pending', 'conflict'):
+            return Response(
+                {'detail': 'Only pending or conflicting reviews can be activated.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        employee_serializer = EmployeeSerializer(data=request.data, context={'request': request})
+        employee_serializer.is_valid(raise_exception=True)
+        with transaction.atomic():
+            employee = employee_serializer.save()
+            review.employee_payload = dict(employee_serializer.data)
+            review.status = 'activated'
+            review.activated_employee = employee
+            review.resolved_by = request.user
+            review.resolved_at = timezone.now()
+            review.issues = []
+            review.save(update_fields=[
+                'employee_payload', 'status', 'activated_employee', 'resolved_by',
+                'resolved_at', 'issues', 'updated_at',
+            ])
+            AuditLog.objects.create(
+                user=str(request.user),
+                action='activate_employee_import_review',
+                model_name='EmployeeImportReview',
+                record_id=str(review.id),
+            )
+        return Response({
+            'review': EmployeeImportReviewSerializer(review).data,
+            'employee': EmployeeSerializer(employee, context={'request': request}).data,
+        })
+
+    @action(detail=True, methods=['post'])
+    def discard(self, request, pk=None):
+        review = self.get_object()
+        if review.status == 'activated':
+            return Response(
+                {'detail': 'An activated review cannot be discarded.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        review.status = 'discarded'
+        review.resolved_by = request.user
+        review.resolved_at = timezone.now()
+        review.save(update_fields=['status', 'resolved_by', 'resolved_at', 'updated_at'])
+        AuditLog.objects.create(
+            user=str(request.user),
+            action='discard_employee_import_review',
+            model_name='EmployeeImportReview',
+            record_id=str(review.id),
+        )
+        return Response(EmployeeImportReviewSerializer(review).data)
 
 
 class HealthCenterViewSet(viewsets.ModelViewSet):

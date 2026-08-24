@@ -1,3 +1,5 @@
+import hashlib
+import json
 from datetime import datetime, date
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -11,6 +13,7 @@ from .models import (
     CampaignCoverage,
     ClinicVisit,
     Employee,
+    EmployeeImportReview,
     EmployeeClinicVisit,
     EmployeeHealthProfile,
     HealthCenter,
@@ -309,8 +312,18 @@ def employee_choice(field: str, value: Any, default: str = '') -> Optional[str]:
     return EMPLOYEE_CHOICE_MAPS[field].get(text)
 
 
-def import_employee_roster_sheet(ws, sheet_name: str, file_name: str, commit: bool) -> Dict[str, Any]:
-    """Import new employees without overwriting records already in PostgreSQL."""
+def review_fingerprint(file_name: str, sheet_name: str, row_number: int, raw_payload: Dict[str, Any]) -> str:
+    material = json.dumps(
+        {'file': file_name, 'sheet': sheet_name, 'row': row_number, 'payload': raw_payload},
+        ensure_ascii=False,
+        sort_keys=True,
+        default=str,
+    )
+    return hashlib.sha256(material.encode('utf-8')).hexdigest()
+
+
+def import_employee_roster_sheet(ws, sheet_name: str, file_name: str, commit: bool, user=None) -> Dict[str, Any]:
+    """Activate valid employees and quarantine invalid/conflicting rows for review."""
     header_row, headers = find_header_row(ws)
     normalized_headers = {normalize_header(header) for header in headers if clean_text(header)}
     missing_columns = [
@@ -324,13 +337,13 @@ def import_employee_roster_sheet(ws, sheet_name: str, file_name: str, commit: bo
         normalize_header(center.name): center
         for center in HealthCenter.objects.filter(is_active=True)
     }
-    existing_ids = set(Employee.objects.exclude(national_id='').values_list('national_id', flat=True))
-    existing_emails = set(
-        Employee.objects.exclude(email__isnull=True).exclude(email='').values_list('email', flat=True)
+    existing_id_map = dict(Employee.objects.exclude(national_id='').values_list('national_id', 'id'))
+    existing_email_map = dict(
+        Employee.objects.exclude(email__isnull=True).exclude(email='').values_list('email', 'id')
     )
-    existing_numbers = set(
+    existing_number_map = dict(
         Employee.objects.exclude(employee_number__isnull=True).exclude(employee_number='')
-        .values_list('employee_number', flat=True)
+        .values_list('employee_number', 'id')
     )
     seen_ids = set()
     seen_emails = set()
@@ -339,12 +352,14 @@ def import_employee_roster_sheet(ws, sheet_name: str, file_name: str, commit: bo
     duplicates: List[Dict[str, Any]] = []
     errors: List[Dict[str, Any]] = []
     preview_rows: List[Dict[str, Any]] = []
+    review_candidates: List[Dict[str, Any]] = []
     total_rows = 0
     today = date.today()
 
     for row_number, row in iter_data_rows(ws, header_row):
         total_rows += 1
-        raw = {field: employee_roster_value(row, headers, field) for field in EMPLOYEE_ROSTER_ALIASES}
+        raw_input = {field: employee_roster_value(row, headers, field) for field in EMPLOYEE_ROSTER_ALIASES}
+        raw = dict(raw_input)
         raw['email'] = raw['email'].strip().lower()
         raw['national_id'] = ''.join(ch for ch in raw['national_id'] if ch.isdigit())
         raw['employee_number'] = raw['employee_number'].strip()
@@ -405,23 +420,76 @@ def import_employee_roster_sheet(ws, sheet_name: str, file_name: str, commit: bo
             duplicate_reasons.append('Email is duplicated inside the file.')
         if raw['employee_number'] in seen_numbers:
             duplicate_reasons.append('Employee number is duplicated inside the file.')
-        if raw['national_id'] in existing_ids:
+        if raw['national_id'] in existing_id_map:
             duplicate_reasons.append('National ID already exists in PostgreSQL.')
-        if raw['email'] in existing_emails:
+        if raw['email'] in existing_email_map:
             duplicate_reasons.append('Email already exists in PostgreSQL.')
-        if raw['employee_number'] in existing_numbers:
+        if raw['employee_number'] in existing_number_map:
             duplicate_reasons.append('Employee number already exists in PostgreSQL.')
+
+        review_payload = {
+            'name': raw['name'],
+            'email': raw['email'],
+            'national_id': raw['national_id'],
+            'employee_number': raw['employee_number'],
+            'national_address': raw['national_address'],
+            'mobile': raw['mobile'],
+            'date_of_birth': date_of_birth.isoformat() if date_of_birth else '',
+            'birth_place': raw['birth_place'],
+            'gender': gender or raw['gender'],
+            'marital_status': marital_status or raw['marital_status'],
+            'health_center_name': center.name if center else raw['health_center'],
+            'health_center': center.id if center else None,
+            'job_title': raw['job_title'],
+            'appointment_date': appointment_date.isoformat() if appointment_date else '',
+            'periodic_exam_status': periodic_exam_status or raw['periodic_exam_status'],
+            'vaccination_status': vaccination_status or raw['vaccination_status'],
+            'risk_level': risk_level or raw['risk_level'],
+        }
+        conflict_employee_id = (
+            existing_id_map.get(raw['national_id'])
+            or existing_email_map.get(raw['email'])
+            or existing_number_map.get(raw['employee_number'])
+        )
 
         if row_errors:
             errors.append({'row': row_number, 'reason': ' '.join(row_errors)})
+            review_candidates.append({
+                'row': row_number,
+                'status': 'pending',
+                'raw_payload': raw_input,
+                'employee_payload': review_payload,
+                'issues': row_errors,
+                'conflict_employee_id': conflict_employee_id,
+            })
+            if raw['national_id']:
+                seen_ids.add(raw['national_id'])
+            if raw['email']:
+                seen_emails.add(raw['email'])
+            if raw['employee_number']:
+                seen_numbers.add(raw['employee_number'])
             continue
         if duplicate_reasons:
             duplicates.append({
                 'row': row_number,
                 'national_id': mask_value(raw['national_id']),
                 'name': raw['name'],
-                'reason': ' '.join(duplicate_reasons) + ' The row will be skipped.',
+                'reason': ' '.join(duplicate_reasons) + ' The row requires review before activation.',
             })
+            review_candidates.append({
+                'row': row_number,
+                'status': 'conflict',
+                'raw_payload': raw_input,
+                'employee_payload': review_payload,
+                'issues': duplicate_reasons,
+                'conflict_employee_id': conflict_employee_id,
+            })
+            if raw['national_id']:
+                seen_ids.add(raw['national_id'])
+            if raw['email']:
+                seen_emails.add(raw['email'])
+            if raw['employee_number']:
+                seen_numbers.add(raw['employee_number'])
             continue
 
         payload = {
@@ -455,15 +523,13 @@ def import_employee_roster_sheet(ws, sheet_name: str, file_name: str, commit: bo
         'valid_rows': len(valid_payloads),
         'duplicate_rows': len(duplicates),
         'errors_count': len(errors),
-        'skipped_rows': len(errors) + len(duplicates),
+        'skipped_rows': 0,
         'imported_employees': 0,
+        'pending_reviews': len([item for item in review_candidates if item['status'] == 'pending']),
+        'conflict_reviews': len([item for item in review_candidates if item['status'] == 'conflict']),
+        'staged_for_review': len(review_candidates),
     }
-    if commit and errors:
-        raise ValueError(
-            'Employee import was blocked because the file contains validation errors. '
-            'Fix the reported rows and preview the file again.'
-        )
-
+    review_ids: List[int] = []
     if commit:
         with transaction.atomic():
             for payload in valid_payloads:
@@ -473,14 +539,47 @@ def import_employee_roster_sheet(ws, sheet_name: str, file_name: str, commit: bo
                 }
                 Employee.objects.create(health_center=payload['_center'], **employee_values)
                 summary['imported_employees'] += 1
+            for candidate in review_candidates:
+                fingerprint = review_fingerprint(
+                    file_name,
+                    sheet_name,
+                    candidate['row'],
+                    candidate['raw_payload'],
+                )
+                review, created = EmployeeImportReview.objects.get_or_create(
+                    fingerprint=fingerprint,
+                    defaults={
+                        'source_file': file_name,
+                        'source_sheet': sheet_name,
+                        'source_row': candidate['row'],
+                        'raw_payload': candidate['raw_payload'],
+                        'employee_payload': candidate['employee_payload'],
+                        'issues': candidate['issues'],
+                        'status': candidate['status'],
+                        'conflict_employee_id': candidate['conflict_employee_id'],
+                        'created_by': user,
+                    },
+                )
+                if not created and review.status in ('pending', 'conflict'):
+                    review.raw_payload = candidate['raw_payload']
+                    review.employee_payload = candidate['employee_payload']
+                    review.issues = candidate['issues']
+                    review.status = candidate['status']
+                    review.conflict_employee_id = candidate['conflict_employee_id']
+                    review.save(update_fields=[
+                        'raw_payload', 'employee_payload', 'issues', 'status',
+                        'conflict_employee', 'updated_at',
+                    ])
+                review_ids.append(review.id)
 
     return {
         'detected_headers': headers,
-        'mapped_fields': {'mode': 'employee_roster', 'duplicate_policy': 'skip_existing'},
+        'mapped_fields': {'mode': 'employee_roster', 'invalid_policy': 'stage_for_review'},
         'summary': summary,
         'duplicates': duplicates[:100],
         'errors': errors[:100],
         'preview_rows': preview_rows,
+        'review_ids': review_ids,
     }
 
 
@@ -889,10 +988,13 @@ def resolve_processor(sheet_name: str):
     return import_generic_sheet
 
 
-def process_single_sheet(workbook, selected_sheet: str, commit: bool, file_name: str) -> Dict[str, Any]:
+def process_single_sheet(workbook, selected_sheet: str, commit: bool, file_name: str, user=None) -> Dict[str, Any]:
     ws = workbook[selected_sheet]
     processor = resolve_processor(selected_sheet)
-    result = processor(ws, selected_sheet, file_name, commit)
+    if processor is import_employee_roster_sheet:
+        result = processor(ws, selected_sheet, file_name, commit, user=user)
+    else:
+        result = processor(ws, selected_sheet, file_name, commit)
     result.update({'mode': 'commit' if commit else 'preview', 'file_name': file_name, 'sheet_name': selected_sheet, 'processor': processor.__name__})
     return result
 
@@ -913,14 +1015,14 @@ def process_excel_import(uploaded_file, sheet_name: str = '', commit: bool = Fal
     importable_sheets = [sheet for sheet in workbook.sheetnames if resolve_processor(sheet) is not import_generic_sheet or sheet == 'Database']
 
     if normalize_header(requested) in ('all', '__all__', 'كل الشيتات', 'all sheets'):
-        results = [process_single_sheet(workbook, sheet, commit, file_name) for sheet in importable_sheets]
+        results = [process_single_sheet(workbook, sheet, commit, file_name, user=user) for sheet in importable_sheets]
         summary = merge_summary(results)
         return {'mode': 'commit' if commit else 'preview', 'file_name': file_name, 'sheet_name': 'ALL', 'available_sheets': workbook.sheetnames, 'importable_sheets': importable_sheets, 'summary': summary, 'sheet_results': [{'sheet_name': item['sheet_name'], 'processor': item['processor'], 'summary': item['summary'], 'errors': item.get('errors', [])[:20], 'duplicates': item.get('duplicates', [])[:20], 'preview_rows': item.get('preview_rows', [])[:5]} for item in results], 'duplicates': [dup for item in results for dup in item.get('duplicates', [])][:50], 'errors': [err for item in results for err in item.get('errors', [])][:50], 'preview_rows': [row for item in results for row in item.get('preview_rows', [])][:12], 'privacy_note': 'Raw Excel files are not stored in GitHub. Records are saved to PostgreSQL only when commit mode is selected.'}
 
     if requested and requested not in workbook.sheetnames:
         raise ValueError(f'The requested worksheet "{requested}" was not found in the uploaded file.')
     selected_sheet = requested if requested in workbook.sheetnames else ('Database' if 'Database' in workbook.sheetnames else workbook.sheetnames[0])
-    result = process_single_sheet(workbook, selected_sheet, commit, file_name)
+    result = process_single_sheet(workbook, selected_sheet, commit, file_name, user=user)
     result['available_sheets'] = workbook.sheetnames
     result['importable_sheets'] = importable_sheets
     result['privacy_note'] = 'Raw Excel files are not stored in GitHub. Records are saved to PostgreSQL only when commit mode is selected.'

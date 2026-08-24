@@ -562,3 +562,68 @@ class DataImportBatch(models.Model):
 
     def __str__(self):
         return f'{self.file_name} - {self.status}'
+
+
+class EmployeeImportReview(models.Model):
+    STATUS_CHOICES = (
+        ('pending', 'Pending correction'),
+        ('conflict', 'Conflicting existing employee'),
+        ('activated', 'Corrected and activated'),
+        ('discarded', 'Discarded'),
+    )
+
+    batch = models.ForeignKey(
+        DataImportBatch,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='employee_reviews',
+    )
+    source_file = models.CharField(max_length=255, blank=True)
+    source_sheet = models.CharField(max_length=150, blank=True)
+    source_row = models.PositiveIntegerField()
+    fingerprint = models.CharField(max_length=64, unique=True)
+    raw_payload = models.JSONField(default=dict, blank=True)
+    employee_payload = models.JSONField(default=dict, blank=True)
+    issues = models.JSONField(default=list, blank=True)
+    warnings = models.JSONField(default=list, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', db_index=True)
+    conflict_employee = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='import_conflicts',
+    )
+    activated_employee = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='activated_import_reviews',
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='employee_import_reviews',
+    )
+    resolved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='resolved_employee_import_reviews',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at', 'source_row']
+        indexes = [models.Index(fields=['status', 'created_at'])]
+
+    def __str__(self):
+        name = self.employee_payload.get('name') or self.raw_payload.get('name') or f'Row {self.source_row}'
+        return f'{name} - {self.status}'

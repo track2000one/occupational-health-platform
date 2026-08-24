@@ -1,8 +1,9 @@
 from rest_framework.routers import DefaultRouter
-from .views import AuditLogViewSet, ClinicVisitViewSet, CommitteeReferralViewSet, EmployeeViewSet, ExcelImportViewSet, HealthCenterViewSet, InjuryCaseViewSet, LabTestViewSet, OccupationalHealthAssessmentViewSet, UserViewSet, VaccinationViewSet
+from .views import AuditLogViewSet, ClinicVisitViewSet, CommitteeReferralViewSet, EmployeeImportReviewViewSet, EmployeeViewSet, ExcelImportViewSet, HealthCenterViewSet, InjuryCaseViewSet, LabTestViewSet, OccupationalHealthAssessmentViewSet, UserViewSet, VaccinationViewSet
 router=DefaultRouter()
 router.register('users',UserViewSet,basename='users')
 router.register('excel-import',ExcelImportViewSet,basename='excel-import')
+router.register('employee-import-reviews',EmployeeImportReviewViewSet,basename='employee-import-reviews')
 router.register('health-centers',HealthCenterViewSet)
 router.register('employees',EmployeeViewSet)
 router.register('lab-tests',LabTestViewSet)

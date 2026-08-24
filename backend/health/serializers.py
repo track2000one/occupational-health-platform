@@ -2,7 +2,7 @@ from datetime import date
 
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
-from .models import AuditLog, ClinicVisit, CommitteeReferral, DataImportBatch, Employee, EmployeeHealthCard, HealthCenter, InjuryCase, LabTest, OccupationalHealthAssessment, UserProfile, Vaccination
+from .models import AuditLog, ClinicVisit, CommitteeReferral, DataImportBatch, Employee, EmployeeHealthCard, EmployeeImportReview, HealthCenter, InjuryCase, LabTest, OccupationalHealthAssessment, UserProfile, Vaccination
 
 
 ROLE_PERMISSIONS = {
@@ -413,3 +413,30 @@ class DataImportBatchSerializer(serializers.ModelSerializer):
         model = DataImportBatch
         fields = ['id','file_name','sheet_name','mode','status','total_rows','valid_rows','duplicate_rows','imported_records','skipped_rows','errors_count','summary','created_by_name','created_at']
         read_only_fields = fields
+
+
+class EmployeeImportReviewSerializer(serializers.ModelSerializer):
+    conflict_employee_summary = serializers.SerializerMethodField()
+    activated_employee_id = serializers.IntegerField(read_only=True)
+    created_by_name = serializers.CharField(source='created_by.username', read_only=True)
+
+    class Meta:
+        model = EmployeeImportReview
+        fields = [
+            'id', 'batch', 'source_file', 'source_sheet', 'source_row',
+            'raw_payload', 'employee_payload', 'issues', 'warnings', 'status',
+            'conflict_employee', 'conflict_employee_summary', 'activated_employee_id',
+            'created_by_name', 'created_at', 'updated_at', 'resolved_at',
+        ]
+        read_only_fields = fields
+
+    def get_conflict_employee_summary(self, obj):
+        employee = obj.conflict_employee
+        if not employee:
+            return None
+        return {
+            'id': employee.id,
+            'name': employee.name,
+            'employee_number': employee.employee_number or '',
+            'national_id_masked': f"******{employee.national_id[-4:]}" if employee.national_id else '',
+        }
