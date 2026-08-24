@@ -37,7 +37,7 @@ import {
   BadgeOutlined as HealthCardIcon,
 } from '@mui/icons-material';
 import { toast } from 'sonner';
-import { getAccessToken, useAuth } from '../context/AuthContext';
+import { authFetch, getAccessToken, useAuth } from '../context/AuthContext';
 import { PERMISSIONS } from '../data/roles';
 import { CalendarDateField } from '../components/CalendarDateField';
 
@@ -213,7 +213,7 @@ async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T
     throw new Error('لا يوجد رمز دخول من Django. أعد تسجيل الدخول بحساب Backend وليس الحساب التجريبي.');
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await authFetch(`${API_BASE_URL}${path}`, {
     ...options,
     headers: {
       ...(options.body ? { 'Content-Type': 'application/json' } : {}),

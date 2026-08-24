@@ -40,7 +40,7 @@ import {
   Visibility as VisibilityIcon,
   Work as WorkIcon,
 } from '@mui/icons-material';
-import { getAccessToken, type User, useAuth } from '../context/AuthContext';
+import { authFetch, getAccessToken, type User, useAuth } from '../context/AuthContext';
 import { useDatePreference } from '../context/DatePreferenceContext';
 import { PERMISSIONS, ROLE_DEFINITIONS, type Permission, type UserRole } from '../data/roles';
 import { mockHealthCenters } from '../data/mockData';
@@ -92,7 +92,7 @@ async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T
   const token = getAccessToken();
   if (!token) throw new Error('لا يوجد رمز دخول من Django. سجّل الدخول من جديد.');
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await authFetch(`${API_BASE_URL}${path}`, {
     ...options,
     headers: {
       'Content-Type': 'application/json',

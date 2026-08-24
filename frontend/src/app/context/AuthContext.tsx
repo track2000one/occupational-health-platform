@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { type UserRole, type Permission, hasPermission } from '../data/roles';
 
 export type { UserRole };
@@ -49,9 +49,16 @@ const API_BASE_URL = (
 const ACCESS_TOKEN_KEY = 'ohp_access_token';
 const REFRESH_TOKEN_KEY = 'ohp_refresh_token';
 const USER_KEY = 'ohp_current_user';
+const SESSION_EXPIRED_EVENT = 'ohp:session-expired';
+
+let refreshInFlight: Promise<string> | null = null;
 
 export function getAccessToken() {
   return localStorage.getItem(ACCESS_TOKEN_KEY);
+}
+
+function getRefreshToken() {
+  return localStorage.getItem(REFRESH_TOKEN_KEY);
 }
 
 function persistSession(user: User, access: string, refresh: string) {
@@ -66,8 +73,69 @@ function clearSession() {
   localStorage.removeItem(REFRESH_TOKEN_KEY);
 }
 
+function expireSession() {
+  clearSession();
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
+}
+
+async function refreshAccessToken() {
+  if (refreshInFlight) return refreshInFlight;
+  refreshInFlight = (async () => {
+    const refresh = getRefreshToken();
+    if (!refresh) {
+      expireSession();
+      throw new Error('انتهت جلسة الدخول. سجّل الدخول مرة أخرى.');
+    }
+    const response = await fetch(`${API_BASE_URL}/auth/token/refresh/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || !body.access) {
+      expireSession();
+      throw new Error('انتهت جلسة الدخول. سجّل الدخول مرة أخرى.');
+    }
+    localStorage.setItem(ACCESS_TOKEN_KEY, body.access);
+    if (body.refresh) localStorage.setItem(REFRESH_TOKEN_KEY, body.refresh);
+    return String(body.access);
+  })().finally(() => {
+    refreshInFlight = null;
+  });
+  return refreshInFlight;
+}
+
+function withBearerToken(options: RequestInit, accessToken: string) {
+  const headers = new Headers(options.headers || {});
+  headers.set('Authorization', `Bearer ${accessToken}`);
+  return { ...options, headers };
+}
+
+export async function authFetch(input: RequestInfo | URL, options: RequestInit = {}) {
+  const accessToken = getAccessToken();
+  if (!accessToken) {
+    expireSession();
+    throw new Error('انتهت جلسة الدخول. سجّل الدخول مرة أخرى.');
+  }
+
+  let response = await fetch(input, withBearerToken(options, accessToken));
+  if (response.status !== 401) return response;
+
+  const renewedAccessToken = await refreshAccessToken();
+  response = await fetch(input, withBearerToken(options, renewedAccessToken));
+  if (response.status === 401) {
+    expireSession();
+    throw new Error('تعذر تجديد جلسة الدخول. سجّل الدخول مرة أخرى.');
+  }
+  return response;
+}
+
 function readStoredUser(): User | null {
   try {
+    if (!getAccessToken() || !getRefreshToken()) {
+      clearSession();
+      return null;
+    }
     const raw = localStorage.getItem(USER_KEY);
     return raw ? JSON.parse(raw) as User : null;
   } catch {
@@ -117,6 +185,12 @@ function normalizeUser(payload: any): User {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(() => readStoredUser());
+
+  useEffect(() => {
+    const handleSessionExpired = () => setUser(null);
+    window.addEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
+  }, []);
 
   const login = async (email: string, password: string) => {
     const identifier = email.trim().toLowerCase();

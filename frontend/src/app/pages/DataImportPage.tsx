@@ -39,7 +39,7 @@ import {
   Edit as EditIcon,
   Cancel as CancelIcon,
 } from '@mui/icons-material';
-import { getAccessToken } from '../context/AuthContext';
+import { authFetch, getAccessToken } from '../context/AuthContext';
 import { CalendarDateField } from '../components/CalendarDateField';
 
 const PRODUCTION_API_BASE_URL = 'https://occupational-health-platform-production.up.railway.app/api';
@@ -292,10 +292,10 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
     if (!token) return;
     try {
       const [reviewsResponse, centersResponse] = await Promise.all([
-        fetch(`${API_BASE_URL}/employee-import-reviews/?status=pending,conflict`, {
+        authFetch(`${API_BASE_URL}/employee-import-reviews/?status=pending,conflict`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
-        fetch(`${API_BASE_URL}/health-centers/`, {
+        authFetch(`${API_BASE_URL}/health-centers/`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
       ]);
@@ -354,7 +354,7 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
     setReviewLoading(true);
     const loadingToast = toast.loading(isRtl ? 'جاري التحقق وتفعيل الموظف...' : 'Validating and activating employee...');
     try {
-      const response = await fetch(`${API_BASE_URL}/employee-import-reviews/${activeReview.id}/activate/`, {
+      const response = await authFetch(`${API_BASE_URL}/employee-import-reviews/${activeReview.id}/activate/`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...reviewForm, health_center: Number(reviewForm.health_center) }),
@@ -378,7 +378,7 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
     if (!window.confirm(isRtl ? 'هل تريد تجاهل هذا السجل المعلق؟' : 'Discard this pending record?')) return;
     const token = getAccessToken();
     if (!token) return;
-    const response = await fetch(`${API_BASE_URL}/employee-import-reviews/${review.id}/discard/`, {
+    const response = await authFetch(`${API_BASE_URL}/employee-import-reviews/${review.id}/discard/`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
     });
@@ -449,7 +449,7 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
       }
       else if (sheetName.trim()) form.append('sheetName', sheetName.trim());
 
-      const response = await fetch(`${API_BASE_URL}/excel-import/upload/`, {
+      const response = await authFetch(`${API_BASE_URL}/excel-import/upload/`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
         body: form,

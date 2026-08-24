@@ -11,7 +11,7 @@ import {
   Visibility as ViewIcon,
 } from '@mui/icons-material';
 import { toast } from 'sonner';
-import { getAccessToken, useAuth } from '../context/AuthContext';
+import { authFetch, getAccessToken, useAuth } from '../context/AuthContext';
 import { useDatePreference } from '../context/DatePreferenceContext';
 
 const PRODUCTION_API_BASE_URL = 'https://occupational-health-platform-production.up.railway.app/api';
@@ -98,7 +98,7 @@ export function OccupationalHealthPage() {
 
         while (nextUrl && !visited.has(nextUrl) && visited.size < 200) {
           visited.add(nextUrl);
-          const response = await fetch(nextUrl, {
+          const response = await authFetch(nextUrl, {
             headers: { Authorization: `Bearer ${token}` }, signal: controller.signal,
           });
           if (!response.ok) throw new Error(await apiError(response));
@@ -158,7 +158,7 @@ export function OccupationalHealthPage() {
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 20000);
     try {
-      const response = await fetch(`${API_BASE_URL}/employees/${deleteTarget.id}/health_card/`, {
+      const response = await authFetch(`${API_BASE_URL}/employees/${deleteTarget.id}/health_card/`, {
         method: 'DELETE', headers: { Authorization: `Bearer ${token}` }, signal: controller.signal,
       });
       if (!response.ok && response.status !== 404) throw new Error(await apiError(response));

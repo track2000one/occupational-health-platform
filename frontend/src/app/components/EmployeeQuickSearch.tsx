@@ -11,7 +11,7 @@ import {
   Typography,
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
-import { getAccessToken } from '../context/AuthContext';
+import { authFetch, getAccessToken } from '../context/AuthContext';
 
 const PRODUCTION_API_BASE_URL = 'https://occupational-health-platform-production.up.railway.app/api';
 const LOCAL_API_BASE_URL = 'http://localhost:8000/api';
@@ -113,7 +113,7 @@ async function fetchEmployees(query: string): Promise<EmployeeSearchOption[]> {
   if (!token) return [];
 
   const searchParam = query.trim() ? `?search=${encodeURIComponent(query.trim())}` : '';
-  const response = await fetch(`${API_BASE_URL}/employees/${searchParam}`, {
+  const response = await authFetch(`${API_BASE_URL}/employees/${searchParam}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
 
@@ -125,7 +125,7 @@ async function fetchEmployees(query: string): Promise<EmployeeSearchOption[]> {
 async function fetchEmployeeById(employeeId: string): Promise<EmployeeSearchOption | null> {
   const token = getAccessToken();
   if (!token || !employeeId) return null;
-  const response = await fetch(`${API_BASE_URL}/employees/${encodeURIComponent(employeeId)}/`, {
+  const response = await authFetch(`${API_BASE_URL}/employees/${encodeURIComponent(employeeId)}/`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!response.ok) return null;

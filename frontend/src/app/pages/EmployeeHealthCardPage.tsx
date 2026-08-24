@@ -33,7 +33,7 @@ import { toast } from 'sonner';
 import logoImg from '@/imports/ChatGPT_Image_21______2026__10_06_18__.png';
 import { EmployeeQuickSearch, type EmployeeSearchOption } from '../components/EmployeeQuickSearch';
 import { CalendarDateField } from '../components/CalendarDateField';
-import { getAccessToken, useAuth } from '../context/AuthContext';
+import { authFetch, getAccessToken, useAuth } from '../context/AuthContext';
 import { useDatePreference } from '../context/DatePreferenceContext';
 import '../../styles/employee-health-card.css';
 
@@ -283,7 +283,7 @@ function normalizeSections(card: HealthCardData): SectionData {
 async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getAccessToken();
   if (!token) throw new Error('لا يوجد رمز دخول من Django. أعد تسجيل الدخول بحساب Backend.');
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await authFetch(`${API_BASE_URL}${path}`, {
     ...options,
     headers: {
       ...(options.body ? { 'Content-Type': 'application/json' } : {}),
