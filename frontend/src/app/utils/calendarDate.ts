@@ -6,6 +6,9 @@ export type CalendarDateParts = {
   day: number;
 };
 
+export const MIN_HIJRI_YEAR = 1300;
+export const MAX_HIJRI_YEAR = 1600;
+
 const HIJRI_LOCALE = 'en-US-u-ca-islamic-umalqura';
 const hijriFormatter = new Intl.DateTimeFormat(HIJRI_LOCALE, {
   year: 'numeric',
@@ -56,7 +59,7 @@ export function parseCalendarDate(value: string): CalendarDateParts | null {
   const match = normalized.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
   if (!match) return null;
   const parts = { year: Number(match[1]), month: Number(match[2]), day: Number(match[3]) };
-  if (parts.month < 1 || parts.month > 12 || parts.day < 1 || parts.day > 30) return null;
+  if (parts.year < MIN_HIJRI_YEAR || parts.year > MAX_HIJRI_YEAR || parts.month < 1 || parts.month > 12 || parts.day < 1 || parts.day > 30) return null;
   return parts;
 }
 
@@ -75,12 +78,18 @@ export function hijriToGregorian(value: string) {
     const date = new Date(timestamp);
     const iso = date.toISOString().slice(0, 10);
     const converted = gregorianToHijriParts(iso);
+    if (converted) conversionCache.set(formatIsoDate(converted), iso);
     if (converted && converted.year === parts.year && converted.month === parts.month && converted.day === parts.day) {
-      conversionCache.set(key, iso);
       return iso;
     }
   }
 
   conversionCache.set(key, null);
   return null;
+}
+
+export function daysInHijriMonth(year: number, month: number) {
+  if (hijriToGregorian(formatIsoDate({ year, month, day: 30 }))) return 30;
+  if (hijriToGregorian(formatIsoDate({ year, month, day: 29 }))) return 29;
+  return 0;
 }
