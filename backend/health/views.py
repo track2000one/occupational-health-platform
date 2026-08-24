@@ -703,7 +703,39 @@ class OccupationalHealthAssessmentViewSet(viewsets.ModelViewSet):
         )
 
 class VaccinationViewSet(viewsets.ModelViewSet): queryset=Vaccination.objects.select_related('employee').all().order_by('-id'); serializer_class=VaccinationSerializer; permission_classes=[permissions.IsAuthenticated]
-class ClinicVisitViewSet(viewsets.ModelViewSet): queryset=ClinicVisit.objects.select_related('employee').all().order_by('-id'); serializer_class=ClinicVisitSerializer; permission_classes=[permissions.IsAuthenticated]
+class ClinicVisitViewSet(viewsets.ModelViewSet):
+    queryset = ClinicVisit.objects.select_related('employee', 'employee__health_center', 'created_by').all()
+    serializer_class = ClinicVisitSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    search_fields = ['employee__name', 'employee__employee_number', 'employee__national_id', 'clinic_type', 'doctor_name']
+
+    def perform_create(self, serializer):
+        visit = serializer.save(created_by=self.request.user)
+        AuditLog.objects.create(
+            user=str(self.request.user),
+            action='create_clinic_visit',
+            model_name='ClinicVisit',
+            record_id=str(visit.id),
+        )
+
+    def perform_update(self, serializer):
+        visit = serializer.save()
+        AuditLog.objects.create(
+            user=str(self.request.user),
+            action='update_clinic_visit',
+            model_name='ClinicVisit',
+            record_id=str(visit.id),
+        )
+
+    def perform_destroy(self, instance):
+        record_id = str(instance.id)
+        instance.delete()
+        AuditLog.objects.create(
+            user=str(self.request.user),
+            action='delete_clinic_visit',
+            model_name='ClinicVisit',
+            record_id=record_id,
+        )
 class CommitteeReferralViewSet(viewsets.ModelViewSet): queryset=CommitteeReferral.objects.select_related('employee').all().order_by('-id'); serializer_class=CommitteeReferralSerializer; permission_classes=[permissions.IsAuthenticated]
 class InjuryCaseViewSet(viewsets.ModelViewSet): queryset=InjuryCase.objects.select_related('employee').all().order_by('-id'); serializer_class=InjuryCaseSerializer; permission_classes=[permissions.IsAuthenticated]
 class AuditLogViewSet(viewsets.ReadOnlyModelViewSet): queryset=AuditLog.objects.all().order_by('-created_at'); serializer_class=AuditLogSerializer; permission_classes=[permissions.IsAdminUser]

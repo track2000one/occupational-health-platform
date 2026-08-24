@@ -344,11 +344,38 @@ class VaccinationDose(ImportTraceModel):
 
 
 class ClinicVisit(models.Model):
+    STATUS = (
+        ('open', 'Open'),
+        ('completed', 'Completed'),
+        ('follow_up', 'Follow-up required'),
+    )
+
     employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name='clinic_visits')
     clinic_type = models.CharField(max_length=120)
     diagnosis = models.TextField(blank=True)
     action_taken = models.TextField(blank=True)
-    visit_date = models.DateField(null=True, blank=True)
+    visit_date = models.DateField(null=True, blank=True, db_index=True)
+    visit_time = models.TimeField(null=True, blank=True)
+    sick_leave_days = models.PositiveSmallIntegerField(null=True, blank=True)
+    follow_up_date = models.DateField(null=True, blank=True)
+    doctor_name = models.CharField(max_length=200, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS, default='completed', db_index=True)
+    notes = models.TextField(blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_clinic_visits',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-visit_date', '-visit_time', '-id']
+
+    def __str__(self):
+        return f'Clinic visit {self.id or "new"} - {self.employee}'
 
 
 class OccupationalClinicVisit(ImportTraceModel):

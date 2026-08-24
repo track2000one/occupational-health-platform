@@ -400,7 +400,65 @@ class LabTestSerializer(serializers.ModelSerializer):
 class VaccinationSerializer(serializers.ModelSerializer):
     class Meta: model = Vaccination; fields = '__all__'
 class ClinicVisitSerializer(serializers.ModelSerializer):
-    class Meta: model = ClinicVisit; fields = '__all__'
+    visit_number = serializers.SerializerMethodField()
+    employee_name = serializers.CharField(source='employee.name', read_only=True)
+    employee_number = serializers.CharField(source='employee.employee_number', read_only=True)
+    national_id_masked = serializers.SerializerMethodField()
+    health_center_name = serializers.CharField(source='employee.health_center.name', read_only=True, default='')
+    job_title = serializers.CharField(source='employee.job_title', read_only=True, default='')
+    created_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ClinicVisit
+        fields = [
+            'id', 'visit_number', 'employee', 'employee_name', 'employee_number',
+            'national_id_masked', 'health_center_name', 'job_title', 'visit_date',
+            'visit_time', 'clinic_type', 'diagnosis', 'action_taken',
+            'sick_leave_days', 'follow_up_date', 'doctor_name', 'status', 'notes',
+            'created_by_name', 'created_at', 'updated_at',
+        ]
+        read_only_fields = [
+            'id', 'visit_number', 'employee_name', 'employee_number',
+            'national_id_masked', 'health_center_name', 'job_title',
+            'created_by_name', 'created_at', 'updated_at',
+        ]
+
+    def get_visit_number(self, obj):
+        return f'CV-{obj.id:06d}' if obj.id else ''
+
+    def get_national_id_masked(self, obj):
+        value = str(obj.employee.national_id or '')
+        if not value:
+            return ''
+        if len(value) <= 4:
+            return '****'
+        return f'{value[:2]}****{value[-4:]}'
+
+    def get_created_by_name(self, obj):
+        if not obj.created_by_id:
+            return ''
+        return obj.created_by.get_full_name() or obj.created_by.username
+
+    def validate(self, attrs):
+        visit_date = attrs.get('visit_date') or getattr(self.instance, 'visit_date', None)
+        diagnosis = attrs.get('diagnosis')
+        if diagnosis is None and self.instance is not None:
+            diagnosis = self.instance.diagnosis
+        follow_up_date = attrs.get('follow_up_date')
+        if follow_up_date is None and self.instance is not None:
+            follow_up_date = self.instance.follow_up_date
+        errors = {}
+        if not visit_date:
+            errors['visit_date'] = 'Visit date is required.'
+        if not str(diagnosis or '').strip():
+            errors['diagnosis'] = 'Diagnosis is required.'
+        if errors:
+            raise serializers.ValidationError(errors)
+        if visit_date and visit_date > date.today():
+            raise serializers.ValidationError({'visit_date': 'Visit date cannot be in the future.'})
+        if visit_date and follow_up_date and follow_up_date < visit_date:
+            raise serializers.ValidationError({'follow_up_date': 'Follow-up date cannot be before visit date.'})
+        return attrs
 class CommitteeReferralSerializer(serializers.ModelSerializer):
     class Meta: model = CommitteeReferral; fields = '__all__'
 class InjuryCaseSerializer(serializers.ModelSerializer):
