@@ -129,6 +129,81 @@ const EMPTY_REVIEW_FORM: ReviewForm = {
   vaccination_status: 'due', risk_level: 'low',
 };
 
+const IMPORT_FIELD_LABELS_AR: Record<string, string> = {
+  name: 'اسم الموظف',
+  email: 'البريد الإلكتروني',
+  national_id: 'رقم الهوية الوطنية',
+  employee_number: 'الرقم الوظيفي',
+  national_address: 'العنوان الوطني',
+  mobile: 'رقم الجوال',
+  date_of_birth: 'تاريخ الميلاد',
+  birth_place: 'مكان الميلاد',
+  gender: 'الجنس',
+  marital_status: 'الحالة الاجتماعية',
+  health_center: 'المركز الصحي',
+  job_title: 'المسمى الوظيفي',
+  appointment_date: 'تاريخ التعيين',
+  periodic_exam_status: 'حالة الفحص الدوري',
+  vaccination_status: 'حالة التطعيم',
+  risk_level: 'مستوى الخطورة',
+};
+
+const IMPORT_ISSUE_LABELS_AR: Record<string, string> = {
+  'Invalid email address': 'صيغة البريد الإلكتروني غير صحيحة',
+  'National ID must contain exactly 10 digits': 'يجب أن يتكون رقم الهوية الوطنية من 10 أرقام بالضبط',
+  'Mobile number must contain 9 to 15 digits': 'يجب أن يتكون رقم الجوال من 9 إلى 15 رقمًا',
+  'Invalid date of birth': 'تاريخ الميلاد غير صحيح',
+  'Invalid appointment date': 'تاريخ التعيين غير صحيح',
+  'Use a real Excel date or YYYY-MM-DD': 'استخدم تاريخ Excel حقيقيًا أو الصيغة YYYY-MM-DD',
+  'Date of birth cannot be in the future': 'لا يمكن أن يكون تاريخ الميلاد في المستقبل',
+  'Appointment date cannot be in the future': 'لا يمكن أن يكون تاريخ التعيين في المستقبل',
+  'Appointment date must be after date of birth': 'يجب أن يكون تاريخ التعيين بعد تاريخ الميلاد',
+  'Invalid gender': 'قيمة الجنس غير صحيحة؛ استخدم ذكر أو أنثى',
+  'Use male/female or ذكر/أنثى': 'استخدم ذكر أو أنثى',
+  'Invalid marital status': 'الحالة الاجتماعية غير صحيحة',
+  'Health center does not match an active center in the platform': 'اسم المركز الصحي لا يطابق مركزًا فعّالًا في المنصة',
+  'National ID is duplicated inside the file': 'رقم الهوية الوطنية مكرر داخل الملف',
+  'Email is duplicated inside the file': 'البريد الإلكتروني مكرر داخل الملف',
+  'Employee number is duplicated inside the file': 'الرقم الوظيفي مكرر داخل الملف',
+  'National ID already exists in PostgreSQL': 'رقم الهوية الوطنية موجود مسبقًا في قاعدة البيانات',
+  'Email already exists in PostgreSQL': 'البريد الإلكتروني موجود مسبقًا في قاعدة البيانات',
+  'Employee number already exists in PostgreSQL': 'الرقم الوظيفي موجود مسبقًا في قاعدة البيانات',
+  'The row requires review before activation': 'يجب مراجعة الصف قبل تفعيل بطاقة الموظف',
+  'Missing employee name or national ID': 'اسم الموظف أو رقم الهوية الوطنية مفقود',
+  'Missing employee name': 'اسم الموظف مفقود',
+  'Missing health center': 'المركز الصحي مفقود',
+  'Missing trainee name': 'اسم المتدرب مفقود',
+  'Duplicate national ID inside the uploaded sheet': 'رقم الهوية الوطنية مكرر داخل ورقة Excel المرفوعة',
+  'National ID already exists in PostgreSQL; record will be updated in commit mode': 'رقم الهوية الوطنية موجود مسبقًا؛ سيُحدّث السجل عند الاعتماد',
+};
+
+function localizeImportIssue(issue: string, isRtl: boolean) {
+  const normalized = issue.trim().replace(/\.$/, '');
+  if (!isRtl) return normalized;
+
+  const missingField = normalized.match(/^Missing required field:\s*([a-z_]+)$/i);
+  if (missingField) {
+    const field = IMPORT_FIELD_LABELS_AR[missingField[1]] || missingField[1];
+    return `${field} مطلوب ولا يمكن تركه فارغًا`;
+  }
+
+  const invalidField = normalized.match(/^Invalid value for\s+([a-z_]+)$/i);
+  if (invalidField) {
+    const field = IMPORT_FIELD_LABELS_AR[invalidField[1]] || invalidField[1];
+    return `قيمة ${field} غير صحيحة`;
+  }
+
+  return IMPORT_ISSUE_LABELS_AR[normalized] || normalized;
+}
+
+function localizeImportReason(reason: string, isRtl: boolean) {
+  const parts = reason.match(/[^.]+(?:\.|$)/g) || [reason];
+  return parts
+    .map(part => localizeImportIssue(part, isRtl))
+    .filter(Boolean)
+    .filter((part, index, values) => values.indexOf(part) === index);
+}
+
 function getImportedTotal(summary: ImportSummary) {
   return Object.entries(summary)
     .filter(([key, value]) => key.startsWith('imported_') && typeof value === 'number')
@@ -536,15 +611,40 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
             <Grid container spacing={2}>
               <Grid size={{ xs: 12, md: 6 }}>
                 <Alert severity="warning" sx={{ mb: 1 }}>{isRtl ? 'التكرارات' : 'Duplicates'}</Alert>
-                <Paper sx={{ p: 2, borderRadius: 3, maxHeight: 260, overflow: 'auto' }}>
-                  {result.duplicates.length ? result.duplicates.map((item, index) => <Typography key={index} variant="body2">#{item.row} - {item.name || '-'} - {item.national_id || '-'} - {item.reason}</Typography>) : <Typography variant="body2">-</Typography>}
-                </Paper>
+                <Stack spacing={1.25} sx={{ maxHeight: 360, overflow: 'auto', pr: isRtl ? 0 : 0.5, pl: isRtl ? 0.5 : 0 }}>
+                  {result.duplicates.length ? result.duplicates.map((item, index) => (
+                    <Paper key={`${item.row}-${index}`} variant="outlined" sx={{ p: 1.5, borderRadius: 3, borderColor: 'warning.light', bgcolor: 'warning.50' }}>
+                      <Stack direction={isRtl ? 'row-reverse' : 'row'} spacing={1} alignItems="center" flexWrap="wrap" sx={{ mb: 0.75 }}>
+                        <Chip size="small" color="warning" label={`${isRtl ? 'صف' : 'Row'} ${item.row}`} />
+                        <Typography variant="body2" fontWeight={900}>{item.name || (isRtl ? 'اسم غير متوفر' : 'Name unavailable')}</Typography>
+                        {item.national_id && <Chip size="small" variant="outlined" label={`${isRtl ? 'الهوية' : 'ID'}: ${item.national_id}`} />}
+                      </Stack>
+                      <Box component="ul" sx={{ m: 0, ps: 2.5 }}>
+                        {localizeImportReason(item.reason, isRtl).map((issue, issueIndex) => (
+                          <Typography component="li" key={issueIndex} variant="body2" sx={{ mb: 0.35 }}>{issue}</Typography>
+                        ))}
+                      </Box>
+                    </Paper>
+                  )) : <Typography variant="body2">-</Typography>}
+                </Stack>
               </Grid>
               <Grid size={{ xs: 12, md: 6 }}>
                 <Alert severity="error" sx={{ mb: 1 }}>{isRtl ? 'الأخطاء' : 'Errors'}</Alert>
-                <Paper sx={{ p: 2, borderRadius: 3, maxHeight: 260, overflow: 'auto' }}>
-                  {result.errors.length ? result.errors.map((item, index) => <Typography key={index} variant="body2">#{item.row} - {item.reason}</Typography>) : <Typography variant="body2">-</Typography>}
-                </Paper>
+                <Stack spacing={1.25} sx={{ maxHeight: 360, overflow: 'auto', pr: isRtl ? 0 : 0.5, pl: isRtl ? 0.5 : 0 }}>
+                  {result.errors.length ? result.errors.map((item, index) => (
+                    <Paper key={`${item.row}-${index}`} variant="outlined" sx={{ p: 1.5, borderRadius: 3, borderColor: 'error.light', bgcolor: 'error.50' }}>
+                      <Stack direction={isRtl ? 'row-reverse' : 'row'} spacing={1} alignItems="center" sx={{ mb: 0.75 }}>
+                        <Chip size="small" color="error" label={`${isRtl ? 'صف' : 'Row'} ${item.row}`} />
+                        <Typography variant="body2" fontWeight={900}>{isRtl ? 'ملاحظات تمنع تفعيل البطاقة' : 'Issues blocking card activation'}</Typography>
+                      </Stack>
+                      <Box component="ul" sx={{ m: 0, ps: 2.5 }}>
+                        {localizeImportReason(item.reason, isRtl).map((issue, issueIndex) => (
+                          <Typography component="li" key={issueIndex} variant="body2" sx={{ mb: 0.35 }}>{issue}</Typography>
+                        ))}
+                      </Box>
+                    </Paper>
+                  )) : <Typography variant="body2">-</Typography>}
+                </Stack>
               </Grid>
             </Grid>
           )}
@@ -599,7 +699,13 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
                           )}
                           <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2, bgcolor: 'warning.50' }}>
                             <Typography fontWeight={900} variant="body2" sx={{ mb: 0.5 }}>{isRtl ? 'الملاحظات المطلوب معالجتها' : 'Issues to resolve'}</Typography>
-                            {review.issues.map((issue, index) => <Typography key={index} variant="caption" display="block">• {issue}</Typography>)}
+                            <Box component="ul" sx={{ m: 0, ps: 2.5 }}>
+                              {review.issues.flatMap(issue => localizeImportReason(issue, isRtl)).map((issue, index) => (
+                                <Typography component="li" key={index} variant="caption" sx={{ mb: 0.25 }}>
+                                  {localizeImportIssue(issue, isRtl)}
+                                </Typography>
+                              ))}
+                            </Box>
                           </Paper>
                           <Stack direction={isRtl ? 'row-reverse' : 'row'} spacing={1}>
                             <Button fullWidth variant="contained" startIcon={<EditIcon />} onClick={() => openReview(review)}>
@@ -625,7 +731,13 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
         <DialogContent dividers>
           {activeReview && (
             <Alert severity={activeReview.status === 'conflict' ? 'error' : 'warning'} sx={{ mb: 2 }}>
-              {activeReview.issues.join(' — ')}
+              <Box component="ul" sx={{ m: 0, ps: 2.5 }}>
+                {activeReview.issues.flatMap(issue => localizeImportReason(issue, isRtl)).map((issue, index) => (
+                  <Typography component="li" key={index} variant="body2">
+                    {localizeImportIssue(issue, isRtl)}
+                  </Typography>
+                ))}
+              </Box>
             </Alert>
           )}
           <Grid container spacing={2}>
