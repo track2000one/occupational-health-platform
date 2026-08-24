@@ -1,0 +1,111 @@
+/* Clinic visit history is intentionally a real table, not a registry-card grid. */
+.clinic-visits-history-table.MuiTableContainer-root {
+  padding: 0 !important;
+  overflow-x: auto !important;
+  overflow-y: auto !important;
+  border-radius: 18px !important;
+  background: #fff !important;
+}
+
+.clinic-visits-history-table .MuiTable-root {
+  display: table !important;
+  width: 100% !important;
+  min-width: 980px !important;
+  padding: 0 !important;
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+  white-space: nowrap;
+}
+
+.clinic-visits-history-table .MuiTableHead-root {
+  display: table-header-group !important;
+}
+
+.clinic-visits-history-table .MuiTableBody-root {
+  display: table-row-group !important;
+  width: auto !important;
+}
+
+.clinic-visits-history-table .MuiTableHead-root .MuiTableRow-root,
+.clinic-visits-history-table .MuiTableBody-root .MuiTableRow-root {
+  display: table-row !important;
+  width: auto !important;
+  max-width: none !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  position: static !important;
+  overflow: visible !important;
+  transform: none !important;
+}
+
+.clinic-visits-history-table .MuiTableBody-root .MuiTableRow-root::before,
+.clinic-visits-history-table .MuiTableBody-root .MuiTableRow-root::after,
+.clinic-visits-history-table .MuiTableBody-root .MuiTableCell-root::before,
+.clinic-visits-history-table .MuiTableBody-root .MuiTableCell-root::after {
+  content: none !important;
+  display: none !important;
+}
+
+.clinic-visits-history-table .MuiTableHead-root .MuiTableCell-root,
+.clinic-visits-history-table .MuiTableBody-root .MuiTableCell-root,
+.clinic-visits-history-table .MuiTableBody-root .MuiTableCell-root:nth-of-type(2),
+.clinic-visits-history-table .MuiTableBody-root .MuiTableCell-root:last-of-type {
+  display: table-cell !important;
+  position: static !important;
+  min-height: 0 !important;
+  padding: 11px 13px !important;
+  border: 0 !important;
+  border-bottom: 1px solid rgba(15, 53, 87, 0.12) !important;
+  background: #fff !important;
+  box-shadow: none !important;
+  color: #16324a !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  text-align: start !important;
+  vertical-align: middle !important;
+}
+
+.clinic-visits-history-table .MuiTableHead-root .MuiTableCell-root {
+  background: #eef6f8 !important;
+  color: #0f3557 !important;
+  font-weight: 900 !important;
+  border-bottom: 2px solid rgba(15, 92, 122, 0.28) !important;
+}
+
+.clinic-visits-history-table .MuiTableBody-root .MuiTableRow-root:hover .MuiTableCell-root {
+  background: #f7fbfc !important;
+}
+
+.clinic-visits-history-table .MuiTableBody-root .clinic-visit-day-heading .MuiTableCell-root {
+  background: #e8f5f4 !important;
+  color: #0f5c7a !important;
+  font-weight: 900 !important;
+}
+
+.clinic-visits-history-table .MuiTableBody-root .MuiTableCell-root:last-of-type .MuiStack-root {
+  justify-content: center !important;
+}
+
+.clinic-visits-history-table .MuiTableBody-root .MuiTableCell-root:last-of-type .MuiIconButton-root {
+  flex: 0 0 auto !important;
+  width: 32px !important;
+  min-width: 32px !important;
+  height: 32px !important;
+  padding: 5px !important;
+  border-width: 1px !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+}
+
+html .clinic-visits-history-table .MuiTableBody-root .MuiTableRow-root .MuiTableCell-root:last-of-type .MuiIconButton-root::after {
+  content: none !important;
+  display: none !important;
+}
+
+.clinic-visits-history-table .MuiTableBody-root .MuiTableCell-root:last-of-type .MuiIconButton-root svg {
+  font-size: 17px !important;
+}
