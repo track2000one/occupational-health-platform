@@ -25,6 +25,7 @@ import {
 } from '@mui/material';
 import {
   CloudUpload as CloudUploadIcon,
+  Download as DownloadIcon,
   Security as SecurityIcon,
   Preview as PreviewIcon,
   Storage as StorageIcon,
@@ -103,7 +104,11 @@ function summaryCard(label: string, value: number | string, color: string) {
   );
 }
 
-export function DataImportPage() {
+type DataImportPageProps = {
+  employeeMode?: boolean;
+};
+
+export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
   const { i18n } = useTranslation();
   const isRtl = i18n.language === 'ar';
   const [file, setFile] = useState<File | null>(null);
@@ -118,7 +123,7 @@ export function DataImportPage() {
     setResult(null);
   };
 
-  const upload = async () => {
+  const upload = async (commitOverride?: boolean) => {
     if (!file) {
       toast.error(isRtl ? 'اختر ملف Excel أولًا' : 'Select an Excel file first');
       return;
@@ -129,13 +134,15 @@ export function DataImportPage() {
       return;
     }
 
+    const shouldCommit = commitOverride ?? commitMode;
     setLoading(true);
-    const loadingToast = toast.loading(commitMode ? (isRtl ? 'جاري الاستيراد إلى قاعدة البيانات...' : 'Importing into database...') : (isRtl ? 'جاري فحص الملف...' : 'Validating file...'));
+    const loadingToast = toast.loading(shouldCommit ? (isRtl ? 'جاري الاستيراد إلى قاعدة البيانات...' : 'Importing into database...') : (isRtl ? 'جاري فحص الملف...' : 'Validating file...'));
     try {
       const form = new FormData();
       form.append('file', file);
-      form.append('commit', commitMode ? 'true' : 'false');
-      if (sheetName.trim()) form.append('sheetName', sheetName.trim());
+      form.append('commit', shouldCommit ? 'true' : 'false');
+      if (employeeMode) form.append('sheetName', 'Employees');
+      else if (sheetName.trim()) form.append('sheetName', sheetName.trim());
 
       const response = await fetch(`${API_BASE_URL}/excel-import/upload/`, {
         method: 'POST',
@@ -145,7 +152,7 @@ export function DataImportPage() {
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body.detail || body.file || body.password || 'Import failed');
       setResult(body as ImportResult);
-      toast.success(commitMode ? (isRtl ? 'تم الحفظ في PostgreSQL بنجاح' : 'Committed to PostgreSQL') : (isRtl ? 'تم فحص الملف بنجاح' : 'File validated successfully'), { id: loadingToast });
+      toast.success(shouldCommit ? (isRtl ? 'تم الحفظ في PostgreSQL بنجاح' : 'Committed to PostgreSQL') : (isRtl ? 'تم فحص الملف بنجاح' : 'File validated successfully'), { id: loadingToast });
     } catch (error) {
       toast.error(friendlyFetchError(error, isRtl), { id: loadingToast, duration: 9000 });
     } finally {
@@ -164,9 +171,15 @@ export function DataImportPage() {
               <SecurityIcon color="primary" />
               <Typography variant="overline" color="primary" fontWeight={900}>{isRtl ? 'استيراد آمن للبيانات الصحية' : 'Secure Health Data Import'}</Typography>
             </Stack>
-            <Typography variant="h4" fontWeight={950}>{isRtl ? 'استيراد Excel إلى قاعدة البيانات' : 'Excel Import to Database'}</Typography>
+            <Typography variant="h4" fontWeight={950}>
+              {employeeMode
+                ? (isRtl ? 'استيراد بيانات موظفي الجهة' : 'Import Organization Employees')
+                : (isRtl ? 'استيراد Excel إلى قاعدة البيانات' : 'Excel Import to Database')}
+            </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 1, maxWidth: 950, lineHeight: 1.9 }}>
-              {isRtl ? 'ارفع ملف Excel داخل المنصة فقط. يتم فحص الأعمدة، إخفاء أرقام الهوية في المعاينة، التحقق من التكرار، ثم الحفظ في PostgreSQL عند التفعيل.' : 'Upload Excel inside the platform only. Columns are validated, IDs are masked in preview, duplicates are checked, and records are committed to PostgreSQL only when enabled.'}
+              {employeeMode
+                ? (isRtl ? 'نزّل القالب الرسمي وأرسله للجهة لتعبئة موظفيها، ثم ارفعه هنا بصلاحية مسؤول المنصة. تتم المعاينة أولًا ولا يُحفظ أي صف قبل الاعتماد.' : 'Send the official template to the organization, then upload the completed roster here as a platform administrator. Preview is mandatory before commit.')
+                : (isRtl ? 'ارفع ملف Excel داخل المنصة فقط. يتم فحص الأعمدة، إخفاء أرقام الهوية في المعاينة، التحقق من التكرار، ثم الحفظ في PostgreSQL عند التفعيل.' : 'Upload Excel inside the platform only. Columns are validated, IDs are masked in preview, duplicates are checked, and records are committed to PostgreSQL only when enabled.')}
             </Typography>
           </Box>
           <Stack spacing={1} alignItems={isRtl ? 'flex-start' : 'flex-end'}>
@@ -185,20 +198,35 @@ export function DataImportPage() {
           <Card sx={{ borderRadius: 4 }}>
             <CardContent>
               <Stack spacing={2.5}>
+                {employeeMode && (
+                  <Button
+                    component="a"
+                    href="/templates/employee-import-template.xlsx"
+                    download
+                    variant="outlined"
+                    size="large"
+                    startIcon={<DownloadIcon />}
+                    sx={{ borderRadius: 3, py: 1.4 }}
+                  >
+                    {isRtl ? 'تنزيل قالب بيانات الموظفين' : 'Download Employee Template'}
+                  </Button>
+                )}
                 <Button component="label" variant="contained" size="large" startIcon={<CloudUploadIcon />} sx={{ borderRadius: 3, py: 1.6 }}>
                   {file ? file.name : (isRtl ? 'اختيار ملف Excel' : 'Select Excel File')}
-                  <input hidden type="file" accept=".xlsx,.xlsm,.xltx,.xltm" onChange={onFileChange} />
+                  <input hidden type="file" accept={employeeMode ? '.xlsx' : '.xlsx,.xlsm,.xltx,.xltm'} onChange={onFileChange} />
                 </Button>
 
-                <TextField
-                  label={isRtl ? 'اسم الشيت اختياري' : 'Sheet name optional'}
-                  value={sheetName}
-                  onChange={(event) => setSheetName(event.target.value)}
-                  placeholder="Database أو ALL"
-                  fullWidth
-                />
+                {!employeeMode && (
+                  <TextField
+                    label={isRtl ? 'اسم الشيت اختياري' : 'Sheet name optional'}
+                    value={sheetName}
+                    onChange={(event) => setSheetName(event.target.value)}
+                    placeholder="Database أو ALL"
+                    fullWidth
+                  />
+                )}
 
-                <Paper variant="outlined" sx={{ p: 2, borderRadius: 3 }}>
+                {!employeeMode && <Paper variant="outlined" sx={{ p: 2, borderRadius: 3 }}>
                   <Stack direction={isRtl ? 'row-reverse' : 'row'} alignItems="center" justifyContent="space-between">
                     <Box sx={{ textAlign: isRtl ? 'right' : 'left' }}>
                       <Typography fontWeight={900}>{isRtl ? 'حفظ فعلي في PostgreSQL' : 'Commit to PostgreSQL'}</Typography>
@@ -208,11 +236,27 @@ export function DataImportPage() {
                     </Box>
                     <Switch checked={commitMode} onChange={(event) => setCommitMode(event.target.checked)} color="success" />
                   </Stack>
-                </Paper>
+                </Paper>}
 
-                <Button onClick={upload} disabled={loading || !file} variant="contained" color={commitMode ? 'success' : 'primary'} size="large" startIcon={commitMode ? <StorageIcon /> : <PreviewIcon />} sx={{ borderRadius: 3, py: 1.4 }}>
-                  {commitMode ? (isRtl ? 'فحص وحفظ في قاعدة البيانات' : 'Validate & Commit') : (isRtl ? 'فحص ومعاينة فقط' : 'Validate Preview Only')}
+                <Button onClick={() => void upload(employeeMode ? false : commitMode)} disabled={loading || !file} variant="contained" color={commitMode ? 'success' : 'primary'} size="large" startIcon={!employeeMode && commitMode ? <StorageIcon /> : <PreviewIcon />} sx={{ borderRadius: 3, py: 1.4 }}>
+                  {employeeMode
+                    ? (isRtl ? 'فحص الملف ومعاينة الموظفين' : 'Validate & Preview Employees')
+                    : (commitMode ? (isRtl ? 'فحص وحفظ في قاعدة البيانات' : 'Validate & Commit') : (isRtl ? 'فحص ومعاينة فقط' : 'Validate Preview Only'))}
                 </Button>
+
+                {employeeMode && result?.mode === 'preview' && (
+                  <Button
+                    onClick={() => void upload(true)}
+                    disabled={loading || !file || (result.summary.errors_count || 0) > 0 || (result.summary.valid_rows || 0) === 0}
+                    variant="contained"
+                    color="success"
+                    size="large"
+                    startIcon={<StorageIcon />}
+                    sx={{ borderRadius: 3, py: 1.4 }}
+                  >
+                    {isRtl ? `اعتماد واستيراد ${result.summary.valid_rows || 0} موظف` : `Commit ${result.summary.valid_rows || 0} Employees`}
+                  </Button>
+                )}
 
                 {loading && <LinearProgress />}
               </Stack>
@@ -225,11 +269,23 @@ export function DataImportPage() {
             <CardContent>
               <Typography variant="h6" fontWeight={900} gutterBottom>{isRtl ? 'قواعد الاستيراد' : 'Import Rules'}</Typography>
               <Stack spacing={1.2}>
-                <Typography variant="body2">{isRtl ? '1. اكتب Database لاستيراد الملف الصحي الرئيسي أو ALL لفحص جميع الشيتات المدعومة.' : '1. Use Database for the main health file or ALL to validate all supported sheets.'}</Typography>
-                <Typography variant="body2">{isRtl ? '2. رقم الهوية يتم التحقق منه لمنع التكرار داخل الملف وقاعدة البيانات.' : '2. National ID is checked for duplicates inside the file and database.'}</Typography>
-                <Typography variant="body2">{isRtl ? '3. يتم إخفاء الهوية والجوال في المعاينة.' : '3. IDs and phone numbers are masked in preview.'}</Typography>
-                <Typography variant="body2">{isRtl ? '4. الشيتات المدعومة تحفظ في جداولها مثل التحاليل، التطعيمات، الوخز بالإبر، الهيئة الطبية والحملات.' : '4. Supported sheets are routed to their own tables: labs, vaccines, exposures, committee cases, and campaigns.'}</Typography>
-                <Typography variant="body2">{isRtl ? '5. لا يتم تخزين ملف Excel الخام داخل المستودع أو قاعدة البيانات.' : '5. Raw Excel files are not stored in the repository or database.'}</Typography>
+                {employeeMode ? (
+                  <>
+                    <Typography variant="body2">{isRtl ? '1. لا تغيّر اسم الشيت Employees ولا أسماء الأعمدة في القالب.' : '1. Do not rename the Employees sheet or template columns.'}</Typography>
+                    <Typography variant="body2">{isRtl ? '2. الهوية الوطنية والبريد الإلكتروني والرقم الوظيفي يجب أن تكون فريدة.' : '2. National ID, email, and employee number must be unique.'}</Typography>
+                    <Typography variant="body2">{isRtl ? '3. اسم المركز الصحي يجب أن يطابق مركزًا نشطًا موجودًا في المنصة.' : '3. Health center must exactly match an active center in the platform.'}</Typography>
+                    <Typography variant="body2">{isRtl ? '4. أي خطأ يمنع اعتماد الملف كاملًا؛ والسجلات الموجودة مسبقًا تُتجاوز دون تعديلها.' : '4. Any validation error blocks the whole commit; existing employees are skipped without changes.'}</Typography>
+                    <Typography variant="body2">{isRtl ? '5. ملف الجهة الخام لا يُحفظ في GitHub أو قاعدة البيانات.' : '5. The organization roster file is not stored in GitHub or the database.'}</Typography>
+                  </>
+                ) : (
+                  <>
+                    <Typography variant="body2">{isRtl ? '1. اكتب Database لاستيراد الملف الصحي الرئيسي أو ALL لفحص جميع الشيتات المدعومة.' : '1. Use Database for the main health file or ALL to validate all supported sheets.'}</Typography>
+                    <Typography variant="body2">{isRtl ? '2. رقم الهوية يتم التحقق منه لمنع التكرار داخل الملف وقاعدة البيانات.' : '2. National ID is checked for duplicates inside the file and database.'}</Typography>
+                    <Typography variant="body2">{isRtl ? '3. يتم إخفاء الهوية والجوال في المعاينة.' : '3. IDs and phone numbers are masked in preview.'}</Typography>
+                    <Typography variant="body2">{isRtl ? '4. الشيتات المدعومة تحفظ في جداولها مثل التحاليل، التطعيمات، الوخز بالإبر، الهيئة الطبية والحملات.' : '4. Supported sheets are routed to their own tables: labs, vaccines, exposures, committee cases, and campaigns.'}</Typography>
+                    <Typography variant="body2">{isRtl ? '5. لا يتم تخزين ملف Excel الخام داخل المستودع أو قاعدة البيانات.' : '5. Raw Excel files are not stored in the repository or database.'}</Typography>
+                  </>
+                )}
               </Stack>
             </CardContent>
           </Card>

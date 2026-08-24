@@ -1,6 +1,8 @@
 from datetime import datetime, date
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.validators import validate_email
 from django.db import transaction
 from openpyxl import load_workbook
 from openpyxl.utils.datetime import from_excel
@@ -37,6 +39,59 @@ HEADER_ALIASES = {
     'clinic_type': ['clinic', 'clinic type', 'العيادة', 'نوع العيادة', 'نوع الزيارة'],
     'action_taken': ['action', 'action taken', 'recommendation', 'recommendations', 'الإجراء', 'الاجراء', 'التوصية', 'التوصيات'],
     'visit_date': ['date', 'visit date', 'تاريخ', 'التاريخ', 'تاريخ الزيارة'],
+}
+
+EMPLOYEE_ROSTER_ALIASES = {
+    'name': ['name', 'employee name', 'اسم الموظف', 'الاسم'],
+    'email': ['email', 'البريد الإلكتروني', 'البريد الالكتروني'],
+    'national_id': ['national id', 'national_id', 'رقم الهوية الوطنية', 'رقم الهوية'],
+    'employee_number': ['employee number', 'employee id', 'الرقم الوظيفي'],
+    'national_address': ['national address', 'العنوان الوطني'],
+    'mobile': ['mobile', 'mobile number', 'رقم الجوال', 'الجوال'],
+    'date_of_birth': ['date of birth', 'birth date', 'تاريخ الميلاد'],
+    'birth_place': ['birth place', 'مكان الميلاد'],
+    'gender': ['gender', 'الجنس'],
+    'marital_status': ['marital status', 'الحالة الاجتماعية'],
+    'health_center': ['health center', 'المركز الصحي'],
+    'job_title': ['job title', 'المسمى الوظيفي'],
+    'appointment_date': ['appointment date', 'hire date', 'تاريخ التعيين'],
+    'periodic_exam_status': ['periodic exam status', 'حالة الفحص الدوري'],
+    'vaccination_status': ['vaccination status', 'حالة التطعيم'],
+    'risk_level': ['risk level', 'مستوى الخطورة'],
+}
+
+EMPLOYEE_REQUIRED_FIELDS = (
+    'name', 'email', 'national_id', 'employee_number', 'national_address', 'mobile',
+    'date_of_birth', 'birth_place', 'gender', 'marital_status', 'health_center',
+    'job_title', 'appointment_date',
+)
+
+EMPLOYEE_CHOICE_MAPS = {
+    'gender': {
+        'male': 'male', 'ذكر': 'male', 'm': 'male',
+        'female': 'female', 'أنثى': 'female', 'انثى': 'female', 'f': 'female',
+    },
+    'marital_status': {
+        'single': 'single', 'أعزب': 'single', 'اعزب': 'single', 'عزباء': 'single',
+        'married': 'married', 'متزوج': 'married', 'متزوجة': 'married',
+        'divorced': 'divorced', 'مطلق': 'divorced', 'مطلقة': 'divorced',
+        'widowed': 'widowed', 'أرمل': 'widowed', 'ارمل': 'widowed', 'أرملة': 'widowed', 'ارملة': 'widowed',
+    },
+    'periodic_exam_status': {
+        'completed': 'completed', 'مكتمل': 'completed',
+        'incomplete': 'incomplete', 'غير مكتمل': 'incomplete',
+        'overdue': 'overdue', 'متأخر': 'overdue',
+    },
+    'vaccination_status': {
+        'completed': 'completed', 'مكتمل': 'completed',
+        'due': 'due', 'مستحق': 'due',
+        'refused': 'refused', 'مرفوض': 'refused',
+    },
+    'risk_level': {
+        'low': 'low', 'منخفض': 'low',
+        'medium': 'medium', 'متوسط': 'medium',
+        'high': 'high', 'مرتفع': 'high',
+    },
 }
 
 
@@ -149,7 +204,8 @@ def find_header_row(ws) -> Tuple[int, List[str]]:
     best_row = 1
     best_headers: List[str] = []
     best_score = 0
-    for idx, row in enumerate(ws.iter_rows(min_row=1, max_row=min(ws.max_row, 20), values_only=True), start=1):
+    detected_max_row = ws.max_row or 20
+    for idx, row in enumerate(ws.iter_rows(min_row=1, max_row=min(detected_max_row, 20), values_only=True), start=1):
         headers = [clean_text(cell) for cell in row]
         normalized = [normalize_header(cell) for cell in headers]
         non_empty = [cell for cell in normalized if cell]
@@ -240,6 +296,192 @@ def iter_data_rows(ws, header_row: int):
         if not any(clean_text(cell) for cell in row):
             continue
         yield row_number, row
+
+
+def employee_roster_value(row: Tuple[Any, ...], headers: List[str], field: str) -> str:
+    return text_val(row, headers, EMPLOYEE_ROSTER_ALIASES[field])
+
+
+def employee_choice(field: str, value: Any, default: str = '') -> Optional[str]:
+    text = normalize_header(value)
+    if not text:
+        return default
+    return EMPLOYEE_CHOICE_MAPS[field].get(text)
+
+
+def import_employee_roster_sheet(ws, sheet_name: str, file_name: str, commit: bool) -> Dict[str, Any]:
+    """Import new employees without overwriting records already in PostgreSQL."""
+    header_row, headers = find_header_row(ws)
+    normalized_headers = {normalize_header(header) for header in headers if clean_text(header)}
+    missing_columns = [
+        field for field in EMPLOYEE_REQUIRED_FIELDS
+        if not any(normalize_header(alias) in normalized_headers for alias in EMPLOYEE_ROSTER_ALIASES[field])
+    ]
+    if missing_columns:
+        raise ValueError(f"Missing required employee columns: {', '.join(missing_columns)}")
+
+    centers_by_name = {
+        normalize_header(center.name): center
+        for center in HealthCenter.objects.filter(is_active=True)
+    }
+    existing_ids = set(Employee.objects.exclude(national_id='').values_list('national_id', flat=True))
+    existing_emails = set(
+        Employee.objects.exclude(email__isnull=True).exclude(email='').values_list('email', flat=True)
+    )
+    existing_numbers = set(
+        Employee.objects.exclude(employee_number__isnull=True).exclude(employee_number='')
+        .values_list('employee_number', flat=True)
+    )
+    seen_ids = set()
+    seen_emails = set()
+    seen_numbers = set()
+    valid_payloads: List[Dict[str, Any]] = []
+    duplicates: List[Dict[str, Any]] = []
+    errors: List[Dict[str, Any]] = []
+    preview_rows: List[Dict[str, Any]] = []
+    total_rows = 0
+    today = date.today()
+
+    for row_number, row in iter_data_rows(ws, header_row):
+        total_rows += 1
+        raw = {field: employee_roster_value(row, headers, field) for field in EMPLOYEE_ROSTER_ALIASES}
+        raw['email'] = raw['email'].strip().lower()
+        raw['national_id'] = ''.join(ch for ch in raw['national_id'] if ch.isdigit())
+        raw['employee_number'] = raw['employee_number'].strip()
+        raw['mobile'] = ''.join(ch for ch in raw['mobile'] if ch.isdigit() or ch == '+')
+        row_errors: List[str] = []
+
+        for field in EMPLOYEE_REQUIRED_FIELDS:
+            if not raw.get(field):
+                row_errors.append(f'Missing required field: {field}.')
+        try:
+            validate_email(raw['email'])
+        except DjangoValidationError:
+            row_errors.append('Invalid email address.')
+        if raw['national_id'] and len(raw['national_id']) != 10:
+            row_errors.append('National ID must contain exactly 10 digits.')
+        mobile_digits = ''.join(ch for ch in raw['mobile'] if ch.isdigit())
+        if raw['mobile'] and not (9 <= len(mobile_digits) <= 15):
+            row_errors.append('Mobile number must contain 9 to 15 digits.')
+
+        date_of_birth = parse_date(val(row, headers, EMPLOYEE_ROSTER_ALIASES['date_of_birth']))
+        appointment_date = parse_date(val(row, headers, EMPLOYEE_ROSTER_ALIASES['appointment_date']))
+        if raw['date_of_birth'] and not date_of_birth:
+            row_errors.append('Invalid date of birth. Use a real Excel date or YYYY-MM-DD.')
+        if raw['appointment_date'] and not appointment_date:
+            row_errors.append('Invalid appointment date. Use a real Excel date or YYYY-MM-DD.')
+        if date_of_birth and date_of_birth > today:
+            row_errors.append('Date of birth cannot be in the future.')
+        if appointment_date and appointment_date > today:
+            row_errors.append('Appointment date cannot be in the future.')
+        if date_of_birth and appointment_date and appointment_date <= date_of_birth:
+            row_errors.append('Appointment date must be after date of birth.')
+
+        gender = employee_choice('gender', raw['gender'])
+        marital_status = employee_choice('marital_status', raw['marital_status'])
+        periodic_exam_status = employee_choice('periodic_exam_status', raw['periodic_exam_status'], 'incomplete')
+        vaccination_status = employee_choice('vaccination_status', raw['vaccination_status'], 'due')
+        risk_level = employee_choice('risk_level', raw['risk_level'], 'low')
+        if raw['gender'] and not gender:
+            row_errors.append('Invalid gender. Use male/female or ذكر/أنثى.')
+        if raw['marital_status'] and not marital_status:
+            row_errors.append('Invalid marital status.')
+        for field, parsed in (
+            ('periodic_exam_status', periodic_exam_status),
+            ('vaccination_status', vaccination_status),
+            ('risk_level', risk_level),
+        ):
+            if raw[field] and not parsed:
+                row_errors.append(f'Invalid value for {field}.')
+
+        center = centers_by_name.get(normalize_header(raw['health_center']))
+        if raw['health_center'] and not center:
+            row_errors.append('Health center does not match an active center in the platform.')
+
+        duplicate_reasons: List[str] = []
+        if raw['national_id'] in seen_ids:
+            duplicate_reasons.append('National ID is duplicated inside the file.')
+        if raw['email'] in seen_emails:
+            duplicate_reasons.append('Email is duplicated inside the file.')
+        if raw['employee_number'] in seen_numbers:
+            duplicate_reasons.append('Employee number is duplicated inside the file.')
+        if raw['national_id'] in existing_ids:
+            duplicate_reasons.append('National ID already exists in PostgreSQL.')
+        if raw['email'] in existing_emails:
+            duplicate_reasons.append('Email already exists in PostgreSQL.')
+        if raw['employee_number'] in existing_numbers:
+            duplicate_reasons.append('Employee number already exists in PostgreSQL.')
+
+        if row_errors:
+            errors.append({'row': row_number, 'reason': ' '.join(row_errors)})
+            continue
+        if duplicate_reasons:
+            duplicates.append({
+                'row': row_number,
+                'national_id': mask_value(raw['national_id']),
+                'name': raw['name'],
+                'reason': ' '.join(duplicate_reasons) + ' The row will be skipped.',
+            })
+            continue
+
+        payload = {
+            'name': raw['name'],
+            'email': raw['email'],
+            'national_id': raw['national_id'],
+            'employee_number': raw['employee_number'],
+            'national_address': raw['national_address'],
+            'mobile': raw['mobile'],
+            'date_of_birth': date_of_birth,
+            'birth_place': raw['birth_place'],
+            'gender': gender,
+            'marital_status': marital_status,
+            'health_center': center.name if center else '',
+            'job_title': raw['job_title'],
+            'appointment_date': appointment_date,
+            'periodic_exam_status': periodic_exam_status,
+            'vaccination_status': vaccination_status,
+            'risk_level': risk_level,
+            '_center': center,
+        }
+        valid_payloads.append(payload)
+        seen_ids.add(raw['national_id'])
+        seen_emails.add(raw['email'])
+        seen_numbers.add(raw['employee_number'])
+        if len(preview_rows) < 20:
+            preview_rows.append({'row': row_number, **masked_preview(payload)})
+
+    summary = {
+        'total_rows': total_rows,
+        'valid_rows': len(valid_payloads),
+        'duplicate_rows': len(duplicates),
+        'errors_count': len(errors),
+        'skipped_rows': len(errors) + len(duplicates),
+        'imported_employees': 0,
+    }
+    if commit and errors:
+        raise ValueError(
+            'Employee import was blocked because the file contains validation errors. '
+            'Fix the reported rows and preview the file again.'
+        )
+
+    if commit:
+        with transaction.atomic():
+            for payload in valid_payloads:
+                employee_values = {
+                    key: value for key, value in payload.items()
+                    if key not in {'health_center', '_center'}
+                }
+                Employee.objects.create(health_center=payload['_center'], **employee_values)
+                summary['imported_employees'] += 1
+
+    return {
+        'detected_headers': headers,
+        'mapped_fields': {'mode': 'employee_roster', 'duplicate_policy': 'skip_existing'},
+        'summary': summary,
+        'duplicates': duplicates[:100],
+        'errors': errors[:100],
+        'preview_rows': preview_rows,
+    }
 
 
 def database_payload(row: Tuple[Any, ...], headers: List[str], row_number: int, sheet_name: str, file_name: str) -> Dict[str, Any]:
@@ -621,6 +863,8 @@ def import_generic_sheet(ws, sheet_name: str, file_name: str, commit: bool) -> D
 
 
 SHEET_ROUTERS = (
+    ('Employees', import_employee_roster_sheet),
+    ('الموظفون', import_employee_roster_sheet),
     ('Database', import_database_sheet),
     ('عيادة الموظفين', import_employee_clinic_sheet),
     ('عيادة الصحة المهنية', import_occupational_clinic_sheet),
@@ -673,6 +917,8 @@ def process_excel_import(uploaded_file, sheet_name: str = '', commit: bool = Fal
         summary = merge_summary(results)
         return {'mode': 'commit' if commit else 'preview', 'file_name': file_name, 'sheet_name': 'ALL', 'available_sheets': workbook.sheetnames, 'importable_sheets': importable_sheets, 'summary': summary, 'sheet_results': [{'sheet_name': item['sheet_name'], 'processor': item['processor'], 'summary': item['summary'], 'errors': item.get('errors', [])[:20], 'duplicates': item.get('duplicates', [])[:20], 'preview_rows': item.get('preview_rows', [])[:5]} for item in results], 'duplicates': [dup for item in results for dup in item.get('duplicates', [])][:50], 'errors': [err for item in results for err in item.get('errors', [])][:50], 'preview_rows': [row for item in results for row in item.get('preview_rows', [])][:12], 'privacy_note': 'Raw Excel files are not stored in GitHub. Records are saved to PostgreSQL only when commit mode is selected.'}
 
+    if requested and requested not in workbook.sheetnames:
+        raise ValueError(f'The requested worksheet "{requested}" was not found in the uploaded file.')
     selected_sheet = requested if requested in workbook.sheetnames else ('Database' if 'Database' in workbook.sheetnames else workbook.sheetnames[0])
     result = process_single_sheet(workbook, selected_sheet, commit, file_name)
     result['available_sheets'] = workbook.sheetnames

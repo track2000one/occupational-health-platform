@@ -231,6 +231,11 @@ class ExcelImportViewSet(viewsets.ReadOnlyModelViewSet):
 
         commit=truthy(request.data.get('commit'))
         sheet_name=str(request.data.get('sheetName') or '').strip()
+        if sheet_name in ('Employees', 'الموظفون') and not uploaded.name.lower().endswith('.xlsx'):
+            return Response(
+                {'file': 'Employee roster import accepts .xlsx files only. Macro-enabled files are blocked.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         try:
             result=process_excel_import(uploaded, sheet_name=sheet_name, commit=commit, user=request.user)
             result=normalize_import_result(result)

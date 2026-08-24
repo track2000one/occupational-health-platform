@@ -34,6 +34,7 @@ import {
   People as PeopleIcon,
   Refresh as RefreshIcon,
   Search as SearchIcon,
+  UploadFile as UploadFileIcon,
   Visibility as VisibilityIcon,
   BadgeOutlined as HealthCardIcon,
 } from '@mui/icons-material';
@@ -438,6 +439,11 @@ export function EmployeesPage() {
           <Button variant="outlined" startIcon={<RefreshIcon />} onClick={() => void loadData()} disabled={loading}>
             {isRtl ? 'تحديث' : 'Refresh'}
           </Button>
+          {can(PERMISSIONS.MANAGE_USERS) && (
+            <Button variant="outlined" startIcon={<UploadFileIcon />} onClick={() => navigate('/employees/import')}>
+              {isRtl ? 'استيراد Excel' : 'Import Excel'}
+            </Button>
+          )}
           {can(PERMISSIONS.CREATE_EMPLOYEE) && (
             <Button variant="contained" startIcon={<AddIcon />} onClick={openAdd}>
               {t('addEmployee')}

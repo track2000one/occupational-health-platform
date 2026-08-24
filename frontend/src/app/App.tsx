@@ -85,6 +85,11 @@ function AppRoutes() {
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="employees" element={<EmployeesPage />} />
+        <Route path="employees/import" element={
+          <PermissionRoute permission="manage:users">
+            <DataImportPage employeeMode />
+          </PermissionRoute>
+        } />
         <Route path="employee-health-card" element={<EmployeeHealthCardPage />} />
         <Route path="employees/:employeeId/health-card" element={<EmployeeHealthCardPage />} />
         <Route path="lab-tests" element={<LabTestsPage />} />
