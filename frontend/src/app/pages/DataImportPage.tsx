@@ -76,7 +76,13 @@ type ImportResult = {
   available_sheets: string[];
   importable_sheets?: string[];
   detected_headers?: string[];
-  mapped_fields?: Record<string, number | string>;
+  mapped_fields?: Record<string, number | string | null>;
+  mapping_options?: { index: number; header: string; samples: string[] }[];
+  mapping_candidates?: Record<string, number[]>;
+  ignored_columns?: { index: number; header: string }[];
+  missing_required_fields?: string[];
+  header_row?: number;
+  employee_import_mode?: 'template' | 'flexible';
   summary: ImportSummary;
   sheet_results?: SheetImportResult[];
   duplicates: { row: number; national_id?: string; name?: string; reason: string }[];
@@ -147,6 +153,32 @@ const IMPORT_FIELD_LABELS_AR: Record<string, string> = {
   vaccination_status: 'حالة التطعيم',
   risk_level: 'مستوى الخطورة',
 };
+
+const IMPORT_FIELD_LABELS_EN: Record<string, string> = {
+  name: 'Employee name',
+  email: 'Email',
+  national_id: 'National ID',
+  employee_number: 'Employee number',
+  national_address: 'National address',
+  mobile: 'Mobile',
+  date_of_birth: 'Date of birth',
+  birth_place: 'Birth place',
+  gender: 'Gender',
+  marital_status: 'Marital status',
+  health_center: 'Health center',
+  job_title: 'Job title',
+  appointment_date: 'Appointment date',
+  periodic_exam_status: 'Periodic exam status',
+  vaccination_status: 'Vaccination status',
+  risk_level: 'Risk level',
+};
+
+const EMPLOYEE_IMPORT_FIELDS = Object.keys(IMPORT_FIELD_LABELS_AR);
+const EMPLOYEE_REQUIRED_FIELDS = new Set([
+  'name', 'email', 'national_id', 'employee_number', 'national_address', 'mobile',
+  'date_of_birth', 'birth_place', 'gender', 'marital_status', 'health_center',
+  'job_title', 'appointment_date',
+]);
 
 const IMPORT_ISSUE_LABELS_AR: Record<string, string> = {
   'Invalid email address': 'صيغة البريد الإلكتروني غير صحيحة',
@@ -248,6 +280,11 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
   const [activeReview, setActiveReview] = useState<ImportReview | null>(null);
   const [reviewForm, setReviewForm] = useState<ReviewForm>(EMPTY_REVIEW_FORM);
   const [reviewLoading, setReviewLoading] = useState(false);
+  const [employeeImportMode, setEmployeeImportMode] = useState<'template' | 'flexible'>('template');
+  const [employeeSheetName, setEmployeeSheetName] = useState('');
+  const [availableEmployeeSheets, setAvailableEmployeeSheets] = useState<string[]>([]);
+  const [fieldMapping, setFieldMapping] = useState<Record<string, number | null>>({});
+  const [mappingDirty, setMappingDirty] = useState(false);
 
   const loadReviews = async () => {
     if (!employeeMode) return;
@@ -357,6 +394,31 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
     const selected = event.target.files?.[0] || null;
     setFile(selected);
     setResult(null);
+    setEmployeeSheetName('');
+    setAvailableEmployeeSheets([]);
+    setFieldMapping({});
+    setMappingDirty(false);
+  };
+
+  const changeEmployeeImportMode = (mode: 'template' | 'flexible') => {
+    setEmployeeImportMode(mode);
+    setResult(null);
+    setEmployeeSheetName('');
+    setAvailableEmployeeSheets([]);
+    setFieldMapping({});
+    setMappingDirty(false);
+  };
+
+  const changeEmployeeSheet = (value: string) => {
+    setEmployeeSheetName(value);
+    setResult(null);
+    setFieldMapping({});
+    setMappingDirty(false);
+  };
+
+  const changeFieldMapping = (field: string, value: string) => {
+    setFieldMapping(current => ({ ...current, [field]: value === '' ? null : Number(value) }));
+    setMappingDirty(true);
   };
 
   const upload = async (commitOverride?: boolean) => {
@@ -377,7 +439,14 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
       const form = new FormData();
       form.append('file', file);
       form.append('commit', shouldCommit ? 'true' : 'false');
-      if (employeeMode) form.append('sheetName', 'Employees');
+      if (employeeMode) {
+        form.append('employeeImportMode', employeeImportMode);
+        if (employeeImportMode === 'template') form.append('sheetName', 'Employees');
+        else if (employeeSheetName) form.append('sheetName', employeeSheetName);
+        if (employeeImportMode === 'flexible' && Object.keys(fieldMapping).length) {
+          form.append('fieldMapping', JSON.stringify(fieldMapping));
+        }
+      }
       else if (sheetName.trim()) form.append('sheetName', sheetName.trim());
 
       const response = await fetch(`${API_BASE_URL}/excel-import/upload/`, {
@@ -387,7 +456,20 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body.detail || body.file || body.password || 'Import failed');
-      setResult(body as ImportResult);
+      const nextResult = body as ImportResult;
+      setResult(nextResult);
+      if (employeeMode && nextResult.employee_import_mode === 'flexible') {
+        const nextMapping = Object.fromEntries(
+          EMPLOYEE_IMPORT_FIELDS.map(field => {
+            const value = nextResult.mapped_fields?.[field];
+            return [field, typeof value === 'number' ? value : null];
+          }),
+        );
+        setFieldMapping(nextMapping);
+        setEmployeeSheetName(nextResult.sheet_name || '');
+        setAvailableEmployeeSheets(nextResult.available_sheets || []);
+        setMappingDirty(false);
+      }
       if (employeeMode && shouldCommit) await loadReviews();
       toast.success(shouldCommit ? (isRtl ? 'تم الحفظ في PostgreSQL بنجاح' : 'Committed to PostgreSQL') : (isRtl ? 'تم فحص الملف بنجاح' : 'File validated successfully'), { id: loadingToast });
     } catch (error) {
@@ -436,15 +518,22 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
             <CardContent>
               <Stack spacing={2.5}>
                 {employeeMode && (
-                  <Button
-                    component="a"
-                    href="/templates/employee-import-template.xlsx"
-                    download
-                    variant="outlined"
-                    size="large"
-                    startIcon={<DownloadIcon />}
-                    sx={{ borderRadius: 3, py: 1.4 }}
-                  >
+                  <Paper variant="outlined" sx={{ p: 1.25, borderRadius: 3 }}>
+                    <Typography fontWeight={900} variant="body2" sx={{ mb: 1 }}>
+                      {isRtl ? 'طريقة قراءة ملف الموظفين' : 'Employee file mode'}
+                    </Typography>
+                    <Stack direction={isRtl ? 'row-reverse' : 'row'} spacing={1}>
+                      <Button fullWidth variant={employeeImportMode === 'template' ? 'contained' : 'outlined'} onClick={() => changeEmployeeImportMode('template')}>
+                        {isRtl ? 'القالب الرسمي' : 'Official template'}
+                      </Button>
+                      <Button fullWidth variant={employeeImportMode === 'flexible' ? 'contained' : 'outlined'} onClick={() => changeEmployeeImportMode('flexible')}>
+                        {isRtl ? 'ملف مرن' : 'Flexible file'}
+                      </Button>
+                    </Stack>
+                  </Paper>
+                )}
+                {employeeMode && employeeImportMode === 'template' && (
+                  <Button component="a" href="/templates/employee-import-template.xlsx" download variant="outlined" size="large" startIcon={<DownloadIcon />} sx={{ borderRadius: 3, py: 1.4 }}>
                     {isRtl ? 'تنزيل قالب بيانات الموظفين' : 'Download Employee Template'}
                   </Button>
                 )}
@@ -463,6 +552,12 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
                   />
                 )}
 
+                {employeeMode && employeeImportMode === 'flexible' && availableEmployeeSheets.length > 1 && (
+                  <TextField select fullWidth label={isRtl ? 'ورقة الموظفين داخل الملف' : 'Employee worksheet'} value={employeeSheetName} onChange={event => changeEmployeeSheet(event.target.value)}>
+                    {availableEmployeeSheets.map(sheet => <MenuItem key={sheet} value={sheet}>{sheet}</MenuItem>)}
+                  </TextField>
+                )}
+
                 {!employeeMode && <Paper variant="outlined" sx={{ p: 2, borderRadius: 3 }}>
                   <Stack direction={isRtl ? 'row-reverse' : 'row'} alignItems="center" justifyContent="space-between">
                     <Box sx={{ textAlign: isRtl ? 'right' : 'left' }}>
@@ -477,14 +572,16 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
 
                 <Button onClick={() => void upload(employeeMode ? false : commitMode)} disabled={loading || !file} variant="contained" color={commitMode ? 'success' : 'primary'} size="large" startIcon={!employeeMode && commitMode ? <StorageIcon /> : <PreviewIcon />} sx={{ borderRadius: 3, py: 1.4 }}>
                   {employeeMode
-                    ? (isRtl ? 'فحص الملف ومعاينة الموظفين' : 'Validate & Preview Employees')
+                    ? (employeeImportMode === 'flexible'
+                      ? (mappingDirty ? (isRtl ? 'إعادة فحص المطابقة' : 'Revalidate mapping') : (isRtl ? 'اكتشاف الأعمدة ومعاينة الموظفين' : 'Detect Columns & Preview'))
+                      : (isRtl ? 'فحص القالب ومعاينة الموظفين' : 'Validate Template & Preview'))
                     : (commitMode ? (isRtl ? 'فحص وحفظ في قاعدة البيانات' : 'Validate & Commit') : (isRtl ? 'فحص ومعاينة فقط' : 'Validate Preview Only'))}
                 </Button>
 
                 {employeeMode && result?.mode === 'preview' && (
                   <Button
                     onClick={() => void upload(true)}
-                    disabled={loading || !file || (result.summary.total_rows || 0) === 0}
+                    disabled={loading || !file || mappingDirty || (result.summary.total_rows || 0) === 0}
                     variant="contained"
                     color="success"
                     size="large"
@@ -506,7 +603,15 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
             <CardContent>
               <Typography variant="h6" fontWeight={900} gutterBottom>{isRtl ? 'قواعد الاستيراد' : 'Import Rules'}</Typography>
               <Stack spacing={1.2}>
-                {employeeMode ? (
+                {employeeMode ? (employeeImportMode === 'flexible' ? (
+                  <>
+                    <Typography variant="body2">{isRtl ? '1. يمكن رفع ملف .xlsx بأي ترتيب للأعمدة وبأي اسم لورقة العمل.' : '1. Upload any .xlsx file regardless of column order or worksheet name.'}</Typography>
+                    <Typography variant="body2">{isRtl ? '2. تتعرف المنصة على أسماء الأعمدة العربية والإنجليزية وتعرض المطابقة قبل الحفظ.' : '2. Arabic and English column names are detected and mapped before saving.'}</Typography>
+                    <Typography variant="body2">{isRtl ? '3. الأعمدة الزائدة تُعرض على أنها متجاهلة ولا تُحفظ.' : '3. Extra columns are shown as ignored and are not stored.'}</Typography>
+                    <Typography variant="body2">{isRtl ? '4. يمكنك تصحيح أي مطابقة ثم إعادة الفحص قبل الاعتماد.' : '4. Correct any mapping and revalidate before committing.'}</Typography>
+                    <Typography variant="body2">{isRtl ? '5. السليم يُفعّل، والناقص أو المتعارض يُعلّق للمراجعة دون فقد الصف.' : '5. Valid rows activate; incomplete/conflicting rows are staged without data loss.'}</Typography>
+                  </>
+                ) : (
                   <>
                     <Typography variant="body2">{isRtl ? '1. لا تغيّر اسم الشيت Employees ولا أسماء الأعمدة في القالب.' : '1. Do not rename the Employees sheet or template columns.'}</Typography>
                     <Typography variant="body2">{isRtl ? '2. الهوية الوطنية والبريد الإلكتروني والرقم الوظيفي يجب أن تكون فريدة.' : '2. National ID, email, and employee number must be unique.'}</Typography>
@@ -514,7 +619,7 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
                     <Typography variant="body2">{isRtl ? '4. الصفوف السليمة تُفعّل، والصفوف التي فيها خطأ أو تعارض تُحفظ كبطاقات معلقة للمراجعة دون تعطيل الملف كاملًا.' : '4. Valid rows are activated; invalid or conflicting rows become pending review cards without blocking the full file.'}</Typography>
                     <Typography variant="body2">{isRtl ? '5. ملف الجهة الخام لا يُحفظ في GitHub أو قاعدة البيانات.' : '5. The organization roster file is not stored in GitHub or the database.'}</Typography>
                   </>
-                ) : (
+                )) : (
                   <>
                     <Typography variant="body2">{isRtl ? '1. اكتب Database لاستيراد الملف الصحي الرئيسي أو ALL لفحص جميع الشيتات المدعومة.' : '1. Use Database for the main health file or ALL to validate all supported sheets.'}</Typography>
                     <Typography variant="body2">{isRtl ? '2. رقم الهوية يتم التحقق منه لمنع التكرار داخل الملف وقاعدة البيانات.' : '2. National ID is checked for duplicates inside the file and database.'}</Typography>
@@ -554,6 +659,73 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
               {!!result.importable_sheets?.length && <Chip label={`${isRtl ? 'الشيتات المدعومة' : 'Importable'}: ${result.importable_sheets.length}`} />}
             </Stack>
           </Paper>
+
+          {employeeMode && employeeImportMode === 'flexible' && result.mapping_options && (
+            <Paper sx={{ p: 2.5, borderRadius: 3, mb: 2, border: '1px solid', borderColor: mappingDirty ? 'warning.main' : 'primary.light' }}>
+              <Stack direction={{ xs: 'column', md: isRtl ? 'row-reverse' : 'row' }} justifyContent="space-between" spacing={1.5} sx={{ mb: 2 }}>
+                <Box sx={{ textAlign: isRtl ? 'right' : 'left' }}>
+                  <Typography variant="h6" fontWeight={950}>{isRtl ? 'مطابقة أعمدة الملف مع بيانات الموظف' : 'Map File Columns to Employee Fields'}</Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {isRtl
+                      ? `تم اكتشاف صف العناوين في الصف رقم ${result.header_row || '-'}. راجع المطابقة، وعدّل أي حقل غير صحيح قبل الاعتماد.`
+                      : `Headers were detected on row ${result.header_row || '-'}. Review the mapping before committing.`}
+                  </Typography>
+                </Box>
+                <Chip
+                  color={mappingDirty ? 'warning' : 'success'}
+                  label={mappingDirty ? (isRtl ? 'المطابقة معدّلة وتحتاج إعادة فحص' : 'Mapping changed; revalidate') : (isRtl ? 'تم فحص المطابقة' : 'Mapping validated')}
+                />
+              </Stack>
+
+              <Grid container spacing={1.5}>
+                {EMPLOYEE_IMPORT_FIELDS.map(field => {
+                  const currentIndex = fieldMapping[field];
+                  const selectedOption = result.mapping_options?.find(option => option.index === currentIndex);
+                  return (
+                    <Grid key={field} size={{ xs: 12, sm: 6, lg: 4 }}>
+                      <TextField
+                        select
+                        fullWidth
+                        required={EMPLOYEE_REQUIRED_FIELDS.has(field)}
+                        label={`${isRtl ? IMPORT_FIELD_LABELS_AR[field] : IMPORT_FIELD_LABELS_EN[field]}${EMPLOYEE_REQUIRED_FIELDS.has(field) ? ' *' : ''}`}
+                        value={currentIndex ?? ''}
+                        onChange={event => changeFieldMapping(field, event.target.value)}
+                        helperText={selectedOption?.samples?.length ? `${isRtl ? 'عينة' : 'Sample'}: ${selectedOption.samples.join('، ')}` : (isRtl ? 'لم يُربط بعمود' : 'Not mapped')}
+                      >
+                        <MenuItem value="">{isRtl ? 'غير موجود في الملف' : 'Not present in file'}</MenuItem>
+                        {result.mapping_options.map(option => (
+                          <MenuItem key={option.index} value={option.index}>{option.header}</MenuItem>
+                        ))}
+                      </TextField>
+                    </Grid>
+                  );
+                })}
+              </Grid>
+
+              {!!result.missing_required_fields?.length && (
+                <Alert severity="warning" sx={{ mt: 2 }}>
+                  {isRtl ? 'حقول إلزامية غير مرتبطة: ' : 'Required fields not mapped: '}
+                  {result.missing_required_fields.map(field => isRtl ? IMPORT_FIELD_LABELS_AR[field] : IMPORT_FIELD_LABELS_EN[field]).join('، ')}
+                  {isRtl ? '. ستصبح السجلات المتأثرة معلقة للمراجعة.' : '. Affected records will be staged for review.'}
+                </Alert>
+              )}
+
+              {!!result.ignored_columns?.length && (
+                <Box sx={{ mt: 2 }}>
+                  <Typography variant="body2" fontWeight={900} sx={{ mb: 1 }}>{isRtl ? 'الأعمدة التي سيتم تجاهلها' : 'Columns that will be ignored'}</Typography>
+                  <Stack direction={isRtl ? 'row-reverse' : 'row'} spacing={0.75} flexWrap="wrap" useFlexGap>
+                    {result.ignored_columns.map(column => <Chip key={column.index} size="small" variant="outlined" label={column.header} />)}
+                  </Stack>
+                </Box>
+              )}
+
+              {mappingDirty && (
+                <Button onClick={() => void upload(false)} disabled={loading || !file} variant="contained" color="warning" startIcon={<PreviewIcon />} sx={{ mt: 2, borderRadius: 3 }}>
+                  {isRtl ? 'إعادة فحص الملف بهذه المطابقة' : 'Revalidate File with This Mapping'}
+                </Button>
+              )}
+            </Paper>
+          )}
 
           {!!result.sheet_results?.length && (
             <TableContainer component={Paper} sx={{ borderRadius: 3, mb: 2 }}>

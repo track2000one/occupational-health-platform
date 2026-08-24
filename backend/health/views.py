@@ -1,3 +1,4 @@
+import json
 from datetime import date, timedelta
 
 from django.contrib.auth import get_user_model
@@ -232,13 +233,30 @@ class ExcelImportViewSet(viewsets.ReadOnlyModelViewSet):
 
         commit=truthy(request.data.get('commit'))
         sheet_name=str(request.data.get('sheetName') or '').strip()
-        if sheet_name in ('Employees', 'الموظفون') and not uploaded.name.lower().endswith('.xlsx'):
+        employee_import_mode=str(request.data.get('employeeImportMode') or '').strip().lower()
+        field_mapping=None
+        raw_mapping=request.data.get('fieldMapping')
+        if raw_mapping:
+            try:
+                field_mapping=json.loads(str(raw_mapping))
+            except (TypeError, ValueError, json.JSONDecodeError):
+                return Response({'fieldMapping':'Field mapping must be valid JSON.'}, status=status.HTTP_400_BAD_REQUEST)
+            if not isinstance(field_mapping, dict):
+                return Response({'fieldMapping':'Field mapping must be a JSON object.'}, status=status.HTTP_400_BAD_REQUEST)
+        if employee_import_mode in ('template', 'flexible') and not uploaded.name.lower().endswith('.xlsx'):
             return Response(
                 {'file': 'Employee roster import accepts .xlsx files only. Macro-enabled files are blocked.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         try:
-            result=process_excel_import(uploaded, sheet_name=sheet_name, commit=commit, user=request.user)
+            result=process_excel_import(
+                uploaded,
+                sheet_name=sheet_name,
+                commit=commit,
+                user=request.user,
+                employee_import_mode=employee_import_mode,
+                field_mapping=field_mapping,
+            )
             result=normalize_import_result(result)
             summary=result['summary']
             batch=DataImportBatch.objects.create(

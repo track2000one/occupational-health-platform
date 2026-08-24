@@ -1,5 +1,6 @@
 import hashlib
 import json
+import re
 from datetime import datetime, date
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -45,19 +46,19 @@ HEADER_ALIASES = {
 }
 
 EMPLOYEE_ROSTER_ALIASES = {
-    'name': ['name', 'employee name', 'اسم الموظف', 'الاسم'],
-    'email': ['email', 'البريد الإلكتروني', 'البريد الالكتروني'],
-    'national_id': ['national id', 'national_id', 'رقم الهوية الوطنية', 'رقم الهوية'],
-    'employee_number': ['employee number', 'employee id', 'الرقم الوظيفي'],
-    'national_address': ['national address', 'العنوان الوطني'],
-    'mobile': ['mobile', 'mobile number', 'رقم الجوال', 'الجوال'],
-    'date_of_birth': ['date of birth', 'birth date', 'تاريخ الميلاد'],
-    'birth_place': ['birth place', 'مكان الميلاد'],
-    'gender': ['gender', 'الجنس'],
-    'marital_status': ['marital status', 'الحالة الاجتماعية'],
-    'health_center': ['health center', 'المركز الصحي'],
-    'job_title': ['job title', 'المسمى الوظيفي'],
-    'appointment_date': ['appointment date', 'hire date', 'تاريخ التعيين'],
+    'name': ['name', 'employee name', 'full name', 'staff name', 'اسم الموظف', 'الاسم', 'الاسم الكامل', 'الاسم الرباعي'],
+    'email': ['email', 'email address', 'e-mail', 'البريد', 'البريد الإلكتروني', 'البريد الالكتروني'],
+    'national_id': ['national id', 'national_id', 'id number', 'civil id', 'رقم الهوية الوطنية', 'رقم الهوية', 'الهوية', 'السجل المدني', 'رقم السجل المدني'],
+    'employee_number': ['employee number', 'employee no', 'employee id', 'staff id', 'staff number', 'الرقم الوظيفي', 'رقم الموظف', 'رقم المنسوب'],
+    'national_address': ['national address', 'address', 'العنوان الوطني', 'العنوان'],
+    'mobile': ['mobile', 'mobile number', 'mobile no', 'phone', 'phone number', 'رقم الجوال', 'الجوال', 'رقم الهاتف', 'الهاتف'],
+    'date_of_birth': ['date of birth', 'birth date', 'dob', 'تاريخ الميلاد', 'الميلاد'],
+    'birth_place': ['birth place', 'place of birth', 'مكان الميلاد', 'محل الميلاد'],
+    'gender': ['gender', 'sex', 'الجنس', 'النوع'],
+    'marital_status': ['marital status', 'social status', 'الحالة الاجتماعية', 'الحالة'],
+    'health_center': ['health center', 'facility', 'work facility', 'المركز الصحي', 'المركز', 'المنشأة الصحية', 'المرفق الصحي', 'جهة العمل'],
+    'job_title': ['job title', 'position', 'occupation', 'المسمى الوظيفي', 'الوظيفة', 'المهنة'],
+    'appointment_date': ['appointment date', 'hire date', 'start date', 'joining date', 'date hired', 'تاريخ التعيين', 'تاريخ المباشرة', 'تاريخ الالتحاق'],
     'periodic_exam_status': ['periodic exam status', 'حالة الفحص الدوري'],
     'vaccination_status': ['vaccination status', 'حالة التطعيم'],
     'risk_level': ['risk level', 'مستوى الخطورة'],
@@ -305,6 +306,134 @@ def employee_roster_value(row: Tuple[Any, ...], headers: List[str], field: str) 
     return text_val(row, headers, EMPLOYEE_ROSTER_ALIASES[field])
 
 
+def employee_header_variants(value: Any) -> set:
+    raw = normalize_header(value)
+    variants = set()
+    for segment in [raw, *re.split(r'[/|\\()\[\]{}]+', raw)]:
+        cleaned = re.sub(r'[^\w\u0600-\u06ff]+', ' ', segment.replace('_', ' '))
+        cleaned = ' '.join(cleaned.split())
+        if cleaned:
+            variants.add(cleaned)
+    return variants
+
+
+def employee_header_matches(header: Any, aliases: Iterable[str]) -> bool:
+    header_variants = employee_header_variants(header)
+    alias_variants = {
+        variant
+        for alias in aliases
+        for variant in employee_header_variants(alias)
+    }
+    return bool(alias_variants & header_variants)
+
+
+def find_employee_header_row(ws) -> Tuple[int, List[str]]:
+    """Find a roster header by recognized employee fields, not sheet position/name."""
+    best_row = 0
+    best_headers: List[str] = []
+    best_matched_fields = 0
+    best_score = 0
+    max_row = min(ws.max_row or 30, 30)
+    fallback_row = 0
+    fallback_headers: List[str] = []
+    fallback_non_empty = 0
+    for row_number, row in enumerate(
+        ws.iter_rows(min_row=1, max_row=max_row, values_only=True),
+        start=1,
+    ):
+        headers = [clean_text(cell) for cell in row]
+        non_empty = [cell for cell in headers if clean_text(cell)]
+        matched_fields = sum(
+            1 for aliases in EMPLOYEE_ROSTER_ALIASES.values()
+            if any(employee_header_matches(cell, aliases) for cell in headers)
+        )
+        score = (matched_fields * 20) + len(non_empty)
+        if len(non_empty) > fallback_non_empty:
+            fallback_row = row_number
+            fallback_headers = headers
+            fallback_non_empty = len(non_empty)
+        if matched_fields >= 2 and score > best_score:
+            best_row = row_number
+            best_headers = headers
+            best_matched_fields = matched_fields
+            best_score = score
+    if not best_headers or best_matched_fields < 2:
+        if fallback_headers and fallback_non_empty >= 2:
+            return fallback_row, fallback_headers
+        raise ValueError('Could not detect a usable header row with at least two columns.')
+    return best_row, best_headers
+
+
+def employee_field_candidates(headers: List[str]) -> Dict[str, List[int]]:
+    return {
+        field: [
+            index for index, header in enumerate(headers)
+            if clean_text(header) and employee_header_matches(header, aliases)
+        ]
+        for field, aliases in EMPLOYEE_ROSTER_ALIASES.items()
+    }
+
+
+def resolve_employee_field_mapping(
+    headers: List[str],
+    requested_mapping: Optional[Dict[str, Any]] = None,
+) -> Tuple[Dict[str, Optional[int]], Dict[str, List[int]]]:
+    candidates = employee_field_candidates(headers)
+    mapping: Dict[str, Optional[int]] = {}
+    supplied = requested_mapping if isinstance(requested_mapping, dict) else None
+    for field in EMPLOYEE_ROSTER_ALIASES:
+        if supplied is not None and field in supplied:
+            raw_index = supplied.get(field)
+            if raw_index in (None, '', -1, '-1'):
+                mapping[field] = None
+                continue
+            try:
+                index = int(raw_index)
+            except (TypeError, ValueError):
+                raise ValueError(f'Invalid column mapping for {field}.')
+            if index < 0 or index >= len(headers) or not clean_text(headers[index]):
+                raise ValueError(f'Column mapping for {field} is outside the detected header range.')
+            mapping[field] = index
+        else:
+            field_candidates = candidates[field]
+            mapping[field] = field_candidates[0] if len(field_candidates) == 1 else None
+
+    used_columns: Dict[int, List[str]] = {}
+    for field, index in mapping.items():
+        if index is not None:
+            used_columns.setdefault(index, []).append(field)
+    duplicate_assignments = [fields for fields in used_columns.values() if len(fields) > 1]
+    if duplicate_assignments:
+        fields = ', '.join('/'.join(items) for items in duplicate_assignments)
+        raise ValueError(f'One Excel column cannot be mapped to multiple employee fields: {fields}.')
+    return mapping, candidates
+
+
+def mapped_employee_cell(row: Tuple[Any, ...], mapping: Dict[str, Optional[int]], field: str):
+    index = mapping.get(field)
+    if index is None or index >= len(row):
+        return ''
+    return row[index]
+
+
+def employee_mapping_options(ws, headers: List[str], header_row: int) -> List[Dict[str, Any]]:
+    samples: Dict[int, List[str]] = {index: [] for index in range(len(headers))}
+    for row in ws.iter_rows(
+        min_row=header_row + 1,
+        max_row=min(ws.max_row or header_row + 5, header_row + 5),
+        values_only=True,
+    ):
+        for index, value in enumerate(row[:len(headers)]):
+            text = clean_text(value)
+            if text and text not in samples[index] and len(samples[index]) < 2:
+                samples[index].append(text[:80])
+    return [
+        {'index': index, 'header': clean_text(header), 'samples': samples.get(index, [])}
+        for index, header in enumerate(headers)
+        if clean_text(header)
+    ]
+
+
 def employee_choice(field: str, value: Any, default: str = '') -> Optional[str]:
     text = normalize_header(value)
     if not text:
@@ -322,15 +451,20 @@ def review_fingerprint(file_name: str, sheet_name: str, row_number: int, raw_pay
     return hashlib.sha256(material.encode('utf-8')).hexdigest()
 
 
-def import_employee_roster_sheet(ws, sheet_name: str, file_name: str, commit: bool, user=None) -> Dict[str, Any]:
+def import_employee_roster_sheet(
+    ws,
+    sheet_name: str,
+    file_name: str,
+    commit: bool,
+    user=None,
+    flexible: bool = False,
+    field_mapping: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     """Activate valid employees and quarantine invalid/conflicting rows for review."""
-    header_row, headers = find_header_row(ws)
-    normalized_headers = {normalize_header(header) for header in headers if clean_text(header)}
-    missing_columns = [
-        field for field in EMPLOYEE_REQUIRED_FIELDS
-        if not any(normalize_header(alias) in normalized_headers for alias in EMPLOYEE_ROSTER_ALIASES[field])
-    ]
-    if missing_columns:
+    header_row, headers = find_employee_header_row(ws) if flexible else find_header_row(ws)
+    column_mapping, mapping_candidates = resolve_employee_field_mapping(headers, field_mapping)
+    missing_columns = [field for field in EMPLOYEE_REQUIRED_FIELDS if column_mapping.get(field) is None]
+    if missing_columns and not flexible:
         raise ValueError(f"Missing required employee columns: {', '.join(missing_columns)}")
 
     centers_by_name = {
@@ -358,7 +492,10 @@ def import_employee_roster_sheet(ws, sheet_name: str, file_name: str, commit: bo
 
     for row_number, row in iter_data_rows(ws, header_row):
         total_rows += 1
-        raw_input = {field: employee_roster_value(row, headers, field) for field in EMPLOYEE_ROSTER_ALIASES}
+        raw_input = {
+            field: clean_text(mapped_employee_cell(row, column_mapping, field))
+            for field in EMPLOYEE_ROSTER_ALIASES
+        }
         raw = dict(raw_input)
         raw['email'] = raw['email'].strip().lower()
         raw['national_id'] = ''.join(ch for ch in raw['national_id'] if ch.isdigit())
@@ -379,8 +516,8 @@ def import_employee_roster_sheet(ws, sheet_name: str, file_name: str, commit: bo
         if raw['mobile'] and not (9 <= len(mobile_digits) <= 15):
             row_errors.append('Mobile number must contain 9 to 15 digits.')
 
-        date_of_birth = parse_date(val(row, headers, EMPLOYEE_ROSTER_ALIASES['date_of_birth']))
-        appointment_date = parse_date(val(row, headers, EMPLOYEE_ROSTER_ALIASES['appointment_date']))
+        date_of_birth = parse_date(mapped_employee_cell(row, column_mapping, 'date_of_birth'))
+        appointment_date = parse_date(mapped_employee_cell(row, column_mapping, 'appointment_date'))
         if raw['date_of_birth'] and not date_of_birth:
             row_errors.append('Invalid date of birth. Use a real Excel date or YYYY-MM-DD.')
         if raw['appointment_date'] and not appointment_date:
@@ -572,9 +709,21 @@ def import_employee_roster_sheet(ws, sheet_name: str, file_name: str, commit: bo
                     ])
                 review_ids.append(review.id)
 
+    used_indices = {index for index in column_mapping.values() if index is not None}
     return {
         'detected_headers': headers,
-        'mapped_fields': {'mode': 'employee_roster', 'invalid_policy': 'stage_for_review'},
+        'mapped_fields': column_mapping,
+        'mapping_options': employee_mapping_options(ws, headers, header_row),
+        'mapping_candidates': mapping_candidates,
+        'ignored_columns': [
+            {'index': index, 'header': clean_text(header)}
+            for index, header in enumerate(headers)
+            if clean_text(header) and index not in used_indices
+        ],
+        'missing_required_fields': missing_columns,
+        'header_row': header_row,
+        'employee_import_mode': 'flexible' if flexible else 'template',
+        'invalid_policy': 'stage_for_review',
         'summary': summary,
         'duplicates': duplicates[:100],
         'errors': errors[:100],
@@ -988,11 +1137,28 @@ def resolve_processor(sheet_name: str):
     return import_generic_sheet
 
 
-def process_single_sheet(workbook, selected_sheet: str, commit: bool, file_name: str, user=None) -> Dict[str, Any]:
+def process_single_sheet(
+    workbook,
+    selected_sheet: str,
+    commit: bool,
+    file_name: str,
+    user=None,
+    force_employee_roster: bool = False,
+    employee_import_mode: str = 'template',
+    field_mapping: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     ws = workbook[selected_sheet]
-    processor = resolve_processor(selected_sheet)
+    processor = import_employee_roster_sheet if force_employee_roster else resolve_processor(selected_sheet)
     if processor is import_employee_roster_sheet:
-        result = processor(ws, selected_sheet, file_name, commit, user=user)
+        result = processor(
+            ws,
+            selected_sheet,
+            file_name,
+            commit,
+            user=user,
+            flexible=employee_import_mode == 'flexible',
+            field_mapping=field_mapping,
+        )
     else:
         result = processor(ws, selected_sheet, file_name, commit)
     result.update({'mode': 'commit' if commit else 'preview', 'file_name': file_name, 'sheet_name': selected_sheet, 'processor': processor.__name__})
@@ -1008,11 +1174,43 @@ def merge_summary(results: List[Dict[str, Any]]) -> Dict[str, Any]:
     return summary
 
 
-def process_excel_import(uploaded_file, sheet_name: str = '', commit: bool = False, user=None) -> Dict[str, Any]:
+def process_excel_import(
+    uploaded_file,
+    sheet_name: str = '',
+    commit: bool = False,
+    user=None,
+    employee_import_mode: str = '',
+    field_mapping: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     workbook = load_workbook(uploaded_file, read_only=True, data_only=True)
     file_name = getattr(uploaded_file, 'name', 'uploaded.xlsx')
     requested = clean_text(sheet_name)
+    normalized_employee_mode = normalize_header(employee_import_mode)
+    if normalized_employee_mode not in ('', 'template', 'flexible'):
+        raise ValueError('Employee import mode must be template or flexible.')
     importable_sheets = [sheet for sheet in workbook.sheetnames if resolve_processor(sheet) is not import_generic_sheet or sheet == 'Database']
+
+    if normalized_employee_mode:
+        if requested and requested not in workbook.sheetnames:
+            raise ValueError(f'The requested worksheet "{requested}" was not found in the uploaded file.')
+        if normalized_employee_mode == 'template':
+            selected_sheet = requested or ('Employees' if 'Employees' in workbook.sheetnames else workbook.sheetnames[0])
+        else:
+            selected_sheet = requested or workbook.sheetnames[0]
+        result = process_single_sheet(
+            workbook,
+            selected_sheet,
+            commit,
+            file_name,
+            user=user,
+            force_employee_roster=True,
+            employee_import_mode=normalized_employee_mode,
+            field_mapping=field_mapping,
+        )
+        result['available_sheets'] = workbook.sheetnames
+        result['importable_sheets'] = workbook.sheetnames
+        result['privacy_note'] = 'Raw Excel files are not stored in GitHub. Records are saved to PostgreSQL only when commit mode is selected.'
+        return result
 
     if normalize_header(requested) in ('all', '__all__', 'كل الشيتات', 'all sheets'):
         results = [process_single_sheet(workbook, sheet, commit, file_name, user=user) for sheet in importable_sheets]
