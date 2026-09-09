@@ -35,6 +35,7 @@ import {
   BriefcaseBusiness,
   ClipboardList,
   Cross,
+  FileSpreadsheet,
   HeartPulse,
   ShieldPlus,
   Stethoscope,
@@ -571,29 +572,59 @@ function HealthCardSheet({ card, form }: { card: HealthCardData; form: SectionDa
 }
 
 function FormSection({
+  number,
   title,
   subtitle,
+  color,
+  colorEnd,
+  icon,
   fields,
   values,
   onChange,
   defaultExpanded = false,
 }: {
+  number: string;
   title: string;
   subtitle: string;
+  color: string;
+  colorEnd: string;
+  icon: React.ReactNode;
   fields: FieldDefinition[];
   values: Record<string, string>;
   onChange: (key: string, value: string) => void;
   defaultExpanded?: boolean;
 }) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
+  const completedFields = fields.filter(field => String(values[field.key] || '').trim()).length;
+  const completion = fields.length ? Math.round((completedFields / fields.length) * 100) : 0;
+
   return (
-    <Accordion defaultExpanded={defaultExpanded} disableGutters className="ohc-form-accordion">
-      <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-        <Box>
-          <Typography fontWeight={900}>{title}</Typography>
-          <Typography variant="caption" color="text.secondary">{subtitle}</Typography>
-        </Box>
+    <Accordion
+      expanded={expanded}
+      onChange={(_, isExpanded) => setExpanded(isExpanded)}
+      disableGutters
+      className={`ohc-form-accordion${expanded ? ' is-expanded' : ''}`}
+      style={{ '--form-section-color': color, '--form-section-color-end': colorEnd } as React.CSSProperties}
+    >
+      <AccordionSummary
+        expandIcon={<span className="ohc-form-expand"><ExpandMoreIcon /></span>}
+        aria-controls={`health-card-section-${number}`}
+        id={`health-card-section-${number}-header`}
+      >
+        <div className="ohc-form-summary-art" aria-hidden="true">
+          <span className="ohc-form-section-number">{number}</span>
+          <span className="ohc-form-section-icon">{icon}</span>
+        </div>
+        <div className="ohc-form-summary-copy">
+          <Typography component="h3" className="ohc-form-section-title">{title}</Typography>
+          <Typography component="p" className="ohc-form-section-subtitle">{subtitle}</Typography>
+          <div className="ohc-form-section-progress" aria-label={`اكتمل ${completedFields} من ${fields.length} حقول`}>
+            <span><i style={{ width: `${completion}%` }} /></span>
+            <small>{completedFields} / {fields.length}</small>
+          </div>
+        </div>
       </AccordionSummary>
-      <AccordionDetails>
+      <AccordionDetails id={`health-card-section-${number}`}>
         <Grid container spacing={1.5}>
           {fields.map(field => (
             <Grid key={field.key} size={{ xs: 12, sm: field.kind === 'textarea' ? 12 : 6, lg: field.kind === 'textarea' ? 6 : 4 }}>
@@ -866,15 +897,17 @@ export function EmployeeHealthCardPage() {
             <Grid size={{ xs: 12 }}><FormControlLabel control={<Switch checked={isApproved} onChange={event => setIsApproved(event.target.checked)} />} label="تمت مراجعة واعتماد البطاقة" /></Grid>
           </Grid>
 
-          <FormSection title="1. المعلومات الشخصية الإضافية" subtitle="حقول Excel غير الموجودة في سجل الموظف" fields={PERSONAL_FIELDS} values={form.personal} onChange={(key, fieldValue) => updateSection('personal', key, fieldValue)} defaultExpanded />
-          <FormSection title="2. معلومات العمل الإضافية" subtitle="MOH ID والوظيفة الحالية" fields={EMPLOYMENT_FIELDS} values={form.employment} onChange={(key, fieldValue) => updateSection('employment', key, fieldValue)} />
-          <FormSection title="3. المعلومات البدنية" subtitle="الوزن والطول وBMI والنشاط البدني" fields={PHYSICAL_FIELDS} values={form.physical} onChange={(key, fieldValue) => updateSection('physical', key, fieldValue)} />
-          <FormSection title="4. الحالات الطبية" subtitle="جميع الحالات والتاريخ الطبي الواردة في Excel" fields={CONDITION_FIELDS} values={form.conditions} onChange={(key, fieldValue) => updateSection('conditions', key, fieldValue)} />
-          <FormSection title="5. الصحة النفسية" subtitle="PHQ وGAD وMBI ومؤشرات الصحة النفسية" fields={MENTAL_FIELDS} values={form.mental} onChange={(key, fieldValue) => updateSection('mental', key, fieldValue)} />
-          <FormSection title="6. المتابعة الصحية" subtitle="الزيارات والفحوصات وبرامج المسح" fields={FOLLOW_UP_FIELDS} values={form.follow_up} onChange={(key, fieldValue) => updateSection('follow_up', key, fieldValue)} />
-          <FormSection title="7. التطعيمات والمناعة" subtitle="جميع حقول التطعيم والسيرولوجيا في Excel والصورة المرجعية" fields={VACCINATION_FIELDS} values={form.vaccinations} onChange={(key, fieldValue) => updateSection('vaccinations', key, fieldValue)} />
-          <FormSection title="8. التوصيات" subtitle="التوصيات الطبية وتوصيات التطعيم" fields={RECOMMENDATION_FIELDS} values={form.recommendations} onChange={(key, fieldValue) => updateSection('recommendations', key, fieldValue)} />
-          <FormSection title="الحقول الإضافية في ملف Excel" subtitle="Spare fields وNSI والتعليقات — محفوظة لضمان عدم فقد أي محتوى من الملف" fields={ADDITIONAL_FIELDS} values={form.additional} onChange={(key, fieldValue) => updateSection('additional', key, fieldValue)} />
+          <div className="ohc-form-sections-grid">
+            <FormSection number="1" title="المعلومات الشخصية الإضافية" subtitle="حقول Excel غير الموجودة في سجل الموظف" color="#0ea5e9" colorEnd="#2563eb" icon={<UserRound />} fields={PERSONAL_FIELDS} values={form.personal} onChange={(key, fieldValue) => updateSection('personal', key, fieldValue)} defaultExpanded />
+            <FormSection number="2" title="معلومات العمل الإضافية" subtitle="رقم وزارة الصحة والوظيفة الحالية" color="#8b5cf6" colorEnd="#6d28d9" icon={<BriefcaseBusiness />} fields={EMPLOYMENT_FIELDS} values={form.employment} onChange={(key, fieldValue) => updateSection('employment', key, fieldValue)} />
+            <FormSection number="3" title="المعلومات البدنية" subtitle="الوزن والطول وBMI والنشاط البدني" color="#10b981" colorEnd="#059669" icon={<HeartPulse />} fields={PHYSICAL_FIELDS} values={form.physical} onChange={(key, fieldValue) => updateSection('physical', key, fieldValue)} />
+            <FormSection number="4" title="الحالات الطبية" subtitle="الحالات المرضية والتاريخ الطبي" color="#f59e0b" colorEnd="#ea580c" icon={<Cross />} fields={CONDITION_FIELDS} values={form.conditions} onChange={(key, fieldValue) => updateSection('conditions', key, fieldValue)} />
+            <FormSection number="5" title="الصحة النفسية" subtitle="PHQ وGAD وMBI ومؤشرات الصحة النفسية" color="#ec4899" colorEnd="#be185d" icon={<Brain />} fields={MENTAL_FIELDS} values={form.mental} onChange={(key, fieldValue) => updateSection('mental', key, fieldValue)} />
+            <FormSection number="6" title="المتابعة الصحية" subtitle="الزيارات والفحوصات وبرامج المسح" color="#06b6d4" colorEnd="#0e7490" icon={<Stethoscope />} fields={FOLLOW_UP_FIELDS} values={form.follow_up} onChange={(key, fieldValue) => updateSection('follow_up', key, fieldValue)} />
+            <FormSection number="7" title="التطعيمات والمناعة" subtitle="التطعيمات والسيرولوجيا والصورة المرجعية" color="#ef4444" colorEnd="#b91c1c" icon={<ShieldPlus />} fields={VACCINATION_FIELDS} values={form.vaccinations} onChange={(key, fieldValue) => updateSection('vaccinations', key, fieldValue)} />
+            <FormSection number="8" title="التوصيات" subtitle="التوصيات الطبية وتوصيات التطعيم" color="#6366f1" colorEnd="#4338ca" icon={<ClipboardList />} fields={RECOMMENDATION_FIELDS} values={form.recommendations} onChange={(key, fieldValue) => updateSection('recommendations', key, fieldValue)} />
+            <FormSection number="9" title="الحقول الإضافية في ملف Excel" subtitle="الحقول الاحتياطية وNSI والتعليقات العامة" color="#64748b" colorEnd="#334155" icon={<FileSpreadsheet />} fields={ADDITIONAL_FIELDS} values={form.additional} onChange={(key, fieldValue) => updateSection('additional', key, fieldValue)} />
+          </div>
 
           <Stack direction="row" justifyContent="flex-end" sx={{ mt: 2 }}>
             <Button size="large" variant="contained" startIcon={saving ? <CircularProgress size={18} color="inherit" /> : <SaveIcon />} onClick={() => void handleSave()} disabled={saving}>حفظ البطاقة وإظهارها كصورة</Button>
