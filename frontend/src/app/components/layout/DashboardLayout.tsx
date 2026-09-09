@@ -12,6 +12,7 @@ import {
   AppBar,
   Toolbar,
   List,
+  ListSubheader,
   Typography,
   Divider,
   IconButton,
@@ -59,6 +60,7 @@ interface NavItem {
   label: string;
   icon: ReactNode;
   path: string;
+  group: 'main' | 'health' | 'followup' | 'admin';
   permission?: Permission;
 }
 
@@ -73,26 +75,33 @@ export function DashboardLayout() {
   const isRtl = i18n.language === 'ar';
 
   const navItems: NavItem[] = [
-    { key: 'dashboard',          label: t('dashboard'),          icon: <DashboardIcon />,          path: '/dashboard',              permission: PERMISSIONS.VIEW_DASHBOARD },
-    { key: 'employees',          label: t('employees'),          icon: <PeopleIcon />,              path: '/employees',              permission: PERMISSIONS.VIEW_EMPLOYEES },
-    { key: 'employeeHealthCard', label: isRtl ? 'البطاقة الصحية' : 'Health Card', icon: <HealthCardIcon />, path: '/employee-health-card', permission: PERMISSIONS.VIEW_EMPLOYEES },
-    { key: 'labTests',           label: t('labTests'),           icon: <ScienceIcon />,             path: '/lab-tests',              permission: PERMISSIONS.VIEW_LAB_TESTS },
-    { key: 'vaccinations',       label: t('vaccinations'),       icon: <VaccinesIcon />,            path: '/vaccinations',           permission: PERMISSIONS.VIEW_VACCINATIONS },
-    { key: 'clinicVisits',       label: t('clinicVisits'),       icon: <LocalHospitalIcon />,       path: '/clinic-visits',          permission: PERMISSIONS.VIEW_CLINIC_VISITS },
-    { key: 'occupationalHealth', label: t('occupationalHealth'), icon: <MedicalInformationIcon />,  path: '/occupational-health',    permission: PERMISSIONS.VIEW_OH_VISITS },
-    { key: 'needleStickInjury',  label: t('needleStickInjury'),  icon: <WarningIcon />,             path: '/needle-stick-injuries',  permission: PERMISSIONS.VIEW_NEEDLE_STICK },
-    { key: 'medicalCommittee',   label: t('medicalCommittee'),   icon: <GavelIcon />,               path: '/medical-committee',      permission: PERMISSIONS.VIEW_COMMITTEE },
-    { key: 'campaigns',          label: t('campaigns'),          icon: <CampaignIcon />,            path: '/campaigns',              permission: PERMISSIONS.VIEW_CAMPAIGNS },
-    { key: 'reports',            label: t('reports'),            icon: <AssessmentIcon />,          path: '/reports',                permission: PERMISSIONS.VIEW_REPORTS },
-    { key: 'dataQuality',        label: isRtl ? 'جودة البيانات' : 'Data Quality',              icon: <FactCheckIcon />,      path: '/data-quality',    permission: PERMISSIONS.VIEW_DATA_QUALITY },
-    { key: 'dataImport',         label: isRtl ? 'استيراد Excel آمن' : 'Secure Excel Import',   icon: <CloudUploadIcon />,   path: '/data-import',     permission: PERMISSIONS.MANAGE_USERS },
-    { key: 'appointments',       label: isRtl ? 'المواعيد' : 'Appointments',                   icon: <CalendarIcon />,      path: '/appointments',    permission: PERMISSIONS.VIEW_DASHBOARD },
-    { key: 'notifications',      label: isRtl ? 'الإشعارات' : 'Notifications',                 icon: <NotificationsIcon />, path: '/notifications',   permission: PERMISSIONS.VIEW_DASHBOARD },
-    { key: 'admin',              label: isRtl ? 'لوحة المسؤول' : 'Admin Console',              icon: <AdminPanelSettingsIcon />, path: '/admin',      permission: PERMISSIONS.MANAGE_USERS },
-    { key: 'adminUsers',         label: isRtl ? 'إدارة المستخدمين' : 'Users Management',       icon: <PeopleIcon />,        path: '/admin/users',     permission: PERMISSIONS.MANAGE_USERS },
-    { key: 'auditLog',           label: isRtl ? 'سجل العمليات' : 'Audit Log',                  icon: <SecurityIcon />,      path: '/audit-log',       permission: PERMISSIONS.VIEW_AUDIT_LOGS },
-    { key: 'settings',           label: isRtl ? 'إعدادات النظام' : 'System Settings',          icon: <SettingsIcon />,      path: '/settings',        permission: PERMISSIONS.MANAGE_SETTINGS },
-    { key: 'roles',              label: isRtl ? 'الأدوار والصلاحيات' : 'Roles & Perms',        icon: <ShieldIcon />,        path: '/roles',           permission: PERMISSIONS.MANAGE_USERS },
+    { key: 'dashboard',          label: t('dashboard'),          icon: <DashboardIcon />,          path: '/dashboard',             group: 'main',     permission: PERMISSIONS.VIEW_DASHBOARD },
+    { key: 'employees',          label: t('employees'),          icon: <PeopleIcon />,              path: '/employees',             group: 'main',     permission: PERMISSIONS.VIEW_EMPLOYEES },
+    { key: 'employeeHealthCard', label: isRtl ? 'البطاقة الصحية' : 'Health Card', icon: <HealthCardIcon />, path: '/employee-health-card', group: 'main', permission: PERMISSIONS.VIEW_EMPLOYEES },
+    { key: 'labTests',           label: t('labTests'),           icon: <ScienceIcon />,             path: '/lab-tests',             group: 'health',   permission: PERMISSIONS.VIEW_LAB_TESTS },
+    { key: 'vaccinations',       label: t('vaccinations'),       icon: <VaccinesIcon />,            path: '/vaccinations',          group: 'health',   permission: PERMISSIONS.VIEW_VACCINATIONS },
+    { key: 'clinicVisits',       label: t('clinicVisits'),       icon: <LocalHospitalIcon />,       path: '/clinic-visits',         group: 'health',   permission: PERMISSIONS.VIEW_CLINIC_VISITS },
+    { key: 'occupationalHealth', label: t('occupationalHealth'), icon: <MedicalInformationIcon />,  path: '/occupational-health',   group: 'health',   permission: PERMISSIONS.VIEW_OH_VISITS },
+    { key: 'needleStickInjury',  label: t('needleStickInjury'),  icon: <WarningIcon />,             path: '/needle-stick-injuries', group: 'health',   permission: PERMISSIONS.VIEW_NEEDLE_STICK },
+    { key: 'medicalCommittee',   label: t('medicalCommittee'),   icon: <GavelIcon />,               path: '/medical-committee',     group: 'health',   permission: PERMISSIONS.VIEW_COMMITTEE },
+    { key: 'campaigns',          label: t('campaigns'),          icon: <CampaignIcon />,            path: '/campaigns',             group: 'health',   permission: PERMISSIONS.VIEW_CAMPAIGNS },
+    { key: 'reports',            label: t('reports'),            icon: <AssessmentIcon />,          path: '/reports',               group: 'followup', permission: PERMISSIONS.VIEW_REPORTS },
+    { key: 'dataQuality',        label: isRtl ? 'جودة البيانات' : 'Data Quality',              icon: <FactCheckIcon />,      path: '/data-quality',  group: 'followup', permission: PERMISSIONS.VIEW_DATA_QUALITY },
+    { key: 'dataImport',         label: isRtl ? 'استيراد Excel آمن' : 'Secure Excel Import',   icon: <CloudUploadIcon />,   path: '/data-import',   group: 'followup', permission: PERMISSIONS.MANAGE_USERS },
+    { key: 'appointments',       label: isRtl ? 'المواعيد' : 'Appointments',                   icon: <CalendarIcon />,      path: '/appointments',  group: 'followup', permission: PERMISSIONS.VIEW_DASHBOARD },
+    { key: 'notifications',      label: isRtl ? 'الإشعارات' : 'Notifications',                 icon: <NotificationsIcon />, path: '/notifications', group: 'followup', permission: PERMISSIONS.VIEW_DASHBOARD },
+    { key: 'admin',              label: isRtl ? 'لوحة المسؤول' : 'Admin Console',              icon: <AdminPanelSettingsIcon />, path: '/admin',  group: 'admin', permission: PERMISSIONS.MANAGE_USERS },
+    { key: 'adminUsers',         label: isRtl ? 'إدارة المستخدمين' : 'Users Management',       icon: <PeopleIcon />,        path: '/admin/users', group: 'admin', permission: PERMISSIONS.MANAGE_USERS },
+    { key: 'auditLog',           label: isRtl ? 'سجل العمليات' : 'Audit Log',                  icon: <SecurityIcon />,      path: '/audit-log',   group: 'admin', permission: PERMISSIONS.VIEW_AUDIT_LOGS },
+    { key: 'settings',           label: isRtl ? 'إعدادات النظام' : 'System Settings',          icon: <SettingsIcon />,      path: '/settings',    group: 'admin', permission: PERMISSIONS.MANAGE_SETTINGS },
+    { key: 'roles',              label: isRtl ? 'الأدوار والصلاحيات' : 'Roles & Perms',        icon: <ShieldIcon />,        path: '/roles',       group: 'admin', permission: PERMISSIONS.MANAGE_USERS },
+  ];
+
+  const navGroups: Array<{ key: NavItem['group']; label: string }> = [
+    { key: 'main', label: isRtl ? 'الرئيسية' : 'Main' },
+    { key: 'health', label: isRtl ? 'الخدمات الصحية' : 'Health Services' },
+    { key: 'followup', label: isRtl ? 'المتابعة والتقارير' : 'Follow-up & Reports' },
+    { key: 'admin', label: isRtl ? 'الإدارة والنظام' : 'Administration' },
   ];
 
   const filteredNavItems = navItems.filter(item => !item.permission || can(item.permission));
@@ -129,7 +138,14 @@ export function DashboardLayout() {
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
-        background: 'linear-gradient(180deg, rgba(255,255,255,.98) 0%, rgba(248,250,252,.95) 100%)',
+        position: 'relative',
+        overflow: 'hidden',
+        background: `
+          radial-gradient(circle at 12% 2%, ${appPalette.primary}22 0, transparent 25%),
+          radial-gradient(circle at 92% 94%, ${appPalette.secondary}16 0, transparent 28%),
+          linear-gradient(155deg, rgba(255,255,255,.98) 0%, ${appPalette.paper} 48%, ${appPalette.background} 100%)
+        `,
+        boxShadow: 'inset -1px 0 0 rgba(255,255,255,.85), inset 10px 0 30px rgba(15,23,42,.035)',
       }}
     >
       <Toolbar
@@ -140,7 +156,8 @@ export function DashboardLayout() {
           mx: { xs: 1, md: 1.25 },
           mt: { xs: 1, md: 1.25 },
           borderRadius: { xs: 3, md: 3.5 },
-          boxShadow: `0 12px 26px ${appPalette.primary}33, inset 0 1px 0 rgba(255,255,255,.28)`,
+          border: '1px solid rgba(255,255,255,.36)',
+          boxShadow: `0 16px 30px ${appPalette.primary}38, 0 5px 10px rgba(15,23,42,.12), inset 0 2px 1px rgba(255,255,255,.34), inset 0 -3px 8px rgba(15,23,42,.10)`,
           overflow: 'hidden',
           position: 'relative',
           '&::before': {
@@ -148,6 +165,17 @@ export function DashboardLayout() {
             position: 'absolute',
             inset: 0,
             background: 'radial-gradient(circle at 15% 15%, rgba(255,255,255,.28) 0, transparent 34%)',
+          },
+          '&::after': {
+            content: '""',
+            position: 'absolute',
+            width: 110,
+            height: 110,
+            borderRadius: '50%',
+            insetInlineEnd: -42,
+            bottom: -74,
+            border: '1px solid rgba(255,255,255,.18)',
+            boxShadow: '0 0 0 18px rgba(255,255,255,.04)',
           },
         }}
       >
@@ -165,9 +193,61 @@ export function DashboardLayout() {
           </Box>
         </Box>
       </Toolbar>
-      <Divider sx={{ mx: 2, my: 1.25, borderColor: 'rgba(148,163,184,.18)' }} />
-      <List sx={{ pt: 0.25, px: 1, pb: 2, overflowY: 'auto' }}>
-        {filteredNavItems.map((item) => {
+      <Divider sx={{ mx: 2, mt: 1.4, mb: .4, borderColor: 'rgba(148,163,184,.16)', boxShadow: '0 1px 0 rgba(255,255,255,.8)' }} />
+      <List
+        sx={{
+          pt: 0,
+          px: 1.25,
+          pb: 2.5,
+          overflowY: 'auto',
+          scrollbarWidth: 'thin',
+          scrollbarColor: `${appPalette.primary}55 transparent`,
+          '&::-webkit-scrollbar': { width: 5 },
+          '&::-webkit-scrollbar-thumb': { borderRadius: 99, bgcolor: `${appPalette.primary}55` },
+        }}
+      >
+        {navGroups.map(group => {
+          const groupItems = filteredNavItems.filter(item => item.group === group.key);
+          if (!groupItems.length) return null;
+          return [
+            <ListSubheader
+              key={`${variant}-${group.key}-heading`}
+              disableSticky
+              component="div"
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: .8,
+                height: 30,
+                px: 1.1,
+                mt: group.key === 'main' ? .25 : 1.1,
+                mb: .35,
+                color: '#64748b',
+                bgcolor: 'transparent',
+                fontSize: '.69rem',
+                fontWeight: 900,
+                letterSpacing: isRtl ? 0 : '.08em',
+                textTransform: isRtl ? 'none' : 'uppercase',
+                '&::before': {
+                  content: '""',
+                  width: 7,
+                  height: 7,
+                  flexShrink: 0,
+                  borderRadius: '50%',
+                  background: `linear-gradient(145deg, ${appPalette.primary}, ${appPalette.secondary})`,
+                  boxShadow: `0 0 0 4px ${appPalette.primary}13, 0 3px 7px ${appPalette.primary}45`,
+                },
+                '&::after': {
+                  content: '""',
+                  height: 1,
+                  flex: 1,
+                  background: `linear-gradient(${isRtl ? '270deg' : '90deg'}, ${appPalette.primary}35, transparent)`,
+                },
+              }}
+            >
+              {group.label}
+            </ListSubheader>,
+            ...groupItems.map((item) => {
           const isActive = item.path === '/admin'
             ? location.pathname === '/admin'
             : location.pathname === item.path || location.pathname.startsWith(`${item.path}/`);
@@ -180,46 +260,106 @@ export function DashboardLayout() {
                 }}
                 sx={{
                   position: 'relative',
-                  minHeight: { xs: 44, md: 46 },
-                  px: { xs: 1.25, md: 1.45 },
-                  borderRadius: 2.5,
+                  minHeight: { xs: 48, md: 49 },
+                  px: { xs: 1, md: 1.1 },
+                  py: .55,
+                  borderRadius: 3,
                   flexDirection: isRtl ? 'row-reverse' : 'row',
                   color: isActive ? '#fff' : '#334155',
                   overflow: 'hidden',
-                  background: isActive ? `linear-gradient(135deg, ${appPalette.primary} 0%, ${appPalette.primaryDark} 100%)` : 'transparent',
-                  boxShadow: isActive ? `0 10px 22px ${appPalette.primary}30, inset 0 1px 0 rgba(255,255,255,.22)` : 'none',
-                  '&::before': isActive ? {
+                  border: isActive ? '1px solid rgba(255,255,255,.28)' : '1px solid rgba(148,163,184,.16)',
+                  background: isActive
+                    ? `linear-gradient(140deg, ${appPalette.primary} 0%, ${appPalette.primaryDark} 62%, ${appPalette.secondary} 145%)`
+                    : `linear-gradient(145deg, rgba(255,255,255,.94), ${appPalette.paper})`,
+                  boxShadow: isActive
+                    ? `0 11px 22px ${appPalette.primary}38, 0 4px 8px rgba(15,23,42,.16), inset 0 2px 1px rgba(255,255,255,.3), inset 0 -3px 7px rgba(15,23,42,.13)`
+                    : '5px 5px 12px rgba(148,163,184,.18), -4px -4px 10px rgba(255,255,255,.88), inset 0 1px 0 rgba(255,255,255,.95)',
+                  '&::before': {
                     content: '""',
                     position: 'absolute',
                     insetInlineStart: isRtl ? 'auto' : 0,
                     insetInlineEnd: isRtl ? 0 : 'auto',
-                    top: 10,
-                    bottom: 10,
-                    width: 4,
+                    top: isActive ? 9 : 14,
+                    bottom: isActive ? 9 : 14,
+                    width: isActive ? 4 : 2,
                     borderRadius: 999,
-                    background: '#fff',
-                    opacity: .9,
+                    background: isActive ? '#fff' : `${appPalette.primary}55`,
+                    opacity: isActive ? .95 : .7,
+                    boxShadow: isActive ? '0 0 10px rgba(255,255,255,.8)' : 'none',
+                  },
+                  '&::after': isActive ? {
+                    content: '""',
+                    position: 'absolute',
+                    width: 90,
+                    height: 55,
+                    top: -38,
+                    insetInlineStart: 28,
+                    borderRadius: '50%',
+                    background: 'rgba(255,255,255,.13)',
+                    filter: 'blur(2px)',
                   } : {},
                   '&:hover': {
-                    transform: 'translateY(-1px)',
-                    bgcolor: isActive ? undefined : `${appPalette.primary}10`,
-                    boxShadow: isActive ? `0 12px 24px ${appPalette.primary}36` : `0 8px 18px ${appPalette.primary}14`,
-                    '& .MuiListItemIcon-root': { color: isActive ? '#fff' : appPalette.primary },
+                    transform: `translateY(-2px) translateX(${isRtl ? '-2px' : '2px'})`,
+                    background: isActive
+                      ? `linear-gradient(140deg, ${appPalette.primary} 0%, ${appPalette.primaryDark} 58%, ${appPalette.secondary} 140%)`
+                      : `linear-gradient(145deg, #fff, ${appPalette.primary}0d)`,
+                    boxShadow: isActive
+                      ? `0 14px 27px ${appPalette.primary}42, 0 5px 9px rgba(15,23,42,.18), inset 0 2px 1px rgba(255,255,255,.3)`
+                      : `7px 8px 18px rgba(148,163,184,.24), -5px -5px 12px rgba(255,255,255,.95)`,
+                    '& .nav-icon-3d': {
+                      color: isActive ? '#fff' : appPalette.primary,
+                      transform: 'translateY(-1px) rotate(-4deg) scale(1.05)',
+                    },
                   },
-                  transition: 'all .18s ease',
+                  '&:active': {
+                    transform: 'translateY(1px)',
+                    boxShadow: isActive
+                      ? `0 5px 12px ${appPalette.primary}30, inset 0 3px 8px rgba(15,23,42,.12)`
+                      : 'inset 3px 3px 8px rgba(148,163,184,.2), inset -2px -2px 6px rgba(255,255,255,.9)',
+                  },
+                  transition: 'transform .2s ease, box-shadow .2s ease, background .2s ease',
                 }}
               >
-                <ListItemIcon sx={{ minWidth: { xs: 36, md: 38 }, color: isActive ? '#fff' : 'text.secondary', justifyContent: isRtl ? 'flex-end' : 'flex-start', transition: 'color .18s ease' }}>
-                  {item.icon}
+                <ListItemIcon sx={{ position: 'relative', zIndex: 1, minWidth: { xs: 43, md: 45 }, justifyContent: isRtl ? 'flex-end' : 'flex-start' }}>
+                  <Box
+                    className="nav-icon-3d"
+                    sx={{
+                      width: 34,
+                      height: 34,
+                      display: 'grid',
+                      placeItems: 'center',
+                      flexShrink: 0,
+                      borderRadius: 2.1,
+                      color: isActive ? '#fff' : appPalette.primaryDark,
+                      background: isActive
+                        ? 'linear-gradient(145deg, rgba(255,255,255,.28), rgba(255,255,255,.10))'
+                        : `linear-gradient(145deg, #fff, ${appPalette.primary}14)`,
+                      border: isActive ? '1px solid rgba(255,255,255,.34)' : `1px solid ${appPalette.primary}1f`,
+                      boxShadow: isActive
+                        ? '0 6px 12px rgba(15,23,42,.2), inset 0 1px 1px rgba(255,255,255,.35)'
+                        : '3px 4px 8px rgba(148,163,184,.22), -2px -2px 5px rgba(255,255,255,.95), inset 0 1px 0 #fff',
+                      transition: 'all .2s ease',
+                      '& svg': { fontSize: 20 },
+                    }}
+                  >
+                    {item.icon}
+                  </Box>
                 </ListItemIcon>
                 <ListItemText
                   primary={item.label}
-                  sx={{ textAlign: isRtl ? 'right' : 'left', minWidth: 0 }}
-                  primaryTypographyProps={{ noWrap: true, fontWeight: isActive ? 850 : 700, fontSize: { xs: '.86rem', md: '.9rem' } }}
+                  sx={{ position: 'relative', zIndex: 1, textAlign: isRtl ? 'right' : 'left', minWidth: 0 }}
+                  primaryTypographyProps={{
+                    noWrap: true,
+                    fontWeight: isActive ? 900 : 740,
+                    fontSize: { xs: '.88rem', md: '.91rem' },
+                    sx: { textShadow: isActive ? '0 1px 3px rgba(15,23,42,.2)' : 'none' },
+                  }}
                 />
               </ListItemButton>
             </ListItem>
           );
+            }),
+          ];
         })}
       </List>
     </Box>
