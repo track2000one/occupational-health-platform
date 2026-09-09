@@ -541,15 +541,15 @@
   z-index: 2;
   top: 0;
   inset-inline-start: 0;
-  width: 27px;
-  height: 27px;
+  width: 31px;
+  height: 31px;
   display: grid;
   place-items: center;
   border-radius: 9px;
   color: var(--form-section-color-end);
   background: #fff;
   box-shadow: 0 5px 12px rgba(0,0,0,.18);
-  font-size: .78rem;
+  font-size: .9rem;
   font-weight: 950;
 }
 
@@ -560,18 +560,20 @@
 }
 
 .ohc-form-section-title {
-  color: #fff;
-  font-size: 1.05rem !important;
+  color: #fff !important;
+  font-size: 1.22rem !important;
   font-weight: 950 !important;
-  line-height: 1.35 !important;
+  line-height: 1.4 !important;
   text-shadow: 0 2px 4px rgba(0,0,0,.12);
 }
 
 .ohc-form-section-subtitle {
-  margin-top: 4px !important;
-  color: rgba(255,255,255,.88);
-  font-size: .73rem !important;
-  line-height: 1.45 !important;
+  margin-top: 5px !important;
+  color: rgba(255,255,255,.94) !important;
+  font-size: .88rem !important;
+  font-weight: 650 !important;
+  line-height: 1.55 !important;
+  text-shadow: 0 1px 3px rgba(0,0,0,.1);
 }
 
 .ohc-form-section-progress {
@@ -600,9 +602,9 @@
 }
 
 .ohc-form-section-progress small {
-  min-width: 34px;
+  min-width: 42px;
   color: #fff;
-  font-size: .68rem;
+  font-size: .82rem;
   font-weight: 900;
 }
 
@@ -634,6 +636,23 @@
 .ohc-form-accordion .MuiAccordionDetails-root .MuiOutlinedInput-root {
   border-radius: 12px;
   background: rgba(255,255,255,.92);
+}
+
+.ohc-form-accordion .MuiAccordionDetails-root .MuiInputBase-input,
+.ohc-form-accordion .MuiAccordionDetails-root .MuiSelect-select,
+.ohc-form-accordion .MuiAccordionDetails-root textarea {
+  font-size: 1rem !important;
+  font-weight: 650;
+  line-height: 1.65;
+}
+
+.ohc-form-accordion .MuiAccordionDetails-root .MuiInputLabel-root {
+  font-size: .98rem !important;
+  font-weight: 750;
+}
+
+.ohc-form-accordion .MuiAccordionDetails-root .MuiFormHelperText-root {
+  font-size: .84rem;
 }
 
 .ohc-form-accordion .MuiAccordionDetails-root .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline {
@@ -709,7 +728,9 @@
   .ohc-form-summary-art { flex-basis: 68px; }
   .ohc-form-section-icon { width: 58px; height: 58px; border-radius: 18px; }
   .ohc-form-section-icon svg { width: 34px; height: 34px; }
-  .ohc-form-section-title { font-size: .96rem !important; }
+  .ohc-form-section-title { font-size: 1.08rem !important; }
+  .ohc-form-section-subtitle { font-size: .8rem !important; }
+  .ohc-form-section-progress small { font-size: .76rem; }
   .ohc-form-accordion .MuiAccordionDetails-root { padding: 14px; }
   .ohc-card-sheet { padding: 10px; }
   .ohc-section { grid-template-columns: 1fr; }
