@@ -3,6 +3,7 @@ import ibmPlexArabic400Url from '@fontsource/ibm-plex-sans-arabic/files/ibm-plex
 import ibmPlexLatin400Url from '@fontsource/ibm-plex-sans-arabic/files/ibm-plex-sans-arabic-latin-400-normal.woff2?url';
 import ibmPlexArabic700Url from '@fontsource/ibm-plex-sans-arabic/files/ibm-plex-sans-arabic-arabic-700-normal.woff2?url';
 import ibmPlexLatin700Url from '@fontsource/ibm-plex-sans-arabic/files/ibm-plex-sans-arabic-latin-700-normal.woff2?url';
+import fananWebUrl from '../../assets/fonts/FananWeb.ttf?url';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // PROFESSIONAL REPORT EXPORT
@@ -135,6 +136,13 @@ function buildReportHtml(options: ReportOptions) {
   <title>${escapeHtml(options.fileName)}</title>
   <style>
     @font-face {
+      font-family: "Fanan";
+      font-style: normal;
+      font-weight: 400;
+      font-display: swap;
+      src: url("${fananWebUrl}") format("truetype");
+    }
+    @font-face {
       font-family: "IBM Plex Sans Arabic";
       font-style: normal;
       font-weight: 400;
@@ -170,7 +178,7 @@ function buildReportHtml(options: ReportOptions) {
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; background: #eef2f7; color: ${COLORS.dark}; }
     body {
-      font-family: "IBM Plex Sans Arabic", "Segoe UI", Tahoma, Arial, sans-serif;
+      font-family: "Fanan", "IBM Plex Sans Arabic", "Segoe UI", Tahoma, Arial, sans-serif;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
       text-rendering: optimizeLegibility;
@@ -282,7 +290,7 @@ function buildReportHtml(options: ReportOptions) {
       font-size: 9px;
     }
     .confidential { color: ${COLORS.danger}; font-weight: 900; margin: 2mm 0; }
-    .ar { font-family: "IBM Plex Sans Arabic", "Segoe UI", Tahoma, Arial, sans-serif; direction: rtl; unicode-bidi: plaintext; }
+    .ar { font-family: "Fanan", "IBM Plex Sans Arabic", "Segoe UI", Tahoma, Arial, sans-serif; direction: rtl; unicode-bidi: plaintext; }
     @media print {
       html, body { background: white; }
       .page { margin: 0; box-shadow: none; width: auto; min-height: auto; }

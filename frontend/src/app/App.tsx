@@ -182,7 +182,7 @@ function ThemedShell({ children }: { children: React.ReactNode }) {
       },
     },
     typography: {
-      fontFamily: '"IBM Plex Sans Arabic", "Segoe UI", Tahoma, Arial, sans-serif',
+      fontFamily: '"Fanan", "IBM Plex Sans Arabic", "Segoe UI", Tahoma, Arial, sans-serif',
       h4: { fontWeight: 850, letterSpacing: '-0.02em', color: '#111827' },
       h5: { fontWeight: 800, letterSpacing: '-0.01em', color: '#111827' },
       h6: { fontWeight: 780, color: '#111827' },

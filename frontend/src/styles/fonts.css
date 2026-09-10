@@ -7,6 +7,14 @@
 @import '@fontsource/ibm-plex-sans-arabic/arabic-700.css';
 @import '@fontsource/ibm-plex-sans-arabic/latin-700.css';
 
+@font-face {
+  font-family: 'Fanan';
+  src: url('../assets/fonts/FananWeb.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
 :root {
-  --app-font-family: 'IBM Plex Sans Arabic', 'Segoe UI', Tahoma, Arial, sans-serif;
+  --app-font-family: 'Fanan', 'IBM Plex Sans Arabic', 'Segoe UI', Tahoma, Arial, sans-serif;
 }
