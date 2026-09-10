@@ -299,6 +299,13 @@ export function DashboardLayout() {
                   '&:active': {
                     transform: 'none',
                   },
+                  '& .MuiListItemText-primary': {
+                    color: isActive ? '#ffffff !important' : '#334155 !important',
+                    WebkitTextFillColor: isActive ? '#ffffff !important' : '#334155 !important',
+                    opacity: '1 !important',
+                    fontWeight: isActive ? '950 !important' : '740 !important',
+                    textShadow: isActive ? '0 1px 2px rgba(0,0,0,.24)' : 'none',
+                  },
                   transition: 'color .16s ease, box-shadow .16s ease, background .16s ease',
                 }}
               >
@@ -330,11 +337,13 @@ export function DashboardLayout() {
                   sx={{ position: 'relative', zIndex: 1, textAlign: isRtl ? 'right' : 'left', minWidth: 0 }}
                   primaryTypographyProps={{
                     noWrap: true,
-                    fontWeight: isActive ? 850 : 720,
-                    fontSize: { xs: '.9rem', md: '.93rem' },
+                    fontWeight: isActive ? 950 : 740,
+                    fontSize: { xs: '.91rem', md: '.94rem' },
                     sx: {
-                      color: isActive ? '#fff !important' : '#334155 !important',
-                      textShadow: 'none',
+                      color: isActive ? '#ffffff !important' : '#334155 !important',
+                      WebkitTextFillColor: isActive ? '#ffffff !important' : '#334155 !important',
+                      opacity: '1 !important',
+                      textShadow: isActive ? '0 1px 2px rgba(0,0,0,.24)' : 'none',
                     },
                   }}
                 />
