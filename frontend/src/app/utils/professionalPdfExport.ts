@@ -1,4 +1,8 @@
 import logoImageUrl from '../../imports/ChatGPT_Image_21______2026__10_06_18__.png';
+import ibmPlexArabic400Url from '@fontsource/ibm-plex-sans-arabic/files/ibm-plex-sans-arabic-arabic-400-normal.woff2?url';
+import ibmPlexLatin400Url from '@fontsource/ibm-plex-sans-arabic/files/ibm-plex-sans-arabic-latin-400-normal.woff2?url';
+import ibmPlexArabic700Url from '@fontsource/ibm-plex-sans-arabic/files/ibm-plex-sans-arabic-arabic-700-normal.woff2?url';
+import ibmPlexLatin700Url from '@fontsource/ibm-plex-sans-arabic/files/ibm-plex-sans-arabic-latin-700-normal.woff2?url';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // PROFESSIONAL REPORT EXPORT
@@ -130,11 +134,43 @@ function buildReportHtml(options: ReportOptions) {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>${escapeHtml(options.fileName)}</title>
   <style>
+    @font-face {
+      font-family: "IBM Plex Sans Arabic";
+      font-style: normal;
+      font-weight: 400;
+      font-display: swap;
+      src: url("${ibmPlexArabic400Url}") format("woff2");
+      unicode-range: U+0600-06FF, U+0750-077F, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFC;
+    }
+    @font-face {
+      font-family: "IBM Plex Sans Arabic";
+      font-style: normal;
+      font-weight: 400;
+      font-display: swap;
+      src: url("${ibmPlexLatin400Url}") format("woff2");
+      unicode-range: U+0000-024F, U+2000-206F;
+    }
+    @font-face {
+      font-family: "IBM Plex Sans Arabic";
+      font-style: normal;
+      font-weight: 700;
+      font-display: swap;
+      src: url("${ibmPlexArabic700Url}") format("woff2");
+      unicode-range: U+0600-06FF, U+0750-077F, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFC;
+    }
+    @font-face {
+      font-family: "IBM Plex Sans Arabic";
+      font-style: normal;
+      font-weight: 700;
+      font-display: swap;
+      src: url("${ibmPlexLatin700Url}") format("woff2");
+      unicode-range: U+0000-024F, U+2000-206F;
+    }
     @page { size: ${pageSize}; margin: 12mm; }
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; background: #eef2f7; color: ${COLORS.dark}; }
     body {
-      font-family: Tahoma, Arial, "Segoe UI", "Noto Sans Arabic", sans-serif;
+      font-family: "IBM Plex Sans Arabic", "Segoe UI", Tahoma, Arial, sans-serif;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
       text-rendering: optimizeLegibility;
@@ -246,7 +282,7 @@ function buildReportHtml(options: ReportOptions) {
       font-size: 9px;
     }
     .confidential { color: ${COLORS.danger}; font-weight: 900; margin: 2mm 0; }
-    .ar { font-family: Tahoma, Arial, "Segoe UI", "Noto Sans Arabic", sans-serif; direction: rtl; unicode-bidi: plaintext; }
+    .ar { font-family: "IBM Plex Sans Arabic", "Segoe UI", Tahoma, Arial, sans-serif; direction: rtl; unicode-bidi: plaintext; }
     @media print {
       html, body { background: white; }
       .page { margin: 0; box-shadow: none; width: auto; min-height: auto; }
