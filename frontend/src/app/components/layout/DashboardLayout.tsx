@@ -140,13 +140,9 @@ export function DashboardLayout() {
         flexDirection: 'column',
         position: 'relative',
         overflow: 'hidden',
-        color: '#fff',
-        background: `
-          radial-gradient(circle at 12% 2%, rgba(255,255,255,.18) 0, transparent 25%),
-          radial-gradient(circle at 92% 94%, ${appPalette.secondary}4d 0, transparent 30%),
-          linear-gradient(165deg, ${appPalette.primaryDark} 0%, ${appPalette.primary} 60%, ${appPalette.primaryDark} 128%)
-        `,
-        boxShadow: 'inset -1px 0 0 rgba(255,255,255,.2), inset 10px 0 30px rgba(15,23,42,.16)',
+        color: '#1e293b',
+        background: 'linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)',
+        boxShadow: 'inset -1px 0 0 rgba(148,163,184,.16)',
       }}
     >
       <Toolbar
@@ -156,27 +152,26 @@ export function DashboardLayout() {
           minHeight: { xs: 74, md: 82 },
           mx: { xs: 1, md: 1.25 },
           mt: { xs: 1, md: 1.25 },
-          borderRadius: { xs: 3, md: 3.5 },
-          border: '1px solid rgba(255,255,255,.36)',
-          boxShadow: `0 16px 30px ${appPalette.primary}38, 0 5px 10px rgba(15,23,42,.12), inset 0 2px 1px rgba(255,255,255,.34), inset 0 -3px 8px rgba(15,23,42,.10)`,
+          borderRadius: { xs: 2.5, md: 2.75 },
+          border: `1px solid ${appPalette.primary}22`,
+          boxShadow: `0 6px 16px ${appPalette.primary}22`,
           overflow: 'hidden',
           position: 'relative',
           '&::before': {
             content: '""',
             position: 'absolute',
             inset: 0,
-            background: 'radial-gradient(circle at 15% 15%, rgba(255,255,255,.28) 0, transparent 34%)',
+            background: 'linear-gradient(90deg, rgba(255,255,255,.13), transparent 42%)',
           },
           '&::after': {
             content: '""',
             position: 'absolute',
-            width: 110,
-            height: 110,
-            borderRadius: '50%',
-            insetInlineEnd: -42,
-            bottom: -74,
-            border: '1px solid rgba(255,255,255,.18)',
-            boxShadow: '0 0 0 18px rgba(255,255,255,.04)',
+            width: 4,
+            height: '46%',
+            borderRadius: 99,
+            insetInlineEnd: 0,
+            top: '27%',
+            background: 'rgba(255,255,255,.72)',
           },
         }}
       >
@@ -194,7 +189,7 @@ export function DashboardLayout() {
           </Box>
         </Box>
       </Toolbar>
-      <Divider sx={{ mx: 2, mt: 1.4, mb: .4, borderColor: 'rgba(255,255,255,.2)', boxShadow: '0 1px 0 rgba(15,23,42,.12)' }} />
+      <Divider sx={{ mx: 2, mt: 1.4, mb: .4, borderColor: 'rgba(148,163,184,.18)' }} />
       <List
         sx={{
           pt: 0,
@@ -202,9 +197,9 @@ export function DashboardLayout() {
           pb: 2.5,
           overflowY: 'auto',
           scrollbarWidth: 'thin',
-          scrollbarColor: 'rgba(255,255,255,.4) transparent',
+          scrollbarColor: `${appPalette.primary}55 transparent`,
           '&::-webkit-scrollbar': { width: 5 },
-          '&::-webkit-scrollbar-thumb': { borderRadius: 99, bgcolor: 'rgba(255,255,255,.4)' },
+          '&::-webkit-scrollbar-thumb': { borderRadius: 99, bgcolor: `${appPalette.primary}55` },
         }}
       >
         {navGroups.map(group => {
@@ -223,10 +218,10 @@ export function DashboardLayout() {
                 px: 1.1,
                 mt: group.key === 'main' ? .25 : 1.1,
                 mb: .35,
-                color: 'rgba(255,255,255,.9)',
+                color: '#64748b',
                 bgcolor: 'transparent',
                 fontSize: '.69rem',
-                fontWeight: 950,
+                fontWeight: 850,
                 letterSpacing: isRtl ? 0 : '.08em',
                 textTransform: isRtl ? 'none' : 'uppercase',
                 '&::before': {
@@ -235,14 +230,14 @@ export function DashboardLayout() {
                   height: 7,
                   flexShrink: 0,
                   borderRadius: '50%',
-                  background: '#fff',
-                  boxShadow: '0 0 0 4px rgba(255,255,255,.12), 0 3px 8px rgba(15,23,42,.3)',
+                  background: appPalette.primary,
+                  boxShadow: `0 0 0 3px ${appPalette.primary}14`,
                 },
                 '&::after': {
                   content: '""',
                   height: 1,
                   flex: 1,
-                  background: `linear-gradient(${isRtl ? '270deg' : '90deg'}, rgba(255,255,255,.3), transparent)`,
+                  background: `linear-gradient(${isRtl ? '270deg' : '90deg'}, rgba(148,163,184,.28), transparent)`,
                 },
               }}
             >
@@ -264,59 +259,47 @@ export function DashboardLayout() {
                   minHeight: { xs: 48, md: 49 },
                   px: { xs: 1, md: 1.1 },
                   py: .55,
-                  borderRadius: 3,
+                  borderRadius: 2.25,
                   flexDirection: isRtl ? 'row-reverse' : 'row',
-                  color: '#fff',
+                  color: isActive ? '#fff' : '#334155',
                   overflow: 'hidden',
-                  border: isActive ? '1px solid rgba(255,255,255,.48)' : '1px solid rgba(255,255,255,.16)',
+                  border: isActive ? `1px solid ${appPalette.primary}` : '1px solid transparent',
                   background: isActive
-                    ? `linear-gradient(140deg, rgba(255,255,255,.32) 0%, rgba(255,255,255,.17) 58%, ${appPalette.secondary}5c 145%)`
-                    : 'linear-gradient(145deg, rgba(255,255,255,.14), rgba(255,255,255,.065))',
+                    ? `linear-gradient(135deg, ${appPalette.primary} 0%, ${appPalette.primaryDark} 100%)`
+                    : 'transparent',
                   boxShadow: isActive
-                    ? '0 11px 22px rgba(15,23,42,.3), 0 0 18px rgba(255,255,255,.12), inset 0 2px 1px rgba(255,255,255,.38), inset 0 -3px 7px rgba(15,23,42,.13)'
-                    : '5px 6px 13px rgba(15,23,42,.2), -3px -3px 9px rgba(255,255,255,.06), inset 0 1px 1px rgba(255,255,255,.18)',
+                    ? `0 5px 13px ${appPalette.primary}2e`
+                    : 'none',
                   '&::before': {
                     content: '""',
                     position: 'absolute',
                     insetInlineStart: isRtl ? 'auto' : 0,
                     insetInlineEnd: isRtl ? 0 : 'auto',
-                    top: isActive ? 9 : 14,
-                    bottom: isActive ? 9 : 14,
-                    width: isActive ? 4 : 2,
+                    top: 10,
+                    bottom: 10,
+                    width: 3,
                     borderRadius: 999,
-                    background: '#fff',
-                    opacity: isActive ? .95 : .46,
-                    boxShadow: isActive ? '0 0 10px rgba(255,255,255,.8)' : 'none',
+                    background: isActive ? '#fff' : 'transparent',
+                    opacity: .95,
+                    boxShadow: 'none',
                   },
-                  '&::after': isActive ? {
-                    content: '""',
-                    position: 'absolute',
-                    width: 90,
-                    height: 55,
-                    top: -38,
-                    insetInlineStart: 28,
-                    borderRadius: '50%',
-                    background: 'rgba(255,255,255,.13)',
-                    filter: 'blur(2px)',
-                  } : {},
                   '&:hover': {
-                    transform: `translateY(-2px) translateX(${isRtl ? '-2px' : '2px'})`,
+                    transform: 'none',
                     background: isActive
-                      ? `linear-gradient(140deg, rgba(255,255,255,.38), rgba(255,255,255,.20), ${appPalette.secondary}66)`
-                      : 'linear-gradient(145deg, rgba(255,255,255,.21), rgba(255,255,255,.09))',
+                      ? `linear-gradient(135deg, ${appPalette.primary} 0%, ${appPalette.primaryDark} 100%)`
+                      : `${appPalette.primary}0d`,
                     boxShadow: isActive
-                      ? '0 14px 27px rgba(15,23,42,.32), 0 0 20px rgba(255,255,255,.13), inset 0 2px 1px rgba(255,255,255,.36)'
-                      : '7px 8px 18px rgba(15,23,42,.24), -4px -4px 10px rgba(255,255,255,.07)',
+                      ? `0 6px 15px ${appPalette.primary}38`
+                      : 'none',
                     '& .nav-icon-3d': {
-                      color: '#fff',
-                      transform: 'translateY(-1px) rotate(-4deg) scale(1.05)',
+                      color: isActive ? '#fff' : appPalette.primaryDark,
+                      transform: 'none',
                     },
                   },
                   '&:active': {
-                    transform: 'translateY(1px)',
-                    boxShadow: 'inset 3px 3px 9px rgba(15,23,42,.24), inset -2px -2px 6px rgba(255,255,255,.10)',
+                    transform: 'none',
                   },
-                  transition: 'transform .2s ease, box-shadow .2s ease, background .2s ease',
+                  transition: 'color .16s ease, box-shadow .16s ease, background .16s ease',
                 }}
               >
                 <ListItemIcon sx={{ position: 'relative', zIndex: 1, minWidth: { xs: 43, md: 45 }, justifyContent: isRtl ? 'flex-end' : 'flex-start' }}>
@@ -328,15 +311,13 @@ export function DashboardLayout() {
                       display: 'grid',
                       placeItems: 'center',
                       flexShrink: 0,
-                      borderRadius: 2.1,
-                      color: '#fff',
+                      borderRadius: 1.75,
+                      color: isActive ? '#fff' : appPalette.primaryDark,
                       background: isActive
-                        ? 'linear-gradient(145deg, rgba(255,255,255,.32), rgba(255,255,255,.13))'
-                        : 'linear-gradient(145deg, rgba(255,255,255,.18), rgba(255,255,255,.07))',
-                      border: isActive ? '1px solid rgba(255,255,255,.42)' : '1px solid rgba(255,255,255,.20)',
-                      boxShadow: isActive
-                        ? '0 6px 12px rgba(15,23,42,.24), inset 0 1px 1px rgba(255,255,255,.4)'
-                        : '3px 4px 8px rgba(15,23,42,.20), -2px -2px 5px rgba(255,255,255,.05), inset 0 1px 0 rgba(255,255,255,.2)',
+                        ? 'rgba(255,255,255,.15)'
+                        : `${appPalette.primary}0d`,
+                      border: isActive ? '1px solid rgba(255,255,255,.24)' : `1px solid ${appPalette.primary}1f`,
+                      boxShadow: 'none',
                       transition: 'all .2s ease',
                       '& svg': { fontSize: 20 },
                     }}
@@ -349,11 +330,11 @@ export function DashboardLayout() {
                   sx={{ position: 'relative', zIndex: 1, textAlign: isRtl ? 'right' : 'left', minWidth: 0 }}
                   primaryTypographyProps={{
                     noWrap: true,
-                    fontWeight: 950,
-                    fontSize: { xs: '.92rem', md: '.96rem' },
+                    fontWeight: isActive ? 850 : 720,
+                    fontSize: { xs: '.9rem', md: '.93rem' },
                     sx: {
-                      color: '#fff !important',
-                      textShadow: '0 1px 3px rgba(15,23,42,.34)',
+                      color: isActive ? '#fff !important' : '#334155 !important',
+                      textShadow: 'none',
                     },
                   }}
                 />
