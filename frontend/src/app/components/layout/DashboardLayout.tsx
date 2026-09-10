@@ -141,8 +141,8 @@ export function DashboardLayout() {
         position: 'relative',
         overflow: 'hidden',
         color: '#1e293b',
-        background: 'linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)',
-        boxShadow: 'inset -1px 0 0 rgba(148,163,184,.16)',
+        background: `linear-gradient(180deg, #f7f9fb 0%, ${appPalette.background} 100%)`,
+        boxShadow: 'inset -1px 0 0 rgba(148,163,184,.14)',
       }}
     >
       <Toolbar
@@ -189,11 +189,11 @@ export function DashboardLayout() {
           </Box>
         </Box>
       </Toolbar>
-      <Divider sx={{ mx: 2, mt: 1.4, mb: .4, borderColor: 'rgba(148,163,184,.18)' }} />
+      <Divider sx={{ mx: 2, mt: 1.3, mb: .7, borderColor: 'rgba(148,163,184,.16)' }} />
       <List
         sx={{
           pt: 0,
-          px: 1.25,
+          px: 1.35,
           pb: 2.5,
           overflowY: 'auto',
           scrollbarWidth: 'thin',
@@ -211,7 +211,7 @@ export function DashboardLayout() {
               disableSticky
               component="div"
               sx={{
-                display: 'flex',
+                display: 'none',
                 alignItems: 'center',
                 gap: .8,
                 height: 30,
@@ -248,7 +248,7 @@ export function DashboardLayout() {
             ? location.pathname === '/admin'
             : location.pathname === item.path || location.pathname.startsWith(`${item.path}/`);
           return (
-            <ListItem key={`${variant}-${item.key}`} disablePadding sx={{ mb: 0.55 }}>
+            <ListItem key={`${variant}-${item.key}`} disablePadding sx={{ mb: 0.75 }}>
               <ListItemButton
                 onClick={() => {
                   navigate(item.path);
@@ -256,43 +256,43 @@ export function DashboardLayout() {
                 }}
                 sx={{
                   position: 'relative',
-                  minHeight: { xs: 48, md: 49 },
-                  px: { xs: 1, md: 1.1 },
-                  py: .55,
-                  borderRadius: 2.25,
+                  minHeight: { xs: 46, md: 47 },
+                  px: { xs: 1.25, md: 1.35 },
+                  py: .5,
+                  borderRadius: 2.15,
                   flexDirection: isRtl ? 'row-reverse' : 'row',
-                  color: isActive ? '#fff' : '#334155',
+                  color: isActive ? appPalette.primaryDark : '#334155',
                   overflow: 'hidden',
-                  border: isActive ? `1px solid ${appPalette.primary}` : '1px solid transparent',
+                  border: isActive ? `1px solid ${appPalette.primary}66` : '1px solid rgba(148,163,184,.13)',
                   background: isActive
-                    ? `linear-gradient(135deg, ${appPalette.primary} 0%, ${appPalette.primaryDark} 100%)`
-                    : 'transparent',
+                    ? `linear-gradient(135deg, ${appPalette.primary}18 0%, #ffffff 100%)`
+                    : 'linear-gradient(145deg, #ffffff 0%, #fbfcfd 100%)',
                   boxShadow: isActive
-                    ? `0 5px 13px ${appPalette.primary}2e`
-                    : 'none',
+                    ? `0 5px 13px ${appPalette.primary}20`
+                    : '0 4px 10px rgba(30,52,77,.07)',
                   '&::before': {
                     content: '""',
                     position: 'absolute',
                     insetInlineStart: isRtl ? 'auto' : 0,
                     insetInlineEnd: isRtl ? 0 : 'auto',
-                    top: 10,
-                    bottom: 10,
+                    top: 9,
+                    bottom: 9,
                     width: 3,
                     borderRadius: 999,
-                    background: isActive ? '#fff' : 'transparent',
+                    background: isActive ? appPalette.primary : 'transparent',
                     opacity: .95,
                     boxShadow: 'none',
                   },
                   '&:hover': {
                     transform: 'none',
                     background: isActive
-                      ? `linear-gradient(135deg, ${appPalette.primary} 0%, ${appPalette.primaryDark} 100%)`
-                      : `${appPalette.primary}0d`,
+                      ? `linear-gradient(135deg, ${appPalette.primary}20 0%, #ffffff 100%)`
+                      : `linear-gradient(145deg, #ffffff 0%, ${appPalette.primary}0b 100%)`,
                     boxShadow: isActive
-                      ? `0 6px 15px ${appPalette.primary}38`
-                      : 'none',
+                      ? `0 6px 15px ${appPalette.primary}28`
+                      : '0 6px 14px rgba(30,52,77,.1)',
                     '& .nav-icon-3d': {
-                      color: isActive ? '#fff' : appPalette.primaryDark,
+                      color: isActive ? appPalette.primary : appPalette.primaryDark,
                       transform: 'none',
                     },
                   },
@@ -300,33 +300,31 @@ export function DashboardLayout() {
                     transform: 'none',
                   },
                   '& .MuiListItemText-primary': {
-                    color: isActive ? '#ffffff !important' : '#334155 !important',
-                    WebkitTextFillColor: isActive ? '#ffffff !important' : '#334155 !important',
+                    color: isActive ? `${appPalette.primaryDark} !important` : '#334155 !important',
+                    WebkitTextFillColor: isActive ? `${appPalette.primaryDark} !important` : '#334155 !important',
                     opacity: '1 !important',
-                    fontWeight: isActive ? '950 !important' : '740 !important',
-                    textShadow: isActive ? '0 1px 2px rgba(0,0,0,.24)' : 'none',
+                    fontWeight: isActive ? '850 !important' : '720 !important',
+                    textShadow: 'none',
                   },
                   transition: 'color .16s ease, box-shadow .16s ease, background .16s ease',
                 }}
               >
-                <ListItemIcon sx={{ position: 'relative', zIndex: 1, minWidth: { xs: 43, md: 45 }, justifyContent: isRtl ? 'flex-end' : 'flex-start' }}>
+                <ListItemIcon sx={{ position: 'relative', zIndex: 1, minWidth: { xs: 34, md: 36 }, justifyContent: isRtl ? 'flex-end' : 'flex-start' }}>
                   <Box
                     className="nav-icon-3d"
                     sx={{
-                      width: 34,
-                      height: 34,
+                      width: 27,
+                      height: 27,
                       display: 'grid',
                       placeItems: 'center',
                       flexShrink: 0,
-                      borderRadius: 1.75,
-                      color: isActive ? '#fff' : appPalette.primaryDark,
-                      background: isActive
-                        ? 'rgba(255,255,255,.15)'
-                        : `${appPalette.primary}0d`,
-                      border: isActive ? '1px solid rgba(255,255,255,.24)' : `1px solid ${appPalette.primary}1f`,
+                      borderRadius: 1.5,
+                      color: isActive ? appPalette.primary : '#27445f',
+                      background: isActive ? `${appPalette.primary}16` : 'transparent',
+                      border: isActive ? `1px solid ${appPalette.primary}24` : '1px solid transparent',
                       boxShadow: 'none',
                       transition: 'all .2s ease',
-                      '& svg': { fontSize: 20 },
+                      '& svg': { fontSize: 18 },
                     }}
                   >
                     {item.icon}
@@ -337,13 +335,13 @@ export function DashboardLayout() {
                   sx={{ position: 'relative', zIndex: 1, textAlign: isRtl ? 'right' : 'left', minWidth: 0 }}
                   primaryTypographyProps={{
                     noWrap: true,
-                    fontWeight: isActive ? 950 : 740,
-                    fontSize: { xs: '.91rem', md: '.94rem' },
+                    fontWeight: isActive ? 850 : 720,
+                    fontSize: { xs: '.89rem', md: '.92rem' },
                     sx: {
-                      color: isActive ? '#ffffff !important' : '#334155 !important',
-                      WebkitTextFillColor: isActive ? '#ffffff !important' : '#334155 !important',
+                      color: isActive ? `${appPalette.primaryDark} !important` : '#334155 !important',
+                      WebkitTextFillColor: isActive ? `${appPalette.primaryDark} !important` : '#334155 !important',
                       opacity: '1 !important',
-                      textShadow: isActive ? '0 1px 2px rgba(0,0,0,.24)' : 'none',
+                      textShadow: 'none',
                     },
                   }}
                 />
