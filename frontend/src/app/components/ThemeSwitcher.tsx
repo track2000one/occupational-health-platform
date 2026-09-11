@@ -9,10 +9,10 @@ import {
   Collapse,
 } from '@mui/material';
 import { Palette as PaletteIcon, Close as CloseIcon } from '@mui/icons-material';
-import { PALETTES, useAppTheme } from '../context/ThemeContext';
+import { useAppTheme } from '../context/ThemeContext';
 
 export function ThemeSwitcher() {
-  const { palette: current, setPaletteId } = useAppTheme();
+  const { palette: current, availablePalettes, setPaletteId, typography } = useAppTheme();
   const { i18n } = useTranslation();
   const isRtl = i18n.language === 'ar';
   const [open, setOpen] = useState(false);
@@ -40,14 +40,14 @@ export function ThemeSwitcher() {
             maxHeight: 390,
             overflowY: 'auto',
             mb: 1,
-            background: 'rgba(248,250,252,.94)',
+            background: `${current.paper}F2`,
             border: '1px solid rgba(255,255,255,.72)',
             backdropFilter: 'blur(18px)',
             boxShadow: '10px 10px 24px rgba(156,169,184,.28), -8px -8px 22px rgba(255,255,255,.82)',
           }}
         >
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.75, px: 0.5 }}>
-            <Typography variant="subtitle2" fontWeight={850} sx={{ color: '#111827' }}>
+            <Typography variant="subtitle2" fontWeight={850} sx={{ color: typography.textColor }}>
               {isRtl ? 'الثيم' : 'Theme'}
             </Typography>
             <IconButton size="small" onClick={() => setOpen(false)} sx={{ width: 28, height: 28 }}>
@@ -55,7 +55,7 @@ export function ThemeSwitcher() {
             </IconButton>
           </Box>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.55 }}>
-            {PALETTES.map((p) => (
+            {availablePalettes.map((p) => (
               <Box
                 key={p.id}
                 onClick={() => setPaletteId(p.id)}
@@ -70,13 +70,13 @@ export function ThemeSwitcher() {
                   cursor: 'pointer',
                   border: '1px solid',
                   borderColor: current.id === p.id ? p.primary : 'rgba(148,163,184,.18)',
-                  bgcolor: current.id === p.id ? '#FFFFFF' : 'rgba(248,250,252,.52)',
+                  bgcolor: current.id === p.id ? current.activeItemBackground : current.paper,
                   boxShadow: current.id === p.id
                     ? `4px 4px 10px ${p.primary}22, -4px -4px 10px rgba(255,255,255,.9)`
                     : 'none',
                   transition: 'all 0.18s ease',
                   '&:hover': {
-                    bgcolor: '#FFFFFF',
+                    bgcolor: current.activeItemBackground,
                     transform: 'translateY(-1px)',
                     borderColor: `${p.primary}88`,
                   },
@@ -100,7 +100,7 @@ export function ThemeSwitcher() {
                   variant="caption"
                   noWrap
                   sx={{
-                    color: current.id === p.id ? '#111827' : '#475569',
+                    color: current.id === p.id ? current.activeItemText : typography.textColor,
                     fontWeight: current.id === p.id ? 850 : 650,
                     fontSize: '0.72rem',
                   }}

@@ -66,6 +66,12 @@ function PermissionRoute({ children, permission }: { children: React.ReactNode; 
   return <>{children}</>;
 }
 
+function withAlpha(hex: string, alpha: number) {
+  const value = hex.replace('#', '');
+  const numeric = Number.parseInt(value, 16);
+  return `rgba(${(numeric >> 16) & 255}, ${(numeric >> 8) & 255}, ${numeric & 255}, ${alpha})`;
+}
+
 function AppRoutes() {
   const { isAuthenticated } = useAuth();
 
@@ -175,7 +181,7 @@ function ThemedShell({ children }: { children: React.ReactNode }) {
       },
       text: {
         primary: textSettings.textColor,
-        secondary: textSettings.highContrast ? '#334155' : '#475569',
+        secondary: textSettings.highContrast ? textSettings.textColor : withAlpha(textSettings.textColor, .72),
       },
       background: {
         default: palette.background,
@@ -233,13 +239,13 @@ function ThemedShell({ children }: { children: React.ReactNode }) {
             },
           },
           outlined: {
-            backgroundColor: 'rgba(248,250,252,.78)',
+            backgroundColor: palette.paper,
             borderColor: 'rgba(148,163,184,.36)',
-            color: '#1F2937',
+            color: textSettings.textColor,
             boxShadow: `5px 5px 12px ${neoDark}, -5px -5px 12px ${neoLight}`,
             '&:hover': {
               transform: 'translateY(-1px)',
-              backgroundColor: '#F8FAFC',
+              backgroundColor: palette.paper,
               borderColor: `${palette.primary}66`,
               boxShadow: `7px 7px 16px ${neoDark}, -7px -7px 16px ${neoLight}`,
             },
@@ -254,7 +260,7 @@ function ThemedShell({ children }: { children: React.ReactNode }) {
           root: {
             borderRadius: 22,
             border: '1px solid rgba(255,255,255,.7)',
-            background: 'linear-gradient(145deg, #F8FAFC 0%, #EEF3F8 100%)',
+            background: `linear-gradient(145deg, ${palette.paper} 0%, ${palette.background} 180%)`,
             boxShadow: `9px 9px 22px ${neoDark}, -9px -9px 22px ${neoLight}`,
             transition: 'transform .18s ease, box-shadow .18s ease, border-color .18s ease',
             '&:hover': {
@@ -270,7 +276,7 @@ function ThemedShell({ children }: { children: React.ReactNode }) {
           root: {
             borderRadius: 20,
             borderColor: 'rgba(255,255,255,.7)',
-            backgroundImage: 'linear-gradient(145deg, #F8FAFC 0%, #EEF3F8 100%)',
+            backgroundImage: `linear-gradient(145deg, ${palette.paper} 0%, ${palette.background} 180%)`,
             boxShadow: `8px 8px 20px ${neoDark}, -8px -8px 20px ${neoLight}`,
           },
         },
@@ -288,7 +294,7 @@ function ThemedShell({ children }: { children: React.ReactNode }) {
         styleOverrides: {
           root: {
             borderRadius: 14,
-            backgroundColor: '#F8FAFC',
+            backgroundColor: palette.paper,
             boxShadow: 'inset 4px 4px 9px rgba(156,169,184,.28), inset -4px -4px 9px rgba(255,255,255,.86)',
             '& .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(148,163,184,.28)' },
             '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: `${palette.primary}55` },
@@ -306,7 +312,7 @@ function ThemedShell({ children }: { children: React.ReactNode }) {
         styleOverrides: {
           paper: {
             borderRadius: 24,
-            backgroundImage: 'linear-gradient(145deg, #F8FAFC 0%, #EEF3F8 100%)',
+            backgroundImage: `linear-gradient(145deg, ${palette.paper} 0%, ${palette.background} 180%)`,
             boxShadow: '18px 18px 48px rgba(15,23,42,.20), -10px -10px 28px rgba(255,255,255,.75)',
           },
         },
@@ -319,7 +325,7 @@ function ThemedShell({ children }: { children: React.ReactNode }) {
           head: {
             fontWeight: 820,
             color: textSettings.textColor,
-            backgroundColor: '#F1F5F9',
+            backgroundColor: palette.background,
           },
         },
       },

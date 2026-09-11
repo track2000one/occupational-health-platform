@@ -143,8 +143,8 @@ export function DashboardLayout() {
         flexDirection: 'column',
         position: 'relative',
         overflow: 'hidden',
-        color: appTypography.textColor,
-        background: `linear-gradient(180deg, #f7f9fb 0%, ${appPalette.background} 100%)`,
+        color: appPalette.sidebarText,
+        background: appPalette.sidebarBackground,
         boxShadow: 'inset -1px 0 0 rgba(148,163,184,.14)',
       }}
     >
@@ -264,12 +264,12 @@ export function DashboardLayout() {
                   py: .5,
                   borderRadius: 2.15,
                   flexDirection: isRtl ? 'row-reverse' : 'row',
-                  color: isActive ? appPalette.primaryDark : appTypography.textColor,
+                  color: isActive ? appPalette.activeItemText : appPalette.sidebarText,
                   overflow: 'hidden',
                   border: isActive ? `1px solid ${appPalette.primary}66` : '1px solid rgba(148,163,184,.13)',
                   background: isActive
-                    ? `linear-gradient(135deg, ${appPalette.primary}18 0%, #ffffff 100%)`
-                    : 'linear-gradient(145deg, #ffffff 0%, #fbfcfd 100%)',
+                    ? appPalette.activeItemBackground
+                    : appPalette.sidebarItem,
                   boxShadow: isActive
                     ? `0 5px 13px ${appPalette.primary}20`
                     : '0 4px 10px rgba(30,52,77,.07)',
@@ -289,13 +289,13 @@ export function DashboardLayout() {
                   '&:hover': {
                     transform: 'none',
                     background: isActive
-                      ? `linear-gradient(135deg, ${appPalette.primary}20 0%, #ffffff 100%)`
-                      : `linear-gradient(145deg, #ffffff 0%, ${appPalette.primary}0b 100%)`,
+                      ? appPalette.activeItemBackground
+                      : `linear-gradient(145deg, ${appPalette.sidebarItem} 0%, ${appPalette.primary}0b 100%)`,
                     boxShadow: isActive
                       ? `0 6px 15px ${appPalette.primary}28`
                       : '0 6px 14px rgba(30,52,77,.1)',
                     '& .nav-icon-3d': {
-                      color: isActive ? appPalette.primary : appPalette.primaryDark,
+                      color: isActive ? appPalette.activeItemText : appPalette.sidebarText,
                       transform: 'none',
                     },
                   },
@@ -303,8 +303,8 @@ export function DashboardLayout() {
                     transform: 'none',
                   },
                   '& .MuiListItemText-primary': {
-                    color: isActive ? `${appPalette.primaryDark} !important` : `${appTypography.textColor} !important`,
-                    WebkitTextFillColor: isActive ? `${appPalette.primaryDark} !important` : `${appTypography.textColor} !important`,
+                    color: isActive ? `${appPalette.activeItemText} !important` : `${appPalette.sidebarText} !important`,
+                    WebkitTextFillColor: isActive ? `${appPalette.activeItemText} !important` : `${appPalette.sidebarText} !important`,
                     opacity: '1 !important',
                     fontWeight: isActive ? '850 !important' : '720 !important',
                     textShadow: 'none',
@@ -322,7 +322,7 @@ export function DashboardLayout() {
                       placeItems: 'center',
                       flexShrink: 0,
                       borderRadius: 1.5,
-                      color: isActive ? appPalette.primary : '#27445f',
+                      color: isActive ? appPalette.activeItemText : appPalette.sidebarText,
                       background: isActive ? `${appPalette.primary}16` : 'transparent',
                       border: isActive ? `1px solid ${appPalette.primary}24` : '1px solid transparent',
                       boxShadow: 'none',
@@ -341,8 +341,8 @@ export function DashboardLayout() {
                     fontWeight: isActive ? 850 : 720,
                     fontSize: { xs: '.89rem', md: '.92rem' },
                     sx: {
-                      color: isActive ? `${appPalette.primaryDark} !important` : `${appTypography.textColor} !important`,
-                      WebkitTextFillColor: isActive ? `${appPalette.primaryDark} !important` : `${appTypography.textColor} !important`,
+                      color: isActive ? `${appPalette.activeItemText} !important` : `${appPalette.sidebarText} !important`,
+                      WebkitTextFillColor: isActive ? `${appPalette.activeItemText} !important` : `${appPalette.sidebarText} !important`,
                       opacity: '1 !important',
                       textShadow: 'none',
                     },
@@ -367,7 +367,7 @@ export function DashboardLayout() {
           width: { md: `calc(100% - ${drawerWidth}px)` },
           ml: { md: isRtl ? 0 : `${drawerWidth}px` },
           mr: { md: isRtl ? `${drawerWidth}px` : 0 },
-          bgcolor: 'rgba(255,255,255,.82)',
+          bgcolor: `${appPalette.paper}E8`,
           color: 'text.primary',
           borderBottom: '1px solid rgba(148,163,184,.18)',
           backdropFilter: 'blur(18px)',
@@ -504,7 +504,7 @@ export function DashboardLayout() {
               borderRight: isRtl ? 'none' : '1px solid',
               borderLeft: isRtl ? '1px solid' : 'none',
               borderColor: 'rgba(148,163,184,.18)',
-              background: 'rgba(255,255,255,.84)',
+              background: appPalette.sidebarBackground,
               backdropFilter: 'blur(18px)',
             },
           }}
@@ -522,7 +522,7 @@ export function DashboardLayout() {
           maxWidth: '100vw',
           minHeight: '100vh',
           overflowX: 'hidden',
-          background: `radial-gradient(circle at 8% 10%, ${appPalette.primary}12 0, transparent 28%), radial-gradient(circle at 95% 0%, ${appPalette.secondary}10 0, transparent 30%), linear-gradient(180deg, #F8FAFC 0%, ${appPalette.background} 100%)`,
+          background: `radial-gradient(circle at 8% 10%, ${appPalette.primary}12 0, transparent 28%), radial-gradient(circle at 95% 0%, ${appPalette.secondary}10 0, transparent 30%), ${appPalette.background}`,
           direction: isRtl ? 'rtl' : 'ltr',
         }}
       >

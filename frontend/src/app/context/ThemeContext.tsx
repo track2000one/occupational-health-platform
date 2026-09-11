@@ -11,7 +11,13 @@ export interface AppPalette {
   secondary: string;
   background: string;
   paper: string;
+  sidebarBackground: string;
+  sidebarItem: string;
+  sidebarText: string;
+  activeItemBackground: string;
+  activeItemText: string;
   drawerGradient: string;
+  isCustom?: boolean;
 }
 
 export type AppFontId = 'fanan' | 'ibm-plex' | 'tahoma';
@@ -72,6 +78,11 @@ export const PALETTES: AppPalette[] = [
     secondary: '#2F6F8F',
     background: '#F4F8F8',
     paper: '#FFFFFF',
+    sidebarBackground: '#F4F8F8',
+    sidebarItem: '#FFFFFF',
+    sidebarText: '#173B43',
+    activeItemBackground: '#E2F1EF',
+    activeItemText: '#0B5D59',
     drawerGradient: 'linear-gradient(135deg, #0B5D59 0%, #147D77 100%)',
   },
   {
@@ -84,6 +95,11 @@ export const PALETTES: AppPalette[] = [
     secondary: '#25847F',
     background: '#F5F8FB',
     paper: '#FFFFFF',
+    sidebarBackground: '#F3F7FA',
+    sidebarItem: '#FFFFFF',
+    sidebarText: '#173B57',
+    activeItemBackground: '#E2EDF5',
+    activeItemText: '#174A73',
     drawerGradient: 'linear-gradient(135deg, #174A73 0%, #246B9B 100%)',
   },
   {
@@ -96,6 +112,11 @@ export const PALETTES: AppPalette[] = [
     secondary: '#357A88',
     background: '#F4F6F8',
     paper: '#FFFFFF',
+    sidebarBackground: '#F1F4F7',
+    sidebarItem: '#FFFFFF',
+    sidebarText: '#17283D',
+    activeItemBackground: '#E2E8EE',
+    activeItemText: '#17283D',
     drawerGradient: 'linear-gradient(135deg, #17283D 0%, #2E4A66 100%)',
   },
   {
@@ -108,13 +129,25 @@ export const PALETTES: AppPalette[] = [
     secondary: '#9A7444',
     background: '#F6F3EE',
     paper: '#FFFEFC',
+    sidebarBackground: '#F5F1EB',
+    sidebarItem: '#FFFEFC',
+    sidebarText: '#1D344D',
+    activeItemBackground: '#E9E2D8',
+    activeItemText: '#1D344D',
     drawerGradient: 'linear-gradient(135deg, #1D344D 0%, #3E5879 100%)',
   },
 ];
 
 interface ThemeContextValue {
   palette: AppPalette;
+  availablePalettes: AppPalette[];
+  customPalettes: AppPalette[];
   setPaletteId: (id: string) => void;
+  updatePalette: (colors: Partial<AppPalette>) => void;
+  saveCustomPalette: (name: string) => AppPalette | null;
+  updateCustomPalette: (id: string, name?: string) => void;
+  deleteCustomPalette: (id: string) => void;
+  resetPalette: () => void;
   typography: AppTypographySettings;
   updateTypography: (settings: Partial<AppTypographySettings>) => void;
   resetTypography: () => void;
@@ -122,14 +155,88 @@ interface ThemeContextValue {
 
 const ThemeCtx = createContext<ThemeContextValue>({
   palette: PALETTES[0],
+  availablePalettes: PALETTES,
+  customPalettes: [],
   setPaletteId: () => {},
+  updatePalette: () => {},
+  saveCustomPalette: () => null,
+  updateCustomPalette: () => {},
+  deleteCustomPalette: () => {},
+  resetPalette: () => {},
   typography: DEFAULT_TYPOGRAPHY_SETTINGS,
   updateTypography: () => {},
   resetTypography: () => {},
 });
 
 const STORAGE_KEY = 'app-palette-id';
+const ACTIVE_PALETTE_STORAGE_KEY = 'app-active-palette-v2';
+const CUSTOM_PALETTES_STORAGE_KEY = 'app-custom-palettes-v1';
 const TYPOGRAPHY_STORAGE_KEY = 'app-typography-settings-v1';
+
+function isHexColor(value: unknown): value is string {
+  return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value);
+}
+
+function normalizePalette(value: Partial<AppPalette>, fallback: AppPalette = PALETTES[0]): AppPalette {
+  const color = (candidate: unknown, defaultColor: string) => isHexColor(candidate) ? candidate : defaultColor;
+  const primary = color(value.primary, fallback.primary);
+  const primaryDark = color(value.primaryDark, fallback.primaryDark);
+  const secondary = color(value.secondary, fallback.secondary);
+  const background = color(value.background, fallback.background);
+
+  return {
+    id: typeof value.id === 'string' && value.id ? value.id : fallback.id,
+    nameAr: typeof value.nameAr === 'string' && value.nameAr.trim() ? value.nameAr.trim().slice(0, 50) : fallback.nameAr,
+    nameEn: typeof value.nameEn === 'string' && value.nameEn.trim() ? value.nameEn.trim().slice(0, 50) : fallback.nameEn,
+    swatches: [primaryDark, primary, secondary, background],
+    primary,
+    primaryDark,
+    secondary,
+    background,
+    paper: color(value.paper, fallback.paper),
+    sidebarBackground: color(value.sidebarBackground, fallback.sidebarBackground),
+    sidebarItem: color(value.sidebarItem, fallback.sidebarItem),
+    sidebarText: color(value.sidebarText, fallback.sidebarText),
+    activeItemBackground: color(value.activeItemBackground, fallback.activeItemBackground),
+    activeItemText: color(value.activeItemText, fallback.activeItemText),
+    drawerGradient: `linear-gradient(135deg, ${primaryDark} 0%, ${primary} 100%)`,
+    isCustom: Boolean(value.isCustom),
+  };
+}
+
+function loadCustomPalettes(): AppPalette[] {
+  try {
+    const stored = JSON.parse(localStorage.getItem(CUSTOM_PALETTES_STORAGE_KEY) || '[]');
+    if (!Array.isArray(stored)) return [];
+    return stored
+      .filter(item => item && typeof item === 'object' && typeof item.id === 'string' && item.id.startsWith('custom-'))
+      .slice(-12)
+      .map(item => normalizePalette({ ...item, isCustom: true }));
+  } catch {
+    return [];
+  }
+}
+
+function loadInitialPalette(customPalettes: AppPalette[]): AppPalette {
+  try {
+    const active = localStorage.getItem(ACTIVE_PALETTE_STORAGE_KEY);
+    if (active) {
+      const parsed = JSON.parse(active) as Partial<AppPalette>;
+      const fallback = [...PALETTES, ...customPalettes].find(item => item.id === parsed.id) ?? PALETTES[0];
+      return normalizePalette(parsed, fallback);
+    }
+  } catch {
+    // Fall back to the legacy palette id below.
+  }
+
+  const storedId = localStorage.getItem(STORAGE_KEY);
+  return [...PALETTES, ...customPalettes].find(item => item.id === storedId) ?? PALETTES[0];
+}
+
+function persistActivePalette(palette: AppPalette) {
+  localStorage.setItem(STORAGE_KEY, palette.id);
+  localStorage.setItem(ACTIVE_PALETTE_STORAGE_KEY, JSON.stringify(palette));
+}
 
 function hexToRgb(hex: string) {
   const normalized = hex.replace('#', '');
@@ -185,9 +292,11 @@ function applyPaletteCssVariables(palette: AppPalette) {
     '--input-background': palette.paper,
     '--chart-1': palette.primary,
     '--chart-2': palette.secondary,
-    '--sidebar': palette.background,
+    '--sidebar': palette.sidebarBackground,
     '--sidebar-primary': palette.primary,
-    '--sidebar-accent': palette.paper,
+    '--sidebar-accent': palette.sidebarItem,
+    '--sidebar-foreground': palette.sidebarText,
+    '--sidebar-accent-foreground': palette.sidebarText,
     '--sidebar-ring': palette.primary,
   };
 
@@ -243,10 +352,10 @@ function applyTypographyCssVariables(settings: AppTypographySettings) {
 }
 
 export function AppThemeProvider({ children }: { children: React.ReactNode }) {
-  const stored = localStorage.getItem(STORAGE_KEY);
-  const initial = PALETTES.find(p => p.id === stored) ?? PALETTES[0];
-  const [palette, setPalette] = useState<AppPalette>(initial);
+  const [customPalettes, setCustomPalettes] = useState<AppPalette[]>(loadCustomPalettes);
+  const [palette, setPalette] = useState<AppPalette>(() => loadInitialPalette(loadCustomPalettes()));
   const [typography, setTypography] = useState<AppTypographySettings>(loadTypographySettings);
+  const availablePalettes = useMemo(() => [...PALETTES, ...customPalettes], [customPalettes]);
 
   useEffect(() => {
     applyPaletteCssVariables(palette);
@@ -254,11 +363,78 @@ export function AppThemeProvider({ children }: { children: React.ReactNode }) {
   }, [palette, typography]);
 
   const setPaletteId = (id: string) => {
-    const found = PALETTES.find(p => p.id === id);
+    const found = availablePalettes.find(p => p.id === id);
     if (found) {
       setPalette(found);
-      localStorage.setItem(STORAGE_KEY, id);
+      persistActivePalette(found);
     }
+  };
+
+  const updatePalette = (colors: Partial<AppPalette>) => {
+    setPalette(current => {
+      const next = normalizePalette({ ...current, ...colors }, current);
+      persistActivePalette(next);
+      return next;
+    });
+  };
+
+  const saveCustomPalette = (name: string) => {
+    const trimmedName = name.trim().slice(0, 50);
+    if (!trimmedName) return null;
+
+    const next = normalizePalette({
+      ...palette,
+      id: `custom-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      nameAr: trimmedName,
+      nameEn: trimmedName,
+      isCustom: true,
+    });
+
+    setCustomPalettes(current => {
+      const updated = [...current, next].slice(-12);
+      localStorage.setItem(CUSTOM_PALETTES_STORAGE_KEY, JSON.stringify(updated));
+      return updated;
+    });
+    setPalette(next);
+    persistActivePalette(next);
+    return next;
+  };
+
+  const updateCustomPalette = (id: string, name?: string) => {
+    if (!id.startsWith('custom-')) return;
+    const currentName = customPalettes.find(item => item.id === id)?.nameAr ?? palette.nameAr;
+    const next = normalizePalette({
+      ...palette,
+      id,
+      nameAr: name?.trim() || currentName,
+      nameEn: name?.trim() || currentName,
+      isCustom: true,
+    });
+    setCustomPalettes(current => {
+      const updated = current.map(item => item.id === id ? next : item);
+      localStorage.setItem(CUSTOM_PALETTES_STORAGE_KEY, JSON.stringify(updated));
+      return updated;
+    });
+    setPalette(next);
+    persistActivePalette(next);
+  };
+
+  const deleteCustomPalette = (id: string) => {
+    if (!id.startsWith('custom-')) return;
+    setCustomPalettes(current => {
+      const updated = current.filter(item => item.id !== id);
+      localStorage.setItem(CUSTOM_PALETTES_STORAGE_KEY, JSON.stringify(updated));
+      return updated;
+    });
+    if (palette.id === id) {
+      setPalette(PALETTES[0]);
+      persistActivePalette(PALETTES[0]);
+    }
+  };
+
+  const resetPalette = () => {
+    setPalette(PALETTES[0]);
+    persistActivePalette(PALETTES[0]);
   };
 
   const updateTypography = (settings: Partial<AppTypographySettings>) => {
@@ -275,8 +451,21 @@ export function AppThemeProvider({ children }: { children: React.ReactNode }) {
   };
 
   const value = useMemo(
-    () => ({ palette, setPaletteId, typography, updateTypography, resetTypography }),
-    [palette, typography],
+    () => ({
+      palette,
+      availablePalettes,
+      customPalettes,
+      setPaletteId,
+      updatePalette,
+      saveCustomPalette,
+      updateCustomPalette,
+      deleteCustomPalette,
+      resetPalette,
+      typography,
+      updateTypography,
+      resetTypography,
+    }),
+    [palette, availablePalettes, customPalettes, typography],
   );
 
   return <ThemeCtx.Provider value={value}>{children}</ThemeCtx.Provider>;
