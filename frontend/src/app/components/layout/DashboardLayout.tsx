@@ -67,7 +67,7 @@ interface NavItem {
 export function DashboardLayout() {
   const { t, i18n } = useTranslation();
   const { user, logout, can } = useAuth();
-  const { palette: appPalette } = useAppTheme();
+  const { palette: appPalette, typography: appTypography } = useAppTheme();
   const navigate = useNavigate();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -93,7 +93,7 @@ export function DashboardLayout() {
     { key: 'admin',              label: isRtl ? 'لوحة المسؤول' : 'Admin Console',              icon: <AdminPanelSettingsIcon />, path: '/admin',  group: 'admin', permission: PERMISSIONS.MANAGE_USERS },
     { key: 'adminUsers',         label: isRtl ? 'إدارة المستخدمين' : 'Users Management',       icon: <PeopleIcon />,        path: '/admin/users', group: 'admin', permission: PERMISSIONS.MANAGE_USERS },
     { key: 'auditLog',           label: isRtl ? 'سجل العمليات' : 'Audit Log',                  icon: <SecurityIcon />,      path: '/audit-log',   group: 'admin', permission: PERMISSIONS.VIEW_AUDIT_LOGS },
-    { key: 'settings',           label: isRtl ? 'إعدادات النظام' : 'System Settings',          icon: <SettingsIcon />,      path: '/settings',    group: 'admin', permission: PERMISSIONS.MANAGE_SETTINGS },
+    { key: 'settings',           label: isRtl ? 'إعدادات المظهر والقراءة' : 'Appearance Settings', icon: <SettingsIcon />,   path: '/settings',    group: 'admin', permission: PERMISSIONS.MANAGE_SETTINGS },
     { key: 'roles',              label: isRtl ? 'الأدوار والصلاحيات' : 'Roles & Perms',        icon: <ShieldIcon />,        path: '/roles',       group: 'admin', permission: PERMISSIONS.MANAGE_USERS },
   ];
 
@@ -110,6 +110,9 @@ export function DashboardLayout() {
     if (item.path === '/admin') return location.pathname === '/admin';
     return location.pathname === item.path || location.pathname.startsWith(`${item.path}/`);
   });
+  const activePageLabel = location.pathname === '/settings'
+    ? (isRtl ? 'إعدادات المظهر والقراءة' : 'Appearance & Reading Settings')
+    : activeNav?.label || t(window.location.pathname.split('/')[1] || 'dashboard');
 
   const handleDrawerToggle = () => setMobileOpen(!mobileOpen);
 
@@ -140,7 +143,7 @@ export function DashboardLayout() {
         flexDirection: 'column',
         position: 'relative',
         overflow: 'hidden',
-        color: '#1e293b',
+        color: appTypography.textColor,
         background: `linear-gradient(180deg, #f7f9fb 0%, ${appPalette.background} 100%)`,
         boxShadow: 'inset -1px 0 0 rgba(148,163,184,.14)',
       }}
@@ -261,7 +264,7 @@ export function DashboardLayout() {
                   py: .5,
                   borderRadius: 2.15,
                   flexDirection: isRtl ? 'row-reverse' : 'row',
-                  color: isActive ? appPalette.primaryDark : '#334155',
+                  color: isActive ? appPalette.primaryDark : appTypography.textColor,
                   overflow: 'hidden',
                   border: isActive ? `1px solid ${appPalette.primary}66` : '1px solid rgba(148,163,184,.13)',
                   background: isActive
@@ -300,8 +303,8 @@ export function DashboardLayout() {
                     transform: 'none',
                   },
                   '& .MuiListItemText-primary': {
-                    color: isActive ? `${appPalette.primaryDark} !important` : '#334155 !important',
-                    WebkitTextFillColor: isActive ? `${appPalette.primaryDark} !important` : '#334155 !important',
+                    color: isActive ? `${appPalette.primaryDark} !important` : `${appTypography.textColor} !important`,
+                    WebkitTextFillColor: isActive ? `${appPalette.primaryDark} !important` : `${appTypography.textColor} !important`,
                     opacity: '1 !important',
                     fontWeight: isActive ? '850 !important' : '720 !important',
                     textShadow: 'none',
@@ -338,8 +341,8 @@ export function DashboardLayout() {
                     fontWeight: isActive ? 850 : 720,
                     fontSize: { xs: '.89rem', md: '.92rem' },
                     sx: {
-                      color: isActive ? `${appPalette.primaryDark} !important` : '#334155 !important',
-                      WebkitTextFillColor: isActive ? `${appPalette.primaryDark} !important` : '#334155 !important',
+                      color: isActive ? `${appPalette.primaryDark} !important` : `${appTypography.textColor} !important`,
+                      WebkitTextFillColor: isActive ? `${appPalette.primaryDark} !important` : `${appTypography.textColor} !important`,
                       opacity: '1 !important',
                       textShadow: 'none',
                     },
@@ -382,8 +385,8 @@ export function DashboardLayout() {
             <MenuIcon />
           </IconButton>
           <Box sx={{ flexGrow: 1, minWidth: 0, textAlign: isRtl ? 'right' : 'left' }}>
-            <Typography variant="h6" noWrap component="div" sx={{ fontWeight: 850, color: '#111827', fontSize: { xs: '1rem', sm: '1.08rem', md: '1.18rem' } }}>
-              {activeNav?.label || t(window.location.pathname.split('/')[1] || 'dashboard')}
+            <Typography variant="h6" noWrap component="div" sx={{ fontWeight: 850, color: appTypography.textColor, fontSize: { xs: '1rem', sm: '1.08rem', md: '1.18rem' } }}>
+              {activePageLabel}
             </Typography>
             <Typography variant="caption" color="text.secondary" sx={{ display: { xs: 'none', sm: 'block' }, fontWeight: 650 }}>
               {isRtl ? 'منصة إدارة الصحة المهنية' : 'Occupational Health Management Platform'}
@@ -451,6 +454,12 @@ export function DashboardLayout() {
                 <LanguageIcon fontSize="small" />
               </ListItemIcon>
               {isRtl ? 'English' : 'العربية'}
+            </MenuItem>
+            <MenuItem onClick={() => { navigate('/settings'); handleMenuClose(); }}>
+              <ListItemIcon>
+                <SettingsIcon fontSize="small" />
+              </ListItemIcon>
+              {isRtl ? 'إعدادات المظهر والقراءة' : 'Appearance & Reading'}
             </MenuItem>
             <MenuItem onClick={handleLogout}>
               <ListItemIcon>

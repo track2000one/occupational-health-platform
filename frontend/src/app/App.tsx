@@ -51,6 +51,7 @@ import { OccupationalHealthPage } from './pages/OccupationalHealthPage';
 import { CampaignsPage } from './pages/CampaignsPage';
 import { DataQualityPage } from './pages/DataQualityPage';
 import { DataImportPage } from './pages/DataImportPage';
+import { AppearanceSettingsPage } from './pages/AppearanceSettingsPage';
 import { Toaster } from 'sonner';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -118,7 +119,7 @@ function AppRoutes() {
             <AuditLogPage />
           </PermissionRoute>
         } />
-        <Route path="settings" element={<Navigate to="/admin/users" replace />} />
+        <Route path="settings" element={<AppearanceSettingsPage />} />
         <Route path="admin/users" element={
           <PermissionRoute permission="manage:users">
             <AdminUsersPage />
@@ -136,7 +137,7 @@ function AppRoutes() {
 }
 
 function ThemedShell({ children }: { children: React.ReactNode }) {
-  const { palette } = useAppTheme();
+  const { palette, typography: textSettings } = useAppTheme();
   const neoLight = 'rgba(255,255,255,.82)';
   const neoDark = 'rgba(156,169,184,.34)';
 
@@ -173,8 +174,8 @@ function ThemedShell({ children }: { children: React.ReactNode }) {
         dark: '#075985',
       },
       text: {
-        primary: '#111827',
-        secondary: '#475569',
+        primary: textSettings.textColor,
+        secondary: textSettings.highContrast ? '#334155' : '#475569',
       },
       background: {
         default: palette.background,
@@ -182,13 +183,16 @@ function ThemedShell({ children }: { children: React.ReactNode }) {
       },
     },
     typography: {
-      fontFamily: '"Fanan", "IBM Plex Sans Arabic", "Segoe UI", Tahoma, Arial, sans-serif',
-      h4: { fontWeight: 850, letterSpacing: '-0.02em', color: '#111827' },
-      h5: { fontWeight: 800, letterSpacing: '-0.01em', color: '#111827' },
-      h6: { fontWeight: 780, color: '#111827' },
-      subtitle1: { fontWeight: 740 },
-      body1: { color: '#1F2937' },
-      body2: { color: '#334155' },
+      fontFamily: 'var(--app-font-family)',
+      fontWeightRegular: textSettings.fontWeight,
+      fontWeightMedium: Math.min(800, textSettings.fontWeight + 100),
+      fontWeightBold: Math.min(900, textSettings.fontWeight + 300),
+      h4: { fontWeight: 850, letterSpacing: '-0.02em', color: textSettings.textColor, lineHeight: 1.35 },
+      h5: { fontWeight: 800, letterSpacing: '-0.01em', color: textSettings.textColor, lineHeight: 1.35 },
+      h6: { fontWeight: 780, color: textSettings.textColor, lineHeight: 1.4 },
+      subtitle1: { fontWeight: 740, lineHeight: textSettings.lineHeight },
+      body1: { color: textSettings.textColor, lineHeight: textSettings.lineHeight },
+      body2: { color: textSettings.textColor, lineHeight: textSettings.lineHeight },
       button: { fontWeight: 760 },
     },
     shape: { borderRadius: 18 },
@@ -198,7 +202,7 @@ function ThemedShell({ children }: { children: React.ReactNode }) {
           body: {
             minHeight: '100vh',
             background: `radial-gradient(circle at 12% 10%, ${palette.primary}12 0, transparent 32%), radial-gradient(circle at 82% 0%, ${palette.secondary}10 0, transparent 28%), ${palette.background}`,
-            color: '#111827',
+            color: textSettings.textColor,
           },
         },
       },
@@ -310,17 +314,17 @@ function ThemedShell({ children }: { children: React.ReactNode }) {
       MuiTableCell: {
         styleOverrides: {
           root: {
-            color: '#1F2937',
+            color: textSettings.textColor,
           },
           head: {
             fontWeight: 820,
-            color: '#111827',
+            color: textSettings.textColor,
             backgroundColor: '#F1F5F9',
           },
         },
       },
     },
-  }), [palette, neoLight, neoDark]);
+  }), [palette, textSettings, neoLight, neoDark]);
 
   return (
     <div style={{ display: 'contents' }}>

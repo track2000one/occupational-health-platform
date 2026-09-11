@@ -2,6 +2,8 @@
 
 :root {
   --font-size: 16px;
+  --app-line-height: 1.55;
+  --app-text-color: #111827;
   --oh-primary: #147D77;
   --oh-primary-dark: #0B5D59;
   --oh-primary-rgb: 20, 125, 119;
@@ -157,6 +159,8 @@
     @apply bg-background text-foreground;
     min-height: 100%;
     font-family: var(--app-font-family);
+    color: var(--app-text-color);
+    line-height: var(--app-line-height);
     background: var(--oh-main-gradient);
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
@@ -170,19 +174,41 @@
 
   label, button, input, textarea, select {
     font-family: var(--app-font-family);
+    line-height: var(--app-line-height);
   }
 
   button {
     font-size: var(--text-base);
     font-weight: 760;
-    line-height: 1.5;
+    line-height: var(--app-line-height);
   }
 
-  input {
+  input, textarea, select {
     font-size: var(--text-base);
     font-weight: var(--font-weight-normal);
-    line-height: 1.5;
+    line-height: var(--app-line-height);
   }
+}
+
+:root[data-high-contrast='true'] {
+  --border: rgba(51, 65, 85, 0.52);
+  --muted-foreground: #334155;
+  --oh-muted: #334155;
+}
+
+:root[data-high-contrast='true'] body .MuiOutlinedInput-notchedOutline,
+:root[data-high-contrast='true'] body .MuiPaper-root,
+:root[data-high-contrast='true'] body .MuiCard-root {
+  border-color: rgba(51, 65, 85, 0.48) !important;
+}
+
+:root[data-reduce-motion='true'] *,
+:root[data-reduce-motion='true'] *::before,
+:root[data-reduce-motion='true'] *::after {
+  scroll-behavior: auto !important;
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
 }
 
 @layer components {

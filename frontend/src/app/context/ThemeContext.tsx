@@ -14,6 +14,53 @@ export interface AppPalette {
   drawerGradient: string;
 }
 
+export type AppFontId = 'fanan' | 'ibm-plex' | 'tahoma';
+
+export interface AppTypographySettings {
+  fontId: AppFontId;
+  fontSize: number;
+  fontWeight: 400 | 500 | 600 | 700;
+  lineHeight: number;
+  textColor: string;
+  highContrast: boolean;
+  reduceMotion: boolean;
+}
+
+export const FONT_OPTIONS: Array<{ id: AppFontId; nameAr: string; nameEn: string; family: string }> = [
+  {
+    id: 'fanan',
+    nameAr: 'فنان',
+    nameEn: 'Fanan',
+    family: "'Fanan', 'IBM Plex Sans Arabic', 'Segoe UI', Tahoma, Arial, sans-serif",
+  },
+  {
+    id: 'ibm-plex',
+    nameAr: 'IBM Plex عربي',
+    nameEn: 'IBM Plex Arabic',
+    family: "'IBM Plex Sans Arabic', 'Segoe UI', Tahoma, Arial, sans-serif",
+  },
+  {
+    id: 'tahoma',
+    nameAr: 'Tahoma كلاسيكي',
+    nameEn: 'Tahoma Classic',
+    family: "Tahoma, 'Segoe UI', Arial, sans-serif",
+  },
+];
+
+export const DEFAULT_TYPOGRAPHY_SETTINGS: AppTypographySettings = {
+  fontId: 'fanan',
+  fontSize: 16,
+  fontWeight: 400,
+  lineHeight: 1.55,
+  textColor: '#111827',
+  highContrast: false,
+  reduceMotion: false,
+};
+
+export function getFontFamily(fontId: AppFontId) {
+  return FONT_OPTIONS.find(option => option.id === fontId)?.family ?? FONT_OPTIONS[0].family;
+}
+
 export const PALETTES: AppPalette[] = [
   {
     id: 'default',
@@ -68,14 +115,21 @@ export const PALETTES: AppPalette[] = [
 interface ThemeContextValue {
   palette: AppPalette;
   setPaletteId: (id: string) => void;
+  typography: AppTypographySettings;
+  updateTypography: (settings: Partial<AppTypographySettings>) => void;
+  resetTypography: () => void;
 }
 
 const ThemeCtx = createContext<ThemeContextValue>({
   palette: PALETTES[0],
   setPaletteId: () => {},
+  typography: DEFAULT_TYPOGRAPHY_SETTINGS,
+  updateTypography: () => {},
+  resetTypography: () => {},
 });
 
 const STORAGE_KEY = 'app-palette-id';
+const TYPOGRAPHY_STORAGE_KEY = 'app-typography-settings-v1';
 
 function hexToRgb(hex: string) {
   const normalized = hex.replace('#', '');
@@ -140,14 +194,64 @@ function applyPaletteCssVariables(palette: AppPalette) {
   Object.entries(vars).forEach(([name, value]) => setCssVariable(name, value));
 }
 
+function normalizeTypographySettings(value: Partial<AppTypographySettings> | null): AppTypographySettings {
+  const validFont = FONT_OPTIONS.some(option => option.id === value?.fontId)
+    ? value!.fontId as AppFontId
+    : DEFAULT_TYPOGRAPHY_SETTINGS.fontId;
+  const validWeights = [400, 500, 600, 700] as const;
+  const requestedWeight = Number(value?.fontWeight);
+
+  return {
+    fontId: validFont,
+    fontSize: Math.min(20, Math.max(14, Number(value?.fontSize) || DEFAULT_TYPOGRAPHY_SETTINGS.fontSize)),
+    fontWeight: validWeights.includes(requestedWeight as typeof validWeights[number])
+      ? requestedWeight as AppTypographySettings['fontWeight']
+      : DEFAULT_TYPOGRAPHY_SETTINGS.fontWeight,
+    lineHeight: Math.min(1.9, Math.max(1.35, Number(value?.lineHeight) || DEFAULT_TYPOGRAPHY_SETTINGS.lineHeight)),
+    textColor: /^#[0-9a-f]{6}$/i.test(value?.textColor || '')
+      ? value!.textColor!
+      : DEFAULT_TYPOGRAPHY_SETTINGS.textColor,
+    highContrast: Boolean(value?.highContrast),
+    reduceMotion: Boolean(value?.reduceMotion),
+  };
+}
+
+function loadTypographySettings() {
+  try {
+    const stored = localStorage.getItem(TYPOGRAPHY_STORAGE_KEY);
+    return normalizeTypographySettings(stored ? JSON.parse(stored) : null);
+  } catch {
+    return DEFAULT_TYPOGRAPHY_SETTINGS;
+  }
+}
+
+function applyTypographyCssVariables(settings: AppTypographySettings) {
+  if (typeof document === 'undefined') return;
+
+  setCssVariable('--app-font-family', getFontFamily(settings.fontId));
+  setCssVariable('--font-size', `${settings.fontSize}px`);
+  setCssVariable('--font-weight-normal', String(settings.fontWeight));
+  setCssVariable('--font-weight-medium', String(Math.min(800, settings.fontWeight + 200)));
+  setCssVariable('--app-line-height', String(settings.lineHeight));
+  setCssVariable('--app-text-color', settings.textColor);
+  setCssVariable('--foreground', settings.textColor);
+  setCssVariable('--card-foreground', settings.textColor);
+  setCssVariable('--popover-foreground', settings.textColor);
+  setCssVariable('--oh-navy', settings.textColor);
+  document.documentElement.dataset.highContrast = String(settings.highContrast);
+  document.documentElement.dataset.reduceMotion = String(settings.reduceMotion);
+}
+
 export function AppThemeProvider({ children }: { children: React.ReactNode }) {
   const stored = localStorage.getItem(STORAGE_KEY);
   const initial = PALETTES.find(p => p.id === stored) ?? PALETTES[0];
   const [palette, setPalette] = useState<AppPalette>(initial);
+  const [typography, setTypography] = useState<AppTypographySettings>(loadTypographySettings);
 
   useEffect(() => {
     applyPaletteCssVariables(palette);
-  }, [palette]);
+    applyTypographyCssVariables(typography);
+  }, [palette, typography]);
 
   const setPaletteId = (id: string) => {
     const found = PALETTES.find(p => p.id === id);
@@ -157,7 +261,23 @@ export function AppThemeProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const value = useMemo(() => ({ palette, setPaletteId }), [palette]);
+  const updateTypography = (settings: Partial<AppTypographySettings>) => {
+    setTypography(current => {
+      const next = normalizeTypographySettings({ ...current, ...settings });
+      localStorage.setItem(TYPOGRAPHY_STORAGE_KEY, JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const resetTypography = () => {
+    setTypography(DEFAULT_TYPOGRAPHY_SETTINGS);
+    localStorage.setItem(TYPOGRAPHY_STORAGE_KEY, JSON.stringify(DEFAULT_TYPOGRAPHY_SETTINGS));
+  };
+
+  const value = useMemo(
+    () => ({ palette, setPaletteId, typography, updateTypography, resetTypography }),
+    [palette, typography],
+  );
 
   return <ThemeCtx.Provider value={value}>{children}</ThemeCtx.Provider>;
 }

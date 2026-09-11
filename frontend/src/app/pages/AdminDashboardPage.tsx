@@ -33,6 +33,7 @@ import {
   ManageAccounts as ManageAccountsIcon,
   TrendingUp as TrendingUpIcon,
   WarningAmber as WarningAmberIcon,
+  Tune as TuneIcon,
 } from '@mui/icons-material';
 import { MOCK_USERS_LIST } from '../context/AuthContext';
 import { PERMISSIONS, ROLE_DEFINITIONS } from '../data/roles';
@@ -129,6 +130,12 @@ export function AdminDashboardPage() {
       desc: isRtl ? 'مؤشرات اكتمال البيانات والتنبيهات' : 'Completeness indicators and alerts',
       icon: <FactCheckIcon />,
       path: '/data-quality',
+    },
+    {
+      title: isRtl ? 'إعدادات المظهر والقراءة' : 'Appearance & Reading',
+      desc: isRtl ? 'التحكم بالخط والحجم والألوان وراحة العرض' : 'Control fonts, sizing, colors, and display comfort',
+      icon: <TuneIcon />,
+      path: '/settings',
     },
   ];
 
