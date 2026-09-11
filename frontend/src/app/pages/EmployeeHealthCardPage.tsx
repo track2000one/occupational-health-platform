@@ -78,6 +78,17 @@ type FieldDefinition = {
   options?: Array<{ value: string; label: string }>;
 };
 
+type FormFieldLayout = {
+  key: string;
+  width?: 4 | 6 | 8 | 12;
+};
+
+type FormFieldGroup = {
+  title: string;
+  description: string;
+  items: FormFieldLayout[];
+};
+
 type SectionData = Record<SectionKey, Record<string, string>>;
 
 type EmployeeData = {
@@ -258,6 +269,111 @@ const SECTION_FIELDS: Record<SectionKey, FieldDefinition[]> = {
   vaccinations: VACCINATION_FIELDS,
   recommendations: RECOMMENDATION_FIELDS,
   additional: ADDITIONAL_FIELDS,
+};
+
+const FIELD_GROUPS: Record<SectionKey, FormFieldGroup[]> = {
+  personal: [
+    { title: 'البيانات الأسرية', description: 'المعلومات الشخصية الإضافية المرتبطة بالأسرة', items: [
+      { key: 'children_count', width: 4 }, { key: 'spouse_name', width: 8 },
+    ] },
+  ],
+  employment: [
+    { title: 'بيانات العمل الحالية', description: 'المعرّفات الوظيفية وبيانات الوظيفة', items: [
+      { key: 'moh_id', width: 6 }, { key: 'current_position', width: 6 },
+    ] },
+  ],
+  physical: [
+    { title: 'القياسات الأساسية', description: 'الوزن والطول ومؤشر كتلة الجسم', items: [
+      { key: 'weight_kg' }, { key: 'height_cm' }, { key: 'bmi' },
+    ] },
+    { title: 'النشاط والتصنيف', description: 'تصنيف الوزن ومستوى النشاط البدني', items: [
+      { key: 'obesity_status' }, { key: 'physical_activity' }, { key: 'activity_level' },
+    ] },
+  ],
+  conditions: [
+    { title: 'الأمراض المزمنة والعوامل الصحية', description: 'الحالات الأساسية والعوامل المؤثرة في الصحة', items: [
+      { key: 'diabetes' }, { key: 'hypertension' }, { key: 'thyroid_disease' },
+      { key: 'asthma' }, { key: 'ms_disorder' }, { key: 'blood_disease' },
+      { key: 'smoking_status' }, { key: 'metabolic_syndrome' }, { key: 'chronic_disease' },
+    ] },
+    { title: 'العمليات والحساسية والتاريخ العائلي', description: 'تفاصيل العمليات والحساسية والتاريخ المرضي للأسرة', items: [
+      { key: 'surgical_history', width: 4 }, { key: 'surgical_details', width: 8 },
+      { key: 'family_history', width: 6 }, { key: 'allergy_history', width: 6 },
+    ] },
+    { title: 'التاريخ السرطاني والمهني', description: 'السجل السابق للأورام وحوادث وخز الإبر', items: [
+      { key: 'colon_cancer_history', width: 6 }, { key: 'breast_cancer_history', width: 6 },
+      { key: 'other_cancer_history', width: 6 }, { key: 'needle_stick_history', width: 6 },
+    ] },
+    { title: 'القيود والعلاج والملاحظات', description: 'القيود الطبية والعلاجات المستمرة والملاحظات الأخرى', items: [
+      { key: 'medical_restrictions' }, { key: 'regular_medication' }, { key: 'other_conditions' },
+    ] },
+  ],
+  mental: [
+    { title: 'نتائج المقاييس النفسية', description: 'نتائج PHQ وGAD وMBI', items: [
+      { key: 'phq_result' }, { key: 'gad_result' }, { key: 'mbi_result' },
+    ] },
+    { title: 'المؤشرات النفسية', description: 'الحالات النفسية ومؤشرات الإجهاد والنوم', items: [
+      { key: 'depression', width: 6 }, { key: 'anxiety', width: 6 },
+      { key: 'burnout', width: 6 }, { key: 'sleep_disorder', width: 6 },
+    ] },
+    { title: 'الملاحظات والمخاطر', description: 'الملاحظات السريرية والمخاطر النفسية الأخرى', items: [
+      { key: 'other_psychological', width: 6 }, { key: 'other_risks', width: 6 },
+    ] },
+  ],
+  follow_up: [
+    { title: 'الزيارات الصحية', description: 'آخر الزيارات الافتراضية والميدانية', items: [
+      { key: 'latest_virtual_visit', width: 6 }, { key: 'latest_field_visit', width: 6 },
+    ] },
+    { title: 'الفحوصات المخبرية وPPD', description: 'طلبات الفحص والنتائج وتواريخ المراجعة', items: [
+      { key: 'lab_request' }, { key: 'lab_request_date' }, { key: 'lab_result' },
+      { key: 'result_checked_date' }, { key: 'ppd_date' }, { key: 'ppd_test' },
+    ] },
+    { title: 'برامج المسح واللقاحات', description: 'الالتحاق وبرامج الفحص والتطعيم الوقائي', items: [
+      { key: 'joined' }, { key: 'breast_cancer_screening' }, { key: 'colon_cancer_screening' },
+      { key: 'flu_vaccine' }, { key: 'mcv4_vaccine' }, { key: 'covid_19' },
+      { key: 'other_vaccine', width: 12 },
+    ] },
+    { title: 'ملاحظات المتابعة', description: 'أي تفاصيل إضافية مرتبطة بخطة المتابعة', items: [
+      { key: 'notes', width: 12 },
+    ] },
+  ],
+  vaccinations: [
+    { title: 'التهاب الكبد B والفحوصات الفيروسية', description: 'اللقاح والجرعات ونتائج الأجسام المضادة والفحوصات', items: [
+      { key: 'hbv_vaccine' }, { key: 'hbv_dose_1' }, { key: 'hbv_dose_2' },
+      { key: 'hbv_dose_3' }, { key: 'anti_hbs' }, { key: 'post_vaccine_anti_hbs' },
+      { key: 'post_vaccine_anti_hbs_date' }, { key: 'hbsag' }, { key: 'hcv' },
+    ] },
+    { title: 'لقاح MMR والمناعة', description: 'جرعات MMR ونتائج المناعة للحصبة والحصبة الألمانية والنكاف', items: [
+      { key: 'mmr_vaccine' }, { key: 'mmr_dose_1' }, { key: 'mmr_dose_2' },
+      { key: 'rubella_igg' }, { key: 'measles_igg' }, { key: 'mumps_igg' },
+    ] },
+    { title: 'اللقاحات والفحوصات الأخرى', description: 'بقية اللقاحات والتحصينات والاختبارات', items: [
+      { key: 'influenza_vaccine' }, { key: 'hpv_vaccine' }, { key: 'hiv' },
+      { key: 'varicella_igg' }, { key: 'tetanus_vaccine' }, { key: 'covid_booster' },
+      { key: 'other_immunization', width: 12 },
+    ] },
+    { title: 'ملاحظات التطعيم', description: 'المعلومات الإضافية المرتبطة بالتطعيم والمناعة', items: [
+      { key: 'notes', width: 12 },
+    ] },
+  ],
+  recommendations: [
+    { title: 'التوصيات المعتمدة', description: 'التوصيات الطبية وتوصيات التطعيم', items: [
+      { key: 'medical', width: 6 }, { key: 'vaccination', width: 6 },
+    ] },
+  ],
+  additional: [
+    { title: 'حقول Excel الاحتياطية', description: 'الحقول الإضافية الواردة من ملف البيانات', items: [
+      { key: 'pi_spare_1', width: 6 }, { key: 'pi_spare_2', width: 6 },
+      { key: 'ei_spare_1', width: 6 }, { key: 'ei_spare_2', width: 6 },
+      { key: 'physical_spare', width: 6 }, { key: 'medical_spare_1', width: 6 },
+      { key: 'nsi', width: 6 }, { key: 'medical_spare_3', width: 6 },
+      { key: 'mental_spare', width: 6 }, { key: 'follow_up_spare_1', width: 6 },
+      { key: 'follow_up_spare_2', width: 6 }, { key: 'follow_up_spare_3', width: 6 },
+    ] },
+    { title: 'التعليقات العامة', description: 'أي ملاحظات لا تندرج ضمن الأقسام السابقة', items: [
+      { key: 'comments', width: 12 },
+    ] },
+  ],
 };
 
 const EDITABLE_ROLES = new Set(['systemAdmin', 'ohManager', 'ohDoctor', 'clinicDoctor', 'dataEntry']);
@@ -572,6 +688,7 @@ function HealthCardSheet({ card, form }: { card: HealthCardData; form: SectionDa
 }
 
 function FormSection({
+  sectionKey,
   number,
   title,
   subtitle,
@@ -583,6 +700,7 @@ function FormSection({
   onChange,
   defaultExpanded = false,
 }: {
+  sectionKey: SectionKey;
   number: string;
   title: string;
   subtitle: string;
@@ -597,6 +715,8 @@ function FormSection({
   const [expanded, setExpanded] = useState(defaultExpanded);
   const completedFields = fields.filter(field => String(values[field.key] || '').trim()).length;
   const completion = fields.length ? Math.round((completedFields / fields.length) * 100) : 0;
+  const fieldByKey = new Map(fields.map(field => [field.key, field]));
+  const groups = FIELD_GROUPS[sectionKey];
 
   return (
     <Accordion
@@ -625,32 +745,54 @@ function FormSection({
         </div>
       </AccordionSummary>
       <AccordionDetails id={`health-card-section-${number}`}>
-        <Grid container spacing={1.5}>
-          {fields.map(field => (
-            <Grid key={field.key} size={{ xs: 12, sm: field.kind === 'textarea' ? 12 : 6, lg: field.kind === 'textarea' ? 6 : 4 }}>
-              {field.kind === 'date' ? (
-                <CalendarDateField
-                  label={field.en ? `${field.label} / ${field.en}` : field.label}
-                  value={values[field.key] || ''}
-                  onChange={fieldValue => onChange(field.key, fieldValue)}
-                />
-              ) : (
-                <TextField
-                  fullWidth
-                  select={field.kind === 'select'}
-                  type={field.kind === 'number' ? 'number' : 'text'}
-                  multiline={field.kind === 'textarea'}
-                  minRows={field.kind === 'textarea' ? 2 : undefined}
-                  label={field.en ? `${field.label} / ${field.en}` : field.label}
-                  value={values[field.key] || ''}
-                  onChange={event => onChange(field.key, event.target.value)}
-                >
-                  {field.options?.map(option => <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>)}
-                </TextField>
-              )}
-            </Grid>
+        <div className="ohc-form-field-groups">
+          {groups.map((group, groupIndex) => (
+            <section className="ohc-form-field-group" key={`${sectionKey}-${group.title}`}>
+              <div className="ohc-form-field-group-heading">
+                <span aria-hidden="true">{groupIndex + 1}</span>
+                <div>
+                  <Typography component="h4">{group.title}</Typography>
+                  <Typography component="p">{group.description}</Typography>
+                </div>
+              </div>
+              <Grid container spacing={1.5} alignItems="stretch">
+                {group.items.map(layout => {
+                  const field = fieldByKey.get(layout.key);
+                  if (!field) return null;
+                  const width = layout.width ?? 4;
+                  return (
+                    <Grid
+                      key={field.key}
+                      className={`ohc-form-field-cell${field.kind === 'date' ? ' is-date' : ''}`}
+                      size={{ xs: 12, sm: width >= 8 ? 12 : 6, md: width, lg: width }}
+                    >
+                      {field.kind === 'date' ? (
+                        <CalendarDateField
+                          label={field.en ? `${field.label} / ${field.en}` : field.label}
+                          value={values[field.key] || ''}
+                          onChange={fieldValue => onChange(field.key, fieldValue)}
+                        />
+                      ) : (
+                        <TextField
+                          fullWidth
+                          select={field.kind === 'select'}
+                          type={field.kind === 'number' ? 'number' : 'text'}
+                          multiline={field.kind === 'textarea'}
+                          minRows={field.kind === 'textarea' ? (width === 12 ? 3 : 2) : undefined}
+                          label={field.en ? `${field.label} / ${field.en}` : field.label}
+                          value={values[field.key] || ''}
+                          onChange={event => onChange(field.key, event.target.value)}
+                        >
+                          {field.options?.map(option => <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>)}
+                        </TextField>
+                      )}
+                    </Grid>
+                  );
+                })}
+              </Grid>
+            </section>
           ))}
-        </Grid>
+        </div>
       </AccordionDetails>
     </Accordion>
   );
@@ -890,23 +1032,39 @@ export function EmployeeHealthCardPage() {
             </Grid>
           </Paper>
 
-          <Grid container spacing={1.5} sx={{ my: 2 }}>
-            <Grid size={{ xs: 12, md: 4 }}><CalendarDateField required label="تاريخ إصدار البطاقة" value={issueDate} onChange={setIssueDate} /></Grid>
-            <Grid size={{ xs: 12, md: 4 }}><CalendarDateField label="تاريخ المراجعة القادمة" value={nextReviewDate} onChange={setNextReviewDate} /></Grid>
-            <Grid size={{ xs: 12, md: 4 }}><TextField fullWidth label="مراجعة واعتماد من قبل" value={reviewedBy} onChange={event => setReviewedBy(event.target.value)} /></Grid>
-            <Grid size={{ xs: 12 }}><FormControlLabel control={<Switch checked={isApproved} onChange={event => setIsApproved(event.target.checked)} />} label="تمت مراجعة واعتماد البطاقة" /></Grid>
-          </Grid>
+          <Paper variant="outlined" className="ohc-card-review-data">
+            <div className="ohc-card-review-heading">
+              <div>
+                <Typography component="h3">بيانات إصدار ومراجعة البطاقة</Typography>
+                <Typography component="p">حدد نوع التقويم ثم أدخل تواريخ الإصدار والمراجعة وبيانات الاعتماد.</Typography>
+              </div>
+              <div className="ohc-calendar-color-key" aria-label="دليل ألوان التقويم">
+                <span className="gregorian">ميلادي</span>
+                <span className="hijri">هجري</span>
+              </div>
+            </div>
+            <Grid container spacing={1.5} alignItems="stretch">
+              <Grid size={{ xs: 12, md: 6 }}><CalendarDateField required label="تاريخ إصدار البطاقة" value={issueDate} onChange={setIssueDate} /></Grid>
+              <Grid size={{ xs: 12, md: 6 }}><CalendarDateField label="تاريخ المراجعة القادمة" value={nextReviewDate} onChange={setNextReviewDate} /></Grid>
+              <Grid size={{ xs: 12, md: 8 }}><TextField fullWidth label="مراجعة واعتماد من قبل" value={reviewedBy} onChange={event => setReviewedBy(event.target.value)} /></Grid>
+              <Grid size={{ xs: 12, md: 4 }}>
+                <Paper variant="outlined" className={`ohc-approval-control${isApproved ? ' is-approved' : ''}`}>
+                  <FormControlLabel control={<Switch checked={isApproved} onChange={event => setIsApproved(event.target.checked)} />} label="تمت مراجعة واعتماد البطاقة" />
+                </Paper>
+              </Grid>
+            </Grid>
+          </Paper>
 
           <div className="ohc-form-sections-grid">
-            <FormSection number="1" title="المعلومات الشخصية الإضافية" subtitle="حقول Excel غير الموجودة في سجل الموظف" color="#0ea5e9" colorEnd="#2563eb" icon={<UserRound />} fields={PERSONAL_FIELDS} values={form.personal} onChange={(key, fieldValue) => updateSection('personal', key, fieldValue)} defaultExpanded />
-            <FormSection number="2" title="معلومات العمل الإضافية" subtitle="رقم وزارة الصحة والوظيفة الحالية" color="#8b5cf6" colorEnd="#6d28d9" icon={<BriefcaseBusiness />} fields={EMPLOYMENT_FIELDS} values={form.employment} onChange={(key, fieldValue) => updateSection('employment', key, fieldValue)} />
-            <FormSection number="3" title="المعلومات البدنية" subtitle="الوزن والطول وBMI والنشاط البدني" color="#10b981" colorEnd="#059669" icon={<HeartPulse />} fields={PHYSICAL_FIELDS} values={form.physical} onChange={(key, fieldValue) => updateSection('physical', key, fieldValue)} />
-            <FormSection number="4" title="الحالات الطبية" subtitle="الحالات المرضية والتاريخ الطبي" color="#f59e0b" colorEnd="#ea580c" icon={<Cross />} fields={CONDITION_FIELDS} values={form.conditions} onChange={(key, fieldValue) => updateSection('conditions', key, fieldValue)} />
-            <FormSection number="5" title="الصحة النفسية" subtitle="PHQ وGAD وMBI ومؤشرات الصحة النفسية" color="#ec4899" colorEnd="#be185d" icon={<Brain />} fields={MENTAL_FIELDS} values={form.mental} onChange={(key, fieldValue) => updateSection('mental', key, fieldValue)} />
-            <FormSection number="6" title="المتابعة الصحية" subtitle="الزيارات والفحوصات وبرامج المسح" color="#06b6d4" colorEnd="#0e7490" icon={<Stethoscope />} fields={FOLLOW_UP_FIELDS} values={form.follow_up} onChange={(key, fieldValue) => updateSection('follow_up', key, fieldValue)} />
-            <FormSection number="7" title="التطعيمات والمناعة" subtitle="التطعيمات والسيرولوجيا والصورة المرجعية" color="#ef4444" colorEnd="#b91c1c" icon={<ShieldPlus />} fields={VACCINATION_FIELDS} values={form.vaccinations} onChange={(key, fieldValue) => updateSection('vaccinations', key, fieldValue)} />
-            <FormSection number="8" title="التوصيات" subtitle="التوصيات الطبية وتوصيات التطعيم" color="#6366f1" colorEnd="#4338ca" icon={<ClipboardList />} fields={RECOMMENDATION_FIELDS} values={form.recommendations} onChange={(key, fieldValue) => updateSection('recommendations', key, fieldValue)} />
-            <FormSection number="9" title="الحقول الإضافية في ملف Excel" subtitle="الحقول الاحتياطية وNSI والتعليقات العامة" color="#64748b" colorEnd="#334155" icon={<FileSpreadsheet />} fields={ADDITIONAL_FIELDS} values={form.additional} onChange={(key, fieldValue) => updateSection('additional', key, fieldValue)} />
+            <FormSection sectionKey="personal" number="1" title="المعلومات الشخصية الإضافية" subtitle="حقول Excel غير الموجودة في سجل الموظف" color="#0ea5e9" colorEnd="#2563eb" icon={<UserRound />} fields={PERSONAL_FIELDS} values={form.personal} onChange={(key, fieldValue) => updateSection('personal', key, fieldValue)} defaultExpanded />
+            <FormSection sectionKey="employment" number="2" title="معلومات العمل الإضافية" subtitle="رقم وزارة الصحة والوظيفة الحالية" color="#8b5cf6" colorEnd="#6d28d9" icon={<BriefcaseBusiness />} fields={EMPLOYMENT_FIELDS} values={form.employment} onChange={(key, fieldValue) => updateSection('employment', key, fieldValue)} />
+            <FormSection sectionKey="physical" number="3" title="المعلومات البدنية" subtitle="الوزن والطول وBMI والنشاط البدني" color="#10b981" colorEnd="#059669" icon={<HeartPulse />} fields={PHYSICAL_FIELDS} values={form.physical} onChange={(key, fieldValue) => updateSection('physical', key, fieldValue)} />
+            <FormSection sectionKey="conditions" number="4" title="الحالات الطبية" subtitle="الحالات المرضية والتاريخ الطبي" color="#f59e0b" colorEnd="#ea580c" icon={<Cross />} fields={CONDITION_FIELDS} values={form.conditions} onChange={(key, fieldValue) => updateSection('conditions', key, fieldValue)} />
+            <FormSection sectionKey="mental" number="5" title="الصحة النفسية" subtitle="PHQ وGAD وMBI ومؤشرات الصحة النفسية" color="#ec4899" colorEnd="#be185d" icon={<Brain />} fields={MENTAL_FIELDS} values={form.mental} onChange={(key, fieldValue) => updateSection('mental', key, fieldValue)} />
+            <FormSection sectionKey="follow_up" number="6" title="المتابعة الصحية" subtitle="الزيارات والفحوصات وبرامج المسح" color="#06b6d4" colorEnd="#0e7490" icon={<Stethoscope />} fields={FOLLOW_UP_FIELDS} values={form.follow_up} onChange={(key, fieldValue) => updateSection('follow_up', key, fieldValue)} />
+            <FormSection sectionKey="vaccinations" number="7" title="التطعيمات والمناعة" subtitle="التطعيمات والسيرولوجيا والصورة المرجعية" color="#ef4444" colorEnd="#b91c1c" icon={<ShieldPlus />} fields={VACCINATION_FIELDS} values={form.vaccinations} onChange={(key, fieldValue) => updateSection('vaccinations', key, fieldValue)} />
+            <FormSection sectionKey="recommendations" number="8" title="التوصيات" subtitle="التوصيات الطبية وتوصيات التطعيم" color="#6366f1" colorEnd="#4338ca" icon={<ClipboardList />} fields={RECOMMENDATION_FIELDS} values={form.recommendations} onChange={(key, fieldValue) => updateSection('recommendations', key, fieldValue)} />
+            <FormSection sectionKey="additional" number="9" title="الحقول الإضافية في ملف Excel" subtitle="الحقول الاحتياطية وNSI والتعليقات العامة" color="#64748b" colorEnd="#334155" icon={<FileSpreadsheet />} fields={ADDITIONAL_FIELDS} values={form.additional} onChange={(key, fieldValue) => updateSection('additional', key, fieldValue)} />
           </div>
 
           <Stack direction="row" justifyContent="flex-end" sx={{ mt: 2 }}>

@@ -130,8 +130,11 @@ export function CalendarDateField({
   const nextIcon = isRtl ? <ChevronLeftIcon /> : <ChevronRightIcon />;
 
   return (
-    <Box sx={sx}>
-      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 0.5 }}>
+    <Box className={`calendar-date-field is-${calendar}`} sx={sx}>
+      <Box className="calendar-date-toolbar">
+        <Typography component="span" className="calendar-date-toolbar-label">
+          {isRtl ? 'نوع التاريخ' : 'Calendar'}
+        </Typography>
         <ToggleButtonGroup
           exclusive
           size="small"
@@ -143,17 +146,19 @@ export function CalendarDateField({
           }}
           aria-label={isRtl ? 'نوع التقويم' : 'Calendar type'}
           disabled={disabled}
-          sx={{
-            direction: 'ltr',
-            '& .MuiToggleButton-root': { py: 0.15, px: 1, fontSize: 11, lineHeight: 1.5 },
-          }}
+          className="calendar-date-toggle"
         >
-          <ToggleButton value="gregorian">{isRtl ? 'ميلادي' : 'Gregorian'}</ToggleButton>
-          <ToggleButton value="hijri">{isRtl ? 'هجري' : 'Hijri'}</ToggleButton>
+          <ToggleButton value="gregorian" className="calendar-option gregorian">
+            <span aria-hidden="true" />{isRtl ? 'ميلادي' : 'Gregorian'}
+          </ToggleButton>
+          <ToggleButton value="hijri" className="calendar-option hijri">
+            <span aria-hidden="true" />{isRtl ? 'هجري' : 'Hijri'}
+          </ToggleButton>
         </ToggleButtonGroup>
       </Box>
 
       <TextField
+        className="calendar-date-input"
         fullWidth={fullWidth}
         required={required}
         disabled={disabled}
@@ -163,8 +168,8 @@ export function CalendarDateField({
         onChange={event => calendar === 'gregorian' && onChange(event.target.value)}
         onClick={event => calendar === 'hijri' && !disabled && openHijriCalendar(event.currentTarget)}
         helperText={helperText || (calendar === 'hijri'
-          ? (isRtl ? 'اختر تاريخًا صحيحًا من تقويم أم القرى' : 'Choose a valid date from the Umm al-Qura calendar')
-          : undefined)}
+          ? (isRtl ? 'هجري — اختر تاريخًا صحيحًا من تقويم أم القرى' : 'Hijri — choose a valid Umm al-Qura date')
+          : (isRtl ? 'ميلادي — اليوم / الشهر / السنة' : 'Gregorian — day / month / year'))}
         placeholder={calendar === 'hijri' ? (isRtl ? 'اختر من التقويم' : 'Choose from calendar') : undefined}
         slotProps={{
           inputLabel: { shrink: true },
@@ -236,7 +241,12 @@ export function CalendarDateField({
                     minWidth: 0, height: 36, p: 0, borderRadius: 2,
                     fontWeight: selected || today ? 950 : 650,
                     border: '1px solid',
-                    borderColor: today && !selected ? 'primary.main' : 'transparent',
+                    borderColor: today && !selected ? '#059669' : 'transparent',
+                    ...(selected ? {
+                      bgcolor: '#059669',
+                      color: '#fff',
+                      '&:hover': { bgcolor: '#047857' },
+                    } : {}),
                   }}
                 >
                   {day}

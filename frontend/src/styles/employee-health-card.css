@@ -426,6 +426,184 @@
   background: linear-gradient(145deg, #f0fdfa, #f8fafc) !important;
 }
 
+.ohc-card-review-data {
+  margin: 18px 0;
+  padding: 18px;
+  border-radius: 18px !important;
+  border: 1px solid rgba(37, 99, 235, .18) !important;
+  background: linear-gradient(145deg, #f8fbff, #f4fbf8) !important;
+  box-shadow: 0 8px 22px rgba(15,39,68,.07) !important;
+}
+
+.ohc-card-review-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(148,163,184,.22);
+}
+
+.ohc-card-review-heading h3 {
+  margin: 0;
+  color: #173b57;
+  font-size: 1.05rem;
+  font-weight: 950;
+}
+
+.ohc-card-review-heading p {
+  margin: 3px 0 0;
+  color: #52677d;
+  font-size: .84rem;
+  font-weight: 650;
+}
+
+.ohc-calendar-color-key {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+}
+
+.ohc-calendar-color-key span {
+  min-width: 70px;
+  padding: 6px 11px;
+  border-radius: 999px;
+  color: #fff;
+  text-align: center;
+  font-size: .78rem;
+  font-weight: 900;
+  box-shadow: 0 5px 12px rgba(15,39,68,.12);
+}
+
+.ohc-calendar-color-key .gregorian { background: #2563eb; }
+.ohc-calendar-color-key .hijri { background: #059669; }
+
+.ohc-approval-control {
+  height: 100%;
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  padding: 7px 14px;
+  border: 1px solid rgba(148,163,184,.3) !important;
+  border-radius: 13px !important;
+  background: #fff !important;
+  box-shadow: none !important;
+  transition: border-color .2s ease, background-color .2s ease;
+}
+
+.ohc-approval-control.is-approved {
+  border-color: rgba(5,150,105,.38) !important;
+  background: #ecfdf5 !important;
+}
+
+.ohc-approval-control .MuiFormControlLabel-root {
+  margin: 0;
+  width: 100%;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.calendar-date-field {
+  width: 100%;
+}
+
+.calendar-date-toolbar {
+  min-height: 37px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 7px;
+  padding: 4px 5px 4px 10px;
+  border: 1px solid rgba(148,163,184,.26);
+  border-radius: 11px;
+  background: rgba(255,255,255,.86);
+}
+
+.calendar-date-toolbar-label {
+  color: #52677d;
+  font-size: .76rem !important;
+  font-weight: 850 !important;
+}
+
+.calendar-date-toggle {
+  direction: ltr;
+  gap: 5px;
+}
+
+.calendar-date-toggle .MuiToggleButtonGroup-grouped {
+  margin: 0 !important;
+  border: 1px solid transparent !important;
+  border-radius: 8px !important;
+}
+
+.calendar-date-toggle .calendar-option {
+  min-width: 74px;
+  gap: 6px;
+  padding: 4px 9px;
+  font-size: .74rem;
+  font-weight: 900;
+  line-height: 1.35;
+  text-transform: none;
+}
+
+.calendar-date-toggle .calendar-option > span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 3px rgba(255,255,255,.42);
+}
+
+.calendar-date-toggle .calendar-option.gregorian {
+  color: #1d4ed8;
+  border-color: #bfdbfe !important;
+  background: #eff6ff;
+}
+
+.calendar-date-toggle .calendar-option.hijri {
+  color: #047857;
+  border-color: #a7f3d0 !important;
+  background: #ecfdf5;
+}
+
+.calendar-date-toggle .calendar-option.gregorian.Mui-selected,
+.calendar-date-toggle .calendar-option.gregorian.Mui-selected:hover {
+  color: #fff;
+  border-color: #2563eb !important;
+  background: #2563eb;
+  box-shadow: 0 4px 10px rgba(37,99,235,.28);
+}
+
+.calendar-date-toggle .calendar-option.hijri.Mui-selected,
+.calendar-date-toggle .calendar-option.hijri.Mui-selected:hover {
+  color: #fff;
+  border-color: #059669 !important;
+  background: #059669;
+  box-shadow: 0 4px 10px rgba(5,150,105,.28);
+}
+
+.calendar-date-field.is-gregorian .calendar-date-input .MuiOutlinedInput-root {
+  box-shadow: inset 4px 0 0 #2563eb !important;
+}
+
+.calendar-date-field.is-hijri .calendar-date-input .MuiOutlinedInput-root {
+  box-shadow: inset 4px 0 0 #059669 !important;
+}
+
+[dir='rtl'] .calendar-date-field.is-gregorian .calendar-date-input .MuiOutlinedInput-root {
+  box-shadow: inset -4px 0 0 #2563eb !important;
+}
+
+[dir='rtl'] .calendar-date-field.is-hijri .calendar-date-input .MuiOutlinedInput-root {
+  box-shadow: inset -4px 0 0 #059669 !important;
+}
+
+.calendar-date-field.is-gregorian .MuiFormHelperText-root { color: #1d4ed8; }
+.calendar-date-field.is-hijri .MuiFormHelperText-root { color: #047857; }
+
 .ohc-form-sections-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -633,6 +811,69 @@
     linear-gradient(180deg, color-mix(in srgb, var(--form-section-color) 5%, #fff), #fff 90px);
 }
 
+.ohc-form-field-groups {
+  display: grid;
+  gap: 18px;
+}
+
+.ohc-form-field-group {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid color-mix(in srgb, var(--form-section-color) 18%, #dbe5ec);
+  border-radius: 16px;
+  background: rgba(255,255,255,.82);
+  box-shadow: 0 6px 18px rgba(15,39,68,.055);
+}
+
+.ohc-form-field-group-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px dashed color-mix(in srgb, var(--form-section-color) 25%, #dbe5ec);
+}
+
+.ohc-form-field-group-heading > span {
+  width: 29px;
+  height: 29px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 29px;
+  border-radius: 9px;
+  color: #fff;
+  background: linear-gradient(135deg, var(--form-section-color), var(--form-section-color-end));
+  font-size: .78rem;
+  font-weight: 950;
+  box-shadow: 0 5px 11px color-mix(in srgb, var(--form-section-color) 28%, transparent);
+}
+
+.ohc-form-field-group-heading h4 {
+  margin: 0;
+  color: #173b57;
+  font-size: .94rem;
+  font-weight: 950;
+  line-height: 1.35;
+}
+
+.ohc-form-field-group-heading p {
+  margin: 2px 0 0;
+  color: #64748b;
+  font-size: .75rem;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.ohc-form-field-cell {
+  display: flex;
+  min-width: 0;
+}
+
+.ohc-form-field-cell > .MuiFormControl-root,
+.ohc-form-field-cell > .calendar-date-field {
+  width: 100%;
+}
+
 .ohc-form-accordion .MuiAccordionDetails-root .MuiOutlinedInput-root {
   border-radius: 12px;
   background: rgba(255,255,255,.92);
@@ -721,6 +962,16 @@
 }
 
 @media (max-width: 700px) {
+  .ohc-card-review-data { padding: 14px; }
+  .ohc-card-review-heading { align-items: flex-start; flex-direction: column; }
+  .ohc-calendar-color-key { width: 100%; }
+  .ohc-calendar-color-key span { flex: 1; }
+  .calendar-date-toolbar { align-items: stretch; flex-direction: column; padding: 7px; }
+  .calendar-date-toggle { width: 100%; }
+  .calendar-date-toggle .calendar-option { flex: 1; }
+  .ohc-form-field-groups { gap: 13px; }
+  .ohc-form-field-group { padding: 12px; }
+  .ohc-form-field-group-heading p { font-size: .7rem; }
   .ohc-form-sections-grid { grid-template-columns: 1fr; gap: 12px; }
   .ohc-form-accordion.is-expanded { grid-column: auto; }
   .ohc-form-accordion .MuiAccordionSummary-root,
