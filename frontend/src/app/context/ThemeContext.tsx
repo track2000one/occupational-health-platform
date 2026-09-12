@@ -54,8 +54,8 @@ export const FONT_OPTIONS: Array<{ id: AppFontId; nameAr: string; nameEn: string
 ];
 
 export const DEFAULT_TYPOGRAPHY_SETTINGS: AppTypographySettings = {
-  fontId: 'fanan',
-  fontSize: 16,
+  fontId: 'ibm-plex',
+  fontSize: 18,
   fontWeight: 400,
   lineHeight: 1.55,
   textColor: '#111827',
@@ -138,6 +138,8 @@ export const PALETTES: AppPalette[] = [
   },
 ];
 
+export const DEFAULT_PALETTE = PALETTES.find(palette => palette.id === 'health-premium')!;
+
 interface ThemeContextValue {
   palette: AppPalette;
   availablePalettes: AppPalette[];
@@ -154,7 +156,7 @@ interface ThemeContextValue {
 }
 
 const ThemeCtx = createContext<ThemeContextValue>({
-  palette: PALETTES[0],
+  palette: DEFAULT_PALETTE,
   availablePalettes: PALETTES,
   customPalettes: [],
   setPaletteId: () => {},
@@ -177,7 +179,7 @@ function isHexColor(value: unknown): value is string {
   return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value);
 }
 
-function normalizePalette(value: Partial<AppPalette>, fallback: AppPalette = PALETTES[0]): AppPalette {
+function normalizePalette(value: Partial<AppPalette>, fallback: AppPalette = DEFAULT_PALETTE): AppPalette {
   const color = (candidate: unknown, defaultColor: string) => isHexColor(candidate) ? candidate : defaultColor;
   const primary = color(value.primary, fallback.primary);
   const primaryDark = color(value.primaryDark, fallback.primaryDark);
@@ -222,7 +224,7 @@ function loadInitialPalette(customPalettes: AppPalette[]): AppPalette {
     const active = localStorage.getItem(ACTIVE_PALETTE_STORAGE_KEY);
     if (active) {
       const parsed = JSON.parse(active) as Partial<AppPalette>;
-      const fallback = [...PALETTES, ...customPalettes].find(item => item.id === parsed.id) ?? PALETTES[0];
+      const fallback = [...PALETTES, ...customPalettes].find(item => item.id === parsed.id) ?? DEFAULT_PALETTE;
       return normalizePalette(parsed, fallback);
     }
   } catch {
@@ -230,7 +232,7 @@ function loadInitialPalette(customPalettes: AppPalette[]): AppPalette {
   }
 
   const storedId = localStorage.getItem(STORAGE_KEY);
-  return [...PALETTES, ...customPalettes].find(item => item.id === storedId) ?? PALETTES[0];
+  return [...PALETTES, ...customPalettes].find(item => item.id === storedId) ?? DEFAULT_PALETTE;
 }
 
 function persistActivePalette(palette: AppPalette) {
@@ -427,14 +429,14 @@ export function AppThemeProvider({ children }: { children: React.ReactNode }) {
       return updated;
     });
     if (palette.id === id) {
-      setPalette(PALETTES[0]);
-      persistActivePalette(PALETTES[0]);
+      setPalette(DEFAULT_PALETTE);
+      persistActivePalette(DEFAULT_PALETTE);
     }
   };
 
   const resetPalette = () => {
-    setPalette(PALETTES[0]);
-    persistActivePalette(PALETTES[0]);
+    setPalette(DEFAULT_PALETTE);
+    persistActivePalette(DEFAULT_PALETTE);
   };
 
   const updateTypography = (settings: Partial<AppTypographySettings>) => {
