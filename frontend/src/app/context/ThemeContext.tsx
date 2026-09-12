@@ -69,6 +69,15 @@ export function getFontFamily(fontId: AppFontId) {
 
 export const PALETTES: AppPalette[] = [
   {
+    id: 'silver-trial', nameEn: 'Sculpted Silver — Trial', nameAr: 'الفضي المجسّم — تجريبي',
+    swatches: ['#454B54', '#C6C6C6', '#E2E2E2', '#F8F8F8'],
+    primary: '#454B54', primaryDark: '#292F38', secondary: '#526575',
+    background: '#DEDEDE', paper: '#EAEAEA',
+    sidebarBackground: '#D5D5D5', sidebarItem: '#D5D5D5', sidebarText: '#292F38',
+    activeItemBackground: '#F0F0F0', activeItemText: '#161B22',
+    drawerGradient: 'linear-gradient(135deg, #454B54, #292F38)',
+  },
+  {
     id: 'default',
     nameEn: 'Official Healthcare',
     nameAr: 'الصحة الرسمي',
@@ -262,6 +271,7 @@ function setCssVariable(name: string, value: string) {
 
 function applyPaletteCssVariables(palette: AppPalette) {
   if (typeof document === 'undefined') return;
+  document.documentElement.dataset.visualStyle = palette.id === 'silver-trial' ? 'silver' : 'standard';
 
   const primaryRgb = hexToRgb(palette.primary);
   const primaryDarkRgb = hexToRgb(palette.primaryDark);

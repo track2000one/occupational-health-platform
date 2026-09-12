@@ -207,6 +207,7 @@ export function AppearanceSettingsPage() {
   return (
     <Box sx={{ direction: isRtl ? 'rtl' : 'ltr' }}>
       <Paper
+        className="appearance-page-banner"
         sx={{
           p: { xs: 2.25, md: 3 },
           mb: 3,

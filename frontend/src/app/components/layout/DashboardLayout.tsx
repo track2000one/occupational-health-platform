@@ -253,6 +253,7 @@ export function DashboardLayout() {
           return (
             <ListItem key={`${variant}-${item.key}`} disablePadding sx={{ mb: 0.75 }}>
               <ListItemButton
+                selected={isActive}
                 onClick={() => {
                   navigate(item.path);
                   setMobileOpen(false);

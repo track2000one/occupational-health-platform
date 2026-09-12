@@ -3,6 +3,7 @@ import logoImg from '@/imports/ChatGPT_Image_21______2026__10_06_18__.png';
 import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../context/AuthContext';
+import { useAppTheme } from '../context/ThemeContext';
 import {
   Alert,
   Box,
@@ -25,6 +26,7 @@ import {
 } from '@mui/icons-material';
 
 export function LoginPage() {
+  const { palette, setPaletteId } = useAppTheme();
   const { t, i18n } = useTranslation();
   const { login } = useAuth();
   const navigate = useNavigate();
@@ -56,7 +58,7 @@ export function LoginPage() {
   };
 
   return (
-    <Box sx={{
+    <Box className="oh-login-page" sx={{
       minHeight: '100vh',
       display: 'flex',
       alignItems: 'center',
@@ -67,6 +69,11 @@ export function LoginPage() {
       position: 'relative',
     }}>
       <Container maxWidth="sm" sx={{ position: 'relative', zIndex: 1 }}>
+        <Button fullWidth variant="outlined" sx={{ mb: 2 }} onClick={() => setPaletteId(palette.id === 'silver-trial' ? 'health-premium' : 'silver-trial')}>
+          {palette.id === 'silver-trial'
+            ? (isRtl ? 'الرجوع إلى الأزرق الطبي' : 'Return to Medical Blue')
+            : (isRtl ? 'تجربة التصميم الفضي المجسّم' : 'Try Sculpted Silver')}
+        </Button>
         <Paper
           elevation={0}
           sx={{
