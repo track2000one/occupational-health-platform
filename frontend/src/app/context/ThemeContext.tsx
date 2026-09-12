@@ -69,13 +69,13 @@ export function getFontFamily(fontId: AppFontId) {
 
 export const PALETTES: AppPalette[] = [
   {
-    id: 'silver-trial', nameEn: 'Sculpted Silver — Trial', nameAr: 'الفضي المجسّم — تجريبي',
-    swatches: ['#454B54', '#C6C6C6', '#E2E2E2', '#F8F8F8'],
-    primary: '#454B54', primaryDark: '#292F38', secondary: '#526575',
-    background: '#DEDEDE', paper: '#EAEAEA',
-    sidebarBackground: '#D5D5D5', sidebarItem: '#D5D5D5', sidebarText: '#292F38',
-    activeItemBackground: '#F0F0F0', activeItemText: '#161B22',
-    drawerGradient: 'linear-gradient(135deg, #454B54, #292F38)',
+    id: 'silver-trial', nameEn: 'Sculpted Medical Colors — Trial', nameAr: 'الطبي المجسّم الملوّن — تجريبي',
+    swatches: ['#173B66', '#246B9B', '#16857C', '#EAF4FA'],
+    primary: '#246B9B', primaryDark: '#173B66', secondary: '#16857C',
+    background: '#EAF4FA', paper: '#F8FCFF',
+    sidebarBackground: '#DCECF5', sidebarItem: '#ECF5FA', sidebarText: '#173B66',
+    activeItemBackground: '#246B9B', activeItemText: '#FFFFFF',
+    drawerGradient: 'linear-gradient(135deg, #173B66, #16857C)',
   },
   {
     id: 'default',
@@ -233,6 +233,9 @@ function loadInitialPalette(customPalettes: AppPalette[]): AppPalette {
     const active = localStorage.getItem(ACTIVE_PALETTE_STORAGE_KEY);
     if (active) {
       const parsed = JSON.parse(active) as Partial<AppPalette>;
+      if (parsed.id === 'silver-trial' && parsed.primary === '#454B54' && parsed.background === '#DEDEDE') {
+        return PALETTES.find(item => item.id === 'silver-trial')!;
+      }
       const fallback = [...PALETTES, ...customPalettes].find(item => item.id === parsed.id) ?? DEFAULT_PALETTE;
       return normalizePalette(parsed, fallback);
     }

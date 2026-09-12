@@ -72,7 +72,7 @@ export function LoginPage() {
         <Button fullWidth variant="outlined" sx={{ mb: 2 }} onClick={() => setPaletteId(palette.id === 'silver-trial' ? 'health-premium' : 'silver-trial')}>
           {palette.id === 'silver-trial'
             ? (isRtl ? 'الرجوع إلى الأزرق الطبي' : 'Return to Medical Blue')
-            : (isRtl ? 'تجربة التصميم الفضي المجسّم' : 'Try Sculpted Silver')}
+            : (isRtl ? 'تجربة التصميم الطبي المجسّم الملوّن' : 'Try Sculpted Medical Colors')}
         </Button>
         <Paper
           elevation={0}
