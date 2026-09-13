@@ -21,8 +21,8 @@ html[data-visual-style='silver'] .MuiAppBar-root {
   color: #173b66 !important;
 }
 html[data-visual-style='silver'] .MuiDrawer-paper > div {
-  background: linear-gradient(100deg, #e6f4f8, #ccdfef) !important;
-  box-shadow: inset 2px 2px 4px #fff, inset -2px -2px 5px #acc8db !important;
+  background: linear-gradient(100deg, #ffffff, #faf8f2) !important;
+  box-shadow: inset 2px 2px 4px #fff, inset -2px -2px 5px #e5e1d8 !important;
 }
 html[data-visual-style='silver'] .MuiDrawer-paper .MuiListItemButton-root {
   border-radius: 999px !important;
