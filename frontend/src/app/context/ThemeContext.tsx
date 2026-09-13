@@ -69,7 +69,7 @@ export function getFontFamily(fontId: AppFontId) {
 
 export const PALETTES: AppPalette[] = [
   {
-    id: 'silver-trial', nameEn: 'Sculpted Medical Colors — Trial', nameAr: 'الطبي المجسّم الملوّن — تجريبي',
+    id: 'silver-trial', nameEn: 'White & Ivory', nameAr: 'الأبيض والسكري',
     swatches: ['#173B66', '#246B9B', '#16857C', '#FAF8F2'],
     primary: '#246B9B', primaryDark: '#173B66', secondary: '#16857C',
     background: '#FAF8F2', paper: '#F8FCFF',
@@ -147,7 +147,7 @@ export const PALETTES: AppPalette[] = [
   },
 ];
 
-export const DEFAULT_PALETTE = PALETTES.find(palette => palette.id === 'health-premium')!;
+export const DEFAULT_PALETTE = PALETTES.find(palette => palette.id === 'silver-trial')!;
 
 interface ThemeContextValue {
   palette: AppPalette;
@@ -233,6 +233,10 @@ function loadInitialPalette(customPalettes: AppPalette[]): AppPalette {
     const active = localStorage.getItem(ACTIVE_PALETTE_STORAGE_KEY);
     if (active) {
       const parsed = JSON.parse(active) as Partial<AppPalette>;
+      if (parsed.id === 'silver-trial') {
+        parsed.nameAr = DEFAULT_PALETTE.nameAr;
+        parsed.nameEn = DEFAULT_PALETTE.nameEn;
+      }
       if (parsed.id === 'silver-trial' && parsed.sidebarBackground === '#DCECF5') {
         parsed.sidebarBackground = '#FAF8F2';
         if (parsed.sidebarItem === '#ECF5FA') parsed.sidebarItem = '#FFFFFF';

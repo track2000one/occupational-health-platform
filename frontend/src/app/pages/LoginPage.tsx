@@ -71,8 +71,8 @@ export function LoginPage() {
       <Container maxWidth="sm" sx={{ position: 'relative', zIndex: 1 }}>
         <Button fullWidth variant="outlined" sx={{ mb: 2 }} onClick={() => setPaletteId(palette.id === 'silver-trial' ? 'health-premium' : 'silver-trial')}>
           {palette.id === 'silver-trial'
-            ? (isRtl ? 'الرجوع إلى الأزرق الطبي' : 'Return to Medical Blue')
-            : (isRtl ? 'تجربة التصميم الطبي المجسّم الملوّن' : 'Try Sculpted Medical Colors')}
+            ? (isRtl ? 'التبديل إلى الأزرق الطبي' : 'Switch to Medical Blue')
+            : (isRtl ? 'استخدام الثيم الافتراضي — الأبيض والسكري' : 'Use Default Theme — White & Ivory')}
         </Button>
         <Paper
           elevation={0}
