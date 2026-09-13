@@ -6,7 +6,7 @@ html[data-visual-style='silver'] {
 html[data-visual-style='silver'] body,
 html[data-visual-style='silver'] main,
 html[data-visual-style='silver'] .oh-login-page {
-  background: radial-gradient(ellipse at top left, #d4f1ec, transparent 55%), #eaf4fa !important;
+  background: #ffffff !important;
 }
 html[data-visual-style='silver'] .MuiPaper-root:not(.MuiAlert-root):not(.MuiDrawer-paper):not(.appearance-page-banner),
 html[data-visual-style='silver'] .MuiCard-root,
