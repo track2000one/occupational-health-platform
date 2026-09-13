@@ -74,7 +74,7 @@ export const PALETTES: AppPalette[] = [
     primary: '#246B9B', primaryDark: '#173B66', secondary: '#16857C',
     background: '#EAF4FA', paper: '#F8FCFF',
     sidebarBackground: '#DCECF5', sidebarItem: '#ECF5FA', sidebarText: '#173B66',
-    activeItemBackground: '#246B9B', activeItemText: '#FFFFFF',
+    activeItemBackground: '#EDEDED', activeItemText: '#292F38',
     drawerGradient: 'linear-gradient(135deg, #173B66, #16857C)',
   },
   {
@@ -233,6 +233,10 @@ function loadInitialPalette(customPalettes: AppPalette[]): AppPalette {
     const active = localStorage.getItem(ACTIVE_PALETTE_STORAGE_KEY);
     if (active) {
       const parsed = JSON.parse(active) as Partial<AppPalette>;
+      if (parsed.id === 'silver-trial' && parsed.activeItemBackground === '#246B9B' && parsed.activeItemText === '#FFFFFF') {
+        parsed.activeItemBackground = '#EDEDED';
+        parsed.activeItemText = '#292F38';
+      }
       if (parsed.id === 'silver-trial' && parsed.primary === '#454B54' && parsed.background === '#DEDEDE') {
         return PALETTES.find(item => item.id === 'silver-trial')!;
       }
