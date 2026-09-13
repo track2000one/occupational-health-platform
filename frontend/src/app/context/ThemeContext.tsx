@@ -70,9 +70,9 @@ export function getFontFamily(fontId: AppFontId) {
 export const PALETTES: AppPalette[] = [
   {
     id: 'silver-trial', nameEn: 'Sculpted Medical Colors — Trial', nameAr: 'الطبي المجسّم الملوّن — تجريبي',
-    swatches: ['#173B66', '#246B9B', '#16857C', '#FFFFFF'],
+    swatches: ['#173B66', '#246B9B', '#16857C', '#FAF8F2'],
     primary: '#246B9B', primaryDark: '#173B66', secondary: '#16857C',
-    background: '#FFFFFF', paper: '#F8FCFF',
+    background: '#FAF8F2', paper: '#F8FCFF',
     sidebarBackground: '#FAF8F2', sidebarItem: '#FFFFFF', sidebarText: '#173B66',
     activeItemBackground: '#EDEDED', activeItemText: '#292F38',
     drawerGradient: 'linear-gradient(135deg, #173B66, #16857C)',
@@ -237,8 +237,8 @@ function loadInitialPalette(customPalettes: AppPalette[]): AppPalette {
         parsed.sidebarBackground = '#FAF8F2';
         if (parsed.sidebarItem === '#ECF5FA') parsed.sidebarItem = '#FFFFFF';
       }
-      if (parsed.id === 'silver-trial' && parsed.background === '#EAF4FA') {
-        parsed.background = '#FFFFFF';
+      if (parsed.id === 'silver-trial' && (parsed.background === '#EAF4FA' || parsed.background === '#FFFFFF')) {
+        parsed.background = '#FAF8F2';
       }
       if (parsed.id === 'silver-trial' && parsed.activeItemBackground === '#246B9B' && parsed.activeItemText === '#FFFFFF') {
         parsed.activeItemBackground = '#EDEDED';

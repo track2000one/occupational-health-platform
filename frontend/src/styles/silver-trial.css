@@ -6,7 +6,7 @@ html[data-visual-style='silver'] {
 html[data-visual-style='silver'] body,
 html[data-visual-style='silver'] main,
 html[data-visual-style='silver'] .oh-login-page {
-  background: #ffffff !important;
+  background: linear-gradient(100deg, #ffffff, #faf8f2) !important;
 }
 html[data-visual-style='silver'] .MuiPaper-root:not(.MuiAlert-root):not(.MuiDrawer-paper):not(.appearance-page-banner),
 html[data-visual-style='silver'] .MuiCard-root,
