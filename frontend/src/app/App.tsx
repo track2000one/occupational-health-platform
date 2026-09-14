@@ -48,6 +48,7 @@ import { AppointmentsPage } from './pages/AppointmentsPage';
 import { AuditLogPage } from './pages/AuditLogPage';
 import { ClinicVisitsPage } from './pages/ClinicVisitsPage';
 import { OccupationalHealthPage } from './pages/OccupationalHealthPage';
+import { FitnessForDutyPage } from './pages/FitnessForDutyPage';
 import { CampaignsPage } from './pages/CampaignsPage';
 import { DataQualityPage } from './pages/DataQualityPage';
 import { DataImportPage } from './pages/DataImportPage';
@@ -104,6 +105,7 @@ function AppRoutes() {
         <Route path="vaccinations" element={<VaccinationsPage />} />
         <Route path="clinic-visits" element={<ClinicVisitsPage />} />
         <Route path="occupational-health" element={<OccupationalHealthPage />} />
+        <Route path="fitness-for-duty" element={<FitnessForDutyPage />} />
         <Route path="needle-stick-injuries" element={<NeedleStickInjuriesPage />} />
         <Route path="medical-committee" element={<MedicalCommitteePage />} />
         <Route path="campaigns" element={<CampaignsPage />} />
