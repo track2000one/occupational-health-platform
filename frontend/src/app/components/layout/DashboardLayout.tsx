@@ -82,6 +82,7 @@ export function DashboardLayout() {
     { key: 'vaccinations',       label: t('vaccinations'),       icon: <VaccinesIcon />,            path: '/vaccinations',          group: 'health',   permission: PERMISSIONS.VIEW_VACCINATIONS },
     { key: 'clinicVisits',       label: t('clinicVisits'),       icon: <LocalHospitalIcon />,       path: '/clinic-visits',         group: 'health',   permission: PERMISSIONS.VIEW_CLINIC_VISITS },
     { key: 'occupationalHealth', label: t('occupationalHealth'), icon: <MedicalInformationIcon />,  path: '/occupational-health',   group: 'health',   permission: PERMISSIONS.VIEW_OH_VISITS },
+    { key: 'fitnessForDuty',     label: isRtl ? 'لياقة العمل' : 'Fitness for Duty', icon: <FactCheckIcon />, path: '/fitness-for-duty', group: 'health', permission: PERMISSIONS.VIEW_OH_VISITS },
     { key: 'needleStickInjury',  label: t('needleStickInjury'),  icon: <WarningIcon />,             path: '/needle-stick-injuries', group: 'health',   permission: PERMISSIONS.VIEW_NEEDLE_STICK },
     { key: 'medicalCommittee',   label: t('medicalCommittee'),   icon: <GavelIcon />,               path: '/medical-committee',     group: 'health',   permission: PERMISSIONS.VIEW_COMMITTEE },
     { key: 'campaigns',          label: t('campaigns'),          icon: <CampaignIcon />,            path: '/campaigns',             group: 'health',   permission: PERMISSIONS.VIEW_CAMPAIGNS },
