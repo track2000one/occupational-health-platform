@@ -6,7 +6,6 @@ import {
   Button,
   Chip,
   CircularProgress,
-  Divider,
   MenuItem,
   Paper,
   Stack,
@@ -25,10 +24,8 @@ import {
   Add as AddIcon,
   Assessment as AssessmentIcon,
   Badge as BadgeIcon,
-  Description as DescriptionIcon,
   Refresh as RefreshIcon,
   Save as SaveIcon,
-  TrendingUp as TrendingUpIcon,
 } from '@mui/icons-material';
 import {
   Bar,
@@ -100,6 +97,16 @@ type SummaryPayload = {
   };
 };
 
+type DailyStatistic = {
+  id: number;
+  indicator: number;
+  date: string;
+  count: number;
+  location: string;
+  executor: string;
+  notes: string;
+};
+
 type WorkforceTarget = {
   id: number;
   member: number;
@@ -131,8 +138,11 @@ type Initiative = {
   leader_target: string;
   implementation_team: string;
   goals: string;
+  details?: string;
+  implementation_method?: string;
   beneficiaries: number;
   achieved_goals: string;
+  supporting_documents_notes?: string;
   quarter: number;
   year: number;
 };
@@ -146,10 +156,19 @@ type ReferenceDocument = {
   notes?: string;
 };
 
+type DayMeta = { location: string; executor: string; notes: string };
 type Paginated<T> = { results?: T[]; next?: string | null };
 
 function percentage(value: number | null | undefined) {
   return value == null ? '—' : `${Math.round(value)}%`;
+}
+
+function pad(value: number) {
+  return String(value).padStart(2, '0');
+}
+
+function dateKey(year: number, month: number, day: number) {
+  return `${year}-${pad(month)}-${pad(day)}`;
 }
 
 async function apiError(response: Response) {
@@ -160,7 +179,7 @@ async function apiError(response: Response) {
     if (Array.isArray(first) && first.length) return String(first[0]);
     if (typeof first === 'string') return first;
   } catch {
-    // Ignore malformed deployment errors and use HTTP status below.
+    // Use HTTP status below when the deployment response is not JSON.
   }
   return `Request failed (${response.status})`;
 }
@@ -228,19 +247,19 @@ export function PeriodicStatisticsPage() {
   const [workforce, setWorkforce] = useState<WorkforceMember[]>([]);
   const [initiatives, setInitiatives] = useState<Initiative[]>([]);
   const [documents, setDocuments] = useState<ReferenceDocument[]>([]);
+  const [monthEntries, setMonthEntries] = useState<DailyStatistic[]>([]);
+  const [monthCounts, setMonthCounts] = useState<Record<string, string>>({});
+  const [dayMeta, setDayMeta] = useState<Record<number, DayMeta>>({});
   const [loading, setLoading] = useState(true);
   const [refreshVersion, setRefreshVersion] = useState(0);
-
-  const [dailyDate, setDailyDate] = useState(now.toISOString().slice(0, 10));
-  const [dailyLocation, setDailyLocation] = useState('');
-  const [dailyExecutor, setDailyExecutor] = useState('');
-  const [dailyNotes, setDailyNotes] = useState('');
-  const [dailyCounts, setDailyCounts] = useState<Record<number, string>>({});
-  const [savingDaily, setSavingDaily] = useState(false);
+  const [savingMonth, setSavingMonth] = useState(false);
 
   const [memberForm, setMemberForm] = useState({ category: 'doctor', name: '', employee_number: '', job_title: '', qualification: '' });
   const [targetForm, setTargetForm] = useState({ member: '', item: '', annual_target: '', q1_target: '', q2_target: '', q3_target: '', q4_target: '', notes: '' });
-  const [initiativeForm, setInitiativeForm] = useState({ name: '', network_department: '', start_date: now.toISOString().slice(0, 10), end_date: '', leader_target: '', implementation_team: '', goals: '', beneficiaries: '', achieved_goals: '' });
+  const [initiativeForm, setInitiativeForm] = useState({
+    name: '', network_department: '', start_date: now.toISOString().slice(0, 10), end_date: '', leader_target: '',
+    implementation_team: '', goals: '', details: '', implementation_method: '', beneficiaries: '', achieved_goals: '', supporting_documents_notes: '',
+  });
   const [documentForm, setDocumentForm] = useState({ title: '', status: 'available', reason: '', last_review_date: '', notes: '' });
 
   useEffect(() => {
@@ -251,12 +270,34 @@ export function PeriodicStatisticsPage() {
       fetchCollection<WorkforceMember>('/periodic-statistics/workforce-members/'),
       fetchCollection<Initiative>(`/periodic-statistics/initiatives/?year=${year}`),
       fetchCollection<ReferenceDocument>('/periodic-statistics/reference-documents/'),
-    ]).then(([summaryPayload, workforceRows, initiativeRows, documentRows]) => {
+      fetchCollection<DailyStatistic>(`/periodic-statistics/daily-statistics/?year=${year}&month=${month}`),
+    ]).then(([summaryPayload, workforceRows, initiativeRows, documentRows, dailyRows]) => {
       if (!active) return;
       setSummary(summaryPayload);
       setWorkforce(workforceRows);
       setInitiatives(initiativeRows);
       setDocuments(documentRows);
+      setMonthEntries(dailyRows);
+
+      const counts: Record<string, string> = {};
+      const meta: Record<number, DayMeta> = {};
+      dailyRows.forEach(row => {
+        const day = Number(row.date.slice(8, 10));
+        const key = `${row.date}|${row.indicator}`;
+        const previous = Number(counts[key] || 0);
+        counts[key] = String(previous + Number(row.count || 0));
+        if (!meta[day]) {
+          meta[day] = { location: row.location || '', executor: row.executor || '', notes: row.notes || '' };
+        } else {
+          meta[day] = {
+            location: meta[day].location || row.location || '',
+            executor: meta[day].executor || row.executor || '',
+            notes: meta[day].notes || row.notes || '',
+          };
+        }
+      });
+      setMonthCounts(counts);
+      setDayMeta(meta);
     }).catch((error) => {
       if (active) toast.error(error instanceof Error ? error.message : (isRtl ? 'تعذر تحميل الإحصائيات' : 'Failed to load statistics'));
     }).finally(() => {
@@ -268,6 +309,8 @@ export function PeriodicStatisticsPage() {
   const doctors = useMemo(() => workforce.filter(item => item.category === 'doctor'), [workforce]);
   const nursing = useMemo(() => workforce.filter(item => item.category === 'nursing'), [workforce]);
   const monthNames = isRtl ? MONTHS_AR : MONTHS_EN;
+  const daysInMonth = useMemo(() => new Date(year, month, 0).getDate(), [year, month]);
+  const days = useMemo(() => Array.from({ length: daysInMonth }, (_, index) => index + 1), [daysInMonth]);
   const monthlyChartData = useMemo(() => monthNames.map((label, index) => ({ month: label, total: summary?.total_by_month[index] || 0 })), [monthNames, summary]);
   const annualChartData = useMemo(() => (summary?.indicators || []).filter(item => item.is_targeted).map(item => ({
     name: isRtl ? item.name_ar : item.name_en,
@@ -275,29 +318,75 @@ export function PeriodicStatisticsPage() {
     achieved: item.annual_achieved,
   })), [summary, isRtl]);
 
-  async function saveDailyEntries() {
-    if (!summary || savingDaily) return;
-    const entries = summary.indicators
-      .map(indicator => ({ indicator, count: Number(dailyCounts[indicator.id] || 0) }))
-      .filter(item => Number.isFinite(item.count) && item.count > 0);
-    if (!dailyDate || entries.length === 0) {
-      toast.error(isRtl ? 'حدد التاريخ وأدخل عددًا لمؤشر واحد على الأقل' : 'Choose a date and enter at least one indicator count');
-      return;
-    }
-    setSavingDaily(true);
+  const indicatorMonthTotals = useMemo(() => {
+    const totals: Record<number, number> = {};
+    (summary?.indicators || []).forEach(indicator => { totals[indicator.id] = 0; });
+    Object.entries(monthCounts).forEach(([key, value]) => {
+      const indicatorId = Number(key.split('|')[1]);
+      totals[indicatorId] = (totals[indicatorId] || 0) + Number(value || 0);
+    });
+    return totals;
+  }, [monthCounts, summary]);
+
+  function getDayName(day: number) {
+    const locale = isRtl ? 'ar-SA' : 'en-US';
+    return new Intl.DateTimeFormat(locale, { weekday: 'long' }).format(new Date(year, month - 1, day));
+  }
+
+  function updateDayMeta(day: number, field: keyof DayMeta, value: string) {
+    setDayMeta(current => ({
+      ...current,
+      [day]: { location: '', executor: '', notes: '', ...(current[day] || {}), [field]: value },
+    }));
+  }
+
+  async function saveMonthlyTable() {
+    if (!summary || savingMonth) return;
+    setSavingMonth(true);
     try {
-      await Promise.all(entries.map(({ indicator, count }) => apiRequest('/periodic-statistics/daily-statistics/', {
-        method: 'POST',
-        body: JSON.stringify({ indicator: indicator.id, date: dailyDate, count, location: dailyLocation, executor: dailyExecutor, notes: dailyNotes }),
-      })));
-      setDailyCounts({});
-      setDailyNotes('');
-      toast.success(isRtl ? `تم حفظ ${entries.length} مؤشر/مؤشرات` : `${entries.length} indicator entries saved`);
-      setRefreshVersion(value => value + 1);
+      const existingMap = new Map<string, DailyStatistic[]>();
+      monthEntries.forEach(entry => {
+        const key = `${entry.date}|${entry.indicator}`;
+        existingMap.set(key, [...(existingMap.get(key) || []), entry]);
+      });
+
+      const operations: Promise<unknown>[] = [];
+      for (const day of days) {
+        const date = dateKey(year, month, day);
+        const meta = dayMeta[day] || { location: '', executor: '', notes: '' };
+        for (const indicator of summary.indicators) {
+          const key = `${date}|${indicator.id}`;
+          const raw = monthCounts[key] ?? '';
+          const count = raw === '' ? 0 : Number(raw);
+          if (!Number.isFinite(count) || count < 0) {
+            throw new Error(isRtl ? `قيمة غير صحيحة في يوم ${day}` : `Invalid value on day ${day}`);
+          }
+          const existing = existingMap.get(key) || [];
+          if (count > 0) {
+            const payload = { indicator: indicator.id, date, count, location: meta.location, executor: meta.executor, notes: meta.notes };
+            if (existing.length > 0) {
+              operations.push(apiRequest(`/periodic-statistics/daily-statistics/${existing[0].id}/`, { method: 'PATCH', body: JSON.stringify(payload) }));
+              existing.slice(1).forEach(duplicate => operations.push(apiRequest(`/periodic-statistics/daily-statistics/${duplicate.id}/`, { method: 'DELETE' })));
+            } else {
+              operations.push(apiRequest('/periodic-statistics/daily-statistics/', { method: 'POST', body: JSON.stringify(payload) }));
+            }
+          } else if (existing.length > 0) {
+            existing.forEach(row => operations.push(apiRequest(`/periodic-statistics/daily-statistics/${row.id}/`, { method: 'DELETE' })));
+          }
+        }
+      }
+
+      if (operations.length === 0) {
+        toast.info(isRtl ? 'لا توجد تغييرات للحفظ في هذا الشهر' : 'There are no changes to save for this month');
+      } else {
+        await Promise.all(operations);
+        toast.success(isRtl ? `تم حفظ جدول ${monthNames[month - 1]} بنجاح` : `${monthNames[month - 1]} table saved successfully`);
+        setRefreshVersion(value => value + 1);
+      }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : (isRtl ? 'تعذر الحفظ' : 'Save failed'));
+      toast.error(error instanceof Error ? error.message : (isRtl ? 'تعذر حفظ جدول الشهر' : 'Could not save monthly table'));
     } finally {
-      setSavingDaily(false);
+      setSavingMonth(false);
     }
   }
 
@@ -345,13 +434,9 @@ export function PeriodicStatisticsPage() {
     try {
       await apiRequest('/periodic-statistics/initiatives/', {
         method: 'POST',
-        body: JSON.stringify({
-          ...initiativeForm,
-          end_date: initiativeForm.end_date || null,
-          beneficiaries: Number(initiativeForm.beneficiaries || 0),
-        }),
+        body: JSON.stringify({ ...initiativeForm, end_date: initiativeForm.end_date || null, beneficiaries: Number(initiativeForm.beneficiaries || 0) }),
       });
-      setInitiativeForm({ name: '', network_department: '', start_date: now.toISOString().slice(0, 10), end_date: '', leader_target: '', implementation_team: '', goals: '', beneficiaries: '', achieved_goals: '' });
+      setInitiativeForm({ name: '', network_department: '', start_date: now.toISOString().slice(0, 10), end_date: '', leader_target: '', implementation_team: '', goals: '', details: '', implementation_method: '', beneficiaries: '', achieved_goals: '', supporting_documents_notes: '' });
       toast.success(isRtl ? 'تمت إضافة المبادرة' : 'Initiative added');
       setRefreshVersion(value => value + 1);
     } catch (error) {
@@ -449,7 +534,7 @@ export function PeriodicStatisticsPage() {
           <Box sx={{ width: 52, height: 52, display: 'grid', placeItems: 'center', borderRadius: 3, bgcolor: 'primary.main', color: 'white' }}><AssessmentIcon /></Box>
           <Box>
             <Typography variant="h4" fontWeight={950}>{isRtl ? 'الإحصائيات والمؤشرات' : 'Statistics & Indicators'}</Typography>
-            <Typography variant="body2" color="text.secondary">{isRtl ? 'تسجيل يومي وتجميع شهري وربع سنوي وسنوي مع القوى العاملة والمبادرات والوثائق' : 'Daily entry with monthly, quarterly and annual aggregation, workforce, initiatives and references'}</Typography>
+            <Typography variant="body2" color="text.secondary">{isRtl ? 'تسجيل يومي داخل جدول شهري مستقل، ثم تجميع شهري وربع سنوي وسنوي' : 'Daily entry in a separate monthly grid, followed by monthly, quarterly and annual aggregation'}</Typography>
           </Box>
         </Stack>
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
@@ -500,25 +585,74 @@ export function PeriodicStatisticsPage() {
 
       {tab === 1 && summary && (
         <Stack spacing={2}>
-          <Alert severity="info">{isRtl ? 'المؤشرات ثابتة في بداية الجدول وليست قائمة منسدلة. أدخل العدد أمام كل مؤشر، ثم احفظ دفعة واحدة.' : 'Indicators are fixed at the start of the table, not a dropdown. Enter counts and save once.'}</Alert>
-          <Paper sx={{ p: 2.5 }}>
-            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(4, 1fr)' }, gap: 1.5, mb: 2 }}>
-              <TextField type="date" label={isRtl ? 'التاريخ' : 'Date'} value={dailyDate} onChange={e => setDailyDate(e.target.value)} />
-              <TextField label={isRtl ? 'الموقع / المركز' : 'Location / Center'} value={dailyLocation} onChange={e => setDailyLocation(e.target.value)} />
-              <TextField label={isRtl ? 'المنفذ' : 'Executor'} value={dailyExecutor} onChange={e => setDailyExecutor(e.target.value)} />
-              <TextField label={isRtl ? 'ملاحظات عامة' : 'General notes'} value={dailyNotes} onChange={e => setDailyNotes(e.target.value)} />
+          <Alert severity="info">
+            {isRtl
+              ? `كل شهر له جدول مستقل. الجدول الحالي خاص بشهر ${monthNames[month - 1]} ${year}، وكل صف يمثل يومًا من أيام الشهر.`
+              : `Each month has its own table. The current table is for ${monthNames[month - 1]} ${year}, with one row per day.`}
+          </Alert>
+          <Paper sx={{ overflow: 'hidden' }}>
+            <Box sx={{ px: 2.5, py: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2, flexWrap: 'wrap', bgcolor: 'background.default' }}>
+              <Box>
+                <Typography variant="h6" fontWeight={950}>{isRtl ? `جدول التسجيل اليومي - ${monthNames[month - 1]} ${year}` : `Daily registration table - ${monthNames[month - 1]} ${year}`}</Typography>
+                <Typography variant="body2" color="text.secondary">{isRtl ? 'أدخل العدد في تقاطع اليوم مع المؤشر، ويمكن إضافة الموقع والمنفذ والملاحظات لكل يوم.' : 'Enter the count at the day/indicator intersection. Location, executor and notes are available per day.'}</Typography>
+              </Box>
+              {canEdit && <Button variant="contained" startIcon={<SaveIcon />} onClick={saveMonthlyTable} disabled={savingMonth}>{savingMonth ? (isRtl ? 'جاري حفظ الشهر...' : 'Saving month...') : (isRtl ? 'حفظ جدول الشهر' : 'Save month table')}</Button>}
             </Box>
-            <TableContainer>
-              <Table>
-                <TableHead><TableRow><TableCell>{isRtl ? 'المؤشر' : 'Indicator'}</TableCell><TableCell width={180}>{isRtl ? 'العدد' : 'Count'}</TableCell><TableCell>{isRtl ? 'النوع' : 'Type'}</TableCell></TableRow></TableHead>
-                <TableBody>{summary.indicators.map(indicator => <TableRow key={indicator.id}>
-                  <TableCell><Typography fontWeight={850}>{isRtl ? indicator.name_ar : indicator.name_en}</Typography><Typography variant="caption" color="text.secondary">{isRtl ? indicator.name_en : indicator.name_ar}</Typography></TableCell>
-                  <TableCell><TextField size="small" type="number" inputProps={{ min: 0 }} value={dailyCounts[indicator.id] || ''} onChange={e => setDailyCounts(v => ({ ...v, [indicator.id]: e.target.value }))} /></TableCell>
-                  <TableCell><Chip size="small" label={indicator.measurement_type === 'reports' ? (isRtl ? 'بلاغات' : 'Reports') : (isRtl ? 'عدد' : 'Count')} /></TableCell>
-                </TableRow>)}</TableBody>
+
+            <TableContainer sx={{ maxHeight: '68vh', borderTop: '1px solid', borderColor: 'divider' }}>
+              <Table stickyHeader size="small" sx={{ minWidth: 1450 }}>
+                <TableHead>
+                  <TableRow>
+                    <TableCell sx={{ minWidth: 105, fontWeight: 950, position: 'sticky', right: isRtl ? 0 : 'auto', left: isRtl ? 'auto' : 0, zIndex: 5, bgcolor: 'background.paper' }}>{isRtl ? 'التاريخ' : 'Date'}</TableCell>
+                    <TableCell sx={{ minWidth: 95, fontWeight: 950 }}>{isRtl ? 'اليوم' : 'Day'}</TableCell>
+                    {summary.indicators.map(indicator => <TableCell key={indicator.id} align="center" sx={{ minWidth: 150, maxWidth: 180, fontWeight: 950 }}>
+                      <Typography variant="caption" fontWeight={950}>{isRtl ? indicator.name_ar : indicator.name_en}</Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: 10 }}>{isRtl ? indicator.name_en : indicator.name_ar}</Typography>
+                    </TableCell>)}
+                    <TableCell align="center" sx={{ minWidth: 95, fontWeight: 950 }}>{isRtl ? 'إجمالي اليوم' : 'Day total'}</TableCell>
+                    <TableCell sx={{ minWidth: 170, fontWeight: 950 }}>{isRtl ? 'الموقع / المركز' : 'Location / Center'}</TableCell>
+                    <TableCell sx={{ minWidth: 160, fontWeight: 950 }}>{isRtl ? 'المنفذ' : 'Executor'}</TableCell>
+                    <TableCell sx={{ minWidth: 210, fontWeight: 950 }}>{isRtl ? 'ملاحظات' : 'Notes'}</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {days.map(day => {
+                    const date = dateKey(year, month, day);
+                    const dailyTotal = summary.indicators.reduce((sum, indicator) => sum + Number(monthCounts[`${date}|${indicator.id}`] || 0), 0);
+                    const meta = dayMeta[day] || { location: '', executor: '', notes: '' };
+                    return <TableRow key={day} hover sx={{ '&:nth-of-type(even)': { bgcolor: 'rgba(148,163,184,.055)' } }}>
+                      <TableCell sx={{ fontWeight: 850, whiteSpace: 'nowrap', position: 'sticky', right: isRtl ? 0 : 'auto', left: isRtl ? 'auto' : 0, zIndex: 2, bgcolor: 'background.paper' }}>{`${pad(day)}/${pad(month)}/${year}`}</TableCell>
+                      <TableCell sx={{ whiteSpace: 'nowrap' }}>{getDayName(day)}</TableCell>
+                      {summary.indicators.map(indicator => {
+                        const key = `${date}|${indicator.id}`;
+                        return <TableCell key={indicator.id} align="center">
+                          <TextField
+                            size="small"
+                            type="number"
+                            value={monthCounts[key] ?? ''}
+                            disabled={!canEdit}
+                            inputProps={{ min: 0, step: 1, style: { textAlign: 'center', width: 62 } }}
+                            onChange={e => setMonthCounts(current => ({ ...current, [key]: e.target.value }))}
+                            sx={{ width: 92 }}
+                          />
+                        </TableCell>;
+                      })}
+                      <TableCell align="center"><Chip size="small" label={dailyTotal} color={dailyTotal > 0 ? 'primary' : 'default'} /></TableCell>
+                      <TableCell><TextField size="small" fullWidth value={meta.location} disabled={!canEdit} onChange={e => updateDayMeta(day, 'location', e.target.value)} /></TableCell>
+                      <TableCell><TextField size="small" fullWidth value={meta.executor} disabled={!canEdit} onChange={e => updateDayMeta(day, 'executor', e.target.value)} /></TableCell>
+                      <TableCell><TextField size="small" fullWidth value={meta.notes} disabled={!canEdit} onChange={e => updateDayMeta(day, 'notes', e.target.value)} /></TableCell>
+                    </TableRow>;
+                  })}
+                  <TableRow sx={{ bgcolor: 'rgba(15,111,109,.08)' }}>
+                    <TableCell colSpan={2} sx={{ fontWeight: 950 }}>{isRtl ? 'إجمالي الشهر' : 'Month total'}</TableCell>
+                    {summary.indicators.map(indicator => <TableCell key={indicator.id} align="center" sx={{ fontWeight: 950, fontSize: 16 }}>{indicatorMonthTotals[indicator.id] || 0}</TableCell>)}
+                    <TableCell align="center" sx={{ fontWeight: 950, fontSize: 16 }}>{Object.values(indicatorMonthTotals).reduce((sum, value) => sum + value, 0)}</TableCell>
+                    <TableCell colSpan={3} />
+                  </TableRow>
+                </TableBody>
               </Table>
             </TableContainer>
-            {canEdit ? <Button sx={{ mt: 2 }} variant="contained" startIcon={<SaveIcon />} onClick={saveDailyEntries} disabled={savingDaily}>{savingDaily ? (isRtl ? 'جاري الحفظ...' : 'Saving...') : (isRtl ? 'حفظ التسجيل اليومي' : 'Save daily entry')}</Button> : <Alert severity="warning" sx={{ mt: 2 }}>{isRtl ? 'حسابك للعرض فقط ولا يملك صلاحية إدخال البيانات.' : 'Your account is read-only.'}</Alert>}
+            {!canEdit && <Alert severity="warning" sx={{ m: 2 }}>{isRtl ? 'حسابك للعرض فقط ولا يملك صلاحية إدخال البيانات.' : 'Your account is read-only.'}</Alert>}
           </Paper>
         </Stack>
       )}
@@ -536,36 +670,46 @@ export function PeriodicStatisticsPage() {
 
       {tab === 6 && (
         <Stack spacing={2.5}>
-          {canEdit && <Paper sx={{ p: 2.5 }}><Typography variant="h6" fontWeight={900} gutterBottom>{isRtl ? 'إضافة مبادرة / مشروع تحسين' : 'Add initiative'}</Typography><Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3, 1fr)' }, gap: 1.5 }}>
-            <TextField label={isRtl ? 'اسم المبادرة / المشروع' : 'Initiative name'} value={initiativeForm.name} onChange={e => setInitiativeForm(v => ({ ...v, name: e.target.value }))} />
-            <TextField label={isRtl ? 'الشبكة / القسم' : 'Network / Department'} value={initiativeForm.network_department} onChange={e => setInitiativeForm(v => ({ ...v, network_department: e.target.value }))} />
-            <TextField type="date" label={isRtl ? 'تاريخ البداية' : 'Start date'} value={initiativeForm.start_date} onChange={e => setInitiativeForm(v => ({ ...v, start_date: e.target.value }))} />
-            <TextField type="date" label={isRtl ? 'تاريخ النهاية' : 'End date'} value={initiativeForm.end_date} onChange={e => setInitiativeForm(v => ({ ...v, end_date: e.target.value }))} />
-            <TextField label={isRtl ? 'قائد المبادرة / المستهدف' : 'Leader / Target'} value={initiativeForm.leader_target} onChange={e => setInitiativeForm(v => ({ ...v, leader_target: e.target.value }))} />
-            <TextField type="number" label={isRtl ? 'عدد المستفيدين' : 'Beneficiaries'} value={initiativeForm.beneficiaries} onChange={e => setInitiativeForm(v => ({ ...v, beneficiaries: e.target.value }))} />
-            <TextField multiline minRows={2} label={isRtl ? 'فريق التنفيذ' : 'Implementation team'} value={initiativeForm.implementation_team} onChange={e => setInitiativeForm(v => ({ ...v, implementation_team: e.target.value }))} />
-            <TextField multiline minRows={2} label={isRtl ? 'الأهداف' : 'Goals'} value={initiativeForm.goals} onChange={e => setInitiativeForm(v => ({ ...v, goals: e.target.value }))} />
-            <TextField multiline minRows={2} label={isRtl ? 'الأهداف المحققة' : 'Achieved goals'} value={initiativeForm.achieved_goals} onChange={e => setInitiativeForm(v => ({ ...v, achieved_goals: e.target.value }))} />
-          </Box><Button sx={{ mt: 1.5 }} variant="contained" startIcon={<AddIcon />} onClick={addInitiative}>{isRtl ? 'إضافة المبادرة' : 'Add initiative'}</Button></Paper>}
-          <Paper sx={{ p: 2 }}><TableContainer><Table size="small"><TableHead><TableRow><TableCell>{isRtl ? 'المبادرة' : 'Initiative'}</TableCell><TableCell>{isRtl ? 'القسم' : 'Department'}</TableCell><TableCell>{isRtl ? 'البداية' : 'Start'}</TableCell><TableCell>{isRtl ? 'الربع' : 'Quarter'}</TableCell><TableCell>{isRtl ? 'القائد' : 'Leader'}</TableCell><TableCell>{isRtl ? 'المستفيدون' : 'Beneficiaries'}</TableCell><TableCell>{isRtl ? 'الأهداف المحققة' : 'Achieved goals'}</TableCell></TableRow></TableHead><TableBody>{initiatives.map(row => <TableRow key={row.id}><TableCell>{row.name}</TableCell><TableCell>{row.network_department || '—'}</TableCell><TableCell>{row.start_date}</TableCell><TableCell>Q{row.quarter}</TableCell><TableCell>{row.leader_target || '—'}</TableCell><TableCell>{row.beneficiaries}</TableCell><TableCell>{row.achieved_goals || '—'}</TableCell></TableRow>)}</TableBody></Table></TableContainer>{initiatives.length === 0 && <EmptyState text={isRtl ? 'لا توجد مبادرات مسجلة لهذه السنة.' : 'No initiatives for this year.'} />}</Paper>
+          {canEdit && <Paper sx={{ p: 2.5 }}>
+            <Typography variant="h6" fontWeight={900} gutterBottom>{isRtl ? 'إضافة مبادرة / مشروع تحسين' : 'Add initiative'}</Typography>
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3, 1fr)' }, gap: 1.5 }}>
+              <TextField label={isRtl ? 'اسم المبادرة / المشروع' : 'Initiative name'} value={initiativeForm.name} onChange={e => setInitiativeForm(v => ({ ...v, name: e.target.value }))} />
+              <TextField label={isRtl ? 'الشبكة / القسم' : 'Network / Department'} value={initiativeForm.network_department} onChange={e => setInitiativeForm(v => ({ ...v, network_department: e.target.value }))} />
+              <TextField type="date" label={isRtl ? 'تاريخ البداية' : 'Start date'} value={initiativeForm.start_date} onChange={e => setInitiativeForm(v => ({ ...v, start_date: e.target.value }))} InputLabelProps={{ shrink: true }} />
+              <TextField type="date" label={isRtl ? 'تاريخ النهاية' : 'End date'} value={initiativeForm.end_date} onChange={e => setInitiativeForm(v => ({ ...v, end_date: e.target.value }))} InputLabelProps={{ shrink: true }} />
+              <TextField label={isRtl ? 'قائد المبادرة / المستهدف' : 'Leader / Target'} value={initiativeForm.leader_target} onChange={e => setInitiativeForm(v => ({ ...v, leader_target: e.target.value }))} />
+              <TextField label={isRtl ? 'فريق التنفيذ' : 'Implementation team'} value={initiativeForm.implementation_team} onChange={e => setInitiativeForm(v => ({ ...v, implementation_team: e.target.value }))} />
+              <TextField label={isRtl ? 'الأهداف' : 'Goals'} value={initiativeForm.goals} onChange={e => setInitiativeForm(v => ({ ...v, goals: e.target.value }))} />
+              <TextField label={isRtl ? 'تفاصيل المبادرة' : 'Details'} value={initiativeForm.details} onChange={e => setInitiativeForm(v => ({ ...v, details: e.target.value }))} />
+              <TextField label={isRtl ? 'طريقة التنفيذ' : 'Implementation method'} value={initiativeForm.implementation_method} onChange={e => setInitiativeForm(v => ({ ...v, implementation_method: e.target.value }))} />
+              <TextField type="number" label={isRtl ? 'عدد المستفيدين' : 'Beneficiaries'} value={initiativeForm.beneficiaries} onChange={e => setInitiativeForm(v => ({ ...v, beneficiaries: e.target.value }))} />
+              <TextField label={isRtl ? 'الأهداف المحققة' : 'Achieved goals'} value={initiativeForm.achieved_goals} onChange={e => setInitiativeForm(v => ({ ...v, achieved_goals: e.target.value }))} />
+              <TextField label={isRtl ? 'ملاحظات الوثائق الداعمة' : 'Supporting documents notes'} value={initiativeForm.supporting_documents_notes} onChange={e => setInitiativeForm(v => ({ ...v, supporting_documents_notes: e.target.value }))} />
+            </Box>
+            <Button sx={{ mt: 1.5 }} variant="contained" startIcon={<AddIcon />} onClick={addInitiative}>{isRtl ? 'إضافة المبادرة' : 'Add initiative'}</Button>
+          </Paper>}
+          <Paper sx={{ p: 2 }}><TableContainer><Table size="small"><TableHead><TableRow><TableCell>{isRtl ? 'المبادرة' : 'Initiative'}</TableCell><TableCell>{isRtl ? 'القسم' : 'Department'}</TableCell><TableCell>{isRtl ? 'البداية' : 'Start'}</TableCell><TableCell>{isRtl ? 'النهاية' : 'End'}</TableCell><TableCell>{isRtl ? 'الربع' : 'Quarter'}</TableCell><TableCell>{isRtl ? 'المستفيدون' : 'Beneficiaries'}</TableCell></TableRow></TableHead><TableBody>{initiatives.map(item => <TableRow key={item.id}><TableCell sx={{ fontWeight: 800 }}>{item.name}</TableCell><TableCell>{item.network_department || '—'}</TableCell><TableCell>{item.start_date}</TableCell><TableCell>{item.end_date || '—'}</TableCell><TableCell>Q{item.quarter}</TableCell><TableCell>{item.beneficiaries}</TableCell></TableRow>)}{initiatives.length === 0 && <TableRow><TableCell colSpan={6}>{isRtl ? 'لا توجد مبادرات مسجلة لهذه السنة.' : 'No initiatives for this year.'}</TableCell></TableRow>}</TableBody></Table></TableContainer></Paper>
         </Stack>
       )}
 
       {tab === 7 && (
         <Stack spacing={2.5}>
-          {canEdit && <Paper sx={{ p: 2.5 }}><Typography variant="h6" fontWeight={900} gutterBottom>{isRtl ? 'إضافة وثيقة / مرجع' : 'Add reference document'}</Typography><Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(4, 1fr)' }, gap: 1.5 }}>
-            <TextField label={isRtl ? 'الوثيقة / المرجع' : 'Document / Reference'} value={documentForm.title} onChange={e => setDocumentForm(v => ({ ...v, title: e.target.value }))} />
-            <TextField select label={isRtl ? 'الحالة' : 'Status'} value={documentForm.status} onChange={e => setDocumentForm(v => ({ ...v, status: e.target.value }))}><MenuItem value="available">{isRtl ? 'متوفر' : 'Available'}</MenuItem><MenuItem value="unavailable">{isRtl ? 'غير متوفر' : 'Unavailable'}</MenuItem><MenuItem value="not_applicable">{isRtl ? 'لا ينطبق' : 'Not applicable'}</MenuItem></TextField>
-            <TextField label={isRtl ? 'السبب / المصدر' : 'Reason / Source'} value={documentForm.reason} onChange={e => setDocumentForm(v => ({ ...v, reason: e.target.value }))} />
-            <TextField type="date" label={isRtl ? 'تاريخ آخر مراجعة' : 'Last review date'} value={documentForm.last_review_date} onChange={e => setDocumentForm(v => ({ ...v, last_review_date: e.target.value }))} />
-            <TextField sx={{ gridColumn: { md: 'span 4' } }} multiline minRows={2} label={isRtl ? 'ملاحظات' : 'Notes'} value={documentForm.notes} onChange={e => setDocumentForm(v => ({ ...v, notes: e.target.value }))} />
-          </Box><Button sx={{ mt: 1.5 }} variant="contained" startIcon={<AddIcon />} onClick={addDocument}>{isRtl ? 'إضافة الوثيقة' : 'Add document'}</Button></Paper>}
-          <Paper sx={{ p: 2 }}><TableContainer><Table><TableHead><TableRow><TableCell>{isRtl ? 'الوثيقة / المرجع' : 'Document / Reference'}</TableCell><TableCell>{isRtl ? 'الحالة' : 'Status'}</TableCell><TableCell>{isRtl ? 'السبب / المصدر' : 'Reason / Source'}</TableCell><TableCell>{isRtl ? 'آخر مراجعة' : 'Last review'}</TableCell><TableCell>{isRtl ? 'ملاحظات' : 'Notes'}</TableCell></TableRow></TableHead><TableBody>{documents.map(row => <TableRow key={row.id}><TableCell><Stack direction="row" spacing={1} alignItems="center"><DescriptionIcon fontSize="small" /><span>{row.title}</span></Stack></TableCell><TableCell><Chip size="small" color={row.status === 'available' ? 'success' : row.status === 'unavailable' ? 'error' : 'default'} label={row.status === 'available' ? (isRtl ? 'متوفر' : 'Available') : row.status === 'unavailable' ? (isRtl ? 'غير متوفر' : 'Unavailable') : (isRtl ? 'لا ينطبق' : 'N/A')} /></TableCell><TableCell>{row.reason || '—'}</TableCell><TableCell>{row.last_review_date || '—'}</TableCell><TableCell>{row.notes || '—'}</TableCell></TableRow>)}</TableBody></Table></TableContainer></Paper>
+          {canEdit && <Paper sx={{ p: 2.5 }}>
+            <Typography variant="h6" fontWeight={900} gutterBottom>{isRtl ? 'إضافة وثيقة / مرجع' : 'Add reference document'}</Typography>
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '2fr 1fr 2fr 1fr 2fr' }, gap: 1.5 }}>
+              <TextField label={isRtl ? 'اسم الوثيقة' : 'Document title'} value={documentForm.title} onChange={e => setDocumentForm(v => ({ ...v, title: e.target.value }))} />
+              <TextField select label={isRtl ? 'الحالة' : 'Status'} value={documentForm.status} onChange={e => setDocumentForm(v => ({ ...v, status: e.target.value }))}>
+                <MenuItem value="available">{isRtl ? 'متوفر' : 'Available'}</MenuItem><MenuItem value="unavailable">{isRtl ? 'غير متوفر' : 'Unavailable'}</MenuItem><MenuItem value="not_applicable">{isRtl ? 'لا ينطبق' : 'Not applicable'}</MenuItem>
+              </TextField>
+              <TextField label={isRtl ? 'السبب / المصدر' : 'Reason / Source'} value={documentForm.reason} onChange={e => setDocumentForm(v => ({ ...v, reason: e.target.value }))} />
+              <TextField type="date" label={isRtl ? 'آخر مراجعة' : 'Last review'} value={documentForm.last_review_date} onChange={e => setDocumentForm(v => ({ ...v, last_review_date: e.target.value }))} InputLabelProps={{ shrink: true }} />
+              <TextField label={isRtl ? 'ملاحظات' : 'Notes'} value={documentForm.notes} onChange={e => setDocumentForm(v => ({ ...v, notes: e.target.value }))} />
+            </Box>
+            <Button sx={{ mt: 1.5 }} variant="contained" startIcon={<AddIcon />} onClick={addDocument}>{isRtl ? 'إضافة الوثيقة' : 'Add document'}</Button>
+          </Paper>}
+          <Paper sx={{ p: 2 }}><TableContainer><Table size="small"><TableHead><TableRow><TableCell>{isRtl ? 'الوثيقة / المرجع' : 'Document / Reference'}</TableCell><TableCell>{isRtl ? 'الحالة' : 'Status'}</TableCell><TableCell>{isRtl ? 'السبب / المصدر' : 'Reason / Source'}</TableCell><TableCell>{isRtl ? 'آخر مراجعة' : 'Last review'}</TableCell><TableCell>{isRtl ? 'ملاحظات' : 'Notes'}</TableCell></TableRow></TableHead><TableBody>{documents.map(doc => <TableRow key={doc.id}><TableCell sx={{ fontWeight: 800 }}>{doc.title}</TableCell><TableCell><Chip size="small" color={doc.status === 'available' ? 'success' : doc.status === 'unavailable' ? 'error' : 'default'} label={doc.status === 'available' ? (isRtl ? 'متوفر' : 'Available') : doc.status === 'unavailable' ? (isRtl ? 'غير متوفر' : 'Unavailable') : (isRtl ? 'لا ينطبق' : 'Not applicable')} /></TableCell><TableCell>{doc.reason || '—'}</TableCell><TableCell>{doc.last_review_date || '—'}</TableCell><TableCell>{doc.notes || '—'}</TableCell></TableRow>)}</TableBody></Table></TableContainer></Paper>
         </Stack>
       )}
-
-      <Divider sx={{ my: 3 }} />
-      <Stack direction="row" spacing={1} alignItems="center" color="text.secondary"><TrendingUpIcon fontSize="small" /><Typography variant="caption">{isRtl ? 'مصدر البيانات: قاعدة بيانات منصة إدارة الصحة المهنية، مع تجميع آلي شهري وربع سنوي وسنوي.' : 'Data source: Occupational Health Management Platform database with automatic monthly, quarterly and annual aggregation.'}</Typography></Stack>
     </Box>
   );
 }
