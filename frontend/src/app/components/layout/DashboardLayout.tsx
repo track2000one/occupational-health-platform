@@ -86,6 +86,7 @@ export function DashboardLayout() {
     { key: 'needleStickInjury',  label: t('needleStickInjury'),  icon: <WarningIcon />,             path: '/needle-stick-injuries', group: 'health',   permission: PERMISSIONS.VIEW_NEEDLE_STICK },
     { key: 'medicalCommittee',   label: t('medicalCommittee'),   icon: <GavelIcon />,               path: '/medical-committee',     group: 'health',   permission: PERMISSIONS.VIEW_COMMITTEE },
     { key: 'campaigns',          label: t('campaigns'),          icon: <CampaignIcon />,            path: '/campaigns',             group: 'health',   permission: PERMISSIONS.VIEW_CAMPAIGNS },
+    { key: 'periodicStatistics', label: isRtl ? 'الإحصائيات والمؤشرات' : 'Statistics & Indicators', icon: <AssessmentIcon />, path: '/periodic-statistics', group: 'followup', permission: PERMISSIONS.VIEW_REPORTS },
     { key: 'reports',            label: t('reports'),            icon: <AssessmentIcon />,          path: '/reports',               group: 'followup', permission: PERMISSIONS.VIEW_REPORTS },
     { key: 'dataQuality',        label: isRtl ? 'جودة البيانات' : 'Data Quality',              icon: <FactCheckIcon />,      path: '/data-quality',  group: 'followup', permission: PERMISSIONS.VIEW_DATA_QUALITY },
     { key: 'dataImport',         label: isRtl ? 'استيراد Excel آمن' : 'Secure Excel Import',   icon: <CloudUploadIcon />,   path: '/data-import',   group: 'followup', permission: PERMISSIONS.MANAGE_USERS },
