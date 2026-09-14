@@ -52,6 +52,7 @@ import { CampaignsPage } from './pages/CampaignsPage';
 import { DataQualityPage } from './pages/DataQualityPage';
 import { DataImportPage } from './pages/DataImportPage';
 import { AppearanceSettingsPage } from './pages/AppearanceSettingsPage';
+import { PeriodicStatisticsPage } from './pages/PeriodicStatisticsPage';
 import { Toaster } from 'sonner';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -106,6 +107,7 @@ function AppRoutes() {
         <Route path="needle-stick-injuries" element={<NeedleStickInjuriesPage />} />
         <Route path="medical-committee" element={<MedicalCommitteePage />} />
         <Route path="campaigns" element={<CampaignsPage />} />
+        <Route path="periodic-statistics" element={<PeriodicStatisticsPage />} />
         <Route path="reports" element={<ReportsPage />} />
         <Route path="data-quality" element={<DataQualityPage />} />
         <Route path="data-import" element={
