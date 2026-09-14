@@ -23,6 +23,7 @@ import {
   LocalHospital as HospitalIcon,
   MonitorHeart as MonitorHeartIcon,
   Analytics as AnalyticsIcon,
+  Assessment as PeriodicStatsIcon,
 } from '@mui/icons-material';
 
 const theme = {
@@ -188,6 +189,9 @@ export function DashboardPage() {
         </Grid>
         <Grid size={{ xs: 12, md: 3 }}>
           <QuickAction label="إدارة الصلاحيات" icon={<SecurityIcon />} color="#4F63F6" onClick={() => navigate('/roles-permissions')} />
+        </Grid>
+        <Grid size={{ xs: 12, md: 3 }}>
+          <QuickAction label="الإحصائيات والمؤشرات" icon={<PeriodicStatsIcon />} color="#0F6F6D" onClick={() => navigate('/periodic-statistics')} />
         </Grid>
       </Grid>
 
