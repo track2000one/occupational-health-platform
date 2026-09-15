@@ -165,3 +165,35 @@ class ReferenceDocument(models.Model):
 
     def __str__(self):
         return self.title
+
+
+class EvidenceAttachment(models.Model):
+    class OwnerType(models.TextChoices):
+        INITIATIVE = 'initiative', 'Initiative'
+        REFERENCE_DOCUMENT = 'reference_document', 'Reference document'
+
+    owner_type = models.CharField(max_length=30, choices=OwnerType.choices, db_index=True)
+    initiative = models.ForeignKey(Initiative, on_delete=models.CASCADE, related_name='attachments', null=True, blank=True)
+    reference_document = models.ForeignKey(ReferenceDocument, on_delete=models.CASCADE, related_name='attachments', null=True, blank=True)
+    file_name = models.CharField(max_length=255)
+    content_type = models.CharField(max_length=100)
+    byte_size = models.PositiveIntegerField()
+    file_data = models.BinaryField(editable=False)
+    checksum_sha256 = models.CharField(max_length=64, db_index=True)
+    description = models.CharField(max_length=500, blank=True)
+    uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='periodic_stats_evidence_uploads')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at', '-id']
+        indexes = [
+            models.Index(fields=['owner_type', 'initiative']),
+            models.Index(fields=['owner_type', 'reference_document']),
+        ]
+
+    @property
+    def is_image(self):
+        return self.content_type.startswith('image/')
+
+    def __str__(self):
+        return self.file_name
