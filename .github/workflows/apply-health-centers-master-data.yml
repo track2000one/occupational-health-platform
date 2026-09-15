@@ -23,6 +23,20 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+      - name: Repair generated template escaping
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/apply-health-centers-master-data.mjs')
+          source = path.read_text(encoding='utf-8')
+          for token in ('API_BASE_URL', 'path', 'token', 'editing.id', 'center.id'):
+              source = source.replace('${' + token + '}', '\\${' + token + '}')
+          source = source.replace(
+              "created_at = models.DateTimeField(auto_now_add=True)\\n    updated_at = models.DateTimeField(auto_now=True)",
+              "created_at = models.DateTimeField(auto_now_add=True, null=True)\\n    updated_at = models.DateTimeField(auto_now=True, null=True)",
+          )
+          path.write_text(source, encoding='utf-8')
+          PY
       - name: Apply implementation
         run: node scripts/apply-health-centers-master-data.mjs
       - name: Verify Python syntax
