@@ -1,6 +1,7 @@
 from django.urls import path
 from rest_framework.routers import DefaultRouter
 
+from .compound_views import InitiativeWithAttachmentsCreateView, ReferenceDocumentWithAttachmentsCreateView
 from .views import (
     DailyStatisticViewSet,
     EvidenceAttachmentViewSet,
@@ -23,5 +24,7 @@ router.register('evidence-attachments', EvidenceAttachmentViewSet, basename='evi
 
 urlpatterns = [
     path('summary/', PeriodicStatisticsSummaryView.as_view(), name='periodic-statistics-summary'),
+    path('initiatives/create-with-attachments/', InitiativeWithAttachmentsCreateView.as_view(), name='initiative-create-with-attachments'),
+    path('reference-documents/create-with-attachments/', ReferenceDocumentWithAttachmentsCreateView.as_view(), name='reference-document-create-with-attachments'),
     *router.urls,
 ]

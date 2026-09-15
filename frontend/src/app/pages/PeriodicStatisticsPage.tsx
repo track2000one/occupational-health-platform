@@ -47,6 +47,7 @@ import {
 import { toast } from 'sonner';
 import { authFetch, getAccessToken, useAuth } from '../context/AuthContext';
 import { CalendarDateField } from '../components/CalendarDateField';
+import { DraftEvidencePicker } from '../components/DraftEvidencePicker';
 import { EvidenceAttachmentManager, type EvidenceAttachment } from '../components/EvidenceAttachmentManager';
 
 const PRODUCTION_API_BASE_URL = 'https://occupational-health-platform-production.up.railway.app/api';
@@ -182,6 +183,21 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   return await response.json() as T;
 }
 
+async function apiMultipartRequest<T>(path: string, payload: Record<string, unknown>, files: File[]): Promise<T> {
+  const token = getAccessToken();
+  if (!token) throw new Error('Authentication required');
+  const form = new FormData();
+  form.append('payload', JSON.stringify(payload));
+  files.forEach(file => form.append('files', file));
+  const response = await authFetch(`${API_BASE_URL}${path}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  });
+  if (!response.ok) throw new Error(await apiError(response));
+  return await response.json() as T;
+}
+
 async function fetchCollection<T>(path: string): Promise<T[]> {
   const items: T[] = [];
   const visited = new Set<string>();
@@ -249,6 +265,10 @@ export function PeriodicStatisticsPage() {
   const [loading, setLoading] = useState(true);
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [savingMonth, setSavingMonth] = useState(false);
+  const [savingInitiative, setSavingInitiative] = useState(false);
+  const [savingDocument, setSavingDocument] = useState(false);
+  const [initiativeDraftFiles, setInitiativeDraftFiles] = useState<File[]>([]);
+  const [documentDraftFiles, setDocumentDraftFiles] = useState<File[]>([]);
 
   const [memberForm, setMemberForm] = useState({ category: 'doctor', name: '', employee_number: '', job_title: '', qualification: '' });
   const [targetForm, setTargetForm] = useState({ member: '', item: '', annual_target: '', q1_target: '', q2_target: '', q3_target: '', q4_target: '', notes: '' });
@@ -410,6 +430,7 @@ export function PeriodicStatisticsPage() {
   }
 
   async function addInitiative() {
+    if (savingInitiative) return;
     if (!initiativeForm.name.trim() || !initiativeForm.start_date) return toast.error(isRtl ? 'اسم المبادرة وتاريخ البداية مطلوبان' : 'Name and start date are required');
     if (initiativeForm.redcap_uploaded && !initiativeForm.redcap_upload_date) return toast.error(isRtl ? 'حدد تاريخ الرفع على REDCap' : 'Select REDCap upload date');
     const activities = initiativeForm.activities
@@ -417,66 +438,73 @@ export function PeriodicStatisticsPage() {
       .map(item => ({ title: item.title.trim(), objective: item.objective.trim(), beneficiary_count: Number(item.beneficiary_count || 0) }));
     const teamMembers = splitLines(initiativeForm.team_members_text);
     const evidenceLinks = splitLines(initiativeForm.evidence_links_text);
+    const payload = {
+      name: initiativeForm.name,
+      network_department: initiativeForm.network_department,
+      start_date: initiativeForm.start_date,
+      end_date: initiativeForm.end_date || null,
+      leader_target: initiativeForm.leader_target,
+      implementation_team: teamMembers.join('\n'),
+      team_members: teamMembers,
+      goals: initiativeForm.goals,
+      details: initiativeForm.details,
+      implementation_method: initiativeForm.implementation_method,
+      activities,
+      beneficiaries: activities.reduce((sum, item) => sum + item.beneficiary_count, 0),
+      achieved_goals: initiativeForm.achieved_goals,
+      supporting_documents_notes: initiativeForm.supporting_documents_notes,
+      evidence_links: evidenceLinks,
+      status: initiativeForm.status,
+      redcap_uploaded: initiativeForm.redcap_uploaded,
+      redcap_upload_date: initiativeForm.redcap_upload_date || null,
+      redcap_reference: initiativeForm.redcap_reference,
+      department_copy_saved: initiativeForm.department_copy_saved,
+    };
+    setSavingInitiative(true);
     try {
-      await apiRequest('/periodic-statistics/initiatives/', {
-        method: 'POST',
-        body: JSON.stringify({
-          name: initiativeForm.name,
-          network_department: initiativeForm.network_department,
-          start_date: initiativeForm.start_date,
-          end_date: initiativeForm.end_date || null,
-          leader_target: initiativeForm.leader_target,
-          implementation_team: teamMembers.join('\n'),
-          team_members: teamMembers,
-          goals: initiativeForm.goals,
-          details: initiativeForm.details,
-          implementation_method: initiativeForm.implementation_method,
-          activities,
-          beneficiaries: activities.reduce((sum, item) => sum + item.beneficiary_count, 0),
-          achieved_goals: initiativeForm.achieved_goals,
-          supporting_documents_notes: initiativeForm.supporting_documents_notes,
-          evidence_links: evidenceLinks,
-          status: initiativeForm.status,
-          redcap_uploaded: initiativeForm.redcap_uploaded,
-          redcap_upload_date: initiativeForm.redcap_upload_date || null,
-          redcap_reference: initiativeForm.redcap_reference,
-          department_copy_saved: initiativeForm.department_copy_saved,
-        }),
-      });
+      await apiMultipartRequest<Initiative>('/periodic-statistics/initiatives/create-with-attachments/', payload, initiativeDraftFiles);
+      const attachedCount = initiativeDraftFiles.length;
       setInitiativeForm({ name: '', network_department: '', start_date: today, end_date: '', leader_target: '', team_members_text: '', goals: '', details: '', implementation_method: '', activities: [{ title: '', objective: '', beneficiary_count: '' }], achieved_goals: '', supporting_documents_notes: '', evidence_links_text: '', status: 'draft', redcap_uploaded: false, redcap_upload_date: '', redcap_reference: '', department_copy_saved: false });
-      toast.success(isRtl ? 'تمت إضافة المبادرة. يمكنك الآن رفع الصور وملفات PDF داخل بطاقتها مباشرة.' : 'Initiative added. You can now upload evidence directly in its card.');
+      setInitiativeDraftFiles([]);
+      toast.success(isRtl ? `تم حفظ بطاقة المبادرة${attachedCount ? ` مع ${attachedCount} مرفق` : ''} بنجاح.` : `Initiative saved${attachedCount ? ` with ${attachedCount} attachment(s)` : ''}.`);
       setRefreshVersion(value => value + 1);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Error');
+    } finally {
+      setSavingInitiative(false);
     }
   }
 
   async function addDocument() {
+    if (savingDocument) return;
     if (!documentForm.title.trim()) return toast.error(isRtl ? 'اسم الوثيقة مطلوب' : 'Document title is required');
     if (documentForm.status !== 'available' && !documentForm.reason.trim()) return toast.error(isRtl ? 'السبب إلزامي عند اختيار غير متوفر أو لا ينطبق' : 'Reason is required');
+    const payload = {
+      title: documentForm.title,
+      status: documentForm.status,
+      reason: documentForm.reason,
+      source: documentForm.source,
+      issuing_authority: documentForm.issuing_authority,
+      version_number: documentForm.version_number,
+      issue_date: documentForm.issue_date || null,
+      document_count: Number(documentForm.document_count || 1),
+      responsible_person: documentForm.responsible_person,
+      evidence_links: splitLines(documentForm.evidence_links_text),
+      last_review_date: documentForm.last_review_date || null,
+      notes: documentForm.notes,
+    };
+    setSavingDocument(true);
     try {
-      await apiRequest('/periodic-statistics/reference-documents/', {
-        method: 'POST',
-        body: JSON.stringify({
-          title: documentForm.title,
-          status: documentForm.status,
-          reason: documentForm.reason,
-          source: documentForm.source,
-          issuing_authority: documentForm.issuing_authority,
-          version_number: documentForm.version_number,
-          issue_date: documentForm.issue_date || null,
-          document_count: Number(documentForm.document_count || 1),
-          responsible_person: documentForm.responsible_person,
-          evidence_links: splitLines(documentForm.evidence_links_text),
-          last_review_date: documentForm.last_review_date || null,
-          notes: documentForm.notes,
-        }),
-      });
+      await apiMultipartRequest<ReferenceDocument>('/periodic-statistics/reference-documents/create-with-attachments/', payload, documentDraftFiles);
+      const attachedCount = documentDraftFiles.length;
       setDocumentForm({ title: '', status: 'available', reason: '', source: '', issuing_authority: '', version_number: '', issue_date: '', document_count: '1', responsible_person: '', evidence_links_text: '', last_review_date: '', notes: '' });
-      toast.success(isRtl ? 'تمت إضافة الوثيقة. يمكنك رفع المرفقات والإثباتات مباشرة من سجلها.' : 'Document added. Evidence files can now be uploaded directly.');
+      setDocumentDraftFiles([]);
+      toast.success(isRtl ? `تم حفظ الوثيقة${attachedCount ? ` مع ${attachedCount} مرفق` : ''} بنجاح.` : `Document saved${attachedCount ? ` with ${attachedCount} attachment(s)` : ''}.`);
       setRefreshVersion(value => value + 1);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Error');
+    } finally {
+      setSavingDocument(false);
     }
   }
 
@@ -643,10 +671,10 @@ export function PeriodicStatisticsPage() {
     {tab === 5 && renderWorkforce('nursing')}
 
     {tab === 6 && <Stack spacing={2.5}>
-      <Alert severity="info">{isRtl ? `النموذج ربع سنوي. الربع المختار Q${quarter}. بعد حفظ بطاقة المبادرة يمكن رفع صور الإثبات وملفات PDF مباشرة داخل البطاقة، مع المعاينة والتنزيل والحذف.` : `Quarterly initiative form for Q${quarter}. Evidence files can be uploaded directly after saving the card.`}</Alert>
+      <Alert severity="info">{isRtl ? `النموذج ربع سنوي. الربع المختار Q${quarter}. يمكنك تجهيز الصور وملفات PDF قبل الحفظ؛ وعند الضغط على حفظ البطاقة تُحفظ المبادرة والمرفقات معًا في عملية واحدة.` : `Quarterly initiative form for Q${quarter}. Select evidence before saving; the initiative and files are saved together in one operation.`}</Alert>
       {canEdit && <Paper sx={{ p: 2.5 }}>
         <Typography variant="h5" fontWeight={950}>{isRtl ? 'بطاقة مبادرة / مشروع تحسين' : 'Initiative / Improvement Project'}</Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>{isRtl ? 'سجّل بيانات المبادرة والأنشطة أولاً، ثم أضف المستندات الداعمة من البطاقة المحفوظة.' : 'Save the initiative first, then upload evidence from its saved card.'}</Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>{isRtl ? 'أكمل بيانات المبادرة والأنشطة، ثم اختر المرفقات الداعمة قبل الضغط على الحفظ.' : 'Complete the initiative and activities, then select evidence before saving.'}</Typography>
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3,1fr)' }, gap: 1.5 }}>
           <TextField label={isRtl ? 'اسم المبادرة / المشروع' : 'Initiative name'} value={initiativeForm.name} onChange={event => setInitiativeForm(value => ({ ...value, name: event.target.value }))} />
           <TextField label={isRtl ? 'اسم الشبكة / القسم' : 'Network / Department'} value={initiativeForm.network_department} onChange={event => setInitiativeForm(value => ({ ...value, network_department: event.target.value }))} />
@@ -674,11 +702,12 @@ export function PeriodicStatisticsPage() {
         </Box></Paper>)}</Stack>
         <Divider sx={{ my: 2.5 }} />
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '2fr 1fr 1fr' }, gap: 1.5 }}>
-          <TextField multiline minRows={3} label={isRtl ? 'روابط إثبات خارجية - اختياري' : 'External evidence links - optional'} value={initiativeForm.evidence_links_text} onChange={event => setInitiativeForm(value => ({ ...value, evidence_links_text: event.target.value }))} helperText={isRtl ? 'رفع الملفات الفعلي يتم من بطاقة المبادرة بعد حفظها.' : 'Actual file uploads are added from the saved initiative card.'} />
+          <TextField multiline minRows={3} label={isRtl ? 'روابط إثبات خارجية - اختياري' : 'External evidence links - optional'} value={initiativeForm.evidence_links_text} onChange={event => setInitiativeForm(value => ({ ...value, evidence_links_text: event.target.value }))} helperText={isRtl ? 'يمكن استخدامها إلى جانب الملفات المرفوعة.' : 'Can be used in addition to uploaded files.'} />
           <Box><FormControlLabel control={<Switch checked={initiativeForm.redcap_uploaded} onChange={event => setInitiativeForm(value => ({ ...value, redcap_uploaded: event.target.checked, status: event.target.checked ? 'submitted' : value.status }))} />} label={isRtl ? 'تم الرفع على REDCap' : 'Uploaded to REDCap'} /><FormControlLabel control={<Switch checked={initiativeForm.department_copy_saved} onChange={event => setInitiativeForm(value => ({ ...value, department_copy_saved: event.target.checked }))} />} label={isRtl ? 'تم حفظ نسخة بملف القسم' : 'Department copy saved'} /></Box>
           <Box><CalendarDateField label={isRtl ? 'تاريخ الرفع على REDCap' : 'REDCap upload date'} value={initiativeForm.redcap_upload_date} onChange={value => setInitiativeForm(current => ({ ...current, redcap_upload_date: value }))} /><TextField fullWidth sx={{ mt: 1 }} label={isRtl ? 'رقم / مرجع الرفع' : 'Upload reference'} value={initiativeForm.redcap_reference} onChange={event => setInitiativeForm(value => ({ ...value, redcap_reference: event.target.value }))} /></Box>
         </Box>
-        <Button sx={{ mt: 2 }} size="large" variant="contained" startIcon={<SaveIcon />} onClick={() => void addInitiative()}>{isRtl ? 'حفظ بطاقة المبادرة' : 'Save initiative'}</Button>
+        <Box sx={{ mt: 2.2 }}><DraftEvidencePicker files={initiativeDraftFiles} onChange={setInitiativeDraftFiles} isRtl={isRtl} disabled={savingInitiative} /></Box>
+        <Button sx={{ mt: 2 }} size="large" variant="contained" startIcon={savingInitiative ? <CircularProgress size={18} color="inherit" /> : <SaveIcon />} onClick={() => void addInitiative()} disabled={savingInitiative}>{savingInitiative ? (isRtl ? 'جاري حفظ البطاقة والمرفقات...' : 'Saving record and attachments...') : (isRtl ? 'حفظ بطاقة المبادرة والمرفقات' : 'Save initiative & attachments')}</Button>
       </Paper>}
 
       <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(100%,430px),1fr))', gap: 2 }}>
@@ -710,7 +739,7 @@ export function PeriodicStatisticsPage() {
         <KpiCard title={isRtl ? 'غير متوفر' : 'Unavailable'} value={documentStats.unavailable} accent="#DC2626" />
         <KpiCard title={isRtl ? 'لا ينطبق' : 'Not applicable'} value={documentStats.notApplicable} accent="#64748B" />
       </Box>
-      <Alert severity="info">{isRtl ? 'قائمة امتثال للوثائق والمراجع. يمكن إرفاق صور أو ملفات PDF مباشرة لكل وثيقة، ومعاينتها وتنزيلها وحذفها من نفس السجل.' : 'Document compliance checklist with direct evidence uploads.'}</Alert>
+      <Alert severity="info">{isRtl ? 'قائمة امتثال للوثائق والمراجع. يمكنك اختيار ملفات الإثبات قبل حفظ الوثيقة، فتُحفظ الوثيقة ومرفقاتها معًا؛ وبعد الحفظ يمكن إضافة أو حذف مرفقات أخرى من البطاقة.' : 'Document compliance checklist with pre-save evidence selection and post-save attachment management.'}</Alert>
       {canEdit && <Paper sx={{ p: 2.5 }}>
         <Typography variant="h5" fontWeight={950}>{isRtl ? 'إضافة وثيقة / مرجع' : 'Add reference document'}</Typography>
         <Box sx={{ mt: 2, display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3,1fr)' }, gap: 1.5 }}>
@@ -724,10 +753,11 @@ export function PeriodicStatisticsPage() {
           <CalendarDateField label={isRtl ? 'تاريخ آخر مراجعة' : 'Last review'} value={documentForm.last_review_date} onChange={value => setDocumentForm(current => ({ ...current, last_review_date: value }))} />
           <TextField type="number" label={isRtl ? 'عدد الوثائق / السياسات' : 'Document count'} value={documentForm.document_count} onChange={event => setDocumentForm(value => ({ ...value, document_count: event.target.value }))} inputProps={{ min: 1 }} />
           <TextField label={isRtl ? 'المسؤول عن التحديث' : 'Responsible person'} value={documentForm.responsible_person} onChange={event => setDocumentForm(value => ({ ...value, responsible_person: event.target.value }))} />
-          <TextField multiline minRows={3} label={isRtl ? 'روابط إثبات خارجية - اختياري' : 'External evidence links - optional'} value={documentForm.evidence_links_text} onChange={event => setDocumentForm(value => ({ ...value, evidence_links_text: event.target.value }))} helperText={isRtl ? 'رفع الملفات الفعلي يتم من سجل الوثيقة بعد حفظها.' : 'Actual files are uploaded after the document is saved.'} />
+          <TextField multiline minRows={3} label={isRtl ? 'روابط إثبات خارجية - اختياري' : 'External evidence links - optional'} value={documentForm.evidence_links_text} onChange={event => setDocumentForm(value => ({ ...value, evidence_links_text: event.target.value }))} helperText={isRtl ? 'يمكن استخدامها إلى جانب الملفات المرفوعة.' : 'Can be used in addition to uploaded files.'} />
           <TextField multiline minRows={3} label={isRtl ? 'ملاحظات' : 'Notes'} value={documentForm.notes} onChange={event => setDocumentForm(value => ({ ...value, notes: event.target.value }))} />
         </Box>
-        <Button sx={{ mt: 2 }} variant="contained" startIcon={<SaveIcon />} onClick={() => void addDocument()}>{isRtl ? 'حفظ الوثيقة' : 'Save document'}</Button>
+        <Box sx={{ mt: 2.2 }}><DraftEvidencePicker files={documentDraftFiles} onChange={setDocumentDraftFiles} isRtl={isRtl} disabled={savingDocument} /></Box>
+        <Button sx={{ mt: 2 }} size="large" variant="contained" startIcon={savingDocument ? <CircularProgress size={18} color="inherit" /> : <SaveIcon />} onClick={() => void addDocument()} disabled={savingDocument}>{savingDocument ? (isRtl ? 'جاري حفظ الوثيقة والمرفقات...' : 'Saving document and attachments...') : (isRtl ? 'حفظ الوثيقة والمرفقات' : 'Save document & attachments')}</Button>
       </Paper>}
 
       <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(100%,470px),1fr))', gap: 2 }}>
