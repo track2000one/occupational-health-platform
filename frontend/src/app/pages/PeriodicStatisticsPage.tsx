@@ -26,9 +26,9 @@ import {
 } from '@mui/material';
 import {
   Add as AddIcon,
+  Add as DeleteIcon,
   Assessment as AssessmentIcon,
   Badge as BadgeIcon,
-  DeleteOutline as DeleteIcon,
   Refresh as RefreshIcon,
   Save as SaveIcon,
 } from '@mui/icons-material';
@@ -534,7 +534,7 @@ export function PeriodicStatisticsPage() {
         </Box>
         <Divider sx={{ my: 2.5 }} />
         <Stack direction="row" justifyContent="space-between" alignItems="center"><Box><Typography variant="h6" fontWeight={900}>{isRtl ? 'الأنشطة التابعة للمبادرة' : 'Initiative activities'}</Typography><Typography variant="caption" color="text.secondary">{isRtl ? 'أضف كل محاضرة أو ورشة أو فعالية مع هدفها وعدد المستفيدين.' : 'Add each activity and its beneficiaries.'}</Typography></Box><Button startIcon={<AddIcon />} onClick={addActivityRow}>{isRtl ? 'إضافة نشاط' : 'Add activity'}</Button></Stack>
-        <Stack spacing={1.2} sx={{ mt: 1.5 }}>{initiativeForm.activities.map((activity, index) => <Paper key={index} variant="outlined" sx={{ p: 1.5, boxShadow: 'none' }}><Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '2fr 3fr 1fr auto' }, gap: 1 }}><TextField label={isRtl ? `النشاط ${index + 1}` : `Activity ${index + 1}`} value={activity.title} onChange={e => updateActivity(index, 'title', e.target.value)} /><TextField label={isRtl ? 'الهدف / الوصف' : 'Objective'} value={activity.objective} onChange={e => updateActivity(index, 'objective', e.target.value)} /><TextField type="number" label={isRtl ? 'المستفيدون' : 'Beneficiaries'} value={activity.beneficiary_count} onChange={e => updateActivity(index, 'beneficiary_count', e.target.value)} /><IconButton color="error" disabled={initiativeForm.activities.length === 1} onClick={() => removeActivityRow(index)}><DeleteIcon /></IconButton></Box></Paper>)}</Stack>
+        <Stack spacing={1.2} sx={{ mt: 1.5 }}>{initiativeForm.activities.map((activity, index) => <Paper key={index} variant="outlined" sx={{ p: 1.5, boxShadow: 'none' }}><Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '2fr 3fr 1fr auto' }, gap: 1 }}><TextField label={isRtl ? `النشاط ${index + 1}` : `Activity ${index + 1}`} value={activity.title} onChange={e => updateActivity(index, 'title', e.target.value)} /><TextField label={isRtl ? 'الهدف / الوصف' : 'Objective'} value={activity.objective} onChange={e => updateActivity(index, 'objective', e.target.value)} /><TextField type="number" label={isRtl ? 'المستفيدون' : 'Beneficiaries'} value={activity.beneficiary_count} onChange={e => updateActivity(index, 'beneficiary_count', e.target.value)} /><IconButton color="error" disabled={initiativeForm.activities.length === 1} onClick={() => removeActivityRow(index)} sx={{ transform: 'rotate(45deg)' }}><DeleteIcon /></IconButton></Box></Paper>)}</Stack>
         <Divider sx={{ my: 2.5 }} />
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '2fr 1fr 1fr' }, gap: 1.5 }}>
           <TextField multiline minRows={3} label={isRtl ? 'المستندات الداعمة / روابط الإثبات - رابط في كل سطر' : 'Evidence links'} value={initiativeForm.evidence_links_text} onChange={e => setInitiativeForm(v => ({ ...v, evidence_links_text: e.target.value }))} />
