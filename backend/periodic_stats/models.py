@@ -187,8 +187,8 @@ class EvidenceAttachment(models.Model):
     class Meta:
         ordering = ['-created_at', '-id']
         indexes = [
-            models.Index(fields=['owner_type', 'initiative']),
-            models.Index(fields=['owner_type', 'reference_document']),
+            models.Index(fields=['owner_type', 'initiative'], name='ps_ev_owner_init_idx'),
+            models.Index(fields=['owner_type', 'reference_document'], name='ps_ev_owner_doc_idx'),
         ]
 
     @property
