@@ -14,7 +14,8 @@ RUN python -m pip install --no-cache-dir --upgrade pip \
     && python -m pip install --no-cache-dir -r /app/requirements.txt
 
 COPY . /app
-RUN chmod +x /app/start.sh
+RUN python manage.py collectstatic --noinput \
+    && chmod +x /app/start.sh
 
 ENTRYPOINT ["/app/start.sh"]
 CMD []
