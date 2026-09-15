@@ -83,19 +83,23 @@ export function HealthCentersPage() {
     setSaving(true);
     try {
       const payload = { ...form, name: form.name_en.trim() || form.name_ar.trim(), name_ar: form.name_ar.trim(), name_en: form.name_en.trim(), code: form.code?.trim() || null, region: form.region.trim(), city: form.city.trim(), district: form.district.trim(), notes: form.notes?.trim() || '' };
-      if (editing) await request(`/health-centers/${editing.id}/`, { method: 'PATCH', body: JSON.stringify(payload) });
-      else await request('/health-centers/', { method: 'POST', body: JSON.stringify(payload) });
+      const saved = editing
+        ? await request<Center>(`/health-centers/${editing.id}/`, { method: 'PATCH', body: JSON.stringify(payload) })
+        : await request<Center>('/health-centers/', { method: 'POST', body: JSON.stringify(payload) });
+      setCenters(current => editing
+        ? current.map(center => center.id === saved.id ? saved : center)
+        : [saved, ...current]);
       toast.success(isRtl ? 'تم حفظ بيانات المركز الصحي' : 'Health center saved');
-      setOpen(false); await load();
+      setOpen(false);
     } catch (error) { toast.error(error instanceof Error ? error.message : 'Save failed'); }
     finally { setSaving(false); }
   }
 
   async function toggleCenter(center: Center) {
     try {
-      await request(`/health-centers/${center.id}/`, { method: 'PATCH', body: JSON.stringify({ is_active: !center.is_active }) });
+      const updated = await request<Center>(`/health-centers/${center.id}/`, { method: 'PATCH', body: JSON.stringify({ is_active: !center.is_active }) });
+      setCenters(current => current.map(item => item.id === updated.id ? updated : item));
       toast.success(center.is_active ? (isRtl ? 'تم تعطيل المركز مع الاحتفاظ بالسجلات السابقة' : 'Center deactivated; historical records kept') : (isRtl ? 'تم تفعيل المركز' : 'Center activated'));
-      await load();
     } catch (error) { toast.error(error instanceof Error ? error.message : 'Update failed'); }
   }
 

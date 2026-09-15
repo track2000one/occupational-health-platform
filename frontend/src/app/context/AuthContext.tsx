@@ -53,6 +53,61 @@ const SESSION_EXPIRED_EVENT = 'ohp:session-expired';
 
 let refreshInFlight: Promise<string> | null = null;
 
+
+const SAFE_REQUEST_TIMEOUT_MS = 4000;
+const WRITE_REQUEST_TIMEOUT_MS = 8000;
+const RETRYABLE_STATUS_CODES = new Set([502, 503, 504]);
+
+function wait(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function fetchWithTimeout(input: RequestInfo | URL, options: RequestInit = {}, timeoutMs = WRITE_REQUEST_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const externalSignal = options.signal;
+  const relayAbort = () => controller.abort();
+  if (externalSignal?.aborted) controller.abort();
+  else externalSignal?.addEventListener('abort', relayAbort, { once: true });
+
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (controller.signal.aborted && !externalSignal?.aborted) {
+      throw new Error('تعذر الوصول إلى الخادم خلال المهلة المحددة. حاول مرة أخرى.');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    externalSignal?.removeEventListener('abort', relayAbort);
+  }
+}
+
+async function resilientFetch(input: RequestInfo | URL, options: RequestInit = {}) {
+  const method = String(options.method || 'GET').toUpperCase();
+  const safeToRetry = method === 'GET' || method === 'HEAD' || method === 'OPTIONS';
+  const attempts = safeToRetry ? 2 : 1;
+  const timeoutMs = safeToRetry ? SAFE_REQUEST_TIMEOUT_MS : WRITE_REQUEST_TIMEOUT_MS;
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      const response = await fetchWithTimeout(input, options, timeoutMs);
+      if (safeToRetry && attempt === 0 && RETRYABLE_STATUS_CODES.has(response.status)) {
+        await wait(250);
+        continue;
+      }
+      return response;
+    } catch (error) {
+      lastError = error;
+      if (!safeToRetry || attempt === attempts - 1) throw error;
+      await wait(250);
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('تعذر الاتصال بالخادم.');
+}
+
 export function getAccessToken() {
   return localStorage.getItem(ACCESS_TOKEN_KEY);
 }
@@ -86,7 +141,7 @@ async function refreshAccessToken() {
       expireSession();
       throw new Error('انتهت جلسة الدخول. سجّل الدخول مرة أخرى.');
     }
-    const response = await fetch(`${API_BASE_URL}/auth/token/refresh/`, {
+    const response = await resilientFetch(`${API_BASE_URL}/auth/token/refresh/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refresh }),
@@ -118,11 +173,11 @@ export async function authFetch(input: RequestInfo | URL, options: RequestInit =
     throw new Error('انتهت جلسة الدخول. سجّل الدخول مرة أخرى.');
   }
 
-  let response = await fetch(input, withBearerToken(options, accessToken));
+  let response = await resilientFetch(input, withBearerToken(options, accessToken));
   if (response.status !== 401) return response;
 
   const renewedAccessToken = await refreshAccessToken();
-  response = await fetch(input, withBearerToken(options, renewedAccessToken));
+  response = await resilientFetch(input, withBearerToken(options, renewedAccessToken));
   if (response.status === 401) {
     expireSession();
     throw new Error('تعذر تجديد جلسة الدخول. سجّل الدخول مرة أخرى.');
@@ -144,7 +199,7 @@ function readStoredUser(): User | null {
 }
 
 async function fetchJson(path: string, options: RequestInit = {}) {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await resilientFetch(`${API_BASE_URL}${path}`, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
