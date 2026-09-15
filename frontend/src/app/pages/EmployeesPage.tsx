@@ -60,6 +60,8 @@ type RiskLevel = 'low' | 'medium' | 'high';
 type ApiHealthCenter = {
   id: number | string;
   name: string;
+  name_ar?: string;
+  name_en?: string;
   code?: string | null;
   region?: string;
   city?: string;
@@ -168,6 +170,10 @@ function calculateExperience(dateValue: string) {
 
 function normalizeDate(value?: string | null) {
   return value ? String(value).slice(0, 10) : '';
+}
+
+function centerDisplayName(center: ApiHealthCenter, isRtl: boolean) {
+  return (isRtl ? center.name_ar : center.name_en) || center.name || center.name_en || center.name_ar || '-';
 }
 
 function asForm(employee: ApiEmployee): EmployeeForm {
@@ -290,9 +296,9 @@ export function EmployeesPage() {
 
   const centerNameById = useMemo(() => {
     const map = new Map<string, string>();
-    healthCenters.forEach(center => map.set(String(center.id), center.name));
+    healthCenters.forEach(center => map.set(String(center.id), centerDisplayName(center, isRtl)));
     return map;
-  }, [healthCenters]);
+  }, [healthCenters, isRtl]);
 
   const filteredEmployees = employees.filter(emp => {
     const query = searchTerm.trim().toLowerCase();
@@ -308,7 +314,7 @@ export function EmployeesPage() {
   });
 
   function getHealthCenterName(employee: ApiEmployee) {
-    return employee.health_center_name || centerNameById.get(String(employee.health_center)) || '-';
+    return centerNameById.get(String(employee.health_center)) || employee.health_center_name || '-';
   }
 
   function openAdd() {
@@ -488,7 +494,7 @@ export function EmployeesPage() {
             <TextField fullWidth select label={isRtl ? 'المركز الصحي' : 'Health Center'} value={centerFilter}
               onChange={event => setCenterFilter(event.target.value)}>
               <MenuItem value="all">{isRtl ? 'جميع المراكز' : 'All Centers'}</MenuItem>
-              {healthCenters.map(center => <MenuItem key={center.id} value={String(center.id)}>{center.name}</MenuItem>)}
+              {healthCenters.map(center => <MenuItem key={center.id} value={String(center.id)}>{centerDisplayName(center, isRtl)}</MenuItem>)}
             </TextField>
           </Grid>
         </Grid>

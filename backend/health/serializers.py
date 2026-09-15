@@ -248,6 +248,28 @@ class HealthCenterSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('A health center with this name already exists.')
         return value
 
+    def validate_name_ar(self, value):
+        value = str(value or '').strip()
+        if not value:
+            return ''
+        queryset = HealthCenter.objects.filter(name_ar__iexact=value)
+        if self.instance:
+            queryset = queryset.exclude(pk=self.instance.pk)
+        if queryset.exists():
+            raise serializers.ValidationError('A health center with this Arabic name already exists.')
+        return value
+
+    def validate_name_en(self, value):
+        value = str(value or '').strip()
+        if not value:
+            return ''
+        queryset = HealthCenter.objects.filter(name_en__iexact=value)
+        if self.instance:
+            queryset = queryset.exclude(pk=self.instance.pk)
+        if queryset.exists():
+            raise serializers.ValidationError('A health center with this English name already exists.')
+        return value
+
     def validate_code(self, value):
         value = str(value or '').strip().upper()
         if not value:
@@ -260,7 +282,7 @@ class HealthCenterSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, attrs):
-        for field in ('region', 'city', 'district', 'notes'):
+        for field in ('name_ar', 'name_en', 'region', 'city', 'district', 'notes'):
             if field in attrs and attrs[field] is not None:
                 attrs[field] = str(attrs[field]).strip()
         return attrs
