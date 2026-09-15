@@ -7,12 +7,9 @@ import {
   Chip,
   CircularProgress,
   Divider,
-  FormControlLabel,
-  IconButton,
   MenuItem,
   Paper,
   Stack,
-  Switch,
   Tab,
   Tabs,
   Table,
@@ -26,7 +23,6 @@ import {
 } from '@mui/material';
 import {
   Add as AddIcon,
-  Add as DeleteIcon,
   Assessment as AssessmentIcon,
   Badge as BadgeIcon,
   Refresh as RefreshIcon,
@@ -92,7 +88,6 @@ type SummaryPayload = {
     annual_targeted_achieved: number;
     annual_percentage: number;
     occupational_injuries: number;
-    initiatives_quarter: number;
     document_compliance: number;
     doctors: number;
     nursing: number;
@@ -102,34 +97,6 @@ type SummaryPayload = {
 type DailyStatistic = { id: number; indicator: number; date: string; count: number; location: string; executor: string; notes: string };
 type WorkforceTarget = { id: number; member: number; item: string; annual_target: number; q1_target: number; q2_target: number; q3_target: number; q4_target: number; notes?: string };
 type WorkforceMember = { id: number; category: 'doctor' | 'nursing'; name: string; employee_number: string; job_title: string; qualification: string; targets: WorkforceTarget[] };
-type InitiativeActivity = { title: string; objective: string; beneficiary_count: number | string };
-type Initiative = {
-  id: number;
-  name: string;
-  network_department: string;
-  start_date: string;
-  end_date?: string | null;
-  leader_target: string;
-  implementation_team: string;
-  team_members?: string[];
-  goals: string;
-  details?: string;
-  implementation_method?: string;
-  beneficiaries: number;
-  activities?: InitiativeActivity[];
-  total_beneficiaries?: number;
-  achieved_goals: string;
-  supporting_documents_notes?: string;
-  evidence_links?: string[];
-  attachments?: EvidenceAttachment[];
-  status: 'draft' | 'in_progress' | 'completed' | 'submitted';
-  redcap_uploaded: boolean;
-  redcap_upload_date?: string | null;
-  redcap_reference?: string;
-  department_copy_saved: boolean;
-  quarter: number;
-  year: number;
-};
 type ReferenceDocument = {
   id: number;
   title: string;
@@ -226,30 +193,12 @@ function KpiCard({ title, value, hint, accent = '#0F6F6D' }: { title: string; va
 
 function EmptyState({ text }: { text: string }) { return <Alert severity="info">{text}</Alert>; }
 
-function statusLabel(statusValue: Initiative['status'], isRtl: boolean) {
-  const labels = {
-    draft: isRtl ? 'مسودة' : 'Draft',
-    in_progress: isRtl ? 'قيد التنفيذ' : 'In progress',
-    completed: isRtl ? 'مكتملة' : 'Completed',
-    submitted: isRtl ? 'تم الرفع' : 'Submitted',
-  };
-  return labels[statusValue] || statusValue;
-}
-
-function statusColor(statusValue: Initiative['status']): 'default' | 'info' | 'success' | 'warning' {
-  if (statusValue === 'submitted') return 'success';
-  if (statusValue === 'completed') return 'info';
-  if (statusValue === 'in_progress') return 'warning';
-  return 'default';
-}
-
 export function PeriodicStatisticsPage() {
   const { i18n } = useTranslation();
   const { user } = useAuth();
   const isRtl = i18n.language === 'ar';
   const canEdit = Boolean(user?.role && EDITABLE_ROLES.has(user.role));
   const now = new Date();
-  const today = now.toISOString().slice(0, 10);
 
   const [tab, setTab] = useState(0);
   const [year, setYear] = useState(now.getFullYear());
@@ -257,7 +206,6 @@ export function PeriodicStatisticsPage() {
   const [quarter, setQuarter] = useState(Math.floor(now.getMonth() / 3) + 1);
   const [summary, setSummary] = useState<SummaryPayload | null>(null);
   const [workforce, setWorkforce] = useState<WorkforceMember[]>([]);
-  const [initiatives, setInitiatives] = useState<Initiative[]>([]);
   const [documents, setDocuments] = useState<ReferenceDocument[]>([]);
   const [monthEntries, setMonthEntries] = useState<DailyStatistic[]>([]);
   const [monthCounts, setMonthCounts] = useState<Record<string, string>>({});
@@ -265,19 +213,11 @@ export function PeriodicStatisticsPage() {
   const [loading, setLoading] = useState(true);
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [savingMonth, setSavingMonth] = useState(false);
-  const [savingInitiative, setSavingInitiative] = useState(false);
   const [savingDocument, setSavingDocument] = useState(false);
-  const [initiativeDraftFiles, setInitiativeDraftFiles] = useState<File[]>([]);
   const [documentDraftFiles, setDocumentDraftFiles] = useState<File[]>([]);
 
   const [memberForm, setMemberForm] = useState({ category: 'doctor', name: '', employee_number: '', job_title: '', qualification: '' });
   const [targetForm, setTargetForm] = useState({ member: '', item: '', annual_target: '', q1_target: '', q2_target: '', q3_target: '', q4_target: '', notes: '' });
-  const [initiativeForm, setInitiativeForm] = useState({
-    name: '', network_department: '', start_date: today, end_date: '', leader_target: '', team_members_text: '', goals: '', details: '',
-    implementation_method: '', activities: [{ title: '', objective: '', beneficiary_count: '' }] as InitiativeActivity[], achieved_goals: '',
-    supporting_documents_notes: '', evidence_links_text: '', status: 'draft' as Initiative['status'], redcap_uploaded: false,
-    redcap_upload_date: '', redcap_reference: '', department_copy_saved: false,
-  });
   const [documentForm, setDocumentForm] = useState({
     title: '', status: 'available' as ReferenceDocument['status'], reason: '', source: '', issuing_authority: '', version_number: '',
     issue_date: '', document_count: '1', responsible_person: '', evidence_links_text: '', last_review_date: '', notes: '',
@@ -289,14 +229,12 @@ export function PeriodicStatisticsPage() {
     Promise.all([
       apiRequest<SummaryPayload>(`/periodic-statistics/summary/?year=${year}&month=${month}&quarter=${quarter}`),
       fetchCollection<WorkforceMember>('/periodic-statistics/workforce-members/'),
-      fetchCollection<Initiative>(`/periodic-statistics/initiatives/?year=${year}`),
       fetchCollection<ReferenceDocument>('/periodic-statistics/reference-documents/'),
       fetchCollection<DailyStatistic>(`/periodic-statistics/daily-statistics/?year=${year}&month=${month}`),
-    ]).then(([summaryPayload, workforceRows, initiativeRows, documentRows, dailyRows]) => {
+    ]).then(([summaryPayload, workforceRows, documentRows, dailyRows]) => {
       if (!active) return;
       setSummary(summaryPayload);
       setWorkforce(workforceRows);
-      setInitiatives(initiativeRows);
       setDocuments(documentRows);
       setMonthEntries(dailyRows);
       const counts: Record<string, string> = {};
@@ -322,7 +260,6 @@ export function PeriodicStatisticsPage() {
   const days = useMemo(() => Array.from({ length: daysInMonth }, (_, index) => index + 1), [daysInMonth]);
   const monthlyChartData = useMemo(() => monthNames.map((label, index) => ({ month: label, total: summary?.total_by_month[index] || 0 })), [monthNames, summary]);
   const annualChartData = useMemo(() => (summary?.indicators || []).filter(item => item.is_targeted).map(item => ({ name: isRtl ? item.name_ar : item.name_en, target: item.annual_target || 0, achieved: item.annual_achieved })), [summary, isRtl]);
-  const selectedQuarterInitiatives = useMemo(() => initiatives.filter(item => item.quarter === quarter), [initiatives, quarter]);
   const documentStats = useMemo(() => {
     const applicable = documents.filter(item => item.status !== 'not_applicable');
     const available = applicable.filter(item => item.status === 'available').length;
@@ -417,64 +354,6 @@ export function PeriodicStatisticsPage() {
     }
   }
 
-  function updateActivity(index: number, field: keyof InitiativeActivity, value: string) {
-    setInitiativeForm(current => ({ ...current, activities: current.activities.map((activity, itemIndex) => itemIndex === index ? { ...activity, [field]: value } : activity) }));
-  }
-
-  function addActivityRow() {
-    setInitiativeForm(current => ({ ...current, activities: [...current.activities, { title: '', objective: '', beneficiary_count: '' }] }));
-  }
-
-  function removeActivityRow(index: number) {
-    setInitiativeForm(current => ({ ...current, activities: current.activities.filter((_, itemIndex) => itemIndex !== index) }));
-  }
-
-  async function addInitiative() {
-    if (savingInitiative) return;
-    if (!initiativeForm.name.trim() || !initiativeForm.start_date) return toast.error(isRtl ? 'اسم المبادرة وتاريخ البداية مطلوبان' : 'Name and start date are required');
-    if (initiativeForm.redcap_uploaded && !initiativeForm.redcap_upload_date) return toast.error(isRtl ? 'حدد تاريخ الرفع على REDCap' : 'Select REDCap upload date');
-    const activities = initiativeForm.activities
-      .filter(item => item.title.trim() || item.objective.trim() || Number(item.beneficiary_count || 0) > 0)
-      .map(item => ({ title: item.title.trim(), objective: item.objective.trim(), beneficiary_count: Number(item.beneficiary_count || 0) }));
-    const teamMembers = splitLines(initiativeForm.team_members_text);
-    const evidenceLinks = splitLines(initiativeForm.evidence_links_text);
-    const payload = {
-      name: initiativeForm.name,
-      network_department: initiativeForm.network_department,
-      start_date: initiativeForm.start_date,
-      end_date: initiativeForm.end_date || null,
-      leader_target: initiativeForm.leader_target,
-      implementation_team: teamMembers.join('\n'),
-      team_members: teamMembers,
-      goals: initiativeForm.goals,
-      details: initiativeForm.details,
-      implementation_method: initiativeForm.implementation_method,
-      activities,
-      beneficiaries: activities.reduce((sum, item) => sum + item.beneficiary_count, 0),
-      achieved_goals: initiativeForm.achieved_goals,
-      supporting_documents_notes: initiativeForm.supporting_documents_notes,
-      evidence_links: evidenceLinks,
-      status: initiativeForm.status,
-      redcap_uploaded: initiativeForm.redcap_uploaded,
-      redcap_upload_date: initiativeForm.redcap_upload_date || null,
-      redcap_reference: initiativeForm.redcap_reference,
-      department_copy_saved: initiativeForm.department_copy_saved,
-    };
-    setSavingInitiative(true);
-    try {
-      await apiMultipartRequest<Initiative>('/periodic-statistics/initiatives/create-with-attachments/', payload, initiativeDraftFiles);
-      const attachedCount = initiativeDraftFiles.length;
-      setInitiativeForm({ name: '', network_department: '', start_date: today, end_date: '', leader_target: '', team_members_text: '', goals: '', details: '', implementation_method: '', activities: [{ title: '', objective: '', beneficiary_count: '' }], achieved_goals: '', supporting_documents_notes: '', evidence_links_text: '', status: 'draft', redcap_uploaded: false, redcap_upload_date: '', redcap_reference: '', department_copy_saved: false });
-      setInitiativeDraftFiles([]);
-      toast.success(isRtl ? `تم حفظ بطاقة المبادرة${attachedCount ? ` مع ${attachedCount} مرفق` : ''} بنجاح.` : `Initiative saved${attachedCount ? ` with ${attachedCount} attachment(s)` : ''}.`);
-      setRefreshVersion(value => value + 1);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Error');
-    } finally {
-      setSavingInitiative(false);
-    }
-  }
-
   async function addDocument() {
     if (savingDocument) return;
     if (!documentForm.title.trim()) return toast.error(isRtl ? 'اسم الوثيقة مطلوب' : 'Document title is required');
@@ -560,7 +439,7 @@ export function PeriodicStatisticsPage() {
         <Box sx={{ width: 52, height: 52, display: 'grid', placeItems: 'center', borderRadius: 3, bgcolor: 'primary.main', color: 'white' }}><AssessmentIcon /></Box>
         <Box>
           <Typography variant="h4" fontWeight={950}>{isRtl ? 'الإحصائيات والمؤشرات' : 'Statistics & Indicators'}</Typography>
-          <Typography variant="body2" color="text.secondary">{isRtl ? 'تسجيل يومي وتجميع شهري وربع سنوي وسنوي مع المبادرات والامتثال والمرفقات الداعمة' : 'Daily, monthly, quarterly and annual statistics with initiatives, compliance and evidence'}</Typography>
+          <Typography variant="body2" color="text.secondary">{isRtl ? 'تسجيل يومي وتجميع شهري وربع سنوي وسنوي مع متابعة القوى العاملة وامتثال الوثائق' : 'Daily, monthly, quarterly and annual statistics with workforce targets and document compliance'}</Typography>
         </Box>
       </Stack>
       <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
@@ -578,7 +457,6 @@ export function PeriodicStatisticsPage() {
       <Tab label={isRtl ? 'الربعية' : 'Quarterly'} />
       <Tab label={isRtl ? 'القوى العاملة - الأطباء' : 'Doctors'} />
       <Tab label={isRtl ? 'القوى العاملة - التمريض' : 'Nursing'} />
-      <Tab label={isRtl ? 'المبادرات' : 'Initiatives'} />
       <Tab label={isRtl ? 'الوثائق والمراجع' : 'References'} />
     </Tabs></Paper>
 
@@ -589,7 +467,7 @@ export function PeriodicStatisticsPage() {
         <KpiCard title={isRtl ? 'إجمالي السنة' : 'Annual total'} value={summary.totals.annual_achieved} accent="#168B88" />
         <KpiCard title={isRtl ? 'نسبة الإنجاز السنوية' : 'Annual achievement'} value={percentage(summary.totals.annual_percentage)} accent="#7C3AED" />
         <KpiCard title={isRtl ? 'الإصابات المهنية' : 'Occupational injuries'} value={summary.totals.occupational_injuries} accent="#DC2626" />
-        <KpiCard title={isRtl ? 'مبادرات الربع' : 'Quarter initiatives'} value={summary.totals.initiatives_quarter} accent="#D97706" />
+        <KpiCard title={isRtl ? 'المستهدف السنوي' : 'Annual target'} value={summary.totals.annual_target} accent="#D97706" />
         <KpiCard title={isRtl ? 'امتثال الوثائق' : 'Document compliance'} value={percentage(summary.totals.document_compliance)} accent="#0F766E" />
         <KpiCard title={isRtl ? 'القوى العاملة' : 'Workforce'} value={summary.totals.doctors + summary.totals.nursing} hint={`${isRtl ? 'أطباء' : 'Doctors'} ${summary.totals.doctors} · ${isRtl ? 'تمريض' : 'Nursing'} ${summary.totals.nursing}`} accent="#475569" />
       </Box>
@@ -671,68 +549,6 @@ export function PeriodicStatisticsPage() {
     {tab === 5 && renderWorkforce('nursing')}
 
     {tab === 6 && <Stack spacing={2.5}>
-      <Alert severity="info">{isRtl ? `النموذج ربع سنوي. الربع المختار Q${quarter}. يمكنك تجهيز الصور وملفات PDF قبل الحفظ؛ وعند الضغط على حفظ البطاقة تُحفظ المبادرة والمرفقات معًا في عملية واحدة.` : `Quarterly initiative form for Q${quarter}. Select evidence before saving; the initiative and files are saved together in one operation.`}</Alert>
-      {canEdit && <Paper sx={{ p: 2.5 }}>
-        <Typography variant="h5" fontWeight={950}>{isRtl ? 'بطاقة مبادرة / مشروع تحسين' : 'Initiative / Improvement Project'}</Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>{isRtl ? 'أكمل بيانات المبادرة والأنشطة، ثم اختر المرفقات الداعمة قبل الضغط على الحفظ.' : 'Complete the initiative and activities, then select evidence before saving.'}</Typography>
-        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3,1fr)' }, gap: 1.5 }}>
-          <TextField label={isRtl ? 'اسم المبادرة / المشروع' : 'Initiative name'} value={initiativeForm.name} onChange={event => setInitiativeForm(value => ({ ...value, name: event.target.value }))} />
-          <TextField label={isRtl ? 'اسم الشبكة / القسم' : 'Network / Department'} value={initiativeForm.network_department} onChange={event => setInitiativeForm(value => ({ ...value, network_department: event.target.value }))} />
-          <TextField select label={isRtl ? 'حالة المبادرة' : 'Status'} value={initiativeForm.status} onChange={event => setInitiativeForm(value => ({ ...value, status: event.target.value as Initiative['status'] }))}><MenuItem value="draft">{isRtl ? 'مسودة' : 'Draft'}</MenuItem><MenuItem value="in_progress">{isRtl ? 'قيد التنفيذ' : 'In progress'}</MenuItem><MenuItem value="completed">{isRtl ? 'مكتملة' : 'Completed'}</MenuItem><MenuItem value="submitted">{isRtl ? 'تم الرفع' : 'Submitted'}</MenuItem></TextField>
-          <CalendarDateField required label={isRtl ? 'تاريخ البداية' : 'Start date'} value={initiativeForm.start_date} onChange={value => setInitiativeForm(current => ({ ...current, start_date: value }))} />
-          <CalendarDateField label={isRtl ? 'تاريخ النهاية' : 'End date'} value={initiativeForm.end_date} onChange={value => setInitiativeForm(current => ({ ...current, end_date: value }))} />
-          <TextField label={isRtl ? 'قائد المبادرة / المستهدف' : 'Leader / Target'} value={initiativeForm.leader_target} onChange={event => setInitiativeForm(value => ({ ...value, leader_target: event.target.value }))} />
-          <TextField multiline minRows={3} label={isRtl ? 'فريق التنفيذ - اسم في كل سطر' : 'Implementation team'} value={initiativeForm.team_members_text} onChange={event => setInitiativeForm(value => ({ ...value, team_members_text: event.target.value }))} />
-          <TextField multiline minRows={3} label={isRtl ? 'الأهداف' : 'Goals'} value={initiativeForm.goals} onChange={event => setInitiativeForm(value => ({ ...value, goals: event.target.value }))} />
-          <TextField multiline minRows={3} label={isRtl ? 'الشرح التفصيلي' : 'Details'} value={initiativeForm.details} onChange={event => setInitiativeForm(value => ({ ...value, details: event.target.value }))} />
-          <TextField multiline minRows={3} label={isRtl ? 'طريقة التطبيق' : 'Implementation method'} value={initiativeForm.implementation_method} onChange={event => setInitiativeForm(value => ({ ...value, implementation_method: event.target.value }))} />
-          <TextField multiline minRows={3} label={isRtl ? 'الأهداف المحققة' : 'Achieved goals'} value={initiativeForm.achieved_goals} onChange={event => setInitiativeForm(value => ({ ...value, achieved_goals: event.target.value }))} />
-          <TextField multiline minRows={3} label={isRtl ? 'ملاحظات المستندات الداعمة' : 'Supporting document notes'} value={initiativeForm.supporting_documents_notes} onChange={event => setInitiativeForm(value => ({ ...value, supporting_documents_notes: event.target.value }))} />
-        </Box>
-        <Divider sx={{ my: 2.5 }} />
-        <Stack direction="row" justifyContent="space-between" alignItems="center">
-          <Box><Typography variant="h6" fontWeight={900}>{isRtl ? 'الأنشطة التابعة للمبادرة' : 'Initiative activities'}</Typography><Typography variant="caption" color="text.secondary">{isRtl ? 'أضف كل محاضرة أو ورشة أو فعالية مع هدفها وعدد المستفيدين.' : 'Add each activity and its beneficiaries.'}</Typography></Box>
-          <Button startIcon={<AddIcon />} onClick={addActivityRow}>{isRtl ? 'إضافة نشاط' : 'Add activity'}</Button>
-        </Stack>
-        <Stack spacing={1.2} sx={{ mt: 1.5 }}>{initiativeForm.activities.map((activity, index) => <Paper key={index} variant="outlined" sx={{ p: 1.5, boxShadow: 'none' }}><Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '2fr 3fr 1fr auto' }, gap: 1 }}>
-          <TextField label={isRtl ? `النشاط ${index + 1}` : `Activity ${index + 1}`} value={activity.title} onChange={event => updateActivity(index, 'title', event.target.value)} />
-          <TextField label={isRtl ? 'الهدف / الوصف' : 'Objective'} value={activity.objective} onChange={event => updateActivity(index, 'objective', event.target.value)} />
-          <TextField type="number" label={isRtl ? 'المستفيدون' : 'Beneficiaries'} value={activity.beneficiary_count} onChange={event => updateActivity(index, 'beneficiary_count', event.target.value)} />
-          <IconButton color="error" disabled={initiativeForm.activities.length === 1} onClick={() => removeActivityRow(index)} sx={{ transform: 'rotate(45deg)' }}><DeleteIcon /></IconButton>
-        </Box></Paper>)}</Stack>
-        <Divider sx={{ my: 2.5 }} />
-        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '2fr 1fr 1fr' }, gap: 1.5 }}>
-          <TextField multiline minRows={3} label={isRtl ? 'روابط إثبات خارجية - اختياري' : 'External evidence links - optional'} value={initiativeForm.evidence_links_text} onChange={event => setInitiativeForm(value => ({ ...value, evidence_links_text: event.target.value }))} helperText={isRtl ? 'يمكن استخدامها إلى جانب الملفات المرفوعة.' : 'Can be used in addition to uploaded files.'} />
-          <Box><FormControlLabel control={<Switch checked={initiativeForm.redcap_uploaded} onChange={event => setInitiativeForm(value => ({ ...value, redcap_uploaded: event.target.checked, status: event.target.checked ? 'submitted' : value.status }))} />} label={isRtl ? 'تم الرفع على REDCap' : 'Uploaded to REDCap'} /><FormControlLabel control={<Switch checked={initiativeForm.department_copy_saved} onChange={event => setInitiativeForm(value => ({ ...value, department_copy_saved: event.target.checked }))} />} label={isRtl ? 'تم حفظ نسخة بملف القسم' : 'Department copy saved'} /></Box>
-          <Box><CalendarDateField label={isRtl ? 'تاريخ الرفع على REDCap' : 'REDCap upload date'} value={initiativeForm.redcap_upload_date} onChange={value => setInitiativeForm(current => ({ ...current, redcap_upload_date: value }))} /><TextField fullWidth sx={{ mt: 1 }} label={isRtl ? 'رقم / مرجع الرفع' : 'Upload reference'} value={initiativeForm.redcap_reference} onChange={event => setInitiativeForm(value => ({ ...value, redcap_reference: event.target.value }))} /></Box>
-        </Box>
-        <Box sx={{ mt: 2.2 }}><DraftEvidencePicker files={initiativeDraftFiles} onChange={setInitiativeDraftFiles} isRtl={isRtl} disabled={savingInitiative} /></Box>
-        <Button sx={{ mt: 2 }} size="large" variant="contained" startIcon={savingInitiative ? <CircularProgress size={18} color="inherit" /> : <SaveIcon />} onClick={() => void addInitiative()} disabled={savingInitiative}>{savingInitiative ? (isRtl ? 'جاري حفظ البطاقة والمرفقات...' : 'Saving record and attachments...') : (isRtl ? 'حفظ بطاقة المبادرة والمرفقات' : 'Save initiative & attachments')}</Button>
-      </Paper>}
-
-      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(100%,430px),1fr))', gap: 2 }}>
-        {selectedQuarterInitiatives.map(item => <Paper key={item.id} sx={{ p: 2.2, borderTop: '4px solid', borderTopColor: item.status === 'submitted' ? 'success.main' : item.status === 'completed' ? 'info.main' : 'warning.main' }}>
-          <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1}>
-            <Box><Typography variant="h6" fontWeight={950}>{item.name}</Typography><Typography variant="caption" color="text.secondary">{item.network_department || '—'} · Q{item.quarter} · {item.start_date}{item.end_date ? ` → ${item.end_date}` : ''}</Typography></Box>
-            <Chip size="small" color={statusColor(item.status)} label={statusLabel(item.status, isRtl)} />
-          </Stack>
-          <Divider sx={{ my: 1.5 }} />
-          <Typography variant="body2"><b>{isRtl ? 'قائد المبادرة/المستهدف:' : 'Leader/Target:'}</b> {item.leader_target || '—'}</Typography>
-          <Typography variant="body2" sx={{ mt: .8 }}><b>{isRtl ? 'الأهداف:' : 'Goals:'}</b> {item.goals || '—'}</Typography>
-          {(item.activities || []).length > 0 && <Box sx={{ mt: 1.5 }}><Typography variant="subtitle2" fontWeight={900}>{isRtl ? 'الأنشطة' : 'Activities'}</Typography>{(item.activities || []).map((activity, index) => <Paper key={index} variant="outlined" sx={{ p: 1, mt: .7, boxShadow: 'none' }}><Typography variant="body2" fontWeight={850}>{activity.title || `${isRtl ? 'نشاط' : 'Activity'} ${index + 1}`}</Typography><Typography variant="caption" color="text.secondary">{activity.objective || '—'} · {isRtl ? 'المستفيدون' : 'Beneficiaries'}: {activity.beneficiary_count || 0}</Typography></Paper>)}</Box>}
-          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 1.5 }}>
-            <Chip size="small" label={`${isRtl ? 'إجمالي المستفيدين' : 'Total beneficiaries'}: ${item.total_beneficiaries ?? item.beneficiaries}`} />
-            <Chip size="small" color={item.redcap_uploaded ? 'success' : 'default'} label={item.redcap_uploaded ? (isRtl ? 'تم رفع REDCap' : 'REDCap uploaded') : (isRtl ? 'لم يرفع على REDCap' : 'REDCap pending')} />
-            <Chip size="small" color={item.department_copy_saved ? 'success' : 'default'} label={item.department_copy_saved ? (isRtl ? 'نسخة القسم محفوظة' : 'Department copy saved') : (isRtl ? 'نسخة القسم غير محفوظة' : 'Department copy pending')} />
-          </Stack>
-          {(item.evidence_links || []).length > 0 && <Box sx={{ mt: 1.5 }}><Typography variant="subtitle2" fontWeight={900}>{isRtl ? 'روابط إثبات خارجية' : 'External evidence links'}</Typography>{(item.evidence_links || []).map((link, index) => <Typography key={index} component="a" href={link} target="_blank" rel="noreferrer" variant="body2" sx={{ display: 'block', mt: .4, color: 'primary.main', overflowWrap: 'anywhere' }}>{link}</Typography>)}</Box>}
-          <EvidenceAttachmentManager ownerType="initiative" ownerId={item.id} canEdit={canEdit} isRtl={isRtl} initialAttachments={item.attachments} />
-        </Paper>)}
-        {selectedQuarterInitiatives.length === 0 && <EmptyState text={isRtl ? `لا توجد مبادرات مسجلة للربع Q${quarter}.` : `No initiatives for Q${quarter}.`} />}
-      </Box>
-    </Stack>}
-
-    {tab === 7 && <Stack spacing={2.5}>
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(4,1fr)' }, gap: 1.5 }}>
         <KpiCard title={isRtl ? 'نسبة الامتثال' : 'Compliance'} value={`${documentStats.compliance}%`} accent="#0F766E" />
         <KpiCard title={isRtl ? 'متوفر' : 'Available'} value={documentStats.available} accent="#168B88" />

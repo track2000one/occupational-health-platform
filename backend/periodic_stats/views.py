@@ -287,12 +287,6 @@ class PeriodicStatisticsSummaryView(APIView):
             if indicator.code == 'occupational-injury':
                 injury_total = annual_achieved
 
-        quarter_start_month = ((quarter - 1) * 3) + 1
-        initiatives_count = Initiative.objects.filter(
-            start_date__year=year,
-            start_date__month__gte=quarter_start_month,
-            start_date__month__lte=quarter_start_month + 2,
-        ).count()
 
         applicable_documents = ReferenceDocument.objects.exclude(status=ReferenceDocument.Status.NOT_APPLICABLE)
         applicable_count = applicable_documents.count()
@@ -314,7 +308,6 @@ class PeriodicStatisticsSummaryView(APIView):
                 'annual_targeted_achieved': total_annual_achieved,
                 'annual_percentage': round((total_annual_achieved / total_annual_target) * 100, 1) if total_annual_target else 0,
                 'occupational_injuries': injury_total,
-                'initiatives_quarter': initiatives_count,
                 'document_compliance': document_compliance,
                 'doctors': WorkforceMember.objects.filter(category=WorkforceMember.Category.DOCTOR, is_active=True).count(),
                 'nursing': WorkforceMember.objects.filter(category=WorkforceMember.Category.NURSING, is_active=True).count(),
