@@ -17,11 +17,11 @@ const API_BASE_URL = (import.meta.env.VITE_API_URL || PRODUCTION_API_BASE_URL).r
 
 type Center = {
   id: number; name: string; code?: string | null; region: string; city: string; district: string;
-  building_type: 'model' | 'rented' | 'owned' | 'other'; building_type_label?: string;
+  building_type: 'unknown' | 'model' | 'rented' | 'owned' | 'other'; building_type_label?: string;
   is_active: boolean; notes?: string; employee_count?: number; user_count?: number;
 };
 type CenterForm = Omit<Center, 'id' | 'building_type_label' | 'employee_count' | 'user_count'>;
-const EMPTY_FORM: CenterForm = { name: '', code: '', region: '', city: '', district: '', building_type: 'model', is_active: true, notes: '' };
+const EMPTY_FORM: CenterForm = { name: '', code: '', region: '', city: '', district: '', building_type: 'unknown', is_active: true, notes: '' };
 
 function list<T>(payload: any): T[] { return Array.isArray(payload) ? payload : Array.isArray(payload?.results) ? payload.results : []; }
 async function request<T>(path: string, init: RequestInit = {}) {
@@ -69,13 +69,14 @@ export function HealthCentersPage() {
     return matchesSearch && matchesRegion && matchesCity && matchesStatus;
   }), [centers, search, regionFilter, cityFilter, statusFilter]);
 
-  const buildingLabel = (type: Center['building_type']) => ({ model: isRtl ? 'نموذجي' : 'Model', rented: isRtl ? 'مستأجر' : 'Rented', owned: isRtl ? 'مملوك' : 'Owned', other: isRtl ? 'أخرى' : 'Other' }[type]);
+  const buildingLabel = (type: Center['building_type']) => ({ unknown: isRtl ? 'غير محدد' : 'Unspecified', model: isRtl ? 'نموذجي' : 'Model', rented: isRtl ? 'مستأجر' : 'Rented', owned: isRtl ? 'مملوك' : 'Owned', other: isRtl ? 'أخرى' : 'Other' }[type]);
   function openAdd() { setEditing(null); setForm(EMPTY_FORM); setOpen(true); }
-  function openEdit(center: Center) { setEditing(center); setForm({ name: center.name, code: center.code || '', region: center.region || '', city: center.city || '', district: center.district || '', building_type: center.building_type || 'model', is_active: center.is_active, notes: center.notes || '' }); setOpen(true); }
+  function openEdit(center: Center) { setEditing(center); setForm({ name: center.name, code: center.code || '', region: center.region || '', city: center.city || '', district: center.district || '', building_type: center.building_type || 'unknown', is_active: center.is_active, notes: center.notes || '' }); setOpen(true); }
   function update<K extends keyof CenterForm>(key: K, value: CenterForm[K]) { setForm(current => ({ ...current, [key]: value })); }
 
   async function save() {
     if (!form.name.trim()) return toast.error(isRtl ? 'اسم المركز الصحي مطلوب' : 'Health center name is required');
+    if (form.building_type === 'unknown') return toast.error(isRtl ? 'حدد نوع المبنى قبل الحفظ' : 'Select the building type before saving');
     setSaving(true);
     try {
       const payload = { ...form, name: form.name.trim(), code: form.code?.trim() || null, region: form.region.trim(), city: form.city.trim(), district: form.district.trim(), notes: form.notes?.trim() || '' };
@@ -129,7 +130,7 @@ export function HealthCentersPage() {
       <TextField label={isRtl ? 'المنطقة' : 'Region'} value={form.region} onChange={e => update('region', e.target.value)} />
       <TextField label={isRtl ? 'المدينة' : 'City'} value={form.city} onChange={e => update('city', e.target.value)} />
       <TextField label={isRtl ? 'الحي' : 'District'} value={form.district} onChange={e => update('district', e.target.value)} />
-      <TextField select label={isRtl ? 'نوع المبنى' : 'Building Type'} value={form.building_type} onChange={e => update('building_type', e.target.value as CenterForm['building_type'])}><MenuItem value="model">{isRtl ? 'مبنى نموذجي' : 'Model building'}</MenuItem><MenuItem value="rented">{isRtl ? 'مبنى مستأجر' : 'Rented building'}</MenuItem><MenuItem value="owned">{isRtl ? 'مبنى مملوك' : 'Owned building'}</MenuItem><MenuItem value="other">{isRtl ? 'أخرى' : 'Other'}</MenuItem></TextField>
+      <TextField required select label={isRtl ? 'نوع المبنى' : 'Building Type'} value={form.building_type} onChange={e => update('building_type', e.target.value as CenterForm['building_type'])}><MenuItem value="unknown" disabled>{isRtl ? 'اختر نوع المبنى' : 'Select building type'}</MenuItem><MenuItem value="model">{isRtl ? 'مبنى نموذجي' : 'Model building'}</MenuItem><MenuItem value="rented">{isRtl ? 'مبنى مستأجر' : 'Rented building'}</MenuItem><MenuItem value="owned">{isRtl ? 'مبنى مملوك' : 'Owned building'}</MenuItem><MenuItem value="other">{isRtl ? 'أخرى' : 'Other'}</MenuItem></TextField>
       <TextField multiline minRows={3} label={isRtl ? 'ملاحظات' : 'Notes'} value={form.notes || ''} onChange={e => update('notes', e.target.value)} sx={{ gridColumn: { md: '1 / -1' } }} />
       <Stack direction="row" alignItems="center" spacing={1}><Switch checked={form.is_active} onChange={e => update('is_active', e.target.checked)} /><Typography>{isRtl ? 'المركز نشط ومتاح في القوائم المنسدلة' : 'Center is active and available in dropdowns'}</Typography></Stack>
     </Box></DialogContent><DialogActions><Button onClick={() => setOpen(false)} disabled={saving}>{isRtl ? 'إلغاء' : 'Cancel'}</Button><Button variant="contained" onClick={() => void save()} disabled={saving}>{saving ? (isRtl ? 'جاري الحفظ...' : 'Saving...') : (isRtl ? 'حفظ' : 'Save')}</Button></DialogActions></Dialog>

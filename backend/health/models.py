@@ -25,6 +25,7 @@ def decimal_years_between(start_date, end_date=None):
 
 class HealthCenter(models.Model):
     class BuildingType(models.TextChoices):
+        UNKNOWN = 'unknown', 'Unspecified'
         MODEL = 'model', 'Model'
         RENTED = 'rented', 'Rented'
         OWNED = 'owned', 'Owned'
@@ -35,7 +36,7 @@ class HealthCenter(models.Model):
     region = models.CharField(max_length=120, blank=True, db_index=True)
     city = models.CharField(max_length=120, blank=True, db_index=True)
     district = models.CharField(max_length=120, blank=True, db_index=True)
-    building_type = models.CharField(max_length=20, choices=BuildingType.choices, default=BuildingType.MODEL, db_index=True)
+    building_type = models.CharField(max_length=20, choices=BuildingType.choices, default=BuildingType.UNKNOWN, db_index=True)
     is_active = models.BooleanField(default=True, db_index=True)
     notes = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True, null=True)
