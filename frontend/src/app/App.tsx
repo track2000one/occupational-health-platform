@@ -54,6 +54,7 @@ import { DataQualityPage } from './pages/DataQualityPage';
 import { DataImportPage } from './pages/DataImportPage';
 import { AppearanceSettingsPage } from './pages/AppearanceSettingsPage';
 import { PeriodicStatisticsPage } from './pages/PeriodicStatisticsPage';
+import { HealthCentersPage } from './pages/HealthCentersPage';
 import { Toaster } from 'sonner';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -133,6 +134,11 @@ function AppRoutes() {
         <Route path="admin/users" element={
           <PermissionRoute permission="manage:users">
             <AdminUsersPage />
+          </PermissionRoute>
+        } />
+        <Route path="admin/health-centers" element={
+          <PermissionRoute permission="manage:users">
+            <HealthCentersPage />
           </PermissionRoute>
         } />
         <Route path="roles" element={

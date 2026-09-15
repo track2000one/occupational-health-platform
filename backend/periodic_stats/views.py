@@ -64,7 +64,7 @@ class DailyStatisticViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        queryset = DailyStatistic.objects.select_related('indicator', 'created_by').all()
+        queryset = DailyStatistic.objects.select_related('indicator', 'created_by', 'health_center').all()
         year = self.request.query_params.get('year')
         month = self.request.query_params.get('month')
         indicator = self.request.query_params.get('indicator')

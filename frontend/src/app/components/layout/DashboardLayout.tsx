@@ -48,6 +48,7 @@ import {
   Security as SecurityIcon,
   CloudUpload as CloudUploadIcon,
   BadgeOutlined as HealthCardIcon,
+  Business as BusinessIcon,
 } from '@mui/icons-material';
 import { Badge } from '@mui/material';
 import { mockNotifications } from '../../data/mockData';
@@ -94,6 +95,7 @@ export function DashboardLayout() {
     { key: 'notifications',      label: isRtl ? 'الإشعارات' : 'Notifications',                 icon: <NotificationsIcon />, path: '/notifications', group: 'followup', permission: PERMISSIONS.VIEW_DASHBOARD },
     { key: 'admin',              label: isRtl ? 'لوحة المسؤول' : 'Admin Console',              icon: <AdminPanelSettingsIcon />, path: '/admin',  group: 'admin', permission: PERMISSIONS.MANAGE_USERS },
     { key: 'adminUsers',         label: isRtl ? 'إدارة المستخدمين' : 'Users Management',       icon: <PeopleIcon />,        path: '/admin/users', group: 'admin', permission: PERMISSIONS.MANAGE_USERS },
+    { key: 'healthCenters',      label: isRtl ? 'إدارة المراكز الصحية' : 'Health Centers',      icon: <BusinessIcon />,      path: '/admin/health-centers', group: 'admin', permission: PERMISSIONS.MANAGE_USERS },
     { key: 'auditLog',           label: isRtl ? 'سجل العمليات' : 'Audit Log',                  icon: <SecurityIcon />,      path: '/audit-log',   group: 'admin', permission: PERMISSIONS.VIEW_AUDIT_LOGS },
     { key: 'settings',           label: isRtl ? 'إعدادات المظهر والقراءة' : 'Appearance Settings', icon: <SettingsIcon />,   path: '/settings',    group: 'admin', permission: PERMISSIONS.MANAGE_SETTINGS },
     { key: 'roles',              label: isRtl ? 'الأدوار والصلاحيات' : 'Roles & Perms',        icon: <ShieldIcon />,        path: '/roles',       group: 'admin', permission: PERMISSIONS.MANAGE_USERS },

@@ -14,6 +14,7 @@ class IndicatorSerializer(serializers.ModelSerializer):
 class DailyStatisticSerializer(serializers.ModelSerializer):
     indicator_detail = IndicatorSerializer(source='indicator', read_only=True)
     created_by_name = serializers.CharField(source='created_by.username', read_only=True)
+    health_center_name = serializers.CharField(source='health_center.name', read_only=True)
 
     class Meta:
         model = DailyStatistic
