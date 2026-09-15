@@ -46,7 +46,7 @@ class DailyStatistic(models.Model):
 
     class Meta:
         ordering = ['-date', '-created_at']
-        indexes = [models.Index(fields=['date', 'indicator'])]
+        indexes = [models.Index(fields=['date', 'indicator'], name='periodic_st_date_5a9bca_idx')]
 
     def __str__(self):
         return f'{self.indicator} - {self.date} - {self.count}'
