@@ -13,7 +13,7 @@ import {
   Stack,
   Typography,
 } from '@mui/material';
-import { AttachFile as AttachFileIcon, DeleteOutline as DeleteIcon, Visibility as VisibilityIcon } from '@mui/icons-material';
+import { Add as DeleteIcon, AttachFile as AttachFileIcon, Visibility as VisibilityIcon } from '@mui/icons-material';
 import { toast } from 'sonner';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -150,7 +150,7 @@ export function DraftEvidencePicker({ files, onChange, isRtl, disabled = false, 
           </Box>
           <Stack direction="row" spacing={.5}>
             <Button size="small" startIcon={<VisibilityIcon />} onClick={() => previewFile(file)}>{isRtl ? 'معاينة' : 'Preview'}</Button>
-            <Button size="small" color="error" startIcon={<DeleteIcon />} disabled={disabled} onClick={() => removeFile(index)}>{isRtl ? 'إزالة' : 'Remove'}</Button>
+            <Button size="small" color="error" startIcon={<DeleteIcon sx={{ transform: 'rotate(45deg)' }} />} disabled={disabled} onClick={() => removeFile(index)}>{isRtl ? 'إزالة' : 'Remove'}</Button>
           </Stack>
         </Box>)}
       </Stack>
