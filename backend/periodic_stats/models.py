@@ -92,24 +92,48 @@ class WorkforceTarget(models.Model):
 
 
 class Initiative(models.Model):
+    class Status(models.TextChoices):
+        DRAFT = 'draft', 'Draft'
+        IN_PROGRESS = 'in_progress', 'In progress'
+        COMPLETED = 'completed', 'Completed'
+        SUBMITTED = 'submitted', 'Submitted'
+
     name = models.CharField(max_length=500)
     network_department = models.CharField(max_length=255, blank=True)
     start_date = models.DateField()
     end_date = models.DateField(null=True, blank=True)
     leader_target = models.CharField(max_length=500, blank=True)
     implementation_team = models.TextField(blank=True)
+    team_members = models.JSONField(default=list, blank=True)
     goals = models.TextField(blank=True)
     details = models.TextField(blank=True)
     implementation_method = models.TextField(blank=True)
     beneficiaries = models.PositiveIntegerField(default=0)
+    activities = models.JSONField(default=list, blank=True)
     achieved_goals = models.TextField(blank=True)
     supporting_documents_notes = models.TextField(blank=True)
+    evidence_links = models.JSONField(default=list, blank=True)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.DRAFT, db_index=True)
+    redcap_uploaded = models.BooleanField(default=False)
+    redcap_upload_date = models.DateField(null=True, blank=True)
+    redcap_reference = models.CharField(max_length=255, blank=True)
+    department_copy_saved = models.BooleanField(default=False)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='periodic_stats_initiatives')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ['-start_date', '-id']
+
+    @property
+    def total_beneficiaries(self):
+        total = 0
+        for activity in self.activities or []:
+            try:
+                total += max(0, int(activity.get('beneficiary_count') or 0))
+            except (TypeError, ValueError, AttributeError):
+                continue
+        return total if total else self.beneficiaries
 
     def __str__(self):
         return self.name
@@ -124,6 +148,13 @@ class ReferenceDocument(models.Model):
     title = models.CharField(max_length=500)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.AVAILABLE)
     reason = models.CharField(max_length=500, blank=True)
+    source = models.CharField(max_length=500, blank=True)
+    issuing_authority = models.CharField(max_length=255, blank=True)
+    version_number = models.CharField(max_length=100, blank=True)
+    issue_date = models.DateField(null=True, blank=True)
+    document_count = models.PositiveIntegerField(default=1)
+    responsible_person = models.CharField(max_length=255, blank=True)
+    evidence_links = models.JSONField(default=list, blank=True)
     last_review_date = models.DateField(null=True, blank=True)
     notes = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
