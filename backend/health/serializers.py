@@ -228,7 +228,42 @@ class PlatformUserSerializer(serializers.ModelSerializer):
 
 
 class HealthCenterSerializer(serializers.ModelSerializer):
-    class Meta: model = HealthCenter; fields = '__all__'
+    employee_count = serializers.IntegerField(source='employees.count', read_only=True)
+    user_count = serializers.IntegerField(source='platform_users.count', read_only=True)
+    building_type_label = serializers.CharField(source='get_building_type_display', read_only=True)
+
+    class Meta:
+        model = HealthCenter
+        fields = '__all__'
+        read_only_fields = ('created_at', 'updated_at')
+
+    def validate_name(self, value):
+        value = str(value or '').strip()
+        if not value:
+            raise serializers.ValidationError('Health center name is required.')
+        queryset = HealthCenter.objects.filter(name__iexact=value)
+        if self.instance:
+            queryset = queryset.exclude(pk=self.instance.pk)
+        if queryset.exists():
+            raise serializers.ValidationError('A health center with this name already exists.')
+        return value
+
+    def validate_code(self, value):
+        value = str(value or '').strip().upper()
+        if not value:
+            return None
+        queryset = HealthCenter.objects.filter(code__iexact=value)
+        if self.instance:
+            queryset = queryset.exclude(pk=self.instance.pk)
+        if queryset.exists():
+            raise serializers.ValidationError('A health center with this code already exists.')
+        return value
+
+    def validate(self, attrs):
+        for field in ('region', 'city', 'district', 'notes'):
+            if field in attrs and attrs[field] is not None:
+                attrs[field] = str(attrs[field]).strip()
+        return attrs
 
 
 class EmployeeSerializer(serializers.ModelSerializer):

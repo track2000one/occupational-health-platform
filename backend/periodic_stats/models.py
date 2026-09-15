@@ -37,6 +37,7 @@ class DailyStatistic(models.Model):
     indicator = models.ForeignKey(Indicator, on_delete=models.PROTECT, related_name='daily_entries')
     date = models.DateField(db_index=True)
     count = models.PositiveIntegerField(default=0)
+    health_center = models.ForeignKey('health.HealthCenter', on_delete=models.PROTECT, null=True, blank=True, related_name='daily_statistics')
     location = models.CharField(max_length=255, blank=True)
     executor = models.CharField(max_length=255, blank=True)
     notes = models.TextField(blank=True)

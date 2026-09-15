@@ -44,6 +44,7 @@ import { authFetch, getAccessToken, type User, useAuth } from '../context/AuthCo
 import { useDatePreference } from '../context/DatePreferenceContext';
 import { PERMISSIONS, ROLE_DEFINITIONS, type Permission, type UserRole } from '../data/roles';
 import { mockHealthCenters } from '../data/mockData';
+import { HealthCenterAutocomplete } from '../components/HealthCenterAutocomplete';
 
 const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000/api').replace(/\/$/, '');
 
@@ -54,6 +55,12 @@ interface HealthCenterOption {
   id: string;
   name: string;
   nameAr?: string;
+  code?: string | null;
+  region?: string;
+  city?: string;
+  district?: string;
+  building_type?: string;
+  is_active?: boolean;
 }
 
 const personTypes: { id: PersonType; ar: string; en: string }[] = [
@@ -133,7 +140,17 @@ function normalizeUser(user: any): User {
 }
 
 function normalizeHealthCenter(center: any): HealthCenterOption {
-  return { id: String(center.id), name: center.name || center.nameAr || '-', nameAr: center.nameAr || center.name };
+  return {
+    id: String(center.id),
+    name: center.name || center.nameAr || '-',
+    nameAr: center.nameAr || center.name,
+    code: center.code || null,
+    region: center.region || '',
+    city: center.city || '',
+    district: center.district || '',
+    building_type: center.building_type || '',
+    is_active: center.is_active ?? true,
+  };
 }
 
 function roleLabel(role: UserRole, isRtl: boolean) {
@@ -196,7 +213,7 @@ export function AdminUsersPage() {
     setLoading(true);
     setError('');
     try {
-      const [usersPayload, centersPayload] = await Promise.all([apiRequest<any>('/users/'), apiRequest<any>('/health-centers/')]);
+      const [usersPayload, centersPayload] = await Promise.all([apiRequest<any>('/users/'), apiRequest<any>('/health-centers/?active=true')]);
       setUsers(normalizeList<any>(usersPayload).map(normalizeUser));
       const apiCenters = normalizeList<any>(centersPayload).map(normalizeHealthCenter);
       if (apiCenters.length) setHealthCenters(apiCenters);
@@ -561,7 +578,7 @@ export function AdminUsersPage() {
             <Box>
               <Typography variant="subtitle1" fontWeight={900} sx={{ mb: 1 }}>{isRtl ? 'البيانات المهنية والصحية' : 'Professional / Healthcare Details'}</Typography>
               <Grid container spacing={2}>
-                <Grid size={{ xs: 12, md: 4 }}><TextField fullWidth select label={isRtl ? 'المركز الصحي' : 'Health Center'} value={form.healthCenterId || ''} onChange={e => setForm(prev => ({ ...prev, healthCenterId: e.target.value }))}><MenuItem value="">-</MenuItem>{healthCenters.map(center => <MenuItem key={center.id} value={center.id}>{isRtl ? (center.nameAr || center.name) : center.name}</MenuItem>)}</TextField></Grid>
+                <Grid size={{ xs: 12, md: 4 }}><HealthCenterAutocomplete options={healthCenters} value={form.healthCenterId || ''} onChange={value => setForm(prev => ({ ...prev, healthCenterId: value }))} label={isRtl ? 'المركز الصحي' : 'Health Center'} placeholder={isRtl ? 'اختر أو ابحث باسم المركز' : 'Select or search center'} allowEmpty /></Grid>
                 <Grid size={{ xs: 12, md: 4 }}><TextField fullWidth label={isRtl ? 'القسم' : 'Department'} value={form.department || ''} onChange={e => setForm(prev => ({ ...prev, department: e.target.value }))} /></Grid>
                 <Grid size={{ xs: 12, md: 4 }}><TextField fullWidth label={isRtl ? 'المسمى الوظيفي' : 'Job Title'} value={form.jobTitle || ''} onChange={e => setForm(prev => ({ ...prev, jobTitle: e.target.value }))} /></Grid>
                 <Grid size={{ xs: 12, md: 4 }}><TextField fullWidth label={isRtl ? 'رقم الجوال' : 'Phone'} value={form.phone || ''} onChange={e => setForm(prev => ({ ...prev, phone: e.target.value }))} /></Grid>

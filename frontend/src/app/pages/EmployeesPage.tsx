@@ -40,6 +40,7 @@ import { toast } from 'sonner';
 import { authFetch, getAccessToken, useAuth } from '../context/AuthContext';
 import { PERMISSIONS } from '../data/roles';
 import { CalendarDateField } from '../components/CalendarDateField';
+import { HealthCenterAutocomplete } from '../components/HealthCenterAutocomplete';
 
 const PRODUCTION_API_BASE_URL = 'https://occupational-health-platform-production.up.railway.app/api';
 const LOCAL_API_BASE_URL = 'http://localhost:8000/api';
@@ -59,7 +60,11 @@ type RiskLevel = 'low' | 'medium' | 'high';
 type ApiHealthCenter = {
   id: number | string;
   name: string;
+  code?: string | null;
+  region?: string;
   city?: string;
+  district?: string;
+  building_type?: string;
   is_active?: boolean;
 };
 
@@ -261,7 +266,7 @@ export function EmployeesPage() {
     try {
       const [employeesPayload, centersPayload] = await Promise.all([
         apiRequest<unknown>('/employees/'),
-        apiRequest<unknown>('/health-centers/'),
+        apiRequest<unknown>('/health-centers/?active=true'),
       ]);
       const centers = getList<ApiHealthCenter>(centersPayload);
       setEmployees(getList<ApiEmployee>(employeesPayload));
@@ -611,10 +616,15 @@ export function EmployeesPage() {
               </TextField>
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
-              <TextField fullWidth required select label={isRtl ? 'المركز الصحي' : 'Health Center'} value={form.health_center}
-                onChange={event => updateForm('health_center', event.target.value)} disabled={isReadOnly}>
-                {healthCenters.map(center => <MenuItem key={center.id} value={String(center.id)}>{center.name}</MenuItem>)}
-              </TextField>
+              <HealthCenterAutocomplete
+                options={healthCenters}
+                value={form.health_center}
+                onChange={value => updateForm('health_center', value)}
+                label={isRtl ? 'المركز الصحي' : 'Health Center'}
+                placeholder={isRtl ? 'اختر أو ابحث باسم المركز' : 'Select or search by center name'}
+                required
+                disabled={isReadOnly}
+              />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
               <TextField fullWidth required label={isRtl ? 'المسمى الوظيفي' : 'Job Title'} value={form.job_title}

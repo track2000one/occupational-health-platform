@@ -32,6 +32,20 @@ class IsAdminOrManagerForWrite(permissions.BasePermission):
         return request.user.is_staff
 
 
+class CanManageHealthCenters(permissions.BasePermission):
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        if request.user.is_superuser or request.user.is_staff:
+            return True
+        try:
+            return request.user.health_profile.role == 'ohManager'
+        except Exception:
+            return False
+
+
 class CanManageOccupationalHealthAssessments(permissions.BasePermission):
     """Allow authenticated reads and restrict clinical writes to approved roles."""
 
@@ -366,9 +380,41 @@ class EmployeeImportReviewViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class HealthCenterViewSet(viewsets.ModelViewSet):
-    queryset=HealthCenter.objects.all().order_by('name')
-    serializer_class=HealthCenterSerializer
-    permission_classes=[permissions.IsAuthenticated]
+    serializer_class = HealthCenterSerializer
+    permission_classes = [permissions.IsAuthenticated, CanManageHealthCenters]
+
+    def get_queryset(self):
+        queryset = HealthCenter.objects.all().order_by('region', 'city', 'name')
+        active = str(self.request.query_params.get('active') or '').lower()
+        if active in {'1', 'true', 'yes'}:
+            queryset = queryset.filter(is_active=True)
+        elif active in {'0', 'false', 'no'}:
+            queryset = queryset.filter(is_active=False)
+        region = str(self.request.query_params.get('region') or '').strip()
+        city = str(self.request.query_params.get('city') or '').strip()
+        building_type = str(self.request.query_params.get('building_type') or '').strip()
+        if region:
+            queryset = queryset.filter(region__iexact=region)
+        if city:
+            queryset = queryset.filter(city__iexact=city)
+        if building_type:
+            queryset = queryset.filter(building_type=building_type)
+        return queryset
+
+    def perform_create(self, serializer):
+        center = serializer.save()
+        AuditLog.objects.create(user=str(self.request.user), action='create_health_center', model_name='HealthCenter', record_id=str(center.id))
+
+    def perform_update(self, serializer):
+        center = serializer.save()
+        AuditLog.objects.create(user=str(self.request.user), action='update_health_center', model_name='HealthCenter', record_id=str(center.id))
+
+    def destroy(self, request, *args, **kwargs):
+        center = self.get_object()
+        center.is_active = False
+        center.save(update_fields=['is_active', 'updated_at'])
+        AuditLog.objects.create(user=str(request.user), action='deactivate_health_center', model_name='HealthCenter', record_id=str(center.id))
+        return Response({'status': 'deactivated', 'id': center.id, 'name': center.name}, status=status.HTTP_200_OK)
 
 
 class EmployeeViewSet(viewsets.ModelViewSet):

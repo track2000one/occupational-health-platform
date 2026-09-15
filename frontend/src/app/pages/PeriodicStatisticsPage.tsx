@@ -45,6 +45,7 @@ import { authFetch, getAccessToken, useAuth } from '../context/AuthContext';
 import { CalendarDateField } from '../components/CalendarDateField';
 import { DraftEvidencePicker } from '../components/DraftEvidencePicker';
 import { EvidenceAttachmentManager, type EvidenceAttachment } from '../components/EvidenceAttachmentManager';
+import { HealthCenterAutocomplete, type HealthCenterOption } from '../components/HealthCenterAutocomplete';
 
 const PRODUCTION_API_BASE_URL = 'https://occupational-health-platform-production.up.railway.app/api';
 const LOCAL_API_BASE_URL = 'http://localhost:8000/api';
@@ -94,7 +95,7 @@ type SummaryPayload = {
   };
 };
 
-type DailyStatistic = { id: number; indicator: number; date: string; count: number; location: string; executor: string; notes: string };
+type DailyStatistic = { id: number; indicator: number; date: string; count: number; health_center?: number | null; health_center_name?: string; location: string; executor: string; notes: string };
 type WorkforceTarget = { id: number; member: number; item: string; annual_target: number; q1_target: number; q2_target: number; q3_target: number; q4_target: number; notes?: string };
 type WorkforceMember = { id: number; category: 'doctor' | 'nursing'; name: string; employee_number: string; job_title: string; qualification: string; targets: WorkforceTarget[] };
 type ReferenceDocument = {
@@ -113,7 +114,7 @@ type ReferenceDocument = {
   last_review_date?: string | null;
   notes?: string;
 };
-type DayMeta = { location: string; executor: string; notes: string };
+type DayMeta = { health_center: string; executor: string; notes: string };
 type Paginated<T> = { results?: T[]; next?: string | null };
 
 function percentage(value: number | null | undefined) { return value == null ? '—' : `${Math.round(value)}%`; }
@@ -207,6 +208,7 @@ export function PeriodicStatisticsPage() {
   const [summary, setSummary] = useState<SummaryPayload | null>(null);
   const [workforce, setWorkforce] = useState<WorkforceMember[]>([]);
   const [documents, setDocuments] = useState<ReferenceDocument[]>([]);
+  const [healthCenters, setHealthCenters] = useState<HealthCenterOption[]>([]);
   const [monthEntries, setMonthEntries] = useState<DailyStatistic[]>([]);
   const [monthCounts, setMonthCounts] = useState<Record<string, string>>({});
   const [dayMeta, setDayMeta] = useState<Record<number, DayMeta>>({});
@@ -230,12 +232,14 @@ export function PeriodicStatisticsPage() {
       apiRequest<SummaryPayload>(`/periodic-statistics/summary/?year=${year}&month=${month}&quarter=${quarter}`),
       fetchCollection<WorkforceMember>('/periodic-statistics/workforce-members/'),
       fetchCollection<ReferenceDocument>('/periodic-statistics/reference-documents/'),
+      fetchCollection<HealthCenterOption>('/health-centers/?active=true'),
       fetchCollection<DailyStatistic>(`/periodic-statistics/daily-statistics/?year=${year}&month=${month}`),
-    ]).then(([summaryPayload, workforceRows, documentRows, dailyRows]) => {
+    ]).then(([summaryPayload, workforceRows, documentRows, centerRows, dailyRows]) => {
       if (!active) return;
       setSummary(summaryPayload);
       setWorkforce(workforceRows);
       setDocuments(documentRows);
+      setHealthCenters(centerRows);
       setMonthEntries(dailyRows);
       const counts: Record<string, string> = {};
       const meta: Record<number, DayMeta> = {};
@@ -243,7 +247,10 @@ export function PeriodicStatisticsPage() {
         const day = Number(row.date.slice(8, 10));
         const key = `${row.date}|${row.indicator}`;
         counts[key] = String(Number(counts[key] || 0) + Number(row.count || 0));
-        if (!meta[day]) meta[day] = { location: row.location || '', executor: row.executor || '', notes: row.notes || '' };
+        if (!meta[day]) {
+          const matchedCenter = row.health_center || centerRows.find(center => center.name === row.location)?.id || '';
+          meta[day] = { health_center: String(matchedCenter || ''), executor: row.executor || '', notes: row.notes || '' };
+        }
       });
       setMonthCounts(counts);
       setDayMeta(meta);
@@ -282,7 +289,7 @@ export function PeriodicStatisticsPage() {
   }
 
   function updateDayMeta(day: number, field: keyof DayMeta, value: string) {
-    setDayMeta(current => ({ ...current, [day]: { location: '', executor: '', notes: '', ...(current[day] || {}), [field]: value } }));
+    setDayMeta(current => ({ ...current, [day]: { health_center: '', executor: '', notes: '', ...(current[day] || {}), [field]: value } }));
   }
 
   async function saveMonthlyTable() {
@@ -297,14 +304,15 @@ export function PeriodicStatisticsPage() {
       const operations: Promise<unknown>[] = [];
       for (const day of days) {
         const date = dateKey(year, month, day);
-        const meta = dayMeta[day] || { location: '', executor: '', notes: '' };
+        const meta = dayMeta[day] || { health_center: '', executor: '', notes: '' };
         for (const indicator of summary.indicators) {
           const key = `${date}|${indicator.id}`;
           const count = monthCounts[key] === '' || monthCounts[key] == null ? 0 : Number(monthCounts[key]);
           if (!Number.isFinite(count) || count < 0) throw new Error(isRtl ? `قيمة غير صحيحة في يوم ${day}` : `Invalid value on day ${day}`);
           const existing = existingMap.get(key) || [];
           if (count > 0) {
-            const payload = { indicator: indicator.id, date, count, location: meta.location, executor: meta.executor, notes: meta.notes };
+            const selectedCenter = healthCenters.find(center => String(center.id) === String(meta.health_center));
+            const payload = { indicator: indicator.id, date, count, health_center: meta.health_center ? Number(meta.health_center) : null, location: selectedCenter?.name || '', executor: meta.executor, notes: meta.notes };
             if (existing.length) {
               operations.push(apiRequest(`/periodic-statistics/daily-statistics/${existing[0].id}/`, { method: 'PATCH', body: JSON.stringify(payload) }));
               existing.slice(1).forEach(row => operations.push(apiRequest(`/periodic-statistics/daily-statistics/${row.id}/`, { method: 'DELETE' })));
@@ -489,7 +497,7 @@ export function PeriodicStatisticsPage() {
         <Box sx={{ px: 2.5, py: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
           <Box>
             <Typography variant="h6" fontWeight={950}>{isRtl ? `جدول التسجيل اليومي - ${monthNames[month - 1]} ${year}` : `Daily registration - ${monthNames[month - 1]} ${year}`}</Typography>
-            <Typography variant="body2" color="text.secondary">{isRtl ? 'أدخل العدد في تقاطع اليوم مع المؤشر، ويمكن إضافة الموقع والمنفذ والملاحظات لكل يوم.' : 'Enter counts per day and indicator.'}</Typography>
+            <Typography variant="body2" color="text.secondary">{isRtl ? 'أدخل العدد في تقاطع اليوم مع المؤشر، واختر المركز الصحي من قاعدة المراكز المعتمدة لكل يوم.' : 'Enter counts per day and indicator.'}</Typography>
           </Box>
           {canEdit && <Button variant="contained" startIcon={<SaveIcon />} onClick={() => void saveMonthlyTable()} disabled={savingMonth}>{savingMonth ? (isRtl ? 'جاري الحفظ...' : 'Saving...') : (isRtl ? 'حفظ جدول الشهر' : 'Save month')}</Button>}
         </Box>
@@ -498,13 +506,13 @@ export function PeriodicStatisticsPage() {
           <TableCell sx={{ minWidth: 95 }}>{isRtl ? 'اليوم' : 'Day'}</TableCell>
           {summary.indicators.map(indicator => <TableCell key={indicator.id} align="center" sx={{ minWidth: 150 }}><Typography variant="caption" fontWeight={950}>{isRtl ? indicator.name_ar : indicator.name_en}</Typography></TableCell>)}
           <TableCell align="center">{isRtl ? 'إجمالي اليوم' : 'Total'}</TableCell>
-          <TableCell>{isRtl ? 'الموقع / المركز' : 'Location'}</TableCell>
+          <TableCell sx={{ minWidth: 230 }}>{isRtl ? 'المركز الصحي' : 'Health Center'}</TableCell>
           <TableCell>{isRtl ? 'المنفذ' : 'Executor'}</TableCell>
           <TableCell>{isRtl ? 'ملاحظات' : 'Notes'}</TableCell>
         </TableRow></TableHead><TableBody>
           {days.map(day => {
             const dateValue = dateKey(year, month, day);
-            const meta = dayMeta[day] || { location: '', executor: '', notes: '' };
+            const meta = dayMeta[day] || { health_center: '', executor: '', notes: '' };
             const dailyTotal = summary.indicators.reduce((sum, indicator) => sum + Number(monthCounts[`${dateValue}|${indicator.id}`] || 0), 0);
             return <TableRow key={day} hover>
               <TableCell>{`${pad(day)}/${pad(month)}/${year}`}</TableCell>
@@ -514,7 +522,7 @@ export function PeriodicStatisticsPage() {
                 return <TableCell key={indicator.id} align="center"><TextField size="small" type="number" value={monthCounts[key] ?? ''} disabled={!canEdit} inputProps={{ min: 0, style: { textAlign: 'center', width: 60 } }} onChange={event => setMonthCounts(current => ({ ...current, [key]: event.target.value }))} sx={{ width: 90 }} /></TableCell>;
               })}
               <TableCell align="center"><Chip size="small" label={dailyTotal} color={dailyTotal > 0 ? 'primary' : 'default'} /></TableCell>
-              <TableCell><TextField size="small" value={meta.location} disabled={!canEdit} onChange={event => updateDayMeta(day, 'location', event.target.value)} /></TableCell>
+              <TableCell><HealthCenterAutocomplete options={healthCenters} value={meta.health_center} onChange={value => updateDayMeta(day, 'health_center', value)} label={isRtl ? 'المركز' : 'Center'} disabled={!canEdit} allowEmpty /></TableCell>
               <TableCell><TextField size="small" value={meta.executor} disabled={!canEdit} onChange={event => updateDayMeta(day, 'executor', event.target.value)} /></TableCell>
               <TableCell><TextField size="small" value={meta.notes} disabled={!canEdit} onChange={event => updateDayMeta(day, 'notes', event.target.value)} /></TableCell>
             </TableRow>;
