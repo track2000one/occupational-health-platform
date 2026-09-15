@@ -7,7 +7,7 @@ export type HealthCenterOption = {
   region?: string;
   city?: string;
   district?: string;
-  building_type?: 'model' | 'rented' | 'owned' | 'other' | string;
+  building_type?: 'unknown' | 'model' | 'rented' | 'owned' | 'other' | string;
   building_type_label?: string;
   is_active?: boolean;
 };
@@ -25,6 +25,7 @@ type Props = {
 
 function buildingTypeLabel(type: string | undefined, isArabic: boolean) {
   const labels: Record<string, [string, string]> = {
+    unknown: ['غير محدد', 'Unspecified'],
     model: ['مبنى نموذجي', 'Model building'],
     rented: ['مبنى مستأجر', 'Rented building'],
     owned: ['مبنى مملوك', 'Owned building'],
