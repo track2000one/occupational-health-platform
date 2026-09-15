@@ -37,12 +37,32 @@ class Command(BaseCommand):
             self.stdout.write(self.style.WARNING("DJANGO_SUPERUSER_PASSWORD is not set; skipping superuser bootstrap."))
 
         centers = [
-            ("Main Occupational Health Center", "Dammam"),
-            ("Employee Clinic", "Dammam"),
-            ("Medical Committee Unit", "Dammam"),
+            ("Main Occupational Health Center", "مركز الصحة المهنية الرئيسي", "Dammam"),
+            ("Employee Clinic", "عيادة الموظفين", "Dammam"),
+            ("Medical Committee Unit", "وحدة اللجنة الطبية", "Dammam"),
         ]
-        for name, city in centers:
-            HealthCenter.objects.get_or_create(name=name, defaults={"city": city, "is_active": True})
+        for name_en, name_ar, city in centers:
+            center, _ = HealthCenter.objects.get_or_create(
+                name=name_en,
+                defaults={
+                    "name_en": name_en,
+                    "name_ar": name_ar,
+                    "city": city,
+                    "is_active": True,
+                },
+            )
+            update_fields = []
+            if not center.name_en:
+                center.name_en = name_en
+                update_fields.append("name_en")
+            if not center.name_ar:
+                center.name_ar = name_ar
+                update_fields.append("name_ar")
+            if not center.city:
+                center.city = city
+                update_fields.append("city")
+            if update_fields:
+                center.save(update_fields=update_fields)
         self.stdout.write(self.style.SUCCESS("Base health centers are ready."))
 
         if os.getenv("SEED_DEMO_USERS", "False").lower() == "true":

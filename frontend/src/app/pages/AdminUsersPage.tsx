@@ -55,6 +55,8 @@ interface HealthCenterOption {
   id: string;
   name: string;
   nameAr?: string;
+  name_ar?: string;
+  name_en?: string;
   code?: string | null;
   region?: string;
   city?: string;
@@ -142,8 +144,10 @@ function normalizeUser(user: any): User {
 function normalizeHealthCenter(center: any): HealthCenterOption {
   return {
     id: String(center.id),
-    name: center.name || center.nameAr || '-',
-    nameAr: center.nameAr || center.name,
+    name: center.name || center.name_en || center.nameAr || center.name_ar || '-',
+    nameAr: center.nameAr || center.name_ar || center.name,
+    name_ar: center.name_ar || center.nameAr || '',
+    name_en: center.name_en || center.name || '',
     code: center.code || null,
     region: center.region || '',
     city: center.city || '',
