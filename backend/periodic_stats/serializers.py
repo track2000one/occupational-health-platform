@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import DailyStatistic, Indicator, Initiative, ReferenceDocument, WorkforceMember, WorkforceTarget
+from .models import DailyStatistic, EvidenceAttachment, Indicator, Initiative, ReferenceDocument, WorkforceMember, WorkforceTarget
 
 
 class IndicatorSerializer(serializers.ModelSerializer):
@@ -37,10 +37,25 @@ class WorkforceMemberSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
+class EvidenceAttachmentSerializer(serializers.ModelSerializer):
+    uploaded_by_name = serializers.CharField(source='uploaded_by.username', read_only=True)
+    is_image = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = EvidenceAttachment
+        fields = (
+            'id', 'owner_type', 'initiative', 'reference_document', 'file_name',
+            'content_type', 'byte_size', 'checksum_sha256', 'description',
+            'uploaded_by_name', 'created_at', 'is_image',
+        )
+        read_only_fields = fields
+
+
 class InitiativeSerializer(serializers.ModelSerializer):
     year = serializers.SerializerMethodField()
     quarter = serializers.SerializerMethodField()
     total_beneficiaries = serializers.IntegerField(read_only=True)
+    attachments = EvidenceAttachmentSerializer(many=True, read_only=True)
 
     class Meta:
         model = Initiative
@@ -95,6 +110,8 @@ class InitiativeSerializer(serializers.ModelSerializer):
 
 
 class ReferenceDocumentSerializer(serializers.ModelSerializer):
+    attachments = EvidenceAttachmentSerializer(many=True, read_only=True)
+
     class Meta:
         model = ReferenceDocument
         fields = '__all__'
