@@ -384,10 +384,12 @@ class EmployeeSerializer(serializers.ModelSerializer):
 
 
 class EmployeeHealthCardSerializer(serializers.ModelSerializer):
+    verification_token = serializers.ReadOnlyField()
+
     class Meta:
         model = EmployeeHealthCard
         fields = [
-            'id', 'employee', 'card_number', 'issue_date', 'next_review_date',
+            'id', 'employee', 'card_number', 'verification_token', 'issue_date', 'next_review_date',
             'reviewed_by', 'is_approved', 'data', 'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'employee', 'card_number', 'created_at', 'updated_at']

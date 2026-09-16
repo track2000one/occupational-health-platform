@@ -8,6 +8,7 @@ from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
+from rest_framework.views import APIView
 from .importers import process_excel_import
 from .models import AuditLog, ClinicVisit, CommitteeReferral, DataImportBatch, Employee, EmployeeHealthCard, EmployeeImportReview, HealthCenter, InjuryCase, LabTest, OccupationalHealthAssessment, Vaccination
 from .serializers import AuditLogSerializer, ClinicVisitSerializer, CommitteeReferralSerializer, DataImportBatchSerializer, EmployeeHealthCardSerializer, EmployeeImportReviewSerializer, EmployeeSerializer, HealthCenterSerializer, InjuryCaseSerializer, LabTestSerializer, OccupationalHealthAssessmentSerializer, PlatformUserSerializer, VaccinationSerializer
@@ -178,6 +179,60 @@ def normalize_import_result(result):
         return result
     return _cleanup_sheet_result(result)
 
+
+class HealthCardVerificationView(APIView):
+    """Public, privacy-minimised health-card authenticity check used by the QR code."""
+
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+
+    def get(self, request, token):
+        card = EmployeeHealthCard.from_verification_token(token)
+        if not card:
+            return Response(
+                {
+                    'valid': False,
+                    'status': 'invalid',
+                    'message_ar': 'رمز التحقق غير صالح أو أن البطاقة لم تعد متاحة.',
+                    'message_en': 'The verification code is invalid or the card is no longer available.',
+                },
+                status=status.HTTP_404_NOT_FOUND,
+                headers={'Cache-Control': 'no-store'},
+            )
+
+        employee = card.employee
+        center = employee.health_center
+        employee_number = str(employee.employee_number or '')
+        masked_employee_number = (f'••••{employee_number[-4:]}' if employee_number else '')
+        verification_status = 'approved' if card.is_approved else 'pending'
+        return Response(
+            {
+                'valid': True,
+                'status': verification_status,
+                'is_approved': bool(card.is_approved),
+                'card_number': card.card_number,
+                'employee_name': employee.name,
+                'employee_number_masked': masked_employee_number,
+                'health_center_name_ar': center.name_ar or center.name,
+                'health_center_name_en': center.name_en or center.name,
+                'issue_date': card.issue_date.isoformat() if card.issue_date else None,
+                'next_review_date': card.next_review_date.isoformat() if card.next_review_date else None,
+                'updated_at': card.updated_at.isoformat() if card.updated_at else None,
+                'message_ar': (
+                    'تم التحقق من البطاقة واعتمادها.'
+                    if card.is_approved
+                    else 'تم التحقق من البطاقة، وحالة الاعتماد ما زالت قيد المراجعة.'
+                ),
+                'message_en': (
+                    'The card is authentic and approved.'
+                    if card.is_approved
+                    else 'The card is authentic; approval is still pending.'
+                ),
+                'privacy_notice_ar': 'صفحة التحقق لا تعرض أي تشخيصات أو بيانات صحية سرية.',
+                'privacy_notice_en': 'The verification page does not expose diagnoses or confidential health data.',
+            },
+            headers={'Cache-Control': 'no-store'},
+        )
 
 class UserViewSet(viewsets.ModelViewSet):
     serializer_class = PlatformUserSerializer
@@ -561,6 +616,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             'id': card.id if card else None,
             'exists': bool(card),
             'card_number': card.card_number if card else f'EHC-{issue_date.year}-{employee.id:05d}',
+            'verification_token': card.verification_token if card else '',
             'issue_date': issue_date.isoformat(),
             'next_review_date': next_review_date.isoformat(),
             'reviewed_by': reviewer,

@@ -30,6 +30,7 @@ import {
   Save as SaveIcon,
 } from '@mui/icons-material';
 import { toast } from 'sonner';
+import { QRCodeSVG } from 'qrcode.react';
 import {
   Brain,
   BriefcaseBusiness,
@@ -114,6 +115,7 @@ type HealthCardData = {
   id?: string | number | null;
   exists?: boolean;
   card_number?: string;
+  verification_token?: string;
   issue_date?: string;
   next_review_date?: string;
   reviewed_by?: string;
@@ -481,28 +483,28 @@ async function elementToPng(element: HTMLElement, pixelRatio = 2): Promise<strin
   }
 }
 
-function CardCode({ seed }: { seed: string }) {
-  const cells = useMemo(() => {
-    let hash = 2166136261;
-    for (const character of seed) hash = Math.imul(hash ^ character.charCodeAt(0), 16777619);
-    return Array.from({ length: 121 }, (_, index) => {
-      const row = Math.floor(index / 11);
-      const column = index % 11;
-      const finder = (
-        (row < 4 && column < 4) ||
-        (row < 4 && column > 6) ||
-        (row > 6 && column < 4)
-      );
-      if (finder) {
-        const localRow = row > 6 ? row - 7 : row;
-        const localColumn = column > 6 ? column - 7 : column;
-        return localRow === 0 || localRow === 3 || localColumn === 0 || localColumn === 3 || (localRow === 2 && localColumn === 2);
-      }
-      hash = Math.imul(hash ^ (index + 31), 16777619);
-      return (hash >>> 0) % 3 !== 0;
-    });
-  }, [seed]);
-  return <div className="ohc-card-code" aria-label="رمز البطاقة">{cells.map((filled, index) => <i key={index} className={filled ? 'filled' : ''} />)}</div>;
+function CardCode({ token, cardNumber }: { token?: string; cardNumber: string }) {
+  const verificationUrl = useMemo(() => {
+    if (!token || typeof window === 'undefined') return '';
+    return `${window.location.origin}/v/${encodeURIComponent(token)}`;
+  }, [token]);
+
+  if (!verificationUrl) {
+    return <div className="ohc-card-code inactive" aria-label="رمز التحقق غير مفعل"><span>QR</span></div>;
+  }
+
+  return (
+    <a
+      className="ohc-card-code active"
+      href={verificationUrl}
+      target="_blank"
+      rel="noreferrer"
+      title={`التحقق من البطاقة ${cardNumber}`}
+      aria-label="فتح صفحة التحقق من البطاقة الصحية"
+    >
+      <QRCodeSVG value={verificationUrl} size={68} level="L" bgColor="#ffffff" fgColor="#07365d" />
+    </a>
+  );
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -554,7 +556,7 @@ function HealthCardSheet({ card, form }: { card: HealthCardData; form: SectionDa
           <Field label="رقم البطاقة / Card No.">{value(card.card_number)}</Field>
           <Field label="تاريخ الإصدار / Issue Date">{formatDate(card.issue_date)}</Field>
         </div>
-        <div className="ohc-qr"><CardCode seed={value(card.card_number, 'EHC')} /></div>
+        <div className="ohc-qr"><CardCode token={card.verification_token} cardNumber={value(card.card_number, 'EHC')} /></div>
         <div className="ohc-title-box">
           <HealthAndSafetyIcon />
           <h1>البطاقة الصحية للموظف</h1>
