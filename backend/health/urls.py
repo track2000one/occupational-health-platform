@@ -1,16 +1,21 @@
+from django.urls import path
 from rest_framework.routers import DefaultRouter
-from .views import AuditLogViewSet, ClinicVisitViewSet, CommitteeReferralViewSet, EmployeeImportReviewViewSet, EmployeeViewSet, ExcelImportViewSet, HealthCenterViewSet, InjuryCaseViewSet, LabTestViewSet, OccupationalHealthAssessmentViewSet, UserViewSet, VaccinationViewSet
-router=DefaultRouter()
-router.register('users',UserViewSet,basename='users')
-router.register('excel-import',ExcelImportViewSet,basename='excel-import')
-router.register('employee-import-reviews',EmployeeImportReviewViewSet,basename='employee-import-reviews')
-router.register('health-centers',HealthCenterViewSet,basename='health-centers')
-router.register('employees',EmployeeViewSet)
-router.register('lab-tests',LabTestViewSet)
-router.register('occupational-health-assessments',OccupationalHealthAssessmentViewSet)
-router.register('vaccinations',VaccinationViewSet)
-router.register('clinic-visits',ClinicVisitViewSet)
-router.register('committee-referrals',CommitteeReferralViewSet)
-router.register('injury-cases',InjuryCaseViewSet)
-router.register('audit-logs',AuditLogViewSet)
-urlpatterns=router.urls
+from .views import AuditLogViewSet, ClinicVisitViewSet, CommitteeReferralViewSet, EmployeeImportReviewViewSet, EmployeeViewSet, ExcelImportViewSet, HealthCardVerificationView, HealthCenterViewSet, InjuryCaseViewSet, LabTestViewSet, OccupationalHealthAssessmentViewSet, UserViewSet, VaccinationViewSet
+
+router = DefaultRouter()
+router.register('users', UserViewSet, basename='users')
+router.register('excel-import', ExcelImportViewSet, basename='excel-import')
+router.register('employee-import-reviews', EmployeeImportReviewViewSet, basename='employee-import-reviews')
+router.register('health-centers', HealthCenterViewSet, basename='health-centers')
+router.register('employees', EmployeeViewSet)
+router.register('lab-tests', LabTestViewSet)
+router.register('occupational-health-assessments', OccupationalHealthAssessmentViewSet)
+router.register('vaccinations', VaccinationViewSet)
+router.register('clinic-visits', ClinicVisitViewSet)
+router.register('committee-referrals', CommitteeReferralViewSet)
+router.register('injury-cases', InjuryCaseViewSet)
+router.register('audit-logs', AuditLogViewSet)
+
+urlpatterns = [
+    path('health-card-verification/<str:token>/', HealthCardVerificationView.as_view(), name='health-card-verification'),
+] + router.urls

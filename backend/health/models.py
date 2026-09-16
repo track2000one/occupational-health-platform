@@ -2,7 +2,11 @@ from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.conf import settings
+from django.core import signing
 from django.db import models
+
+
+HEALTH_CARD_VERIFICATION_SALT = 'occupational-health-card-verification-v1'
 
 
 def full_years_between(start_date, end_date=None):
@@ -229,6 +233,26 @@ class EmployeeHealthCard(models.Model):
             year = (self.issue_date or date.today()).year
             self.card_number = f'EHC-{year}-{self.employee_id:05d}'
         super().save(*args, **kwargs)
+
+    @property
+    def verification_token(self):
+        """Return a compact HMAC-signed public verification token.
+
+        The token contains only the database identifier signed with Django's SECRET_KEY;
+        it does not embed employee identity or clinical information.
+        """
+        if not self.pk:
+            return ''
+        return signing.Signer(salt=HEALTH_CARD_VERIFICATION_SALT).sign(str(self.pk))
+
+    @classmethod
+    def from_verification_token(cls, token):
+        try:
+            raw_id = signing.Signer(salt=HEALTH_CARD_VERIFICATION_SALT).unsign(str(token or ''))
+            card_id = int(raw_id)
+        except (signing.BadSignature, TypeError, ValueError):
+            return None
+        return cls.objects.select_related('employee', 'employee__health_center').filter(pk=card_id).first()
 
     def __str__(self):
         return f'{self.card_number or "Health card"} - {self.employee}'
