@@ -29,6 +29,19 @@ jobs:
       - name: Apply implementation
         run: python .github/scripts/apply_real_health_card_qr.py
 
+      - name: Fix MUI icon compatibility
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('frontend/src/app/pages/HealthCardVerificationPage.tsx')
+          text = path.read_text(encoding='utf-8')
+          text = text.replace('  ErrorOutline as ErrorOutlineIcon,\n', '')
+          text = text.replace('  VerifiedUser as VerifiedUserIcon,\n', '')
+          text = text.replace(' icon={<ErrorOutlineIcon />}', '')
+          text = text.replace("{approved ? <CheckCircleIcon sx={{ fontSize: 66, color: 'success.main' }} /> : <VerifiedUserIcon sx={{ fontSize: 66, color: 'warning.main' }} />}", "{approved ? <CheckCircleIcon sx={{ fontSize: 66, color: 'success.main' }} /> : <HealthAndSafetyIcon sx={{ fontSize: 66, color: 'warning.main' }} />}")
+          path.write_text(text, encoding='utf-8')
+          PY
+
       - name: Install QR dependency
         run: npm install qrcode.react@4.2.0 --save --prefix frontend --legacy-peer-deps
 
