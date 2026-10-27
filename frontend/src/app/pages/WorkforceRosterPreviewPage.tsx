@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router';
 import {
   Alert, Box, Button, Chip, CircularProgress, Divider, Paper, Stack,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
-  TextField, Typography,
+  Dialog, DialogTitle, DialogContent, DialogActions, MenuItem, TextField, Typography,
 } from '@mui/material';
 import {
   FactCheckOutlined as VerifyIcon, FileUploadOutlined as UploadIcon,
@@ -27,10 +27,18 @@ interface Summary {
   special_source_status: number;
   organization_groups: number;
   automatic_imported: number;
+  approved_organization_groups: number;
+  unapproved_organization_groups: number;
+  unapproved_center_employees: number;
+  manager_review_groups: number;
 }
 interface Group {
   organization: string;
   organization_type: string;
+  fingerprint: string;
+  approved_center_id: number | null;
+  approved_center_name: string;
+  approval_reference: string;
   count: number;
   manager_names: string[];
   suggested_center: string;
@@ -52,11 +60,17 @@ interface PreviewResult {
   warnings: string[];
 }
 
+interface CenterOption { id: number; name: string; name_ar?: string }
 const formatCount = (v: number) => v.toLocaleString('ar-SA');
 
 export function WorkforceRosterPreviewPage() {
   const navigate = useNavigate();
   const [file, setFile] = useState<File | null>(null);
+  const [centerOptions, setCenterOptions] = useState<CenterOption[]>([]);
+  const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
+  const [approvalCenter, setApprovalCenter] = useState('');
+  const [approvalReference, setApprovalReference] = useState('');
+  const [approving, setApproving] = useState(false);
   const [result, setResult] = useState<PreviewResult | null>(null);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState('');
@@ -105,6 +119,13 @@ export function WorkforceRosterPreviewPage() {
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(String(body?.detail || 'تعذر فحص الملف'));
       setResult(body as PreviewResult);
+      try {
+        const mappingOptions = await authFetch(API_BASE + '/workforce-roster/mapping/');
+        if (mappingOptions.ok) {
+          const options = await mappingOptions.json();
+          setCenterOptions(options.centers || []);
+        }
+      } catch { /* A connectivity failure must not alter preview results. */ }
       toast.success('اكتملت المعاينة دون تعديل قاعدة الموظفين');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'فشلت عملية المعاينة');
@@ -159,6 +180,9 @@ export function WorkforceRosterPreviewPage() {
           ['صفوف تحتاج مراجعة', result.summary.review_rows],
           ['حالات مصدر خاصة', result.summary.special_source_status],
           ['وحدات تنظيمية للمطابقة', result.summary.organization_groups],
+          ['جهات مرتبطة ومعتمدة', result.summary.approved_organization_groups],
+          ['جهات غير معتمدة', result.summary.unapproved_organization_groups],
+          ['موظفون ينتظرون اعتماد مركزهم', result.summary.unapproved_center_employees],
           ['المستوردون فعليًا', result.summary.automatic_imported],
         ].map(([label, value]) => <Paper key={String(label)} sx={{ p: 2, textAlign: 'center' }}>
           <Typography variant="h4" fontWeight={850}>{formatCount(Number(value))}</Typography>
@@ -208,7 +232,7 @@ export function WorkforceRosterPreviewPage() {
           <Table size="small" stickyHeader>
             <TableHead><TableRow>
               <TableCell>الجهة التنظيمية</TableCell><TableCell>النوع</TableCell><TableCell>عدد الموظفين</TableCell>
-              <TableCell>اسم المدير في المصدر</TableCell><TableCell>المركز المحتمل</TableCell><TableCell>حالة الربط</TableCell>
+              <TableCell>اسم المدير في المصدر</TableCell><TableCell>المركز المحتمل</TableCell><TableCell>حالة الربط</TableCell><TableCell>اعتماد</TableCell>
             </TableRow></TableHead>
             <TableBody>{shown.map((group, index) => <TableRow key={group.organization + index} hover>
               <TableCell sx={{ minWidth: 300, maxWidth: 550, whiteSpace: 'normal' }}>{group.organization}</TableCell>
@@ -217,7 +241,14 @@ export function WorkforceRosterPreviewPage() {
               <TableCell>{group.manager_names.length === 1 ? group.manager_names[0] :
                 group.manager_names.length > 1 ? 'أسماء متعددة تحتاج تحققًا' : 'غير محدد'}</TableCell>
               <TableCell>{group.suggested_center || 'لا توجد مطابقة مؤكدة'}</TableCell>
-              <TableCell><Chip size="small" color="warning" label="بانتظار اعتماد الربط" /></TableCell>
+              <TableCell>{group.requires_approval
+                ? <Chip size="small" color="warning" label="بانتظار اعتماد الربط" />
+                : <Chip size="small" color="success" label={'معتمد: ' + group.approved_center_name} />}</TableCell>
+              <TableCell><Button size="small" variant="outlined" onClick={() => {
+                setSelectedGroup(group);
+                setApprovalCenter(group.approved_center_id ? String(group.approved_center_id) : '');
+                setApprovalReference('');
+              }}>{group.requires_approval ? 'اعتماد المركز' : 'تعديل الربط'}</Button></TableCell>
             </TableRow>)}</TableBody>
           </Table>
         </TableContainer>
