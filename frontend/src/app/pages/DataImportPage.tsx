@@ -1,5 +1,6 @@
 import { useEffect, useState, type ChangeEvent } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router';
 import { toast } from 'sonner';
 import {
   Alert,
@@ -285,6 +286,8 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
   const [availableEmployeeSheets, setAvailableEmployeeSheets] = useState<string[]>([]);
   const [fieldMapping, setFieldMapping] = useState<Record<string, number | null>>({});
   const [mappingDirty, setMappingDirty] = useState(false);
+  const [centerCorrections, setCenterCorrections] = useState<Record<string, string>>({});
+  const [uploadError, setUploadError] = useState('');
 
   const loadReviews = async () => {
     if (!employeeMode) return;
@@ -398,9 +401,14 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
     setAvailableEmployeeSheets([]);
     setFieldMapping({});
     setMappingDirty(false);
+    setCenterCorrections({});
+    setUploadError('');
+    if (selected && employeeMode) void upload(false, selected);
   };
 
   const changeEmployeeImportMode = (mode: 'template' | 'flexible') => {
+    if (loading) return;
+    setCenterCorrections({});
     setEmployeeImportMode(mode);
     setResult(null);
     setEmployeeSheetName('');
@@ -410,6 +418,8 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
   };
 
   const changeEmployeeSheet = (value: string) => {
+    if (loading) return;
+    setCenterCorrections({});
     setEmployeeSheetName(value);
     setResult(null);
     setFieldMapping({});
@@ -417,12 +427,15 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
   };
 
   const changeFieldMapping = (field: string, value: string) => {
+    if (loading) return;
     setFieldMapping(current => ({ ...current, [field]: value === '' ? null : Number(value) }));
     setMappingDirty(true);
   };
 
-  const upload = async (commitOverride?: boolean) => {
-    if (!file) {
+  const upload = async (commitOverride?: boolean, selectedFile?: File) => {
+    if (loading) return;
+    const uploadFile = selectedFile || file;
+    if (!uploadFile) {
       toast.error(isRtl ? 'اختر ملف Excel أولًا' : 'Select an Excel file first');
       return;
     }
@@ -433,17 +446,21 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
     }
 
     const shouldCommit = commitOverride ?? commitMode;
+    if (employeeMode && shouldCommit && (result?.mode !== 'preview' || mappingDirty)) return;
+    setUploadError('');
+    setResult(null);
     setLoading(true);
     const loadingToast = toast.loading(shouldCommit ? (isRtl ? 'جاري الاستيراد إلى قاعدة البيانات...' : 'Importing into database...') : (isRtl ? 'جاري فحص الملف...' : 'Validating file...'));
     try {
       const form = new FormData();
-      form.append('file', file);
+      form.append('file', uploadFile);
       form.append('commit', shouldCommit ? 'true' : 'false');
       if (employeeMode) {
+        form.append('centerCorrections', JSON.stringify(selectedFile ? {} : centerCorrections));
         form.append('employeeImportMode', employeeImportMode);
         if (employeeImportMode === 'template') form.append('sheetName', 'Employees');
-        else if (employeeSheetName) form.append('sheetName', employeeSheetName);
-        if (employeeImportMode === 'flexible' && Object.keys(fieldMapping).length) {
+        else if (!selectedFile && employeeSheetName) form.append('sheetName', employeeSheetName);
+        if (!selectedFile && employeeImportMode === 'flexible' && Object.keys(fieldMapping).length) {
           form.append('fieldMapping', JSON.stringify(fieldMapping));
         }
       }
@@ -458,6 +475,7 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
       if (!response.ok) throw new Error(body.detail || body.file || body.password || 'Import failed');
       const nextResult = body as ImportResult;
       setResult(nextResult);
+      setMappingDirty(false);
       if (employeeMode && nextResult.employee_import_mode === 'flexible') {
         const nextMapping = Object.fromEntries(
           EMPLOYEE_IMPORT_FIELDS.map(field => {
@@ -471,8 +489,9 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
         setMappingDirty(false);
       }
       if (employeeMode && shouldCommit) await loadReviews();
-      toast.success(shouldCommit ? (isRtl ? 'تم الحفظ في PostgreSQL بنجاح' : 'Committed to PostgreSQL') : (isRtl ? 'تم فحص الملف بنجاح' : 'File validated successfully'), { id: loadingToast });
+      toast.success(shouldCommit ? (isRtl ? 'اكتملت المعالجة؛ راجع أعداد المضاف والمعلق أدناه.' : 'Processing complete. Check added and pending counts below.') : (isRtl ? 'انتهى الفحص. لم تُضف الأسماء بعد؛ راجع النتائج ثم اضغط إضافة الموظفين.' : 'Preview ready. Review results, then add employees.'), { id: loadingToast });
     } catch (error) {
+      setUploadError(friendlyFetchError(error, isRtl));
       toast.error(friendlyFetchError(error, isRtl), { id: loadingToast, duration: 9000 });
     } finally {
       setLoading(false);
@@ -537,9 +556,10 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
                     {isRtl ? 'تنزيل قالب بيانات الموظفين' : 'Download Employee Template'}
                   </Button>
                 )}
-                <Button component="label" variant="contained" size="large" startIcon={<CloudUploadIcon />} sx={{ borderRadius: 3, py: 1.6 }}>
+                {employeeMode && <Alert severity="info">{isRtl ? '١. اختر الملف ليُفحص تلقائيًا · ٢. راجع النتائج · ٣. اضغط إضافة الموظفين الآن' : '1. Select a file for automatic preview · 2. Review results · 3. Add employees'}</Alert>}
+                <Button component="label" disabled={loading} variant="contained" size="large" startIcon={<CloudUploadIcon />} sx={{ borderRadius: 3, py: 1.6 }}>
                   {file ? file.name : (isRtl ? 'اختيار ملف Excel' : 'Select Excel File')}
-                  <input hidden type="file" accept={employeeMode ? '.xlsx' : '.xlsx,.xlsm,.xltx,.xltm'} onChange={onFileChange} />
+                  <input hidden disabled={loading} type="file" accept={employeeMode ? '.xlsx' : '.xlsx,.xlsm,.xltx,.xltm'} onChange={onFileChange} />
                 </Button>
 
                 {!employeeMode && (
@@ -574,7 +594,7 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
                   {employeeMode
                     ? (employeeImportMode === 'flexible'
                       ? (mappingDirty ? (isRtl ? 'إعادة فحص المطابقة' : 'Revalidate mapping') : (isRtl ? 'اكتشاف الأعمدة ومعاينة الموظفين' : 'Detect Columns & Preview'))
-                      : (isRtl ? 'فحص القالب ومعاينة الموظفين' : 'Validate Template & Preview'))
+                      : (isRtl ? 'إعادة الفحص ومعاينة الموظفين' : 'Revalidate & Preview'))
                     : (commitMode ? (isRtl ? 'فحص وحفظ في قاعدة البيانات' : 'Validate & Commit') : (isRtl ? 'فحص ومعاينة فقط' : 'Validate Preview Only'))}
                 </Button>
 
@@ -588,11 +608,16 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
                     startIcon={<StorageIcon />}
                     sx={{ borderRadius: 3, py: 1.4 }}
                   >
-                    {isRtl ? `اعتماد السليم وتعليق ${((result.summary.errors_count || 0) + (result.summary.duplicate_rows || 0))} للمراجعة` : `Commit valid rows & stage ${((result.summary.errors_count || 0) + (result.summary.duplicate_rows || 0))} for review`}
+                    {(result.summary.valid_rows || 0) > 0
+                      ? (isRtl ? `إضافة الموظفين الآن (${result.summary.valid_rows})` : `Add employees now (${result.summary.valid_rows})`)
+                      : (isRtl ? 'حفظ الصفوف للمراجعة والتصحيح' : 'Save rows for review and correction')}
                   </Button>
                 )}
 
                 {loading && <LinearProgress />}
+                {uploadError && <Alert severity="error">{uploadError}</Alert>}
+                {employeeMode && result?.mode === 'preview' && <Alert severity="warning">{isRtl ? 'لم يتم حفظ أي موظف بعد. الصفوف غير السليمة ستُحفظ للمراجعة عند الاعتماد، ويمكن تصحيحها داخل المنصة.' : 'No employees saved yet. Invalid rows will be staged on confirmation and can be corrected here.'}</Alert>}
+                {employeeMode && result?.mode === 'commit' && <Button component={Link} to="/employees" variant="outlined">{isRtl ? 'عرض قائمة الموظفين' : 'View employee list'}</Button>}
               </Stack>
             </CardContent>
           </Card>
@@ -643,7 +668,7 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
             <Grid size={{ xs: 12, sm: 6, md: 3 }}>{summaryCard(isRtl ? 'أخطاء' : 'Errors', result.summary.errors_count || 0, '#dc2626')}</Grid>
           </Grid>
 
-          <Alert icon={<CheckCircleIcon />} severity={result.mode === 'commit' ? 'success' : 'info'} sx={{ mb: 2 }}>
+          <Alert icon={<CheckCircleIcon />} severity={result.mode === 'commit' ? (importedTotal > 0 ? 'success' : 'warning') : 'info'} sx={{ mb: 2 }}>
             {result.mode === 'commit'
               ? (isRtl
                 ? `تم تفعيل ${importedTotal} سجل سليم، وتعليق ${result.summary.staged_for_review || 0} سجل للمراجعة دون فقد بياناته.`
@@ -809,6 +834,13 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
                         <Chip size="small" color="error" label={`${isRtl ? 'صف' : 'Row'} ${item.row}`} />
                         <Typography variant="body2" fontWeight={900}>{isRtl ? 'ملاحظات تمنع تفعيل البطاقة' : 'Issues blocking card activation'}</Typography>
                       </Stack>
+                      {employeeMode && result.mode === 'preview' && /health center|health_center/i.test(item.reason) && <TextField
+                        select fullWidth disabled={loading} sx={{ my: 1 }}
+                        label={isRtl ? 'تصحيح المركز الصحي لهذا الصف' : 'Correct health center for this row'}
+                        value={centerCorrections[String(item.row)] || ''}
+                        helperText={isRtl ? 'اختر المركز ثم أعد الفحص قبل إضافة الموظفين.' : 'Select a center, then revalidate before adding employees.'}
+                        onChange={event => { setCenterCorrections(current => ({ ...current, [String(item.row)]: event.target.value })); setMappingDirty(true); }}
+                      >{healthCenters.map(center => <MenuItem key={center.id} value={String(center.id)}>{center.name}</MenuItem>)}</TextField>}
                       <Box component="ul" sx={{ m: 0, ps: 2.5 }}>
                         {localizeImportReason(item.reason, isRtl).map((issue, issueIndex) => (
                           <Typography component="li" key={issueIndex} variant="body2" sx={{ mb: 0.35 }}>{issue}</Typography>

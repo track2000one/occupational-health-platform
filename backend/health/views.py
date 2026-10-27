@@ -304,6 +304,15 @@ class ExcelImportViewSet(viewsets.ReadOnlyModelViewSet):
         sheet_name=str(request.data.get('sheetName') or '').strip()
         employee_import_mode=str(request.data.get('employeeImportMode') or '').strip().lower()
         field_mapping=None
+        try:
+            center_corrections=json.loads(str(request.data.get('centerCorrections') or '{}'))
+            if not isinstance(center_corrections, dict) or any(
+                not str(row).isdigit() or not str(center).isdigit()
+                for row, center in center_corrections.items()
+            ):
+                raise ValueError()
+        except (TypeError, ValueError):
+            return Response({'detail':'Invalid health center corrections.'}, status=status.HTTP_400_BAD_REQUEST)
         raw_mapping=request.data.get('fieldMapping')
         if raw_mapping:
             try:
@@ -325,6 +334,7 @@ class ExcelImportViewSet(viewsets.ReadOnlyModelViewSet):
                 user=request.user,
                 employee_import_mode=employee_import_mode,
                 field_mapping=field_mapping,
+                center_corrections=center_corrections,
             )
             result=normalize_import_result(result)
             summary=result['summary']

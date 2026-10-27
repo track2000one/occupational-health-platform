@@ -459,6 +459,7 @@ def import_employee_roster_sheet(
     user=None,
     flexible: bool = False,
     field_mapping: Optional[Dict[str, Any]] = None,
+    center_corrections: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Activate valid employees and quarantine invalid/conflicting rows for review."""
     header_row, headers = find_employee_header_row(ws) if flexible else find_header_row(ws)
@@ -497,6 +498,11 @@ def import_employee_roster_sheet(
             for field in EMPLOYEE_ROSTER_ALIASES
         }
         raw = dict(raw_input)
+        if center_corrections and str(row_number) in center_corrections:
+            corrected_center = HealthCenter.objects.filter(pk=center_corrections[str(row_number)], is_active=True).first()
+            if not corrected_center:
+                raise ValueError('Selected health center is not active or does not exist.')
+            raw['health_center'] = corrected_center.name
         raw['email'] = raw['email'].strip().lower()
         raw['national_id'] = ''.join(ch for ch in raw['national_id'] if ch.isdigit())
         raw['employee_number'] = raw['employee_number'].strip()
@@ -1146,6 +1152,7 @@ def process_single_sheet(
     force_employee_roster: bool = False,
     employee_import_mode: str = 'template',
     field_mapping: Optional[Dict[str, Any]] = None,
+    center_corrections: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     ws = workbook[selected_sheet]
     processor = import_employee_roster_sheet if force_employee_roster else resolve_processor(selected_sheet)
@@ -1158,6 +1165,7 @@ def process_single_sheet(
             user=user,
             flexible=employee_import_mode == 'flexible',
             field_mapping=field_mapping,
+            center_corrections=center_corrections,
         )
     else:
         result = processor(ws, selected_sheet, file_name, commit)
@@ -1181,6 +1189,7 @@ def process_excel_import(
     user=None,
     employee_import_mode: str = '',
     field_mapping: Optional[Dict[str, Any]] = None,
+    center_corrections: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     workbook = load_workbook(uploaded_file, read_only=True, data_only=True)
     file_name = getattr(uploaded_file, 'name', 'uploaded.xlsx')
@@ -1206,6 +1215,7 @@ def process_excel_import(
             force_employee_roster=True,
             employee_import_mode=normalized_employee_mode,
             field_mapping=field_mapping,
+            center_corrections=center_corrections,
         )
         result['available_sheets'] = workbook.sheetnames
         result['importable_sheets'] = workbook.sheetnames
