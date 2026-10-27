@@ -112,6 +112,21 @@ class Employee(models.Model):
     VACCINE = (('completed', 'Completed'), ('due', 'Due'), ('refused', 'Refused'))
     RISK = (('low', 'Low'), ('medium', 'Medium'), ('high', 'High'))
 
+
+
+    class EmploymentStatus(models.TextChoices):
+        ACTIVE = 'active', 'Active'
+        TRANSFERRED = 'transferred', 'Transferred'
+        RETIRED = 'retired', 'Retired'
+        SEPARATED = 'separated', 'Separated'
+        UNDER_REVIEW = 'under_review', 'Under review'
+
+    employment_status = models.CharField(
+        max_length=20,
+        choices=EmploymentStatus.choices,
+        default=EmploymentStatus.ACTIVE,
+        db_index=True,
+    )
     name = models.CharField(max_length=200)
     email = models.EmailField(max_length=254, unique=True, null=True, blank=True)
     national_id = models.CharField(max_length=30, unique=True)
@@ -145,6 +160,38 @@ class Employee(models.Model):
     def __str__(self):
         return self.name
 
+
+
+class EmployeeEmploymentChange(models.Model):
+    """Approved, non-destructive employment history for an existing employee."""
+
+    employee = models.ForeignKey(
+        Employee, on_delete=models.PROTECT, related_name='employment_changes'
+    )
+    previous_status = models.CharField(max_length=20)
+    new_status = models.CharField(max_length=20, choices=Employee.EmploymentStatus.choices)
+    effective_date = models.DateField()
+    evidence_reference = models.CharField(max_length=255)
+    notes = models.TextField(blank=True)
+    previous_health_center = models.ForeignKey(
+        HealthCenter, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='employment_changes_from'
+    )
+    new_health_center = models.ForeignKey(
+        HealthCenter, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='employment_changes_to'
+    )
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True,
+        related_name='approved_employee_status_changes'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-effective_date', '-created_at']
+
+    def __str__(self):
+        return f'{self.employee_id}: {self.previous_status} -> {self.new_status}'
 
 class ImportTraceModel(models.Model):
     imported_sheet = models.CharField(max_length=150, blank=True)
