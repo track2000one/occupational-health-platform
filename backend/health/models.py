@@ -198,9 +198,9 @@ class Employee(models.Model):
         ('divorced', 'Divorced'),
         ('widowed', 'Widowed'),
     )
-    STATUS = (('completed', 'Completed'), ('incomplete', 'Incomplete'), ('overdue', 'Overdue'))
-    VACCINE = (('completed', 'Completed'), ('due', 'Due'), ('refused', 'Refused'))
-    RISK = (('low', 'Low'), ('medium', 'Medium'), ('high', 'High'))
+    STATUS = (('completed', 'Completed'), ('incomplete', 'Incomplete'), ('overdue', 'Overdue'), ('unknown', 'Not assessed'))
+    VACCINE = (('completed', 'Completed'), ('due', 'Due'), ('refused', 'Refused'), ('unknown', 'Not assessed'))
+    RISK = (('low', 'Low'), ('medium', 'Medium'), ('high', 'High'), ('unknown', 'Not assessed'))
 
 
 
