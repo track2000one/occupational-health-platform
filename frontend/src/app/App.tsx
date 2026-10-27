@@ -55,6 +55,7 @@ import { DataImportPage } from './pages/DataImportPage';
 import { AppearanceSettingsPage } from './pages/AppearanceSettingsPage';
 import { PeriodicStatisticsPage } from './pages/PeriodicStatisticsPage';
 import { HealthCentersPage } from './pages/HealthCentersPage';
+import { EmployeeLifecyclePage } from './pages/EmployeeLifecyclePage';
 import { HealthCardVerificationPage } from './pages/HealthCardVerificationPage';
 import { Toaster } from 'sonner';
 
@@ -136,6 +137,11 @@ function AppRoutes() {
         <Route path="admin/users" element={
           <PermissionRoute permission="manage:users">
             <AdminUsersPage />
+          </PermissionRoute>
+        } />
+        <Route path="admin/employee-lifecycle" element={
+          <PermissionRoute permission="manage:users">
+            <EmployeeLifecyclePage />
           </PermissionRoute>
         } />
         <Route path="admin/health-centers" element={
