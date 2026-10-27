@@ -3,6 +3,7 @@ from datetime import date, timedelta
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 from rest_framework import permissions, status, viewsets
@@ -488,6 +489,30 @@ class EmployeeViewSet(viewsets.ModelViewSet):
     serializer_class=EmployeeSerializer
     permission_classes=[permissions.IsAuthenticated,IsAdminOrManagerForWrite]
     search_fields=['name','email','employee_number','national_id','mobile','job_title','birth_place','national_address']
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        requested_status = str(self.request.query_params.get('employment_status') or '').strip()
+        if requested_status in Employee.EmploymentStatus.values:
+            queryset = queryset.filter(employment_status=requested_status)
+        center_id = str(self.request.query_params.get('health_center_id') or '').strip()
+        if center_id.isdigit():
+            queryset = queryset.filter(health_center_id=int(center_id))
+        query = str(self.request.query_params.get('search') or '').strip()
+        if query:
+            queryset = queryset.filter(
+                Q(name__icontains=query) | Q(employee_number__icontains=query) |
+                Q(national_id__icontains=query) | Q(job_title__icontains=query)
+            )
+        return queryset
+
+    def destroy(self, request, *args, **kwargs):
+        """Employee archives and linked medical history must never be cascade-deleted."""
+        return Response(
+            {'detail': 'Employee deletion is disabled. Use approved employment-status transitions.'},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
 
 
 
