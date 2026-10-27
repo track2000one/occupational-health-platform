@@ -101,6 +101,49 @@ class UserProfile(models.Model):
         return f'{self.user.username} - {self.role}'
 
 
+
+class WorkforceCenterMapping(models.Model):
+    """Approved organization-to-center link, independent of employee medical data."""
+    fingerprint = models.CharField(max_length=64, unique=True)
+    organization = models.TextField()
+    organization_type = models.CharField(max_length=100, blank=True)
+    health_center = models.ForeignKey(
+        HealthCenter, on_delete=models.PROTECT, related_name='workforce_mappings'
+    )
+    approval_reference = models.CharField(max_length=255)
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='approved_workforce_mappings'
+    )
+    approved_at = models.DateTimeField(auto_now=True)
+    is_active = models.BooleanField(default=True, db_index=True)
+
+    def __str__(self):
+        return f'{self.organization_type}: {self.health_center_id}'
+
+
+class WorkforceCenterMappingRevision(models.Model):
+    """Append-only revision trail when an organization is reassigned."""
+    mapping = models.ForeignKey(
+        WorkforceCenterMapping, on_delete=models.PROTECT, related_name='revisions'
+    )
+    previous_center = models.ForeignKey(
+        HealthCenter, on_delete=models.PROTECT, null=True, blank=True,
+        related_name='workforce_mapping_previous_revisions'
+    )
+    new_center = models.ForeignKey(
+        HealthCenter, on_delete=models.PROTECT, related_name='workforce_mapping_new_revisions'
+    )
+    approval_reference = models.CharField(max_length=255)
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at', '-id']
+
+
 class Employee(models.Model):
     GENDER = (('male', 'Male'), ('female', 'Female'))
     MARITAL_STATUS = (
