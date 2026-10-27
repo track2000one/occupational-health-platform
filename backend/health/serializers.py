@@ -282,7 +282,7 @@ class HealthCenterSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, attrs):
-        for field in ('name_ar', 'name_en', 'region', 'city', 'district', 'notes'):
+        for field in ('name_ar', 'name_en', 'region', 'city', 'district', 'manager_name', 'notes'):
             if field in attrs and attrs[field] is not None:
                 attrs[field] = str(attrs[field]).strip()
         return attrs
