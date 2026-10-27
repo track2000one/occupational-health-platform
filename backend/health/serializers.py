@@ -358,6 +358,11 @@ class EmployeeSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         attrs = self._normalize_identity(attrs)
+        if self.instance is not None and 'health_center' in attrs:
+            if attrs['health_center'].pk != self.instance.health_center_id:
+                raise serializers.ValidationError({
+                    'health_center': 'Transfer between centers requires an approved employment-status change.'
+                })
 
         self._require_for_create(attrs, 'email', 'Email is required and must be unique.')
         self._require_for_create(attrs, 'national_id', 'National ID is required and must be unique.')
