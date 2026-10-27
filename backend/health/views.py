@@ -490,6 +490,65 @@ class EmployeeViewSet(viewsets.ModelViewSet):
     search_fields=['name','email','employee_number','national_id','mobile','job_title','birth_place','national_address']
 
 
+
+    @action(detail=True, methods=['post'], url_path='transfer-center')
+    def transfer_center(self, request, pk=None):
+        """Move an active employee internally; they remain active, with the previous center preserved."""
+        if not request.user.is_staff and not request.user.is_superuser:
+            return Response({'detail': 'Center transfer approval requires a staff administrator.'},
+                            status=status.HTTP_403_FORBIDDEN)
+        reference = str(request.data.get('evidence_reference') or '').strip()
+        if len(reference) < 3:
+            return Response({'evidence_reference': 'A formal transfer decision reference is required.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        try:
+            effective_date = parse_date(str(request.data.get('effective_date') or ''))
+        except ValueError:
+            effective_date = None
+        if not effective_date or effective_date > date.today():
+            return Response({'effective_date': 'Provide a valid effective date on or before today.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        try:
+            center_id = int(request.data.get('new_health_center_id'))
+        except (TypeError, ValueError):
+            return Response({'new_health_center_id': 'A destination center is required.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        center = HealthCenter.objects.filter(pk=center_id, is_active=True).first()
+        if not center:
+            return Response({'new_health_center_id': 'Select an existing active center.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        with transaction.atomic():
+            employee = Employee.objects.select_for_update().get(pk=self.get_object().pk)
+            if employee.employment_status != Employee.EmploymentStatus.ACTIVE:
+                return Response({'status': 'Only active employees may transfer internally.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            if employee.health_center_id == center.pk:
+                return Response({'new_health_center_id': 'Employee already belongs to this center.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            latest = employee.employment_changes.order_by('-effective_date').first()
+            if latest and effective_date < latest.effective_date:
+                return Response({'effective_date': 'Date precedes the last approved change.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            previous_center = employee.health_center
+            employee.health_center = center
+            employee.save(update_fields=['health_center', 'updated_at'])
+            change = EmployeeEmploymentChange.objects.create(
+                employee=employee, previous_status=Employee.EmploymentStatus.ACTIVE,
+                new_status=Employee.EmploymentStatus.ACTIVE,
+                effective_date=effective_date, evidence_reference=reference,
+                notes=str(request.data.get('notes') or '').strip(),
+                previous_health_center=previous_center,
+                new_health_center=center, approved_by=request.user,
+            )
+            AuditLog.objects.create(
+                user=str(request.user), action='approve_employee_center_transfer',
+                model_name='Employee', record_id=str(employee.pk),
+            )
+        return Response({'employee_id': employee.pk,
+                         'employment_status': employee.employment_status,
+                         'health_center_id': center.pk,
+                         'employment_change_id': change.pk})
+
     @action(detail=True, methods=['get', 'post'], url_path='employment-status')
     def employment_status(self, request, pk=None):
         """Require an explicit approved source; never infer retirement from missing imports."""
@@ -553,11 +612,11 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             if not requested_center:
                 return Response({'new_health_center_id': 'Select an existing active center.'},
                                 status=status.HTTP_400_BAD_REQUEST)
-        if target == Employee.EmploymentStatus.TRANSFERRED and not requested_center:
-            return Response({'new_health_center_id': 'A destination center is required for transfer.'},
-                            status=status.HTTP_400_BAD_REQUEST)
-        if target in (Employee.EmploymentStatus.RETIRED, Employee.EmploymentStatus.SEPARATED) and requested_center:
-            return Response({'new_health_center_id': 'Retirement or separation does not reassign a center.'},
+        if target in (
+            Employee.EmploymentStatus.RETIRED, Employee.EmploymentStatus.SEPARATED,
+            Employee.EmploymentStatus.TRANSFERRED, Employee.EmploymentStatus.UNDER_REVIEW,
+        ) and requested_center:
+            return Response({'new_health_center_id': 'This status change does not reassign a center. Use transfer-center for internal moves.'},
                             status=status.HTTP_400_BAD_REQUEST)
 
         with transaction.atomic():
