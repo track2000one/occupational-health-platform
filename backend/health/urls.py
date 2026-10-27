@@ -1,4 +1,5 @@
 from django.urls import path
+from .workforce_preview import WorkforceRosterPreviewView
 from rest_framework.routers import DefaultRouter
 from .views import AuditLogViewSet, ClinicVisitViewSet, CommitteeReferralViewSet, EmployeeImportReviewViewSet, EmployeeViewSet, ExcelImportViewSet, HealthCardVerificationView, HealthCenterViewSet, InjuryCaseViewSet, LabTestViewSet, OccupationalHealthAssessmentViewSet, UserViewSet, VaccinationViewSet
 
@@ -17,5 +18,6 @@ router.register('injury-cases', InjuryCaseViewSet)
 router.register('audit-logs', AuditLogViewSet)
 
 urlpatterns = [
+    path('workforce-roster/preview/', WorkforceRosterPreviewView.as_view(), name='workforce-roster-preview'),
     path('health-card-verification/<str:token>/', HealthCardVerificationView.as_view(), name='health-card-verification'),
 ] + router.urls
