@@ -86,3 +86,37 @@ class EmployeeEmploymentWorkflowTests(TestCase):
         self.assertEqual(self.client.post(self.endpoint, payload, format='json').status_code, 200)
         self.assertEqual(self.client.post(self.endpoint, payload, format='json').status_code, 400)
         self.assertEqual(EmployeeEmploymentChange.objects.count(), 1)
+
+    def test_employee_record_cannot_be_deleted(self):
+        self.client.force_authenticate(self.user)
+        response = self.client.delete(f'/api/employees/{self.employee.pk}/')
+        self.assertEqual(response.status_code, 405)
+        self.assertTrue(Employee.objects.filter(pk=self.employee.pk).exists())
+
+    def test_direct_center_change_requires_approved_transfer(self):
+        self.client.force_authenticate(self.user)
+        response = self.client.patch(f'/api/employees/{self.employee.pk}/', {
+            'health_center': self.next_center.pk,
+        }, format='json')
+        self.assertEqual(response.status_code, 400)
+        self.employee.refresh_from_db()
+        self.assertEqual(self.employee.health_center_id, self.center.pk)
+
+    def test_status_filter_uses_database_not_first_page(self):
+        self.client.force_authenticate(self.user)
+        response = self.client.get('/api/employees/?employment_status=retired')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['count'], 0)
+        self.employee.employment_status = 'retired'
+        self.employee.save(update_fields=['employment_status'])
+        response = self.client.get('/api/employees/?employment_status=retired')
+        self.assertEqual(response.data['count'], 1)
+
+    def test_health_center_verified_manager_reference(self):
+        self.client.force_authenticate(self.user)
+        response = self.client.patch(f'/api/health-centers/{self.center.pk}/', {
+            'manager_name': 'Verified Center Manager',
+        }, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.center.refresh_from_db()
+        self.assertEqual(self.center.manager_name, 'Verified Center Manager')
