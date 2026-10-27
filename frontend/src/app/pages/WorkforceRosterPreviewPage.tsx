@@ -177,7 +177,7 @@ export function WorkforceRosterPreviewPage() {
           تحليل الملف الجديد وربطه مبدئيًا بالمراكز الصحية ومقارنته بالسجلات الحالية
         </Typography>
       </Box>
-      <Button variant="outlined" onClick={() => navigate('/employees')}>العودة إلى الموظفين</Button>
+      <Stack direction="row" gap={1}><Button variant="outlined" onClick={() => navigate('/employees')}>العودة إلى الموظفين</Button><Button variant="contained" onClick={() => navigate('/admin/workforce-import-plans')}>خطط الاستيراد والاعتمادات</Button></Stack>
     </Stack>
 
     <Alert severity="info" icon={<SecurityIcon />} sx={{ mb: 2 }}>
