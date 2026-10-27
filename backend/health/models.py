@@ -38,6 +38,7 @@ class HealthCenter(models.Model):
     name = models.CharField(max_length=150, unique=True)
     name_ar = models.CharField(max_length=150, blank=True, db_index=True)
     name_en = models.CharField(max_length=150, blank=True, db_index=True)
+    manager_name = models.CharField(max_length=200, blank=True, help_text='Approved reference name for center manager')
     code = models.CharField(max_length=40, unique=True, null=True, blank=True)
     region = models.CharField(max_length=120, blank=True, db_index=True)
     city = models.CharField(max_length=120, blank=True, db_index=True)
