@@ -11,14 +11,15 @@ import re
 import unicodedata
 import zipfile
 
-from django.db.models import Q
+from django.db import transaction
+from django.utils import timezone
 from openpyxl import load_workbook
 from rest_framework import permissions, status
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import AuditLog, Employee, HealthCenter
+from .models import AuditLog, Employee, HealthCenter, WorkforceCenterMapping, WorkforceCenterMappingRevision
 
 
 EXPECTED_COLUMNS = [
@@ -47,7 +48,13 @@ def norm(value):
     return re.sub(r'[\u064b-\u065f\u0670\u0640]', '', clean(value)).casefold()
 
 
-def safe_preview(upload, existing_employees=None, centers=None):
+def group_fingerprint(organization, organization_type):
+    """Deterministic ID independent of source row order."""
+    source = norm(organization) + '\\x1f' + norm(organization_type)
+    return hashlib.sha256(source.encode('utf-8')).hexdigest()
+
+
+def safe_preview(upload, existing_employees=None, centers=None, mappings=None):
     """Analyze uploaded file in memory; return only counts and redacted examples."""
     upload.seek(0)
     payload = upload.read()
@@ -93,6 +100,8 @@ def safe_preview(upload, existing_employees=None, centers=None):
                 if center.get(key):
                     by_center_name[norm(center[key])].add((str(center['id']), clean(center.get('name_ar') or center['name'])))
 
+        approved_by_key = {item['fingerprint']: item for item in (mappings or [])
+                           if item.get('is_active')}
         seen = set()
         seen_job_numbers = {}
         seen_emails = {}
@@ -121,14 +130,20 @@ def safe_preview(upload, existing_employees=None, centers=None):
 
             org_key = (organization, org_type)
             if org_key not in organizational_groups:
+                mapping_key = group_fingerprint(organization, org_type)
+                mapping = approved_by_key.get(mapping_key)
                 organizational_groups[org_key] = {
+                    'fingerprint': mapping_key,
+                    'approved_center_id': mapping['health_center_id'] if mapping else None,
+                    'approved_center_name': mapping.get('health_center__name_ar') or mapping.get('health_center__name') if mapping else '',
+                    'approval_reference': mapping.get('approval_reference', '') if mapping else '',
                     'organization': organization,
                     'organization_type': org_type,
                     'count': 0,
                     'manager_names': set(),
                     'suggested_center': '',
                     'matched_centers_count': 0,
-                    'requires_approval': True,
+                    'requires_approval': not bool(mapping),
                 }
             group = organizational_groups[org_key]
             group['count'] += 1
@@ -190,6 +205,13 @@ def safe_preview(upload, existing_employees=None, centers=None):
                 group['suggested_center'] = next(iter(possibilities))[1]
             group['manager_names'] = sorted(group['manager_names'])
 
+        approved_groups = sum(not item['requires_approval']
+                              for item in organizational_groups.values())
+        approved_employees = sum(item['count']
+                                 for item in organizational_groups.values()
+                                 if not item['requires_approval'])
+        manager_conflicts = sum(len(item['manager_names']) != 1
+                                for item in organizational_groups.values())
         return {
             'sha256_prefix': hashlib.sha256(payload).hexdigest()[:12],
             'source_columns': len(EXPECTED_COLUMNS),
@@ -202,6 +224,11 @@ def safe_preview(upload, existing_employees=None, centers=None):
                 'not_on_platform': summary['not_on_platform'],
                 'special_source_status': summary['special_source_status'],
                 'organization_groups': len(organizational_groups),
+                'approved_organization_groups': approved_groups,
+                'unapproved_organization_groups': len(organizational_groups) - approved_groups,
+                'approved_center_employees': approved_employees,
+                'unapproved_center_employees': summary['total_rows'] - approved_employees,
+                'manager_review_groups': manager_conflicts,
                 'automatic_imported': 0,
             },
             'source_statuses': dict(status_counts.most_common()),
@@ -240,7 +267,12 @@ class WorkforceRosterPreviewView(APIView):
             centers = list(HealthCenter.objects.filter(is_active=True).values(
                 'id', 'name', 'name_ar', 'name_en'
             ))
-            result = safe_preview(upload, existing_employees=employees, centers=centers)
+            mappings = list(WorkforceCenterMapping.objects.filter(is_active=True).values(
+                'fingerprint', 'health_center_id', 'health_center__name',
+                'health_center__name_ar', 'approval_reference', 'is_active'
+            ))
+            result = safe_preview(upload, existing_employees=employees,
+                                  centers=centers, mappings=mappings)
         except ValueError as exc:
             return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         AuditLog.objects.create(
@@ -248,3 +280,76 @@ class WorkforceRosterPreviewView(APIView):
             model_name='WorkforceRoster', record_id=result['sha256_prefix']
         )
         return Response(result)
+
+
+class WorkforceCenterMappingView(APIView):
+    """Administrative approval of an exact, verified organizational mapping."""
+    permission_classes = [permissions.IsAdminUser]
+
+    def get(self, request):
+        centers = list(HealthCenter.objects.filter(is_active=True)
+                       .values('id', 'name', 'name_ar', 'name_en', 'manager_name')
+                       .order_by('name'))
+        return Response({'centers': centers})
+
+    def post(self, request):
+        organization = clean(request.data.get('organization'))
+        organization_type = clean(request.data.get('organization_type'))
+        submitted_key = clean(request.data.get('fingerprint'))
+        reference = clean(request.data.get('approval_reference'))
+        if not organization or not organization_type or len(organization) > 1200:
+            return Response({'detail': 'An exact organization name and type are required.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if len(organization_type) > 100:
+            return Response({'detail': 'Organization type is too long.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if not reference or len(reference) < 3 or len(reference) > 255:
+            return Response({'detail': 'An official approval reference is required (3–255 characters).'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        fingerprint = group_fingerprint(organization, organization_type)
+        if fingerprint != submitted_key:
+            return Response({'detail': 'Organization fingerprint does not match the review source.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        try:
+            center_id = int(request.data.get('center_id'))
+        except (TypeError, ValueError):
+            return Response({'detail': 'Select a valid center.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        center = HealthCenter.objects.filter(pk=center_id, is_active=True).first()
+        if not center:
+            return Response({'detail': 'Center is unavailable or inactive.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        with transaction.atomic():
+            mapping = (WorkforceCenterMapping.objects
+                       .select_for_update().filter(fingerprint=fingerprint).first())
+            if mapping is None:
+                mapping = WorkforceCenterMapping(
+                    fingerprint=fingerprint, organization=organization,
+                    organization_type=organization_type,
+                )
+                previous_center = None
+            else:
+                previous_center = mapping.health_center
+                if mapping.health_center_id == center.id and mapping.is_active:
+                    return Response({'detail': 'This group already has an approved mapping.'},
+                                    status=status.HTTP_400_BAD_REQUEST)
+            mapping.health_center = center
+            mapping.organization = organization
+            mapping.organization_type = organization_type
+            mapping.approval_reference = reference
+            mapping.approved_by = request.user
+            mapping.is_active = True
+            mapping.save()
+            WorkforceCenterMappingRevision.objects.create(
+                mapping=mapping, previous_center=previous_center,
+                new_center=center, approval_reference=reference, approved_by=request.user
+            )
+            AuditLog.objects.create(
+                user=str(request.user), action='approve_workforce_center_mapping',
+                model_name='WorkforceCenterMapping', record_id=str(mapping.pk)
+            )
+        return Response({
+            'fingerprint': fingerprint, 'approved_center_id': center.pk,
+            'approved_center_name': center.name_ar or center.name,
+            'approval_reference': reference, 'approved': True,
+        })
