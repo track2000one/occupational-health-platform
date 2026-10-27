@@ -51,14 +51,18 @@ class EmployeeEmploymentWorkflowTests(TestCase):
 
     def test_transfer_saves_old_center_in_history(self):
         self.client.force_authenticate(self.user)
-        response = self.client.post(self.endpoint, {
-            'status': 'transferred',
-            'effective_date': date.today().isoformat(),
-            'evidence_reference': 'Transfer order 123',
-            'new_health_center_id': self.next_center.pk,
-        }, format='json')
+        response = self.client.post(
+            f'/api/employees/{self.employee.pk}/transfer-center/',
+            {
+                'effective_date': date.today().isoformat(),
+                'evidence_reference': 'Transfer order 123',
+                'new_health_center_id': self.next_center.pk,
+            },
+            format='json',
+        )
         self.assertEqual(response.status_code, 200)
         self.employee.refresh_from_db()
+        self.assertEqual(self.employee.employment_status, 'active')
         self.assertEqual(self.employee.health_center_id, self.next_center.pk)
         record = EmployeeEmploymentChange.objects.get()
         self.assertEqual(record.previous_health_center_id, self.center.pk)
