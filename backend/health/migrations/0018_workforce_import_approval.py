@@ -16,6 +16,24 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='employee', name='roster_hijri_appointment_date',
             field=models.CharField(blank=True, max_length=30)),
+        migrations.AlterField(
+            model_name='employee', name='periodic_exam_status',
+            field=models.CharField(
+                choices=[('completed', 'Completed'), ('incomplete', 'Incomplete'),
+                         ('overdue', 'Overdue'), ('unknown', 'Not assessed')],
+                default='incomplete', max_length=20)),
+        migrations.AlterField(
+            model_name='employee', name='vaccination_status',
+            field=models.CharField(
+                choices=[('completed', 'Completed'), ('due', 'Due'),
+                         ('refused', 'Refused'), ('unknown', 'Not assessed')],
+                default='due', max_length=20)),
+        migrations.AlterField(
+            model_name='employee', name='risk_level',
+            field=models.CharField(
+                choices=[('low', 'Low'), ('medium', 'Medium'),
+                         ('high', 'High'), ('unknown', 'Not assessed')],
+                default='low', max_length=20)),
         migrations.CreateModel(
             name='WorkforceImportPlan',
             fields=[
