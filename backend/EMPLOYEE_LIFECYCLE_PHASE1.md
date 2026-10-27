@@ -47,3 +47,33 @@ then implement and test a separate explicit commit path.
 
 The public GitHub repository must never receive employee identities, medical records,
 or the source/import-review spreadsheets.
+
+
+## Phase 3 — Two-person employee import preparation (not deployed)
+
+- New `/admin/workforce-import-plans` administrative UI creates metadata-only
+  import plans using the original roster XLSX. An independent administrator
+  can approve a **ready** plan with an explicit authorization reference,
+  encrypted backup reference, and evidence of a restore drill. No workbook is
+  persisted by the plan endpoint, and previews contain aggregate counts only.
+- Validation uses column H (employee national ID), column G (job number),
+  column I (employee name), column M (employee mobile), column N (employee email),
+  and the approved organization-to-health-center mapping. Manager identity
+  in column D and manager contact fields are deliberately excluded.
+- Existing employees are *not overwritten*, relocated or reclassified by the
+  importer. Unmatched legacy identities are untouched. Changes to file hash,
+  approved mapping snapshot or candidate totals invalidate the plan.
+- If, in a future separately authorized release, the commit endpoint is enabled,
+  it is superuser-only, requires the approved second administrator and the
+  original identical file, and runs in one database transaction.
+- New roster-only employees receive an **unknown/unassessed** status for
+  vaccination, periodic examinations, and clinical risk (rather than fabricated
+  due/low-risk assessments). Their source employment condition and raw source
+  appointment-date text are recorded without interpreting them as retirement.
+- The production execution gate is environment variable
+  `WORKFORCE_IMPORT_ENABLED`, which defaults to **false**. The administration
+  UI intentionally offers **no execute button** at this stage.
+- A backup reference is a person's attestation, **not proof that backups actually
+  exist or can be restored**. Independent backup restoration in a separate,
+  secure environment is mandatory before explicitly authorizing any live import.
+- All changes are maintained in draft PR #13, not merged, deployed or imported.
