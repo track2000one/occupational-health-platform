@@ -531,7 +531,10 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             return Response({'evidence_reference': 'A formal decision or document reference is required.'},
                             status=status.HTTP_400_BAD_REQUEST)
         raw_date = str(request.data.get('effective_date') or '')
-        effective_date = parse_date(raw_date)
+        try:
+            effective_date = parse_date(raw_date)
+        except ValueError:
+            effective_date = None
         if not effective_date or effective_date > date.today():
             return Response({'effective_date': 'Provide an effective date on or before today (YYYY-MM-DD).'},
                             status=status.HTTP_400_BAD_REQUEST)
@@ -539,8 +542,13 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         requested_center_id = request.data.get('new_health_center_id')
         requested_center = None
         if requested_center_id:
+            try:
+                center_pk = int(requested_center_id)
+            except (TypeError, ValueError):
+                return Response({'new_health_center_id': 'Select an existing active center.'},
+                                status=status.HTTP_400_BAD_REQUEST)
             requested_center = HealthCenter.objects.filter(
-                pk=requested_center_id, is_active=True
+                pk=center_pk, is_active=True
             ).first()
             if not requested_center:
                 return Response({'new_health_center_id': 'Select an existing active center.'},
