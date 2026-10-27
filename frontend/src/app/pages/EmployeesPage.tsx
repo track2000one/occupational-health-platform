@@ -439,6 +439,11 @@ export function EmployeesPage() {
             </Button>
           )}
           {can(PERMISSIONS.MANAGE_USERS) && (
+            <Button variant="outlined" startIcon={<UploadFileIcon />} onClick={() => navigate('/admin/workforce-roster-preview')}>
+              {isRtl ? 'فحص الملف الجديد' : 'Preview Current Roster'}
+            </Button>
+          )}
+          {can(PERMISSIONS.MANAGE_USERS) && (
             <Button variant="outlined" startIcon={<UploadFileIcon />} onClick={() => navigate('/employees/import')}>
               {isRtl ? 'استيراد Excel' : 'Import Excel'}
             </Button>
