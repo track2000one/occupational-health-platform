@@ -92,6 +92,8 @@ class UserProfile(models.Model):
     phone = models.CharField(max_length=30, blank=True)
     department = models.CharField(max_length=120, blank=True)
     job_title = models.CharField(max_length=150, blank=True)
+    roster_source_status = models.CharField(max_length=120, blank=True)
+    roster_hijri_appointment_date = models.CharField(max_length=30, blank=True)
     specialty = models.CharField(max_length=150, blank=True)
     license_number = models.CharField(max_length=80, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -142,6 +144,50 @@ class WorkforceCenterMappingRevision(models.Model):
 
     class Meta:
         ordering = ['-created_at', '-id']
+
+
+
+class WorkforceImportPlan(models.Model):
+    """Metadata-only two-person import approval; the workbook is never persisted."""
+    class State(models.TextChoices):
+        DRAFT = 'draft', 'Draft'
+        APPROVED = 'approved', 'Approved'
+        COMMITTED = 'committed', 'Committed'
+
+    state = models.CharField(max_length=12, choices=State.choices, default=State.DRAFT)
+    file_sha256 = models.CharField(max_length=64)
+    mapping_sha256 = models.CharField(max_length=64)
+    summary = models.JSONField(default=dict)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='workforce_import_plans'
+    )
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT,
+        related_name='approved_workforce_import_plans'
+    )
+    approval_reference = models.CharField(max_length=255, blank=True)
+    backup_reference = models.CharField(max_length=255, blank=True)
+    restore_verification_reference = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    approved_at = models.DateTimeField(null=True, blank=True)
+    committed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+
+class WorkforceImportCreatedEmployee(models.Model):
+    """Immutable per-row provenance for imported employee records."""
+    plan = models.ForeignKey(
+        WorkforceImportPlan, on_delete=models.PROTECT, related_name='created_employees'
+    )
+    employee = models.OneToOneField(
+        'Employee', on_delete=models.PROTECT, related_name='workforce_import_provenance'
+    )
+    source_row = models.PositiveIntegerField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
 
 
 class Employee(models.Model):
