@@ -30,7 +30,7 @@ jobs:
       - run: python -m pip install -r requirements.txt
       - run: python manage.py check
       - run: python manage.py makemigrations --check --dry-run
-      - run: python manage.py test health.test_employment_lifecycle health.test_workforce_preview --verbosity 2
+      - run: python manage.py test health.test_employment_lifecycle health.test_workforce_preview health.test_workforce_import --verbosity 2
 
   frontend:
     runs-on: ubuntu-latest
