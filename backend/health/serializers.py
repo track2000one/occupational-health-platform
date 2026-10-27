@@ -299,6 +299,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
     class Meta:
         model = Employee
         fields = '__all__'
+        read_only_fields = ('employment_status',)
         extra_kwargs = {
             'name': {'required': True, 'allow_blank': False},
             'email': {'required': True, 'allow_blank': False},
