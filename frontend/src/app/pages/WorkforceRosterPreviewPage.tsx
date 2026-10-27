@@ -135,6 +135,40 @@ export function WorkforceRosterPreviewPage() {
     }
   };
 
+
+  const approveMapping = async () => {
+    if (!selectedGroup || !approvalCenter || approvalReference.trim().length < 3 || approving) {
+      toast.error('اختر المركز الصحي وأدخل مرجع قرار الاعتماد');
+      return;
+    }
+    if (!window.confirm('هل تؤكد اعتماد ربط الجهة بالمركز المختار؟')) return;
+    setApproving(true);
+    try {
+      const response = await authFetch(API_BASE + '/workforce-roster/mapping/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fingerprint: selectedGroup.fingerprint,
+          organization: selectedGroup.organization,
+          organization_type: selectedGroup.organization_type,
+          center_id: Number(approvalCenter),
+          approval_reference: approvalReference.trim(),
+        }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(String(body.detail || 'تعذر اعتماد المركز'));
+      toast.success('تم اعتماد المركز مع حفظ سجل الموافقة');
+      setSelectedGroup(null);
+      setApprovalCenter('');
+      setApprovalReference('');
+      await preview();
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : 'تعذر اعتماد الربط');
+    } finally {
+      setApproving(false);
+    }
+  };
+
   return <Box dir="rtl" sx={{ pb: 4 }}>
     <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" gap={2} sx={{ mb: 3 }}>
       <Box>
@@ -264,5 +298,35 @@ export function WorkforceRosterPreviewPage() {
         ولا توجد في هذه المرحلة وظيفة لاعتماد الإدخال أو تعديل أسماء المراكز آليًا.
       </Alert>
     </>}
+
+      <Dialog open={Boolean(selectedGroup)} maxWidth="sm" fullWidth
+        onClose={() => { if (!approving) setSelectedGroup(null); }}>
+        <DialogTitle>اعتماد ربط جهة إدارية بمركز صحي</DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={2} sx={{ pt: 1 }}>
+            <Typography fontWeight={750}>{selectedGroup?.organization}</Typography>
+            <Alert severity="warning">
+              هذا اعتماد إداري للربط فقط؛ لا ينقل الموظفين ولا ينشئ بطاقات صحية.
+              يرجى التأكد من الجهة والمركز قبل الاعتماد.
+            </Alert>
+            <TextField label="المركز الصحي المعتمد" select fullWidth required
+              value={approvalCenter} onChange={e => setApprovalCenter(e.target.value)}>
+              {centerOptions.map(center => <MenuItem key={center.id} value={String(center.id)}>
+                {center.name_ar || center.name}
+              </MenuItem>)}
+            </TextField>
+            <TextField label="رقم الخطاب أو مرجع اعتماد الربط" fullWidth required
+              value={approvalReference} onChange={e => setApprovalReference(e.target.value)}
+              inputProps={{ maxLength: 255 }} />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button disabled={approving} onClick={() => setSelectedGroup(null)}>إلغاء</Button>
+          <Button variant="contained" disabled={approving || !approvalCenter || approvalReference.trim().length < 3}
+            onClick={() => void approveMapping()}>
+            {approving ? 'جارٍ الاعتماد...' : 'اعتماد الربط وتسجيله'}
+          </Button>
+        </DialogActions>
+      </Dialog>
   </Box>;
 }
