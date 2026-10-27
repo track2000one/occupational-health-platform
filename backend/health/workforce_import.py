@@ -233,6 +233,20 @@ class WorkforceImportPlanView(APIView):
     permission_classes = [permissions.IsAdminUser]
     parser_classes = [FormParser, MultiPartParser]
 
+    def get(self, request):
+        recent = WorkforceImportPlan.objects.select_related(
+            'created_by', 'approved_by').order_by('-created_at')[:30]
+        return Response({'plans': [{
+            'id': item.pk, 'state': item.state,
+            'summary': item.summary,
+            'file_sha256_prefix': item.file_sha256[:12],
+            'created_by': item.created_by.username,
+            'approved_by': item.approved_by.username if item.approved_by else None,
+            'created_at': item.created_at.isoformat(),
+            'expires_at': (item.created_at + PLAN_LIFETIME).isoformat(),
+            'expired': plan_expired(item),
+        } for item in recent]})
+
     def post(self, request):
         try:
             scan = evaluate_import(request.FILES.get('file'))
