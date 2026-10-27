@@ -27,7 +27,7 @@ import {
 import { Grid } from '@mui/material';
 import {
   Add as AddIcon,
-  Delete as DeleteIcon,
+  WorkHistoryOutlined as WorkHistoryIcon,
   Edit as EditIcon,
   People as PeopleIcon,
   Refresh as RefreshIcon,
@@ -91,6 +91,7 @@ type ApiEmployee = {
   periodic_exam_status?: ExamStatus;
   vaccination_status?: VaccineStatus;
   risk_level?: RiskLevel;
+  employment_status?: 'active' | 'transferred' | 'retired' | 'separated' | 'under_review';
   created_at?: string;
   updated_at?: string;
 };
@@ -411,22 +412,6 @@ export function EmployeesPage() {
     }
   }
 
-  async function handleDelete(employee: ApiEmployee) {
-    const confirmed = window.confirm(isRtl
-      ? `هل تريد حذف سجل الموظف: ${employee.name}؟`
-      : `Delete employee record: ${employee.name}?`);
-    if (!confirmed) return;
-
-    try {
-      await apiRequest(`/employees/${employee.id}/`, { method: 'DELETE' });
-      setEmployees(prev => prev.filter(emp => String(emp.id) !== String(employee.id)));
-      toast.success(isRtl ? 'تم حذف الموظف من Django/PostgreSQL' : 'Employee deleted from Django/PostgreSQL');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Delete failed';
-      toast.error(message);
-    }
-  }
-
   const completedExams = employees.filter(emp => emp.periodic_exam_status === 'completed').length;
   const highRisk = employees.filter(emp => emp.risk_level === 'high').length;
   const dueVaccines = employees.filter(emp => emp.vaccination_status === 'due').length;
@@ -448,6 +433,11 @@ export function EmployeesPage() {
           <Button variant="outlined" startIcon={<RefreshIcon />} onClick={() => void loadData()} disabled={loading}>
             {isRtl ? 'تحديث' : 'Refresh'}
           </Button>
+          {can(PERMISSIONS.MANAGE_USERS) && (
+            <Button variant="outlined" startIcon={<WorkHistoryIcon />} onClick={() => navigate('/admin/employee-lifecycle')}>
+              {isRtl ? 'الحالات الوظيفية والمتقاعدون' : 'Employment Lifecycle'}
+            </Button>
+          )}
           {can(PERMISSIONS.MANAGE_USERS) && (
             <Button variant="outlined" startIcon={<UploadFileIcon />} onClick={() => navigate('/employees/import')}>
               {isRtl ? 'استيراد Excel' : 'Import Excel'}
@@ -517,6 +507,7 @@ export function EmployeesPage() {
                 <TableCell>{isRtl ? 'الهوية الوطنية' : 'National ID'}</TableCell>
                 <TableCell>{isRtl ? 'البريد الإلكتروني' : 'Email'}</TableCell>
                 <TableCell>{isRtl ? 'المركز / المسمى' : 'Center / Job'}</TableCell>
+                <TableCell>{isRtl ? 'الحالة الوظيفية' : 'Employment Status'}</TableCell>
                 <TableCell>{isRtl ? 'العمر / الخبرة' : 'Age / Experience'}</TableCell>
                 <TableCell>{isRtl ? 'الجوال' : 'Mobile'}</TableCell>
                 <TableCell align="center">{isRtl ? 'الإجراءات' : 'Actions'}</TableCell>
@@ -532,6 +523,18 @@ export function EmployeesPage() {
                   <TableCell>
                     <Typography variant="body2" fontWeight="bold">{getHealthCenterName(employee)}</Typography>
                     <Typography variant="caption" color="text.secondary">{employee.job_title || '-'}</Typography>
+                  </TableCell>
+                  <TableCell>
+                    <Chip size="small"
+                      color={employee.employment_status === 'under_review' ? 'warning' : employee.employment_status === 'active' || !employee.employment_status ? 'success' : 'default'}
+                      label={({
+                        active: isRtl ? 'على رأس العمل' : 'Active',
+                        retired: isRtl ? 'متقاعد' : 'Retired',
+                        separated: isRtl ? 'منتهية خدمته' : 'Separated',
+                        transferred: isRtl ? 'منقول خارج الجهة' : 'Transferred Out',
+                        under_review: isRtl ? 'تحتاج تحقق' : 'Under Review',
+                      } as Record<string, string>)[employee.employment_status || 'active']}
+                    />
                   </TableCell>
                   <TableCell>
                     <Typography variant="body2">{isRtl ? 'العمر: ' : 'Age: '}{employee.age ?? '-'}</Typography>
@@ -552,9 +555,10 @@ export function EmployeesPage() {
                         {isRtl ? 'تعديل' : 'Edit'}
                       </Button>
                     )}
-                    {can(PERMISSIONS.DELETE_EMPLOYEE) && (
-                      <Button size="small" variant="outlined" color="error" startIcon={<DeleteIcon />} onClick={() => void handleDelete(employee)}>
-                        {isRtl ? 'حذف' : 'Delete'}
+                    {can(PERMISSIONS.MANAGE_USERS) && (
+                      <Button size="small" variant="outlined" startIcon={<WorkHistoryIcon />}
+                        onClick={() => navigate('/admin/employee-lifecycle')}>
+                        {isRtl ? 'السجل الوظيفي' : 'Employment History'}
                       </Button>
                     )}
                   </TableCell>
@@ -629,9 +633,16 @@ export function EmployeesPage() {
                 label={isRtl ? 'المركز الصحي' : 'Health Center'}
                 placeholder={isRtl ? 'اختر أو ابحث باسم المركز' : 'Select or search by center name'}
                 required
-                disabled={isReadOnly}
+                disabled={isReadOnly || dialogMode === 'edit'}
               />
             </Grid>
+            {dialogMode === 'edit' && (
+              <Grid size={{ xs: 12 }}>
+                <Alert severity="info">
+                  {isRtl ? 'تغيير المركز الصحي يتم من شاشة «الحالات الوظيفية والمتقاعدون» بإجراء نقل داخلي موثق.' : 'Change health center using the audited employment lifecycle transfer workflow.'}
+                </Alert>
+              </Grid>
+            )}
             <Grid size={{ xs: 12, md: 6 }}>
               <TextField fullWidth required label={isRtl ? 'المسمى الوظيفي' : 'Job Title'} value={form.job_title}
                 onChange={event => updateForm('job_title', event.target.value)} disabled={isReadOnly} />
