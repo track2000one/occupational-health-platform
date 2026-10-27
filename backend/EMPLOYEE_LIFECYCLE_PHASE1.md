@@ -4,9 +4,9 @@ This change is a **non-destructive administrative workflow** for employee status
 
 - Default status for existing employees is `active`. No imported / unmatched row can trigger automatic retirement.
 - A staff administrator must submit a formal evidence reference and effective date to change status.
-- `POST /api/employees/{id}/employment-status/` accepts `status` (`active`, `transferred`, `retired`, `separated`, `under_review`), `effective_date` (`YYYY-MM-DD`), `evidence_reference`, optional `notes`, and `new_health_center_id` when transferring.
+- `POST /api/employees/{id}/employment-status/` accepts `status` (`active`, `transferred`, `retired`, `separated`, `under_review`), `effective_date` (`YYYY-MM-DD`), `evidence_reference`, optional `notes`; for an internal transfer, use the dedicated `transfer-center` endpoint.
 - `GET /api/employees/{id}/employment-status/` returns the auditable status history to staff.
-- A transfer changes the current center only with an explicit active destination center; the previous center remains in history.
+- Internal center transfers use `POST /api/employees/{id}/transfer-center/` with an active destination, date and document reference. The employee remains `active`, while the previous center is retained in history. The `transferred` employment status denotes transfer out of the network.
 - Retirement **retains** the last center, employee identity, health card, examinations and clinical history. The employee is not deleted.
 - Direct employee serializer writes cannot alter `employment_status`; use the audited endpoint.
 - The endpoint is currently staff-admin only. Before public launch, integrate with the application's intended HR approval workflow and uploadable supporting documents.
