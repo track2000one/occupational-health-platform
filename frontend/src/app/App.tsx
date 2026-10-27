@@ -57,6 +57,7 @@ import { PeriodicStatisticsPage } from './pages/PeriodicStatisticsPage';
 import { HealthCentersPage } from './pages/HealthCentersPage';
 import { EmployeeLifecyclePage } from './pages/EmployeeLifecyclePage';
 import { WorkforceRosterPreviewPage } from './pages/WorkforceRosterPreviewPage';
+import { WorkforceImportPlansPage } from './pages/WorkforceImportPlansPage';
 import { HealthCardVerificationPage } from './pages/HealthCardVerificationPage';
 import { Toaster } from 'sonner';
 
@@ -138,6 +139,11 @@ function AppRoutes() {
         <Route path="admin/users" element={
           <PermissionRoute permission="manage:users">
             <AdminUsersPage />
+          </PermissionRoute>
+        } />
+        <Route path="admin/workforce-import-plans" element={
+          <PermissionRoute permission="manage:users">
+            <WorkforceImportPlansPage />
           </PermissionRoute>
         } />
         <Route path="admin/workforce-roster-preview" element={
