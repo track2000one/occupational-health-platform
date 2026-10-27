@@ -96,6 +96,7 @@ export function DashboardLayout() {
     { key: 'notifications',      label: isRtl ? 'الإشعارات' : 'Notifications',                 icon: <NotificationsIcon />, path: '/notifications', group: 'followup', permission: PERMISSIONS.VIEW_DASHBOARD },
     { key: 'admin',              label: isRtl ? 'لوحة المسؤول' : 'Admin Console',              icon: <AdminPanelSettingsIcon />, path: '/admin',  group: 'admin', permission: PERMISSIONS.MANAGE_USERS },
     { key: 'adminUsers',         label: isRtl ? 'إدارة المستخدمين' : 'Users Management',       icon: <PeopleIcon />,        path: '/admin/users', group: 'admin', permission: PERMISSIONS.MANAGE_USERS },
+    { key: 'workforceImportPlans', label: isRtl ? 'خطط استيراد الموظفين' : 'Workforce Import Plans', icon: <CloudUploadIcon />, path: '/admin/workforce-import-plans', group: 'admin', permission: PERMISSIONS.MANAGE_USERS },
     { key: 'workforceRosterPreview', label: isRtl ? 'معاينة استيراد الموظفين' : 'Workforce Roster Preview', icon: <CloudUploadIcon />, path: '/admin/workforce-roster-preview', group: 'admin', permission: PERMISSIONS.MANAGE_USERS },
     { key: 'employeeLifecycle', label: isRtl ? 'الحالات الوظيفية والمتقاعدون' : 'Employment Status & Retirees', icon: <WorkHistoryIcon />, path: '/admin/employee-lifecycle', group: 'admin', permission: PERMISSIONS.MANAGE_USERS },
     { key: 'healthCenters',      label: isRtl ? 'إدارة المراكز الصحية' : 'Health Centers',      icon: <BusinessIcon />,      path: '/admin/health-centers', group: 'admin', permission: PERMISSIONS.MANAGE_USERS },
