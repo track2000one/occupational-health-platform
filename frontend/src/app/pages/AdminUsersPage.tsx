@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import './admin-user-form.css';
 import { useTranslation } from 'react-i18next';
 import {
   Alert,
@@ -554,40 +555,40 @@ export function AdminUsersPage() {
 
       {!loading && filteredUsers.length === 0 && <Alert severity="info" sx={{ mt: 2 }}>{isRtl ? 'لا توجد نتائج مطابقة.' : 'No matching users found.'}</Alert>}
 
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="md" fullWidth>
-        <DialogTitle>{selectedUser ? (isRtl ? 'تعديل مستخدم' : 'Edit User') : (isRtl ? 'إضافة مستخدم جديد' : 'Add New User')}</DialogTitle>
+      <Dialog className="admin-user-form" dir={isRtl ? 'rtl' : 'ltr'} open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="md" fullWidth aria-labelledby="user-form-title">
+        <DialogTitle id="user-form-title"><Stack direction="row" gap={1.5} alignItems="center"><Avatar sx={{ bgcolor: '#e5f2ee', color: '#246454' }}><BadgeIcon /></Avatar><Box>{selectedUser ? (isRtl ? 'تعديل مستخدم' : 'Edit User') : (isRtl ? 'إضافة مستخدم جديد' : 'Add New User')}<Typography component="p" variant="body2" color="text.secondary">{isRtl ? 'بيانات منظمة لحساب واضح وصلاحيات مناسبة' : 'Organized account details and appropriate access'}</Typography></Box></Stack></DialogTitle>
         <DialogContent dividers>
           <Stack spacing={3}>
             <Box>
-              <Typography variant="subtitle1" fontWeight={900} sx={{ mb: 1 }}>{isRtl ? 'بيانات الحساب' : 'Account Details'}</Typography>
+              <Typography className="user-section-title" variant="subtitle1" fontWeight={900} sx={{ mb: 1 }}><BadgeIcon />{isRtl ? '١ · بيانات الحساب' : '1 · Account Details'}</Typography>
               <Grid container spacing={2}>
-                <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label={isRtl ? 'البريد / اسم المستخدم' : 'Email / Username'} value={form.email || ''} onChange={e => setForm(prev => ({ ...prev, email: e.target.value }))} /></Grid>
-                <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label={isRtl ? 'الاسم الكامل' : 'Full Name'} value={form.name || ''} onChange={e => setForm(prev => ({ ...prev, name: e.target.value }))} /></Grid>
-                <Grid size={{ xs: 12, md: 4 }}><TextField fullWidth select label={isRtl ? 'نوع المستخدم' : 'User Type'} value={form.personType || 'employee'} onChange={e => setForm(prev => ({ ...prev, personType: e.target.value as PersonType }))}>{personTypes.map(item => <MenuItem key={item.id} value={item.id}>{isRtl ? item.ar : item.en}</MenuItem>)}</TextField></Grid>
-                <Grid size={{ xs: 12, md: 4 }}><TextField fullWidth select label={isRtl ? 'الدور' : 'Role'} value={form.role || 'employee'} onChange={e => setForm(prev => ({ ...prev, role: e.target.value as UserRole }))}>{Object.values(ROLE_DEFINITIONS).map(role => <MenuItem key={role.id} value={role.id}>{isRtl ? role.nameAr : role.nameEn}</MenuItem>)}</TextField></Grid>
-                <Grid size={{ xs: 12, md: 4 }}><TextField fullWidth label={selectedUser ? (isRtl ? 'كلمة مرور جديدة اختيارية' : 'New password optional') : (isRtl ? 'كلمة المرور' : 'Password')} type="password" value={form.password || ''} onChange={e => setForm(prev => ({ ...prev, password: e.target.value }))} /></Grid>
+                <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth InputLabelProps={{ shrink: true }} label={isRtl ? 'البريد / اسم المستخدم' : 'Email / Username'} value={form.email || ''} onChange={e => setForm(prev => ({ ...prev, email: e.target.value }))} /></Grid>
+                <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth InputLabelProps={{ shrink: true }} label={isRtl ? 'الاسم الكامل' : 'Full Name'} value={form.name || ''} onChange={e => setForm(prev => ({ ...prev, name: e.target.value }))} /></Grid>
+                <Grid size={{ xs: 12, md: 4 }}><TextField fullWidth InputLabelProps={{ shrink: true }} select label={isRtl ? 'نوع المستخدم' : 'User Type'} value={form.personType || 'employee'} onChange={e => setForm(prev => ({ ...prev, personType: e.target.value as PersonType }))}>{personTypes.map(item => <MenuItem key={item.id} value={item.id}>{isRtl ? item.ar : item.en}</MenuItem>)}</TextField></Grid>
+                <Grid size={{ xs: 12, md: 4 }}><TextField fullWidth InputLabelProps={{ shrink: true }} select label={isRtl ? 'الدور' : 'Role'} value={form.role || 'employee'} onChange={e => setForm(prev => ({ ...prev, role: e.target.value as UserRole }))}>{Object.values(ROLE_DEFINITIONS).map(role => <MenuItem key={role.id} value={role.id}>{isRtl ? role.nameAr : role.nameEn}</MenuItem>)}</TextField></Grid>
+                <Grid size={{ xs: 12, md: 4 }}><TextField fullWidth InputLabelProps={{ shrink: true }} label={selectedUser ? (isRtl ? 'كلمة مرور جديدة اختيارية' : 'New password optional') : (isRtl ? 'كلمة المرور' : 'Password')} type="password" value={form.password || ''} onChange={e => setForm(prev => ({ ...prev, password: e.target.value }))} /></Grid>
               </Grid>
             </Box>
 
             <Box>
-              <Typography variant="subtitle1" fontWeight={900} sx={{ mb: 1 }}>{isRtl ? 'الهوية ومنع التكرار' : 'Identity & Duplicate Prevention'}</Typography>
+              <Typography className="user-section-title" variant="subtitle1" fontWeight={900} sx={{ mb: 1 }}><FingerprintIcon />{isRtl ? '٢ · بيانات الهوية' : '2 · Identity Details'}</Typography>
               <Alert severity="info" sx={{ mb: 2 }}>{isRtl ? 'هذه الحقول فريدة في قاعدة البيانات: البريد، رقم الهوية/السجل، الرقم الوظيفي، رقم الملف الطبي.' : 'These fields are unique in the database: email, National ID, Employee No., and MRN.'}</Alert>
               <Grid container spacing={2}>
-                <Grid size={{ xs: 12, md: 4 }}><TextField fullWidth label={isRtl ? 'رقم الهوية الوطنية / السجل' : 'National ID / Registry'} value={form.nationalId || ''} onChange={e => setForm(prev => ({ ...prev, nationalId: e.target.value }))} /></Grid>
-                <Grid size={{ xs: 12, md: 4 }}><TextField fullWidth label={isRtl ? 'الرقم الوظيفي' : 'Employee Number'} value={form.employeeNumber || ''} onChange={e => setForm(prev => ({ ...prev, employeeNumber: e.target.value }))} /></Grid>
-                <Grid size={{ xs: 12, md: 4 }}><TextField fullWidth label={isRtl ? 'رقم الملف الطبي MRN' : 'Medical Record Number'} value={form.medicalRecordNumber || ''} onChange={e => setForm(prev => ({ ...prev, medicalRecordNumber: e.target.value }))} /></Grid>
+                <Grid size={{ xs: 12, md: 4 }}><TextField fullWidth InputLabelProps={{ shrink: true }} label={isRtl ? 'رقم الهوية الوطنية / السجل' : 'National ID / Registry'} value={form.nationalId || ''} onChange={e => setForm(prev => ({ ...prev, nationalId: e.target.value }))} /></Grid>
+                <Grid size={{ xs: 12, md: 4 }}><TextField fullWidth InputLabelProps={{ shrink: true }} label={isRtl ? 'الرقم الوظيفي' : 'Employee Number'} value={form.employeeNumber || ''} onChange={e => setForm(prev => ({ ...prev, employeeNumber: e.target.value }))} /></Grid>
+                <Grid size={{ xs: 12, md: 4 }}><TextField fullWidth InputLabelProps={{ shrink: true }} label={isRtl ? 'رقم الملف الطبي MRN' : 'Medical Record Number'} value={form.medicalRecordNumber || ''} onChange={e => setForm(prev => ({ ...prev, medicalRecordNumber: e.target.value }))} /></Grid>
               </Grid>
             </Box>
 
             <Box>
-              <Typography variant="subtitle1" fontWeight={900} sx={{ mb: 1 }}>{isRtl ? 'البيانات المهنية والصحية' : 'Professional / Healthcare Details'}</Typography>
+              <Typography className="user-section-title" variant="subtitle1" fontWeight={900} sx={{ mb: 1 }}><WorkIcon />{isRtl ? '٣ · البيانات المهنية والصحية' : '3 · Professional / Healthcare Details'}</Typography>
               <Grid container spacing={2}>
                 <Grid size={{ xs: 12, md: 4 }}><HealthCenterAutocomplete options={healthCenters} value={form.healthCenterId || ''} onChange={value => setForm(prev => ({ ...prev, healthCenterId: value }))} label={isRtl ? 'المركز الصحي' : 'Health Center'} placeholder={isRtl ? 'اختر أو ابحث باسم المركز' : 'Select or search center'} allowEmpty /></Grid>
-                <Grid size={{ xs: 12, md: 4 }}><TextField fullWidth label={isRtl ? 'القسم' : 'Department'} value={form.department || ''} onChange={e => setForm(prev => ({ ...prev, department: e.target.value }))} /></Grid>
-                <Grid size={{ xs: 12, md: 4 }}><TextField fullWidth label={isRtl ? 'المسمى الوظيفي' : 'Job Title'} value={form.jobTitle || ''} onChange={e => setForm(prev => ({ ...prev, jobTitle: e.target.value }))} /></Grid>
-                <Grid size={{ xs: 12, md: 4 }}><TextField fullWidth label={isRtl ? 'رقم الجوال' : 'Phone'} value={form.phone || ''} onChange={e => setForm(prev => ({ ...prev, phone: e.target.value }))} /></Grid>
-                <Grid size={{ xs: 12, md: 4 }}><TextField fullWidth label={isRtl ? 'التخصص' : 'Specialty'} value={form.specialty || ''} onChange={e => setForm(prev => ({ ...prev, specialty: e.target.value }))} /></Grid>
-                <Grid size={{ xs: 12, md: 4 }}><TextField fullWidth label={isRtl ? 'رقم الترخيص المهني' : 'License Number'} value={form.licenseNumber || ''} onChange={e => setForm(prev => ({ ...prev, licenseNumber: e.target.value }))} /></Grid>
+                <Grid size={{ xs: 12, md: 4 }}><TextField fullWidth InputLabelProps={{ shrink: true }} label={isRtl ? 'القسم' : 'Department'} value={form.department || ''} onChange={e => setForm(prev => ({ ...prev, department: e.target.value }))} /></Grid>
+                <Grid size={{ xs: 12, md: 4 }}><TextField fullWidth InputLabelProps={{ shrink: true }} label={isRtl ? 'المسمى الوظيفي' : 'Job Title'} value={form.jobTitle || ''} onChange={e => setForm(prev => ({ ...prev, jobTitle: e.target.value }))} /></Grid>
+                <Grid size={{ xs: 12, md: 4 }}><TextField fullWidth InputLabelProps={{ shrink: true }} label={isRtl ? 'رقم الجوال' : 'Phone'} value={form.phone || ''} onChange={e => setForm(prev => ({ ...prev, phone: e.target.value }))} /></Grid>
+                <Grid size={{ xs: 12, md: 4 }}><TextField fullWidth InputLabelProps={{ shrink: true }} label={isRtl ? 'التخصص' : 'Specialty'} value={form.specialty || ''} onChange={e => setForm(prev => ({ ...prev, specialty: e.target.value }))} /></Grid>
+                <Grid size={{ xs: 12, md: 4 }}><TextField fullWidth InputLabelProps={{ shrink: true }} label={isRtl ? 'رقم الترخيص المهني' : 'License Number'} value={form.licenseNumber || ''} onChange={e => setForm(prev => ({ ...prev, licenseNumber: e.target.value }))} /></Grid>
               </Grid>
             </Box>
 
@@ -609,8 +610,8 @@ export function AdminUsersPage() {
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDialogOpen(false)}>{isRtl ? 'إلغاء' : 'Cancel'}</Button>
-          <Button variant="contained" onClick={saveUser}>{isRtl ? 'حفظ في قاعدة البيانات' : 'Save to Database'}</Button>
+          <Button variant="outlined" onClick={() => setDialogOpen(false)}>{isRtl ? 'إلغاء' : 'Cancel'}</Button>
+          <Button variant="contained" onClick={saveUser}>{selectedUser ? (isRtl ? 'حفظ التعديلات' : 'Save Changes') : (isRtl ? 'إنشاء المستخدم' : 'Create User')}</Button>
         </DialogActions>
       </Dialog>
 

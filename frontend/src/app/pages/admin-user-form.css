@@ -1,0 +1,63 @@
+.admin-user-form .MuiDialog-paper {
+  width: min(960px, calc(100% - 32px));
+  max-width: 960px;
+  border-radius: 20px;
+}
+.admin-user-form .MuiDialogTitle-root {
+  padding: 20px 24px;
+  color: #243b35;
+  background: linear-gradient(100deg, #fff, #faf8f2);
+}
+.admin-user-form .MuiDialogContent-root { padding: 24px; }
+.admin-user-form .MuiDialogContent-root > .MuiStack-root > .MuiBox-root {
+  padding: 22px;
+  border: 1px solid #d6e6df;
+  border-inline-start: 4px solid #37816b;
+  border-radius: 14px;
+  background: #f4faf7;
+}
+.admin-user-form .MuiDialogContent-root > .MuiStack-root > .MuiBox-root:nth-child(2) {
+  background: #faf7ef;
+  border-color: #e8dcc2;
+  border-inline-start-color: #9a7535;
+}
+.admin-user-form .MuiDialogContent-root > .MuiStack-root > .MuiBox-root:nth-child(3) {
+  background: #f6f4fa;
+  border-color: #e1daed;
+  border-inline-start-color: #786099;
+}
+.admin-user-form .user-section-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 22px;
+  color: #253b35;
+}
+.admin-user-form .MuiGrid-container {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px 20px;
+}
+.admin-user-form .MuiGrid-container > .MuiGrid-root { width: auto; min-width: 0; }
+.admin-user-form .MuiInputBase-root {
+  min-height: 54px;
+  background: #fff !important;
+  box-shadow: none !important;
+  border-radius: 10px;
+}
+.admin-user-form .MuiInputLabel-root { color: #44554f; }
+.admin-user-form .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline { border-color: #37816b; }
+.admin-user-form .MuiDialogActions-root {
+  padding: 16px 24px;
+  gap: 12px;
+  border-top: 1px solid #e4dfd3;
+  background: #faf8f2;
+}
+.admin-user-form .MuiDialogActions-root .MuiButton-root { min-height: 46px; min-width: 120px; margin: 0; }
+@media (max-width: 600px) {
+  .admin-user-form .MuiDialogContent-root { padding: 12px; }
+  .admin-user-form .MuiDialogContent-root > .MuiStack-root > .MuiBox-root { padding: 16px; }
+  .admin-user-form .MuiGrid-container { grid-template-columns: minmax(0, 1fr); }
+  .admin-user-form .MuiDialogActions-root { padding: 12px; }
+  .admin-user-form .MuiDialogActions-root .MuiButton-root { flex: 1; min-width: 0; }
+}
