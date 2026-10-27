@@ -20,3 +20,30 @@ The provided files also contain clinical information, so **never commit source s
 The next phase should provide: (1) an encrypted/private source-upload preview, (2) a source-to-center mapping approval screen, (3) explicit HR verification of unmatched people, and (4) a restricted staff-facing approval UI.
 
 No production migration or database import is performed by this PR itself.
+
+
+## Phase 2 — Workforce roster preview and center approval (October 2026)
+
+A new protected admin screen at `/admin/workforce-roster-preview` accepts **only the original
+19-column current roster** and previews it without writing Employee or clinical records.
+It uses column H for employee identity; column D contains manager identity.
+The dashboard reports existing-DB matches, internal duplicates, source leave/assignment
+statuses and the 131 organizational groups for center mapping. Actual employee counts
+vary with the platform's existing database, and **must not** be confused with the
+two-source Excel-to-Excel reconciliation counts.
+
+Each organizational path and type has a stable fingerprint. An authorized staff admin
+can approve an existing active HealthCenter with an official reference. Every approval
+or reassignment creates a `WorkforceCenterMappingRevision` and `AuditLog`.
+Preview statistics distinguish approved and unapproved center coverage. No mapping
+is inferred as approved from string matching.
+
+**Not implemented or authorized**: mass employee creation, medical merges, automatic
+retirement, approval of historic employee statuses, or database import to production.
+The source file is parsed in memory and not kept by the preview endpoint.
+The next release gate is: complete center mapping approvals, run migrations and automated
+tests, verify an encrypted DB backup and restore drill in the target environment,
+then implement and test a separate explicit commit path.
+
+The public GitHub repository must never receive employee identities, medical records,
+or the source/import-review spreadsheets.
