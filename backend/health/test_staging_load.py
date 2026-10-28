@@ -3,6 +3,8 @@ from unittest.mock import patch
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.test import TestCase
+from django.contrib.auth import get_user_model
+from rest_framework.test import APIClient
 
 from health.models import Employee, HealthCenter, WorkforceCenterMapping
 from health.management.commands.seed_staging_load import (
@@ -72,3 +74,32 @@ class StagingFullLoadTests(TestCase):
             call_command('seed_staging_load')
         self.assertEqual(Employee.objects.count(), 1)
         self.assertEqual(HealthCenter.objects.filter(code__startswith='QA-C').count(), 0)
+
+    @patch.dict('os.environ', STAGING_ENV)
+    def test_employee_api_paginates_full_staging_dataset(self):
+        call_command('seed_staging_synthetic')
+        call_command('seed_staging_load')
+        client = APIClient()
+        user = get_user_model().objects.create_user(
+            'qa_list_reader', password='not-for-use', is_staff=True)
+        client.force_authenticate(user)
+
+        first = client.get('/api/employees/?page=1')
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(first.data['count'], 1429)
+        self.assertEqual(len(first.data['results']), 25)
+        last = client.get('/api/employees/?page=58')
+        self.assertEqual(last.status_code, 200)
+        self.assertEqual(len(last.data['results']), 4)
+
+        query = client.get('/api/employees/?search=OHP-LOAD-1423')
+        self.assertEqual(query.status_code, 200)
+        self.assertEqual(query.data['count'], 1)
+        self.assertEqual(query.data['results'][0]['employee_number'], 'OHP-LOAD-1423')
+
+        synthetic_center = HealthCenter.objects.get(code='QA-C01')
+        filtered = client.get('/api/employees/?health_center_id=' + str(synthetic_center.id))
+        self.assertEqual(filtered.status_code, 200)
+        self.assertGreater(filtered.data['count'], 0)
+        self.assertTrue(all(item['health_center'] == synthetic_center.id
+                            for item in filtered.data['results']))
