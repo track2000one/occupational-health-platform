@@ -103,3 +103,22 @@ class StagingFullLoadTests(TestCase):
         self.assertGreater(filtered.data['count'], 0)
         self.assertTrue(all(item['health_center'] == synthetic_center.id
                             for item in filtered.data['results']))
+
+        # Search/filter/sort apply to the whole database, never just 25 cards.
+        active_source = client.get('/api/employees/?source_category=active')
+        other_source = client.get('/api/employees/?source_category=other')
+        self.assertEqual(active_source.status_code, 200)
+        self.assertEqual(other_source.status_code, 200)
+        self.assertEqual(active_source.data['count'], 1396)
+        self.assertEqual(other_source.data['count'], 27)
+
+        retired = client.get('/api/employees/?employment_status=retired')
+        self.assertEqual(retired.status_code, 200)
+        self.assertEqual(retired.data['count'], 1)
+        self.assertEqual(retired.data['results'][0]['employee_number'], 'OHP-QA-04')
+
+        # A temporary roster status does not imply retirement.
+        not_retired = client.get('/api/employees/?source_category=other&employment_status=retired')
+        self.assertEqual(not_retired.data['count'], 0)
+        ordered = client.get('/api/employees/?sort=employee_number')
+        self.assertEqual(ordered.data['results'][0]['employee_number'], 'OHP-LOAD-0001')
