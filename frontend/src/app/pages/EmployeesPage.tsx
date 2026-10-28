@@ -456,7 +456,7 @@ export function EmployeesPage() {
           </Box>
         </Box>
         <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" justifyContent="flex-end">
-          <Button variant="outlined" startIcon={<RefreshIcon /> onClick={() => void loadData()} disabled={loading}>
+          <Button variant="outlined" startIcon={<RefreshIcon />} onClick={() => void loadData()} disabled={loading}>
             {isRtl ? 'تحديث' : 'Refresh'}
           </Button>
           {can(PERMISSIONS.MANAGE_USERS) && (
