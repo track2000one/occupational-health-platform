@@ -98,6 +98,7 @@ export function DashboardLayout() {
     { key: 'adminUsers',         label: isRtl ? 'إدارة المستخدمين' : 'Users Management',       icon: <PeopleIcon />,        path: '/admin/users', group: 'admin', permission: PERMISSIONS.MANAGE_USERS },
     { key: 'workforceImportPlans', label: isRtl ? 'خطط استيراد الموظفين' : 'Workforce Import Plans', icon: <CloudUploadIcon />, path: '/admin/workforce-import-plans', group: 'admin', permission: PERMISSIONS.MANAGE_USERS },
     { key: 'workforceRosterPreview', label: isRtl ? 'معاينة استيراد الموظفين' : 'Workforce Roster Preview', icon: <CloudUploadIcon />, path: '/admin/workforce-roster-preview', group: 'admin', permission: PERMISSIONS.MANAGE_USERS },
+    { key: 'workforceTemporary', label: isRtl ? 'بيانات الموظفين الأصلية — مؤقت' : 'Original roster — temporary', icon: <CloudUploadIcon />, path: '/admin/temporary-workforce', group: 'admin', permission: PERMISSIONS.MANAGE_USERS },
     { key: 'employeeLifecycle', label: isRtl ? 'الحالات الوظيفية والمتقاعدون' : 'Employment Status & Retirees', icon: <WorkHistoryIcon />, path: '/admin/employee-lifecycle', group: 'admin', permission: PERMISSIONS.MANAGE_USERS },
     { key: 'healthCenters',      label: isRtl ? 'إدارة المراكز الصحية' : 'Health Centers',      icon: <BusinessIcon />,      path: '/admin/health-centers', group: 'admin', permission: PERMISSIONS.MANAGE_USERS },
     { key: 'auditLog',           label: isRtl ? 'سجل العمليات' : 'Audit Log',                  icon: <SecurityIcon />,      path: '/audit-log',   group: 'admin', permission: PERMISSIONS.VIEW_AUDIT_LOGS },
