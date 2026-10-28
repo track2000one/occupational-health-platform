@@ -5,6 +5,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from openpyxl import Workbook
 from rest_framework.test import APIClient
+from rest_framework_simplejwt.tokens import RefreshToken
 from health.models import Employee, HealthCenter, WorkforceCenterMapping, WorkforceCenterMappingRevision
 from health.workforce_preview import EXPECTED_COLUMNS, group_fingerprint
 
@@ -96,3 +97,34 @@ class PreviewTests(TestCase):
             'approval_reference': 'Authorization test',
         }, format='json')
         self.assertEqual(response.status_code, 403)
+
+class JwtRouteAuthorizationTests(TestCase):
+    """Exercise actual JWT middleware instead of force_authenticate."""
+    def setUp(self):
+        User = get_user_model()
+        self.staff = User.objects.create_user('jwt_staff', password='secret-unit-test', is_staff=True)
+        self.viewer = User.objects.create_user('jwt_viewer', password='secret-unit-test')
+        self.client = APIClient()
+
+    def test_routes_are_private_by_default(self):
+        for path in [
+            '/api/employees/', '/api/health-centers/',
+            '/api/workforce-roster/mapping/',
+            '/api/workforce-roster/import-plan/',
+        ]:
+            response = self.client.get(path)
+            self.assertIn(response.status_code, (401, 403), path)
+
+    def test_authenticated_non_staff_must_not_access_import_metadata(self):
+        self.client.credentials(HTTP_AUTHORIZATION='Bearer ' + str(RefreshToken.for_user(self.viewer).access_token))
+        for path in ['/api/workforce-roster/mapping/', '/api/workforce-roster/import-plan/']:
+            response = self.client.get(path)
+            self.assertEqual(response.status_code, 403, path)
+        response = self.client.post('/api/workforce-roster/import-plan/', {}, format='multipart')
+        self.assertEqual(response.status_code, 403)
+
+    def test_staff_jwt_can_list_blank_staging_import_plans(self):
+        self.client.credentials(HTTP_AUTHORIZATION='Bearer ' + str(RefreshToken.for_user(self.staff).access_token))
+        response = self.client.get('/api/workforce-roster/import-plan/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data.get('plans'), [])
