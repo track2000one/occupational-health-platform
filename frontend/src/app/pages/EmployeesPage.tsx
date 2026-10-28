@@ -594,7 +594,10 @@ export function EmployeesPage() {
             </Grid>
           ) : (
         <TableContainer component={Paper} sx={{ borderRadius: 3, border: '1px solid #D2E0EA' }}>
-          <Table>
+          <Table stickyHeader sx={{
+            '& .MuiTableCell-head': { fontSize: 14, fontWeight: 800, color: '#143452', bgcolor: '#EAF2F9' },
+            '& .MuiTableCell-body': { fontSize: 13.5, color: '#203D56', verticalAlign: 'top' },
+          }}>
             <TableHead>
               <TableRow>
                 <TableCell>{isRtl ? 'الرقم الوظيفي' : 'Employee No.'}</TableCell>
@@ -603,6 +606,7 @@ export function EmployeesPage() {
                 <TableCell>{isRtl ? 'البريد الإلكتروني' : 'Email'}</TableCell>
                 <TableCell>{isRtl ? 'المركز / المسمى' : 'Center / Job'}</TableCell>
                 <TableCell>{isRtl ? 'الحالة الوظيفية' : 'Employment Status'}</TableCell>
+                <TableCell>{isRtl ? 'حالة ملف المصدر' : 'Roster source condition'}</TableCell>
                 <TableCell>{isRtl ? 'العمر / الخبرة' : 'Age / Experience'}</TableCell>
                 <TableCell>{isRtl ? 'الجوال' : 'Mobile'}</TableCell>
                 <TableCell align="center">{isRtl ? 'الإجراءات' : 'Actions'}</TableCell>
@@ -630,6 +634,9 @@ export function EmployeesPage() {
                         under_review: isRtl ? 'تحتاج تحقق' : 'Under Review',
                       } as Record<string, string>)[employee.employment_status || 'active']}
                     />
+                  </TableCell>
+                  <TableCell sx={{ minWidth: 150 }}>
+                    {employee.roster_source_status || (isRtl ? 'غير محددة' : 'Not specified')}
                   </TableCell>
                   <TableCell>
                     <Typography variant="body2">{isRtl ? 'العمر: ' : 'Age: '}{employee.age ?? '-'}</Typography>
