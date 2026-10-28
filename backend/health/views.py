@@ -502,7 +502,8 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         if query:
             queryset = queryset.filter(
                 Q(name__icontains=query) | Q(employee_number__icontains=query) |
-                Q(national_id__icontains=query) | Q(job_title__icontains=query)
+                Q(national_id__icontains=query) | Q(job_title__icontains=query) |
+                Q(email__icontains=query) | Q(mobile__icontains=query)
             )
         return queryset
 
