@@ -16,7 +16,7 @@ import {
   Typography,
 } from '@mui/material';
 import {
-  Email as EmailIcon,
+  PersonOutline as UserIcon,
   Language,
   LocalHospital as LocalHospitalIcon,
   Lock as LockIcon,
@@ -45,7 +45,7 @@ export function LoginPage() {
       await login(email, password);
       navigate('/dashboard');
     } catch {
-      setError(isRtl ? 'تعذر تسجيل الدخول. تأكد من بيانات حساب Django/PostgreSQL.' : 'Login failed. Check your Django/PostgreSQL account credentials.');
+      setError(isRtl ? 'تعذر تسجيل الدخول. تحقق من اسم المستخدم وكلمة المرور، ولا تستخدم البريد الإلكتروني في هذه الخانة.' : 'Login failed. Use your username rather than your email, and check your password.');
     } finally {
       setLoading(false);
     }
@@ -131,12 +131,13 @@ export function LoginPage() {
           <Box component="form" onSubmit={handleSubmit}>
             <TextField
               fullWidth
-              label={isRtl ? 'البريد الإلكتروني أو اسم المستخدم' : 'Email or username'}
+              label={isRtl ? 'اسم المستخدم (وليس البريد الإلكتروني)' : 'Username (not email)'}
+              helperText={isRtl ? 'اكتب اسم المستخدم المخصص لحسابك دون مسافات.' : 'Enter your account username without spaces.'}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               margin="normal"
               required
-              InputProps={{ startAdornment: <InputAdornment position="start"><EmailIcon /></InputAdornment> }}
+              InputProps={{ startAdornment: <InputAdornment position="start"><UserIcon /></InputAdornment> }}
             />
             <TextField
               fullWidth
