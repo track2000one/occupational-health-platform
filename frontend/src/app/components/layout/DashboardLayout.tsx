@@ -536,6 +536,16 @@ export function DashboardLayout() {
         }}
       >
         <Toolbar sx={{ minHeight: { xs: 60, sm: 64, md: 68 } }} />
+        {import.meta.env.VITE_STAGING_MODE === 'true' && (
+          <Box role="status" sx={{
+            m: 1.5, px: 2, py: 1, borderRadius: 2, bgcolor: '#FFF4CE',
+            border: '1px solid #D9A441', color: '#603B00',
+            fontWeight: 800, fontSize: '0.92rem', textAlign: 'center'
+          }}>
+            {isRtl ? 'بيئة اختبار مستقلة — يمنع إدخال بيانات حقيقية أو رفع ملفات طبية' :
+              'ISOLATED STAGING — Synthetic data only. Do not upload employee or medical files.'}
+          </Box>
+        )}
         <Outlet />
       </Box>
       <ThemeSwitcher />
