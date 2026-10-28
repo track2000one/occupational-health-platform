@@ -103,3 +103,48 @@ jobs:
           test "$center_count" = "1"
           echo "Synthetic PostgreSQL backup/restore: PASS (employee, center, assessment unchanged)."
           rm -f /tmp/occupational-ci-only.dump
+
+
+  staging-smoke:
+    runs-on: ubuntu-latest
+    # This job only sends anonymous HTTP GET/OPTIONS to isolated public staging.
+    # Do not send tokens, actual employees, or production data through CI logs.
+    steps:
+      - name: Verify staging routes and unauthenticated access denied
+        run: |
+          set -euo pipefail
+          api="https://occupational-staging-backend-staging.up.railway.app"
+          frontend="https://occupational-staging-frontend-staging.up.railway.app"
+          for attempt in 1 2 3 4; do
+            if curl --silent --show-error --fail --retry 2 --max-time 15 "$api/health/" -o /tmp/staging-health.json && grep -q '"status":"ok"' /tmp/staging-health.json; then
+              break
+            fi
+            if [ "$attempt" = "4" ]; then echo "Staging backend health failed"; exit 1; fi
+            sleep 7
+          done
+          curl --silent --show-error --fail --retry 2 --max-time 20 "$frontend/" -o /tmp/staging-index.html
+          grep -qi 'id="root"' /tmp/staging-index.html
+          for endpoint in /api/employees/ /api/workforce-roster/import-plan/ /api/workforce-roster/mapping/; do
+            code=$(curl --silent --show-error --max-time 15 -o /dev/null -w '%{http_code}' "$api$endpoint")
+            if [ "$code" != 401 ] && [ "$code" != 403 ]; then
+              echo "Private route did not require login: $endpoint ($code)"; exit 1
+            fi
+          done
+          echo "Staging smoke passed: backend health, frontend HTML, and protected endpoints."
+      - name: Verify only staging frontend origin receives CORS authorization
+        run: |
+          set -euo pipefail
+          api="https://occupational-staging-backend-staging.up.railway.app"
+          allowed="https://occupational-staging-frontend-staging.up.railway.app"
+          curl --silent --show-error --max-time 15 --fail -D /tmp/allowed -o /dev/null \
+            -X OPTIONS "$api/api/workforce-roster/import-plan/" \
+            -H "Origin: $allowed" -H "Access-Control-Request-Method: POST"
+          grep -iF "access-control-allow-origin: $allowed" /tmp/allowed >/dev/null
+          curl --silent --show-error --max-time 15 --fail -D /tmp/untrusted -o /dev/null \
+            -X OPTIONS "$api/api/workforce-roster/import-plan/" \
+            -H "Origin: https://unrelated-application.up.railway.app" \
+            -H "Access-Control-Request-Method: POST"
+          if grep -qi '^access-control-allow-origin:' /tmp/untrusted; then
+            echo "Untrusted domain was authorized by CORS"; exit 1
+          fi
+          echo "Staging CORS allowlist: PASS."
