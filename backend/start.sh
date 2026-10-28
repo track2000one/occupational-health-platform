@@ -7,6 +7,20 @@ python manage.py migrate --noinput
 echo "[start] Creating or updating admin user..."
 python manage.py bootstrap_admin
 
+if [ "${STAGING_MODE:-false}" = "true" ]; then
+  python manage.py purge_temporary_workforce
+fi
+
+if [ "${STAGING_MODE:-false}" = "true" ] && [ "${SEED_STAGING_SYNTHETIC:-false}" = "true" ]; then
+  echo "[start] Seeding synthetic-only staging employees..."
+  python manage.py seed_staging_synthetic
+fi
+
+if [ "${STAGING_MODE:-false}" = "true" ] && [ "${SEED_STAGING_LOAD_DATA:-false}" = "true" ]; then
+  echo "[start] Creating isolated, synthetic workforce load-test dataset..."
+  python manage.py seed_staging_load
+fi
+
 WORKERS="${GUNICORN_WORKERS:-2}"
 THREADS="${GUNICORN_THREADS:-4}"
 TIMEOUT="${GUNICORN_TIMEOUT:-45}"

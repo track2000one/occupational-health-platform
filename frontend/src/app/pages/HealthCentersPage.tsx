@@ -16,12 +16,12 @@ const PRODUCTION_API_BASE_URL = 'https://occupational-health-platform-production
 const API_BASE_URL = (import.meta.env.VITE_API_URL || PRODUCTION_API_BASE_URL).replace(/\/$/, '');
 
 type Center = {
-  id: number; name: string; name_ar?: string; name_en?: string; code?: string | null; region: string; city: string; district: string;
+  id: number; name: string; name_ar?: string; name_en?: string; code?: string | null; region: string; city: string; district: string; manager_name?: string;
   building_type: 'unknown' | 'model' | 'rented' | 'owned' | 'other'; building_type_label?: string;
   is_active: boolean; notes?: string; employee_count?: number; user_count?: number;
 };
-type CenterForm = { name_ar: string; name_en: string; code: string; region: string; city: string; district: string; building_type: Center['building_type']; is_active: boolean; notes: string };
-const EMPTY_FORM: CenterForm = { name_ar: '', name_en: '', code: '', region: '', city: '', district: '', building_type: 'unknown', is_active: true, notes: '' };
+type CenterForm = { name_ar: string; name_en: string; code: string; region: string; city: string; district: string; manager_name: string; building_type: Center['building_type']; is_active: boolean; notes: string };
+const EMPTY_FORM: CenterForm = { name_ar: '', name_en: '', code: '', region: '', city: '', district: '', manager_name: '', building_type: 'unknown', is_active: true, notes: '' };
 
 function list<T>(payload: any): T[] { return Array.isArray(payload) ? payload : Array.isArray(payload?.results) ? payload.results : []; }
 async function request<T>(path: string, init: RequestInit = {}) {
@@ -62,7 +62,7 @@ export function HealthCentersPage() {
   const cities = useMemo(() => [...new Set(centers.filter(c => regionFilter === 'all' || c.region === regionFilter).map(c => c.city).filter(Boolean))].sort(), [centers, regionFilter]);
   const filtered = useMemo(() => centers.filter(center => {
     const q = search.trim().toLowerCase();
-    const matchesSearch = !q || [center.name_ar, center.name_en, center.name, center.code, center.region, center.city, center.district].filter(Boolean).join(' ').toLowerCase().includes(q);
+    const matchesSearch = !q || [center.name_ar, center.name_en, center.name, center.code, center.region, center.city, center.district, center.manager_name].filter(Boolean).join(' ').toLowerCase().includes(q);
     const matchesRegion = regionFilter === 'all' || center.region === regionFilter;
     const matchesCity = cityFilter === 'all' || center.city === cityFilter;
     const matchesStatus = statusFilter === 'all' || (statusFilter === 'active' ? center.is_active : !center.is_active);
@@ -73,7 +73,7 @@ export function HealthCentersPage() {
   const displayName = (center: Center) => (isRtl ? center.name_ar : center.name_en) || center.name || center.name_en || center.name_ar || '—';
   const secondaryName = (center: Center) => { const value = isRtl ? center.name_en : center.name_ar; return value && value !== displayName(center) ? value : ''; };
   function openAdd() { setEditing(null); setForm(EMPTY_FORM); setOpen(true); }
-  function openEdit(center: Center) { setEditing(center); setForm({ name_ar: center.name_ar || '', name_en: center.name_en || center.name || '', code: center.code || '', region: center.region || '', city: center.city || '', district: center.district || '', building_type: center.building_type || 'unknown', is_active: center.is_active, notes: center.notes || '' }); setOpen(true); }
+  function openEdit(center: Center) { setEditing(center); setForm({ name_ar: center.name_ar || '', name_en: center.name_en || center.name || '', code: center.code || '', region: center.region || '', city: center.city || '', district: center.district || '', manager_name: center.manager_name || '', building_type: center.building_type || 'unknown', is_active: center.is_active, notes: center.notes || '' }); setOpen(true); }
   function update<K extends keyof CenterForm>(key: K, value: CenterForm[K]) { setForm(current => ({ ...current, [key]: value })); }
 
   async function save() {
@@ -82,7 +82,7 @@ export function HealthCentersPage() {
     if (form.building_type === 'unknown') return toast.error(isRtl ? 'حدد نوع المبنى قبل الحفظ' : 'Select the building type before saving');
     setSaving(true);
     try {
-      const payload = { ...form, name: form.name_en.trim() || form.name_ar.trim(), name_ar: form.name_ar.trim(), name_en: form.name_en.trim(), code: form.code?.trim() || null, region: form.region.trim(), city: form.city.trim(), district: form.district.trim(), notes: form.notes?.trim() || '' };
+      const payload = { ...form, name: form.name_en.trim() || form.name_ar.trim(), name_ar: form.name_ar.trim(), name_en: form.name_en.trim(), code: form.code?.trim() || null, region: form.region.trim(), city: form.city.trim(), district: form.district.trim(), manager_name: form.manager_name.trim(), notes: form.notes?.trim() || '' };
       const saved = editing
         ? await request<Center>(`/health-centers/${editing.id}/`, { method: 'PATCH', body: JSON.stringify(payload) })
         : await request<Center>('/health-centers/', { method: 'POST', body: JSON.stringify(payload) });
@@ -126,10 +126,10 @@ export function HealthCentersPage() {
     </Box></Paper>
 
     {loading ? <Paper sx={{ p: 6, textAlign: 'center' }}><CircularProgress /></Paper> : <TableContainer component={Paper}><Table><TableHead><TableRow>
-      <TableCell>{isRtl ? 'اسم المركز الصحي' : 'Health Center'}</TableCell><TableCell>{isRtl ? 'الكود' : 'Code'}</TableCell><TableCell>{isRtl ? 'المنطقة' : 'Region'}</TableCell><TableCell>{isRtl ? 'المدينة' : 'City'}</TableCell><TableCell>{isRtl ? 'الحي' : 'District'}</TableCell><TableCell>{isRtl ? 'نوع المبنى' : 'Building'}</TableCell><TableCell>{isRtl ? 'الحالة' : 'Status'}</TableCell><TableCell align="center">{isRtl ? 'الإجراءات' : 'Actions'}</TableCell>
+      <TableCell>{isRtl ? 'اسم المركز الصحي' : 'Health Center'}</TableCell><TableCell>{isRtl ? 'المدير المعتمد' : 'Center Manager'}</TableCell><TableCell>{isRtl ? 'الكود' : 'Code'}</TableCell><TableCell>{isRtl ? 'المنطقة' : 'Region'}</TableCell><TableCell>{isRtl ? 'المدينة' : 'City'}</TableCell><TableCell>{isRtl ? 'الحي' : 'District'}</TableCell><TableCell>{isRtl ? 'نوع المبنى' : 'Building'}</TableCell><TableCell>{isRtl ? 'الحالة' : 'Status'}</TableCell><TableCell align="center">{isRtl ? 'الإجراءات' : 'Actions'}</TableCell>
     </TableRow></TableHead><TableBody>{filtered.map(center => <TableRow key={center.id} hover>
-      <TableCell><Typography fontWeight={900}>{displayName(center)}</Typography>{secondaryName(center) && <Typography variant="caption" color="text.secondary" display="block">{secondaryName(center)}</Typography>}{(center.employee_count || center.user_count) ? <Typography variant="caption" color="text.secondary" display="block">{isRtl ? 'مرتبط' : 'Linked'}: {center.employee_count || 0} / {center.user_count || 0}</Typography> : null}</TableCell><TableCell>{center.code || '—'}</TableCell><TableCell>{center.region || '—'}</TableCell><TableCell>{center.city || '—'}</TableCell><TableCell>{center.district || '—'}</TableCell><TableCell><Chip size="small" label={buildingLabel(center.building_type)} /></TableCell><TableCell><Chip size="small" color={center.is_active ? 'success' : 'default'} label={center.is_active ? (isRtl ? 'نشط' : 'Active') : (isRtl ? 'غير نشط' : 'Inactive')} /></TableCell><TableCell align="center"><Button size="small" startIcon={<EditIcon />} onClick={() => openEdit(center)}>{isRtl ? 'تعديل' : 'Edit'}</Button><Button size="small" color={center.is_active ? 'warning' : 'success'} startIcon={<ToggleOffIcon />} onClick={() => void toggleCenter(center)}>{center.is_active ? (isRtl ? 'تعطيل' : 'Deactivate') : (isRtl ? 'تفعيل' : 'Activate')}</Button></TableCell>
-    </TableRow>)}{!filtered.length && <TableRow><TableCell colSpan={8}><Alert severity="info">{isRtl ? 'لا توجد مراكز مطابقة.' : 'No matching health centers.'}</Alert></TableCell></TableRow>}</TableBody></Table></TableContainer>}
+      <TableCell><Typography fontWeight={900}>{displayName(center)}</Typography>{secondaryName(center) && <Typography variant="caption" color="text.secondary" display="block">{secondaryName(center)}</Typography>}{(center.employee_count || center.user_count) ? <Typography variant="caption" color="text.secondary" display="block">{isRtl ? 'مرتبط' : 'Linked'}: {center.employee_count || 0} / {center.user_count || 0}</Typography> : null}</TableCell><TableCell>{center.manager_name || 'غير معتمد'}</TableCell><TableCell>{center.code || '—'}</TableCell><TableCell>{center.region || '—'}</TableCell><TableCell>{center.city || '—'}</TableCell><TableCell>{center.district || '—'}</TableCell><TableCell><Chip size="small" label={buildingLabel(center.building_type)} /></TableCell><TableCell><Chip size="small" color={center.is_active ? 'success' : 'default'} label={center.is_active ? (isRtl ? 'نشط' : 'Active') : (isRtl ? 'غير نشط' : 'Inactive')} /></TableCell><TableCell align="center"><Button size="small" startIcon={<EditIcon />} onClick={() => openEdit(center)}>{isRtl ? 'تعديل' : 'Edit'}</Button><Button size="small" color={center.is_active ? 'warning' : 'success'} startIcon={<ToggleOffIcon />} onClick={() => void toggleCenter(center)}>{center.is_active ? (isRtl ? 'تعطيل' : 'Deactivate') : (isRtl ? 'تفعيل' : 'Activate')}</Button></TableCell>
+    </TableRow>)}{!filtered.length && <TableRow><TableCell colSpan={9}><Alert severity="info">{isRtl ? 'لا توجد مراكز مطابقة.' : 'No matching health centers.'}</Alert></TableCell></TableRow>}</TableBody></Table></TableContainer>}
 
     <Dialog open={open} onClose={() => !saving && setOpen(false)} maxWidth="md" fullWidth><DialogTitle>{editing ? (isRtl ? 'تعديل المركز الصحي' : 'Edit Health Center') : (isRtl ? 'إضافة مركز صحي' : 'Add Health Center')}</DialogTitle><DialogContent dividers><Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2,1fr)' }, gap: 2 }}>
       <TextField required label={isRtl ? 'اسم المركز الصحي بالعربية' : 'Health Center Name (Arabic)'} value={form.name_ar} onChange={e => update('name_ar', e.target.value)} inputProps={{ dir: 'rtl' }} />
@@ -138,6 +138,7 @@ export function HealthCentersPage() {
       <TextField label={isRtl ? 'المنطقة' : 'Region'} value={form.region} onChange={e => update('region', e.target.value)} />
       <TextField label={isRtl ? 'المدينة' : 'City'} value={form.city} onChange={e => update('city', e.target.value)} />
       <TextField label={isRtl ? 'الحي' : 'District'} value={form.district} onChange={e => update('district', e.target.value)} />
+      <TextField label={isRtl ? 'مدير المركز (بعد التحقق من الاسم)' : 'Verified center manager'} value={form.manager_name} onChange={e => update('manager_name', e.target.value)} helperText={isRtl ? 'حقل مرجعي إداري؛ اتركه فارغًا إذا لم تُعتمد بيانات المدير' : 'Administrative reference; leave blank until verified'} />
       <TextField required select label={isRtl ? 'نوع المبنى' : 'Building Type'} value={form.building_type} onChange={e => update('building_type', e.target.value as CenterForm['building_type'])}><MenuItem value="unknown" disabled>{isRtl ? 'اختر نوع المبنى' : 'Select building type'}</MenuItem><MenuItem value="model">{isRtl ? 'مبنى نموذجي' : 'Model building'}</MenuItem><MenuItem value="rented">{isRtl ? 'مبنى مستأجر' : 'Rented building'}</MenuItem><MenuItem value="owned">{isRtl ? 'مبنى مملوك' : 'Owned building'}</MenuItem><MenuItem value="other">{isRtl ? 'أخرى' : 'Other'}</MenuItem></TextField>
       <TextField multiline minRows={3} label={isRtl ? 'ملاحظات' : 'Notes'} value={form.notes || ''} onChange={e => update('notes', e.target.value)} sx={{ gridColumn: { md: '1 / -1' } }} />
       <Stack direction="row" alignItems="center" spacing={1}><Switch checked={form.is_active} onChange={e => update('is_active', e.target.checked)} /><Typography>{isRtl ? 'المركز نشط ومتاح في القوائم المنسدلة' : 'Center is active and available in dropdowns'}</Typography></Stack>

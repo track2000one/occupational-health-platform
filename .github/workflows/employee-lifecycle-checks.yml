@@ -1,0 +1,167 @@
+name: Employee lifecycle checks
+
+on:
+  pull_request:
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - '.github/workflows/employee-lifecycle-checks.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    env:
+      DJANGO_SECRET_KEY: workflow-test-only-secret
+      DEBUG: "1"
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: python -m pip install -r requirements.txt
+      - run: python manage.py check
+      - run: python manage.py makemigrations --check --dry-run
+      - run: python manage.py test health.test_employment_lifecycle health.test_workforce_preview health.test_workforce_import health.test_staging_synthetic health.test_staging_load health.test_temporary_workforce --verbosity 2
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      # The production Dockerfile uses npm install --legacy-peer-deps; match it here.
+      - run: npm install --legacy-peer-deps --ignore-scripts --no-audit --no-fund
+      - run: npm run build
+
+
+  postgres-integration:
+    runs-on: ubuntu-latest
+    # Isolated synthetic database; NEVER use Railway credentials or user spreadsheets.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: occupational_ci
+          POSTGRES_USER: ci_only
+          POSTGRES_PASSWORD: synthetic_ci_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci_only -d occupational_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://ci_only:synthetic_ci_password@127.0.0.1:5432/occupational_ci
+      DEBUG: "True"
+      SECRET_KEY: synthetic-key-not-for-production
+      PGPASSWORD: synthetic_ci_password
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: python -m pip install -r requirements.txt
+      - name: Migrate a separate PostgreSQL database
+        run: python manage.py migrate --noinput
+      - name: Run workforce tests against real PostgreSQL (not SQLite)
+        run: python manage.py test health.test_employment_lifecycle health.test_workforce_preview health.test_workforce_import health.test_staging_synthetic health.test_staging_load health.test_temporary_workforce --verbosity 2
+      - name: Seed synthetic restore sample
+        run: |
+          python manage.py shell -c "from health.models import HealthCenter,Employee; c=HealthCenter.objects.create(name='Synthetic CI Center'); Employee.objects.create(name='Synthetic CI Employee',national_id='1000000001',employee_number='CI001',health_center=c,risk_level='high')"
+      - name: Encrypt PostgreSQL synthetic backup and verify isolated restore
+        run: |
+          set -euo pipefail
+          pg_dump --version
+          gpg --version | head -1
+          mkdir -p "$RUNNER_TEMP/ohp-secure-ci"
+          printf '%s' 'Synthetic-CI-Only-Backup-Key-Not-For-Real-Employees-2026!' > "$RUNNER_TEMP/ohp-synthetic-passphrase"
+          chmod 600 "$RUNNER_TEMP/ohp-synthetic-passphrase"
+          export PGSSLMODE=disable
+          python ops/secure_pg_backup.py backup \
+            --output-dir "$RUNNER_TEMP/ohp-secure-ci" \
+            --passphrase-file "$RUNNER_TEMP/ohp-synthetic-passphrase"
+          archive=$(find "$RUNNER_TEMP/ohp-secure-ci" -maxdepth 1 -name '*.pgdump.gpg' -print -quit)
+          test -s "$archive"
+          test -f "$archive.sha256"
+          # The archive must not accidentally contain recognizable plaintext.
+          if grep -aq 'Synthetic CI Employee' "$archive"; then echo "Plaintext in encrypted archive"; exit 1; fi
+          createdb -h 127.0.0.1 -p 5432 -U ci_only occupational_ci_restored
+          export RESTORE_DATABASE_URL=postgresql://ci_only:synthetic_ci_password@127.0.0.1:5432/occupational_ci_restored
+          python ops/secure_pg_backup.py restore-verify \
+            --archive "$archive" \
+            --passphrase-file "$RUNNER_TEMP/ohp-synthetic-passphrase" \
+            --confirm-disposable
+          count=$(psql -At "$RESTORE_DATABASE_URL" -c "SELECT count(*) FROM health_employee WHERE employee_number='CI001' AND risk_level='high';")
+          test "$count" = "1"
+          if python ops/secure_pg_backup.py restore-verify \
+              --archive "$archive" --passphrase-file "$RUNNER_TEMP/ohp-synthetic-passphrase" --confirm-disposable; then
+            echo "Dangerous repeated restore was not rejected"; exit 1
+          fi
+          echo "Encrypted archive, checksum, isolated restore, clinical risk preservation: PASS"
+          rm -rf "$RUNNER_TEMP/ohp-secure-ci" "$RUNNER_TEMP/ohp-synthetic-passphrase"
+
+
+  staging-smoke:
+    runs-on: ubuntu-latest
+    # This job only sends anonymous HTTP GET/OPTIONS to isolated public staging.
+    # Do not send tokens, actual employees, or production data through CI logs.
+    steps:
+      - name: Verify staging routes and unauthenticated access denied
+        run: |
+          set -euo pipefail
+          api="https://occupational-staging-backend-staging.up.railway.app"
+          frontend="https://occupational-staging-frontend-staging.up.railway.app"
+          for attempt in 1 2 3 4; do
+            if curl --silent --show-error --fail --retry 2 --max-time 15 "$api/health/" -o /tmp/staging-health.json && grep -q '"status":"ok"' /tmp/staging-health.json; then
+              break
+            fi
+            if [ "$attempt" = "4" ]; then echo "Staging backend health failed"; exit 1; fi
+            sleep 7
+          done
+          curl --silent --show-error --fail --retry 2 --max-time 20 "$frontend/" -o /tmp/staging-index.html
+          grep -qi 'id="root"' /tmp/staging-index.html
+          for endpoint in /api/employees/ /api/workforce-roster/import-plan/ /api/workforce-roster/mapping/; do
+            code=$(curl --silent --show-error --max-time 15 -o /dev/null -w '%{http_code}' "$api$endpoint")
+            if [ "$code" != 401 ] && [ "$code" != 403 ]; then
+              echo "Private route did not require login: $endpoint ($code)"; exit 1
+            fi
+          done
+          echo "Staging smoke passed: backend health, frontend HTML, and protected endpoints."
+      - name: Verify only staging frontend origin receives CORS authorization
+        run: |
+          set -euo pipefail
+          api="https://occupational-staging-backend-staging.up.railway.app"
+          allowed="https://occupational-staging-frontend-staging.up.railway.app"
+          curl --silent --show-error --max-time 15 --fail -D /tmp/allowed -o /dev/null \
+            -X OPTIONS "$api/api/workforce-roster/import-plan/" \
+            -H "Origin: $allowed" -H "Access-Control-Request-Method: POST"
+          grep -iF "access-control-allow-origin: $allowed" /tmp/allowed >/dev/null
+          curl --silent --show-error --max-time 15 --fail -D /tmp/untrusted -o /dev/null \
+            -X OPTIONS "$api/api/workforce-roster/import-plan/" \
+            -H "Origin: https://unrelated-application.up.railway.app" \
+            -H "Access-Control-Request-Method: POST"
+          if grep -qi '^access-control-allow-origin:' /tmp/untrusted; then
+            echo "Untrusted domain was authorized by CORS"; exit 1
+          fi
+          echo "Staging CORS allowlist: PASS."

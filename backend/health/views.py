@@ -3,14 +3,16 @@ from datetime import date, timedelta
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from .importers import process_excel_import
-from .models import AuditLog, ClinicVisit, CommitteeReferral, DataImportBatch, Employee, EmployeeHealthCard, EmployeeImportReview, HealthCenter, InjuryCase, LabTest, OccupationalHealthAssessment, Vaccination
+from .models import AuditLog, ClinicVisit, CommitteeReferral, DataImportBatch, Employee, EmployeeEmploymentChange, EmployeeHealthCard, EmployeeImportReview, HealthCenter, InjuryCase, LabTest, OccupationalHealthAssessment, Vaccination
 from .serializers import AuditLogSerializer, ClinicVisitSerializer, CommitteeReferralSerializer, DataImportBatchSerializer, EmployeeHealthCardSerializer, EmployeeImportReviewSerializer, EmployeeSerializer, HealthCenterSerializer, InjuryCaseSerializer, LabTestSerializer, OccupationalHealthAssessmentSerializer, PlatformUserSerializer, VaccinationSerializer
 
 
@@ -487,6 +489,216 @@ class EmployeeViewSet(viewsets.ModelViewSet):
     serializer_class=EmployeeSerializer
     permission_classes=[permissions.IsAuthenticated,IsAdminOrManagerForWrite]
     search_fields=['name','email','employee_number','national_id','mobile','job_title','birth_place','national_address']
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        requested_status = str(self.request.query_params.get('employment_status') or '').strip()
+        if requested_status in Employee.EmploymentStatus.values:
+            queryset = queryset.filter(employment_status=requested_status)
+        center_id = str(self.request.query_params.get('health_center_id') or '').strip()
+        if center_id.isdigit():
+            queryset = queryset.filter(health_center_id=int(center_id))
+        query = str(self.request.query_params.get('search') or '').strip()
+        if query:
+            queryset = queryset.filter(
+                Q(name__icontains=query) | Q(employee_number__icontains=query) |
+                Q(national_id__icontains=query) | Q(job_title__icontains=query) |
+                Q(email__icontains=query) | Q(mobile__icontains=query)
+            )
+        # Source roster status is separate from approved employment status.
+        # Leave leave/study/temporary conditions distinct from retirement.
+        source_category = str(self.request.query_params.get('source_category') or '').strip()
+        if source_category == 'active':
+            queryset = queryset.filter(roster_source_status='تعيين نشط')
+        elif source_category == 'other':
+            queryset = queryset.exclude(
+                roster_source_status__in=['', 'تعيين نشط']
+            )
+        sort_key = str(self.request.query_params.get('sort') or 'newest').strip()
+        safe_orders = {
+            'newest': ('-created_at', '-pk'),
+            'oldest': ('created_at', 'pk'),
+            'name': ('name', 'pk'),
+            'employee_number': ('employee_number', 'pk'),
+        }
+        return queryset.order_by(*safe_orders.get(sort_key, safe_orders['newest']))
+
+    def destroy(self, request, *args, **kwargs):
+        """Employee archives and linked medical history must never be cascade-deleted."""
+        return Response(
+            {'detail': 'Employee deletion is disabled. Use approved employment-status transitions.'},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
+
+
+
+    @action(detail=True, methods=['post'], url_path='transfer-center')
+    def transfer_center(self, request, pk=None):
+        """Move an active employee internally; they remain active, with the previous center preserved."""
+        if not request.user.is_staff and not request.user.is_superuser:
+            return Response({'detail': 'Center transfer approval requires a staff administrator.'},
+                            status=status.HTTP_403_FORBIDDEN)
+        reference = str(request.data.get('evidence_reference') or '').strip()
+        if len(reference) < 3:
+            return Response({'evidence_reference': 'A formal transfer decision reference is required.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        try:
+            effective_date = parse_date(str(request.data.get('effective_date') or ''))
+        except ValueError:
+            effective_date = None
+        if not effective_date or effective_date > date.today():
+            return Response({'effective_date': 'Provide a valid effective date on or before today.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        try:
+            center_id = int(request.data.get('new_health_center_id'))
+        except (TypeError, ValueError):
+            return Response({'new_health_center_id': 'A destination center is required.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        center = HealthCenter.objects.filter(pk=center_id, is_active=True).first()
+        if not center:
+            return Response({'new_health_center_id': 'Select an existing active center.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        with transaction.atomic():
+            employee = Employee.objects.select_for_update().get(pk=self.get_object().pk)
+            if employee.employment_status != Employee.EmploymentStatus.ACTIVE:
+                return Response({'status': 'Only active employees may transfer internally.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            if employee.health_center_id == center.pk:
+                return Response({'new_health_center_id': 'Employee already belongs to this center.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            latest = employee.employment_changes.order_by('-effective_date').first()
+            if latest and effective_date < latest.effective_date:
+                return Response({'effective_date': 'Date precedes the last approved change.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            previous_center = employee.health_center
+            employee.health_center = center
+            employee.save(update_fields=['health_center', 'updated_at'])
+            change = EmployeeEmploymentChange.objects.create(
+                employee=employee, previous_status=Employee.EmploymentStatus.ACTIVE,
+                new_status=Employee.EmploymentStatus.ACTIVE,
+                effective_date=effective_date, evidence_reference=reference,
+                notes=str(request.data.get('notes') or '').strip(),
+                previous_health_center=previous_center,
+                new_health_center=center, approved_by=request.user,
+            )
+            AuditLog.objects.create(
+                user=str(request.user), action='approve_employee_center_transfer',
+                model_name='Employee', record_id=str(employee.pk),
+            )
+        return Response({'employee_id': employee.pk,
+                         'employment_status': employee.employment_status,
+                         'health_center_id': center.pk,
+                         'employment_change_id': change.pk})
+
+    @action(detail=True, methods=['get', 'post'], url_path='employment-status')
+    def employment_status(self, request, pk=None):
+        """Require an explicit approved source; never infer retirement from missing imports."""
+        if not request.user.is_staff and not request.user.is_superuser:
+            return Response({'detail': 'Employment status approval requires a staff administrator.'},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        employee = self.get_object()
+        if request.method == 'GET':
+            history = employee.employment_changes.select_related(
+                'previous_health_center', 'new_health_center', 'approved_by'
+            ).all()
+            return Response({
+                'employee_id': employee.pk,
+                'employment_status': employee.employment_status,
+                'history': [{
+                    'id': item.pk,
+                    'from_status': item.previous_status,
+                    'to_status': item.new_status,
+                    'effective_date': item.effective_date.isoformat(),
+                    'evidence_reference': item.evidence_reference,
+                    'previous_health_center': (
+                        item.previous_health_center.name if item.previous_health_center else None
+                    ),
+                    'new_health_center': (
+                        item.new_health_center.name if item.new_health_center else None
+                    ),
+                    'approved_by': item.approved_by_id,
+                    'created_at': item.created_at.isoformat(),
+                } for item in history],
+            })
+
+        target = str(request.data.get('status') or '').strip()
+        if target not in Employee.EmploymentStatus.values:
+            return Response({'status': 'Invalid employment status.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        reference = str(request.data.get('evidence_reference') or '').strip()
+        if len(reference) < 3:
+            return Response({'evidence_reference': 'A formal decision or document reference is required.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        raw_date = str(request.data.get('effective_date') or '')
+        try:
+            effective_date = parse_date(raw_date)
+        except ValueError:
+            effective_date = None
+        if not effective_date or effective_date > date.today():
+            return Response({'effective_date': 'Provide an effective date on or before today (YYYY-MM-DD).'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        requested_center_id = request.data.get('new_health_center_id')
+        requested_center = None
+        if requested_center_id:
+            try:
+                center_pk = int(requested_center_id)
+            except (TypeError, ValueError):
+                return Response({'new_health_center_id': 'Select an existing active center.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            requested_center = HealthCenter.objects.filter(
+                pk=center_pk, is_active=True
+            ).first()
+            if not requested_center:
+                return Response({'new_health_center_id': 'Select an existing active center.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+        if target in (
+            Employee.EmploymentStatus.RETIRED, Employee.EmploymentStatus.SEPARATED,
+            Employee.EmploymentStatus.TRANSFERRED, Employee.EmploymentStatus.UNDER_REVIEW,
+        ) and requested_center:
+            return Response({'new_health_center_id': 'This status change does not reassign a center. Use transfer-center for internal moves.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        with transaction.atomic():
+            employee = Employee.objects.select_for_update().get(pk=employee.pk)
+            if employee.employment_status == target:
+                return Response({'status': 'This employee already has the requested status.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            latest = employee.employment_changes.order_by('-effective_date').first()
+            if latest and effective_date < latest.effective_date:
+                return Response({'effective_date': 'Date precedes the last approved status change.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+
+            prior_status = employee.employment_status
+            prior_center = employee.health_center
+            if requested_center:
+                employee.health_center = requested_center
+            employee.employment_status = target
+            employee.save(update_fields=['employment_status', 'health_center', 'updated_at'])
+            record = EmployeeEmploymentChange.objects.create(
+                employee=employee,
+                previous_status=prior_status,
+                new_status=target,
+                effective_date=effective_date,
+                evidence_reference=reference,
+                notes=str(request.data.get('notes') or '').strip(),
+                previous_health_center=prior_center,
+                new_health_center=requested_center or employee.health_center,
+                approved_by=request.user,
+            )
+            AuditLog.objects.create(
+                user=str(request.user),
+                action='approve_employee_employment_status',
+                model_name='Employee',
+                record_id=str(employee.pk),
+            )
+        return Response({
+            'employee_id': employee.pk,
+            'employment_status': employee.employment_status,
+            'employment_change_id': record.pk,
+        })
 
     def _health_card_role(self, request):
         if request.user.is_superuser:

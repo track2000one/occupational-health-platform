@@ -282,7 +282,7 @@ class HealthCenterSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, attrs):
-        for field in ('name_ar', 'name_en', 'region', 'city', 'district', 'notes'):
+        for field in ('name_ar', 'name_en', 'region', 'city', 'district', 'manager_name', 'notes'):
             if field in attrs and attrs[field] is not None:
                 attrs[field] = str(attrs[field]).strip()
         return attrs
@@ -299,6 +299,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
     class Meta:
         model = Employee
         fields = '__all__'
+        read_only_fields = ('employment_status',)
         extra_kwargs = {
             'name': {'required': True, 'allow_blank': False},
             'email': {'required': True, 'allow_blank': False},
@@ -357,6 +358,11 @@ class EmployeeSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         attrs = self._normalize_identity(attrs)
+        if self.instance is not None and 'health_center' in attrs:
+            if attrs['health_center'].pk != self.instance.health_center_id:
+                raise serializers.ValidationError({
+                    'health_center': 'Transfer between centers requires an approved employment-status change.'
+                })
 
         self._require_for_create(attrs, 'email', 'Email is required and must be unique.')
         self._require_for_create(attrs, 'national_id', 'National ID is required and must be unique.')

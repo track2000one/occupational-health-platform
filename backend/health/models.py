@@ -38,6 +38,7 @@ class HealthCenter(models.Model):
     name = models.CharField(max_length=150, unique=True)
     name_ar = models.CharField(max_length=150, blank=True, db_index=True)
     name_en = models.CharField(max_length=150, blank=True, db_index=True)
+    manager_name = models.CharField(max_length=200, blank=True, help_text='Approved reference name for center manager')
     code = models.CharField(max_length=40, unique=True, null=True, blank=True)
     region = models.CharField(max_length=120, blank=True, db_index=True)
     city = models.CharField(max_length=120, blank=True, db_index=True)
@@ -100,6 +101,93 @@ class UserProfile(models.Model):
         return f'{self.user.username} - {self.role}'
 
 
+
+class WorkforceCenterMapping(models.Model):
+    """Approved organization-to-center link, independent of employee medical data."""
+    fingerprint = models.CharField(max_length=64, unique=True)
+    organization = models.TextField()
+    organization_type = models.CharField(max_length=100, blank=True)
+    health_center = models.ForeignKey(
+        HealthCenter, on_delete=models.PROTECT, related_name='workforce_mappings'
+    )
+    approval_reference = models.CharField(max_length=255)
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='approved_workforce_mappings'
+    )
+    approved_at = models.DateTimeField(auto_now=True)
+    is_active = models.BooleanField(default=True, db_index=True)
+
+    def __str__(self):
+        return f'{self.organization_type}: {self.health_center_id}'
+
+
+class WorkforceCenterMappingRevision(models.Model):
+    """Append-only revision trail when an organization is reassigned."""
+    mapping = models.ForeignKey(
+        WorkforceCenterMapping, on_delete=models.PROTECT, related_name='revisions'
+    )
+    previous_center = models.ForeignKey(
+        HealthCenter, on_delete=models.PROTECT, null=True, blank=True,
+        related_name='workforce_mapping_previous_revisions'
+    )
+    new_center = models.ForeignKey(
+        HealthCenter, on_delete=models.PROTECT, related_name='workforce_mapping_new_revisions'
+    )
+    approval_reference = models.CharField(max_length=255)
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at', '-id']
+
+
+
+class WorkforceImportPlan(models.Model):
+    """Metadata-only two-person import approval; the workbook is never persisted."""
+    class State(models.TextChoices):
+        DRAFT = 'draft', 'Draft'
+        APPROVED = 'approved', 'Approved'
+        COMMITTED = 'committed', 'Committed'
+
+    state = models.CharField(max_length=12, choices=State.choices, default=State.DRAFT)
+    file_sha256 = models.CharField(max_length=64)
+    mapping_sha256 = models.CharField(max_length=64)
+    summary = models.JSONField(default=dict)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='workforce_import_plans'
+    )
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT,
+        related_name='approved_workforce_import_plans'
+    )
+    approval_reference = models.CharField(max_length=255, blank=True)
+    backup_reference = models.CharField(max_length=255, blank=True)
+    restore_verification_reference = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    approved_at = models.DateTimeField(null=True, blank=True)
+    committed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+
+class WorkforceImportCreatedEmployee(models.Model):
+    """Immutable per-row provenance for imported employee records."""
+    plan = models.ForeignKey(
+        WorkforceImportPlan, on_delete=models.PROTECT, related_name='created_employees'
+    )
+    employee = models.OneToOneField(
+        'Employee', on_delete=models.PROTECT, related_name='workforce_import_provenance'
+    )
+    source_row = models.PositiveIntegerField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+
+
 class Employee(models.Model):
     GENDER = (('male', 'Male'), ('female', 'Female'))
     MARITAL_STATUS = (
@@ -108,10 +196,25 @@ class Employee(models.Model):
         ('divorced', 'Divorced'),
         ('widowed', 'Widowed'),
     )
-    STATUS = (('completed', 'Completed'), ('incomplete', 'Incomplete'), ('overdue', 'Overdue'))
-    VACCINE = (('completed', 'Completed'), ('due', 'Due'), ('refused', 'Refused'))
-    RISK = (('low', 'Low'), ('medium', 'Medium'), ('high', 'High'))
+    STATUS = (('completed', 'Completed'), ('incomplete', 'Incomplete'), ('overdue', 'Overdue'), ('unknown', 'Not assessed'))
+    VACCINE = (('completed', 'Completed'), ('due', 'Due'), ('refused', 'Refused'), ('unknown', 'Not assessed'))
+    RISK = (('low', 'Low'), ('medium', 'Medium'), ('high', 'High'), ('unknown', 'Not assessed'))
 
+
+
+    class EmploymentStatus(models.TextChoices):
+        ACTIVE = 'active', 'Active'
+        TRANSFERRED = 'transferred', 'Transferred'
+        RETIRED = 'retired', 'Retired'
+        SEPARATED = 'separated', 'Separated'
+        UNDER_REVIEW = 'under_review', 'Under review'
+
+    employment_status = models.CharField(
+        max_length=20,
+        choices=EmploymentStatus.choices,
+        default=EmploymentStatus.ACTIVE,
+        db_index=True,
+    )
     name = models.CharField(max_length=200)
     email = models.EmailField(max_length=254, unique=True, null=True, blank=True)
     national_id = models.CharField(max_length=30, unique=True)
@@ -125,6 +228,8 @@ class Employee(models.Model):
     marital_status = models.CharField(max_length=20, choices=MARITAL_STATUS, blank=True)
     health_center = models.ForeignKey(HealthCenter, on_delete=models.PROTECT, related_name='employees')
     job_title = models.CharField(max_length=150, blank=True)
+    roster_source_status = models.CharField(max_length=120, blank=True)
+    roster_hijri_appointment_date = models.CharField(max_length=30, blank=True)
     appointment_date = models.DateField(null=True, blank=True)
     years_of_experience = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
     periodic_exam_status = models.CharField(max_length=20, choices=STATUS, default='incomplete')
@@ -145,6 +250,38 @@ class Employee(models.Model):
     def __str__(self):
         return self.name
 
+
+
+class EmployeeEmploymentChange(models.Model):
+    """Approved, non-destructive employment history for an existing employee."""
+
+    employee = models.ForeignKey(
+        Employee, on_delete=models.PROTECT, related_name='employment_changes'
+    )
+    previous_status = models.CharField(max_length=20)
+    new_status = models.CharField(max_length=20, choices=Employee.EmploymentStatus.choices)
+    effective_date = models.DateField()
+    evidence_reference = models.CharField(max_length=255)
+    notes = models.TextField(blank=True)
+    previous_health_center = models.ForeignKey(
+        HealthCenter, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='employment_changes_from'
+    )
+    new_health_center = models.ForeignKey(
+        HealthCenter, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='employment_changes_to'
+    )
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True,
+        related_name='approved_employee_status_changes'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-effective_date', '-created_at']
+
+    def __str__(self):
+        return f'{self.employee_id}: {self.previous_status} -> {self.new_status}'
 
 class ImportTraceModel(models.Model):
     imported_sheet = models.CharField(max_length=150, blank=True)
@@ -697,3 +834,26 @@ class EmployeeImportReview(models.Model):
     def __str__(self):
         name = self.employee_payload.get('name') or self.raw_payload.get('name') or f'Row {self.source_row}'
         return f'{name} - {self.status}'
+
+
+class TemporaryWorkforceSnapshot(models.Model):
+    """A short-lived, encrypted copy of the original A:S administrative roster.
+
+    No health records are touched and no raw employee PII is saved to source control.
+    """
+    file_sha256 = models.CharField(max_length=64, db_index=True)
+    encrypted_rows = models.BinaryField()
+    summary = models.JSONField(default=dict)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name='temporary_workforce_snapshots'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(db_index=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'Temporary roster {self.pk} ({self.summary.get("rows", 0)} records)'
+

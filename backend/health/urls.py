@@ -1,4 +1,7 @@
 from django.urls import path
+from .workforce_preview import WorkforceRosterPreviewView, WorkforceCenterMappingView
+from .temporary_workforce import TemporaryWorkforceView
+from .workforce_import import WorkforceImportPlanView, WorkforceImportApproveView, WorkforceImportCommitView
 from rest_framework.routers import DefaultRouter
 from .views import AuditLogViewSet, ClinicVisitViewSet, CommitteeReferralViewSet, EmployeeImportReviewViewSet, EmployeeViewSet, ExcelImportViewSet, HealthCardVerificationView, HealthCenterViewSet, InjuryCaseViewSet, LabTestViewSet, OccupationalHealthAssessmentViewSet, UserViewSet, VaccinationViewSet
 
@@ -17,5 +20,11 @@ router.register('injury-cases', InjuryCaseViewSet)
 router.register('audit-logs', AuditLogViewSet)
 
 urlpatterns = [
+    path('workforce-roster/temporary/', TemporaryWorkforceView.as_view(), name='workforce-temporary'),
+    path('workforce-roster/import-plan/', WorkforceImportPlanView.as_view(), name='workforce-import-plan'),
+    path('workforce-roster/import-plan/<int:pk>/approve/', WorkforceImportApproveView.as_view(), name='workforce-import-approve'),
+    path('workforce-roster/import-plan/<int:pk>/commit/', WorkforceImportCommitView.as_view(), name='workforce-import-commit'),
+    path('workforce-roster/mapping/', WorkforceCenterMappingView.as_view(), name='workforce-roster-mapping'),
+    path('workforce-roster/preview/', WorkforceRosterPreviewView.as_view(), name='workforce-roster-preview'),
     path('health-card-verification/<str:token>/', HealthCardVerificationView.as_view(), name='health-card-verification'),
 ] + router.urls
