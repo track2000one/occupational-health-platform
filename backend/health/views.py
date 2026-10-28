@@ -505,7 +505,23 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 Q(national_id__icontains=query) | Q(job_title__icontains=query) |
                 Q(email__icontains=query) | Q(mobile__icontains=query)
             )
-        return queryset
+        # Source roster status is separate from approved employment status.
+        # Leave leave/study/temporary conditions distinct from retirement.
+        source_category = str(self.request.query_params.get('source_category') or '').strip()
+        if source_category == 'active':
+            queryset = queryset.filter(roster_source_status='تعيين نشط')
+        elif source_category == 'other':
+            queryset = queryset.exclude(
+                roster_source_status__in=['', 'تعيين نشط']
+            )
+        sort_key = str(self.request.query_params.get('sort') or 'newest').strip()
+        safe_orders = {
+            'newest': ('-created_at', '-pk'),
+            'oldest': ('created_at', 'pk'),
+            'name': ('name', 'pk'),
+            'employee_number': ('employee_number', 'pk'),
+        }
+        return queryset.order_by(*safe_orders.get(sort_key, safe_orders['newest']))
 
     def destroy(self, request, *args, **kwargs):
         """Employee archives and linked medical history must never be cascade-deleted."""
