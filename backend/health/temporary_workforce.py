@@ -15,7 +15,7 @@ from cryptography.fernet import Fernet, InvalidToken
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import permissions, status
-from rest_framework.parsers import FormParser, MultiPartParser
+from rest_framework.parsers import FormParser, MultiPartParser, JSONParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -111,7 +111,7 @@ def load_original_roster(upload):
 
 class TemporaryWorkforceView(APIView):
     permission_classes = [permissions.IsAdminUser]
-    parser_classes = [MultiPartParser, FormParser]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def dispatch(self, request, *args, **kwargs):
         response = super().dispatch(request, *args, **kwargs)
