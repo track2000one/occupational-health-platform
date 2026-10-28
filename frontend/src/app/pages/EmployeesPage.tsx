@@ -21,6 +21,7 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  TablePagination,
   TextField,
   Typography,
 } from '@mui/material';
@@ -252,6 +253,8 @@ export function EmployeesPage() {
   const isRtl = i18n.language === 'ar';
 
   const [employees, setEmployees] = useState<ApiEmployee[]>([]);
+  const [page, setPage] = useState(0);
+  const [totalCount, setTotalCount] = useState(0);
   const [healthCenters, setHealthCenters] = useState<ApiHealthCenter[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -271,16 +274,16 @@ export function EmployeesPage() {
     setLoading(true);
     setConnectionError('');
     try {
-      const [employeesPayload, centersPayload] = await Promise.all([
-        apiRequest<unknown>('/employees/'),
-        apiRequest<unknown>('/health-centers/?active=true'),
-      ]);
-      const centers = getList<ApiHealthCenter>(centersPayload);
-      setEmployees(getList<ApiEmployee>(employeesPayload));
-      setHealthCenters(centers);
-      if (!form.health_center && centers[0]) {
-        setForm(prev => ({ ...prev, health_center: String(centers[0].id) }));
-      }
+      const query = new URLSearchParams({ page: String(page + 1) });
+      if (searchTerm.trim()) query.set('search', searchTerm.trim());
+      if (centerFilter !== 'all') query.set('health_center_id', centerFilter);
+      const employeesPayload = await apiRequest<unknown>('/employees/?' + query.toString());
+      const results = getList<ApiEmployee>(employeesPayload);
+      const payload = employeesPayload && typeof employeesPayload === 'object'
+        ? employeesPayload as { count?: number }
+        : {};
+      setEmployees(results);
+      setTotalCount(typeof payload.count === 'number' ? payload.count : results.length);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to load employees';
       setConnectionError(message);
@@ -290,10 +293,33 @@ export function EmployeesPage() {
     }
   }
 
+  async function loadCenters() {
+    try {
+      const centers: ApiHealthCenter[] = [];
+      // DRF paginates centers too. Fetch all pages for the selector, not only 25.
+      for (let centerPage = 1; centerPage <= 40; centerPage += 1) {
+        const payload = await apiRequest<unknown>('/health-centers/?active=true&page=' + centerPage);
+        centers.push(...getList<ApiHealthCenter>(payload));
+        const next = payload && typeof payload === 'object'
+          ? (payload as { next?: string | null }).next
+          : null;
+        if (!next) break;
+      }
+      setHealthCenters(centers);
+      setForm(prev => prev.health_center || !centers[0]
+        ? prev : { ...prev, health_center: String(centers[0].id) });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to load centers');
+    }
+  }
+
   useEffect(() => {
-    void loadData();
+    const timer = setTimeout(() => { void loadData(); }, searchTerm ? 350 : 0);
+    return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [page, searchTerm, centerFilter]);
+
+  useEffect(() => { void loadCenters(); }, []);
 
   const centerNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -301,18 +327,8 @@ export function EmployeesPage() {
     return map;
   }, [healthCenters, isRtl]);
 
-  const filteredEmployees = employees.filter(emp => {
-    const query = searchTerm.trim().toLowerCase();
-    const matchSearch = !query ||
-      emp.name.toLowerCase().includes(query) ||
-      String(emp.email || '').toLowerCase().includes(query) ||
-      String(emp.employee_number || '').toLowerCase().includes(query) ||
-      String(emp.national_id || '').includes(query) ||
-      String(emp.mobile || '').includes(query) ||
-      String(emp.job_title || '').toLowerCase().includes(query);
-    const matchCenter = centerFilter === 'all' || String(emp.health_center) === centerFilter;
-    return matchSearch && matchCenter;
-  });
+  // Search and center filtering are performed server-side across all employees.
+  const filteredEmployees = employees;
 
   function getHealthCenterName(employee: ApiEmployee) {
     return centerNameById.get(String(employee.health_center)) || employee.health_center_name || '-';
@@ -425,7 +441,7 @@ export function EmployeesPage() {
           <Box>
             <Typography variant="h4" fontWeight="bold">{t('employees')}</Typography>
             <Typography variant="body2" color="text.secondary">
-              {filteredEmployees.length} {isRtl ? 'موظف — مرتبط بـ Django/PostgreSQL' : 'employees — Django/PostgreSQL connected'}
+              {totalCount} {isRtl ? 'موظف — مرتبطة بياناتهم بقاعدة PostgreSQL' : 'employees in PostgreSQL'}
             </Typography>
           </Box>
         </Box>
@@ -481,13 +497,13 @@ export function EmployeesPage() {
               fullWidth
               placeholder={(isRtl ? 'بحث بالاسم أو البريد أو الهوية أو الرقم الوظيفي أو الجوال' : 'Search name, email, ID, employee number, or mobile') + '...'}
               value={searchTerm}
-              onChange={event => setSearchTerm(event.target.value)}
+              onChange={event => { setSearchTerm(event.target.value); setPage(0); }}
               slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchIcon /></InputAdornment> } }}
             />
           </Grid>
           <Grid size={{ xs: 12, md: 5 }}>
             <TextField fullWidth select label={isRtl ? 'المركز الصحي' : 'Health Center'} value={centerFilter}
-              onChange={event => setCenterFilter(event.target.value)}>
+              onChange={event => { setCenterFilter(event.target.value); setPage(0); }}>
               <MenuItem value="all">{isRtl ? 'جميع المراكز' : 'All Centers'}</MenuItem>
               {healthCenters.map(center => <MenuItem key={center.id} value={String(center.id)}>{centerDisplayName(center, isRtl)}</MenuItem>)}
             </TextField>
@@ -571,7 +587,19 @@ export function EmployeesPage() {
               ))}
             </TableBody>
           </Table>
-        </TableContainer>
+        <>
+          <TablePagination
+            component="div"
+            count={totalCount}
+            page={page}
+            onPageChange={(_, newPage) => setPage(newPage)}
+            rowsPerPage={25}
+            rowsPerPageOptions={[25]}
+            labelDisplayedRows={({ from, to, count }) =>
+              isRtl ? `${from}–${to} من ${count}` : `${from}–${to} of ${count}`}
+            labelRowsPerPage={isRtl ? 'لكل صفحة:' : 'Rows per page:'}
+          />
+        </>
       )}
 
       <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="md" fullWidth>
