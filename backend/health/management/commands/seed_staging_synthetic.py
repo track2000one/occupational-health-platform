@@ -21,7 +21,8 @@ class Command(BaseCommand):
         if os.getenv('SEED_STAGING_SYNTHETIC', '').lower() != 'true':
             raise CommandError('Synthetic seeding is disabled in this environment.')
         # Defense against accidental execution on a copied real database.
-        if Employee.objects.exclude(employee_number__startswith='OHP-QA-').exists():
+        if (Employee.objects.exclude(employee_number__startswith='OHP-QA-')
+                .exclude(employee_number__startswith='OHP-LOAD-').exists()):
             raise CommandError('Refusing to seed a database containing non-QA employees.')
         centers = list(HealthCenter.objects.filter(is_active=True).order_by('id')[:3])
         if len(centers) < 2:
