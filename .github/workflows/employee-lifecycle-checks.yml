@@ -47,3 +47,59 @@ jobs:
       # The production Dockerfile uses npm install --legacy-peer-deps; match it here.
       - run: npm install --legacy-peer-deps --ignore-scripts --no-audit --no-fund
       - run: npm run build
+
+
+  postgres-integration:
+    runs-on: ubuntu-latest
+    # Isolated synthetic database; NEVER use Railway credentials or user spreadsheets.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: occupational_ci
+          POSTGRES_USER: ci_only
+          POSTGRES_PASSWORD: synthetic_ci_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci_only -d occupational_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://ci_only:synthetic_ci_password@127.0.0.1:5432/occupational_ci
+      DEBUG: "True"
+      SECRET_KEY: synthetic-key-not-for-production
+      PGPASSWORD: synthetic_ci_password
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: python -m pip install -r requirements.txt
+      - name: Migrate a separate PostgreSQL database
+        run: python manage.py migrate --noinput
+      - name: Run workforce tests against real PostgreSQL (not SQLite)
+        run: python manage.py test health.test_employment_lifecycle health.test_workforce_preview health.test_workforce_import --verbosity 2
+      - name: Seed synthetic restore sample
+        run: |
+          python manage.py shell -c "from health.models import HealthCenter,Employee; c=HealthCenter.objects.create(name='Synthetic CI Center'); Employee.objects.create(name='Synthetic CI Employee',national_id='1000000001',employee_number='CI001',health_center=c,risk_level='high')"
+      - name: Backup and restore a synthetic PostgreSQL database
+        run: |
+          set -euo pipefail
+          pg_dump --version
+          pg_dump --format=custom --no-owner --no-acl --file=/tmp/occupational-ci-only.dump "$DATABASE_URL"
+          test -s /tmp/occupational-ci-only.dump
+          createdb -h 127.0.0.1 -p 5432 -U ci_only occupational_ci_restored
+          pg_restore --no-owner --no-acl --dbname=postgresql://ci_only:synthetic_ci_password@127.0.0.1:5432/occupational_ci_restored /tmp/occupational-ci-only.dump
+          count=$(psql -At postgresql://ci_only:synthetic_ci_password@127.0.0.1:5432/occupational_ci_restored -c "SELECT count(*) FROM health_employee WHERE employee_number='CI001' AND risk_level='high';")
+          test "$count" = "1"
+          center_count=$(psql -At postgresql://ci_only:synthetic_ci_password@127.0.0.1:5432/occupational_ci_restored -c "SELECT count(*) FROM health_healthcenter WHERE name='Synthetic CI Center';")
+          test "$center_count" = "1"
+          echo "Synthetic PostgreSQL backup/restore: PASS (employee, center, assessment unchanged)."
+          rm -f /tmp/occupational-ci-only.dump
