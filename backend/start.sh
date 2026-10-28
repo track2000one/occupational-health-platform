@@ -7,6 +7,11 @@ python manage.py migrate --noinput
 echo "[start] Creating or updating admin user..."
 python manage.py bootstrap_admin
 
+if [ "${STAGING_MODE:-false}" = "true" ] && [ "${SEED_STAGING_SYNTHETIC:-false}" = "true" ]; then
+  echo "[start] Seeding synthetic-only staging employees..."
+  python manage.py seed_staging_synthetic
+fi
+
 WORKERS="${GUNICORN_WORKERS:-2}"
 THREADS="${GUNICORN_THREADS:-4}"
 TIMEOUT="${GUNICORN_TIMEOUT:-45}"
