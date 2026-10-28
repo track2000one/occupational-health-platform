@@ -16,7 +16,6 @@ import {
   Typography,
 } from '@mui/material';
 import {
-  PersonOutline as UserIcon,
   Language,
   LocalHospital as LocalHospitalIcon,
   Lock as LockIcon,
@@ -137,7 +136,7 @@ export function LoginPage() {
               onChange={(e) => setEmail(e.target.value)}
               margin="normal"
               required
-              InputProps={{ startAdornment: <InputAdornment position="start"><UserIcon /></InputAdornment> }}
+              InputProps={{ startAdornment: <InputAdornment position="start"><ShieldIcon /></InputAdornment> }}
             />
             <TextField
               fullWidth
