@@ -30,7 +30,7 @@ jobs:
       - run: python -m pip install -r requirements.txt
       - run: python manage.py check
       - run: python manage.py makemigrations --check --dry-run
-      - run: python manage.py test health.test_employment_lifecycle health.test_workforce_preview health.test_workforce_import health.test_staging_synthetic --verbosity 2
+      - run: python manage.py test health.test_employment_lifecycle health.test_workforce_preview health.test_workforce_import health.test_staging_synthetic health.test_staging_load --verbosity 2
 
   frontend:
     runs-on: ubuntu-latest
@@ -85,7 +85,7 @@ jobs:
       - name: Migrate a separate PostgreSQL database
         run: python manage.py migrate --noinput
       - name: Run workforce tests against real PostgreSQL (not SQLite)
-        run: python manage.py test health.test_employment_lifecycle health.test_workforce_preview health.test_workforce_import health.test_staging_synthetic --verbosity 2
+        run: python manage.py test health.test_employment_lifecycle health.test_workforce_preview health.test_workforce_import health.test_staging_synthetic health.test_staging_load --verbosity 2
       - name: Seed synthetic restore sample
         run: |
           python manage.py shell -c "from health.models import HealthCenter,Employee; c=HealthCenter.objects.create(name='Synthetic CI Center'); Employee.objects.create(name='Synthetic CI Employee',national_id='1000000001',employee_number='CI001',health_center=c,risk_level='high')"
