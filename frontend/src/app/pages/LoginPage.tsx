@@ -119,6 +119,13 @@ export function LoginPage() {
               : 'Demo accounts were removed from the frontend. Use an account stored in Django/PostgreSQL.'}
           </Alert>
 
+          {import.meta.env.VITE_STAGING_MODE === 'true' && (
+            <Alert severity="warning" sx={{ mb: 2 }}>
+              {isRtl
+                ? 'بيئة اختبار مستقلة — يمنع رفع بيانات الموظفين الحقيقية أو الملفات الطبية. جميع السجلات للاختبار فقط.'
+                : 'Isolated staging environment — use synthetic data only. Do not upload employee or medical records.'}
+            </Alert>
+          )}
           {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
           <Box component="form" onSubmit={handleSubmit}>
