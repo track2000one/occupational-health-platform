@@ -81,8 +81,8 @@ def load_original_roster(upload):
                 raise ValueError('An Excel field exceeds the safe text limit.')
             if not cells[0].strip() or not cells[1].strip():
                 missing_organization.append(number)
-            identity = re.sub(r'\\D', '', cells[7])
-            if not re.fullmatch(r'\\d{10}', identity):
+            identity = re.sub(r'\D', '', cells[7])
+            if not re.fullmatch(r'\d{10}', identity):
                 invalid_identity.append(number)
             if identity in seen_ids:
                 repeated_ids.append(number)
