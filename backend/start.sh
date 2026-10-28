@@ -12,6 +12,11 @@ if [ "${STAGING_MODE:-false}" = "true" ] && [ "${SEED_STAGING_SYNTHETIC:-false}"
   python manage.py seed_staging_synthetic
 fi
 
+if [ "${STAGING_MODE:-false}" = "true" ] && [ "${SEED_STAGING_LOAD_DATA:-false}" = "true" ]; then
+  echo "[start] Creating isolated, synthetic workforce load-test dataset..."
+  python manage.py seed_staging_load
+fi
+
 WORKERS="${GUNICORN_WORKERS:-2}"
 THREADS="${GUNICORN_THREADS:-4}"
 TIMEOUT="${GUNICORN_TIMEOUT:-45}"
