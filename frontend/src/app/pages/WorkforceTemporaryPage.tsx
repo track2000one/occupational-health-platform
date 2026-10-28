@@ -4,12 +4,6 @@ import {
   TableCell, TableContainer, TableHead, TablePagination, TableRow, TextField,
   Typography, Chip,
 } from '@mui/material';
-import {
-  CloudUploadOutlined as UploadIcon,
-  RefreshOutlined as RefreshIcon,
-  DeleteOutline as DeleteIcon,
-  LockOutlined as LockIcon,
-} from '@mui/icons-material';
 import { authFetch, useAuth } from '../context/AuthContext';
 
 const API_BASE = (
@@ -130,11 +124,11 @@ export function WorkforceTemporaryPage() {
             الأعمدة A–S كما وردت في الملف، منفصلة عن سجلات الاختبار الوهمية والملفات الصحية
           </Typography>
         </Box>
-        <Button variant="outlined" startIcon={<RefreshIcon />} onClick={() => void load()} disabled={busy}>
+        <Button variant="outlined" onClick={() => void load()} disabled={busy}>
           تحديث العرض
         </Button>
       </Stack>
-      <Alert icon={<LockIcon />} severity="warning" sx={{ mb: 2 }}>
+      <Alert severity="warning" sx={{ mb: 2 }}>
         بيانات تعريفية حقيقية ومقيدة. تُحفظ مشفّرة لمدة أقصاها 30 يومًا،
         وتُعرض فقط لمدير النظام الأعلى. لا تستخدم هذه المساحة لتسجيل معلومات طبية.
       </Alert>
@@ -150,7 +144,7 @@ export function WorkforceTemporaryPage() {
                 setFile(event.target.files?.[0] || null)} />
             </Button>
             <Typography sx={{ overflowWrap: 'anywhere' }}>{file?.name || 'لم يُحدد ملف'}</Typography>
-            <Button variant="contained" startIcon={<UploadIcon />} onClick={() => void upload()}
+            <Button variant="contained" onClick={() => void upload()}
               disabled={!file || busy || !payload.upload_enabled}>
               رفع نسخة العمل المؤقتة
             </Button>
@@ -169,7 +163,7 @@ export function WorkforceTemporaryPage() {
             {payload.summary.requires_review &&
               <Chip label="توجد سجلات تحتاج مراجعة" color="warning"/>}
             <Box sx={{ flexGrow: 1 }}/>
-            <Button color="error" variant="outlined" startIcon={<DeleteIcon />}
+            <Button color="error" variant="outlined"
               onClick={() => void removeTemporaryCopy()} disabled={busy}>
               حذف البيانات المؤقتة
             </Button>
