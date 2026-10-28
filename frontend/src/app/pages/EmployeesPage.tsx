@@ -519,6 +519,7 @@ export function EmployeesPage() {
           </Typography>
         </Paper>
       ) : (
+        <>
         <TableContainer component={Paper}>
           <Table>
             <TableHead>
@@ -587,7 +588,7 @@ export function EmployeesPage() {
               ))}
             </TableBody>
           </Table>
-        <>
+        </TableContainer>
           <TablePagination
             component="div"
             count={totalCount}
