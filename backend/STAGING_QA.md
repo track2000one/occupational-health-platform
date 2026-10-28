@@ -50,3 +50,37 @@ a successful independent restore drill, signed health-center mapping approvals,
 and a documented authorization. Do not expose staging without access controls
 or use production exports for QA. npm dependency vulnerability alerts must be
 reviewed prior to handling real health/identity data.
+
+## Production-volume synthetic load (28 Oct 2026)
+
+The staging launch also permits `SEED_STAGING_LOAD_DATA=true` **only** when
+`STAGING_MODE=true` and the Railway project's ID is exactly the isolated
+QA project's ID. The operation aborts if non-synthetic employees exist.
+
+- 1,423 fake employees: IDs `9991000001…`, job numbers `OHP-LOAD-0001…`,
+  names `موظف تجريبي رقم …`, emails at the reserved `example.invalid` domain.
+- The QA-only dataset recreates *aggregate* roster proportions: 1,396
+  source-active assignments and 27 non-active administrative source labels.
+  These 27 are **not automatically classified as retired**.
+- 25 extra **fake** health centers and 131 **fake** organization-to-center
+  mappings (all distinguishable from formally approved mappings).
+- 6 existing lifecycle QA employees remain separate, giving 1,429 synthetic
+  employee records in staging after the load.
+- The seeder uses database transactions and is idempotent. It never deletes
+  a real record or transfers medical history.
+- The Employees page now uses server-side pagination, search and health-center
+  filtering across all records (instead of fetching just the first 25).
+- Verified Railway runtime log:
+  `Synthetic load completed: 1423 new, 1423 total load records, 25 QA centers,
+  131 fake organizational groups; no source identities used.`
+- Original uploaded employee workbooks remain in their private conversation
+  context and are **not committed to the public repository, copied to the
+  test database, or published as seed data**.
+
+### Handover gate
+
+Do not mistake synthetic acceptance testing for official user acceptance or
+final production acceptance. Replacing fake records with authentic employee
+details requires explicit data-owner approval, restricted access, validated
+backups/restoration, official center mapping approvals, and a documented
+handling/deletion policy for test data. Keep the two environments separate.
