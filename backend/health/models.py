@@ -834,3 +834,26 @@ class EmployeeImportReview(models.Model):
     def __str__(self):
         name = self.employee_payload.get('name') or self.raw_payload.get('name') or f'Row {self.source_row}'
         return f'{name} - {self.status}'
+
+
+class TemporaryWorkforceSnapshot(models.Model):
+    """A short-lived, encrypted copy of the original A:S administrative roster.
+
+    No health records are touched and no raw employee PII is saved to source control.
+    """
+    file_sha256 = models.CharField(max_length=64, db_index=True)
+    encrypted_rows = models.BinaryField()
+    summary = models.JSONField(default=dict)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name='temporary_workforce_snapshots'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(db_index=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'Temporary roster {self.pk} ({self.summary.get("rows", 0)} records)'
+
