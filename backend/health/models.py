@@ -55,6 +55,30 @@ class HealthCenter(models.Model):
         return self.name
 
 
+class OrganizationCenterMapping(models.Model):
+    """An admin-approved mapping, never an automatic import authorization."""
+
+    organization_name = models.CharField(max_length=250)
+    organization_key = models.CharField(max_length=64, unique=True)
+    health_center = models.ForeignKey(
+        HealthCenter, on_delete=models.PROTECT, related_name='approved_organization_mappings',
+    )
+    is_active = models.BooleanField(default=True)
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='approved_organization_mappings',
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['organization_name']
+
+    def __str__(self):
+        return f'{self.organization_name} -> {self.health_center.name}'
+
+
 class UserProfile(models.Model):
     ROLE_CHOICES = (
         ('systemAdmin', 'System Admin'),
