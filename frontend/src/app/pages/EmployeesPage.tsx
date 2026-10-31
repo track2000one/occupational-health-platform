@@ -86,6 +86,7 @@ type ApiEmployee = {
   health_center: number | string;
   health_center_name?: string;
   job_title?: string;
+  job_title_en?: string;
   appointment_date?: string | null;
   years_of_experience?: string | number | null;
   periodic_exam_status?: ExamStatus;
@@ -108,6 +109,7 @@ type EmployeeForm = {
   marital_status: MaritalStatus;
   health_center: string;
   job_title: string;
+  job_title_en: string;
   appointment_date: string;
   periodic_exam_status: ExamStatus;
   vaccination_status: VaccineStatus;
@@ -127,6 +129,7 @@ const EMPTY_FORM: EmployeeForm = {
   marital_status: '',
   health_center: '',
   job_title: '',
+  job_title_en: '',
   appointment_date: '',
   periodic_exam_status: 'incomplete',
   vaccination_status: 'due',
@@ -190,6 +193,7 @@ function asForm(employee: ApiEmployee): EmployeeForm {
     marital_status: employee.marital_status || '',
     health_center: String(employee.health_center || ''),
     job_title: employee.job_title || '',
+    job_title_en: employee.job_title_en || '',
     appointment_date: normalizeDate(employee.appointment_date),
     periodic_exam_status: employee.periodic_exam_status || 'incomplete',
     vaccination_status: employee.vaccination_status || 'due',
@@ -211,6 +215,7 @@ function buildPayload(form: EmployeeForm) {
     marital_status: form.marital_status,
     health_center: Number(form.health_center),
     job_title: form.job_title.trim(),
+    job_title_en: form.job_title_en.trim(),
     appointment_date: form.appointment_date || null,
     periodic_exam_status: form.periodic_exam_status,
     vaccination_status: form.vaccination_status,
@@ -308,7 +313,8 @@ export function EmployeesPage() {
       String(emp.employee_number || '').toLowerCase().includes(query) ||
       String(emp.national_id || '').includes(query) ||
       String(emp.mobile || '').includes(query) ||
-      String(emp.job_title || '').toLowerCase().includes(query);
+      String(emp.job_title || '').toLowerCase().includes(query) ||
+      String(emp.job_title_en || '').toLowerCase().includes(query);
     const matchCenter = centerFilter === 'all' || String(emp.health_center) === centerFilter;
     return matchSearch && matchCenter;
   });
@@ -531,7 +537,7 @@ export function EmployeesPage() {
                   <TableCell>{employee.email || '-'}</TableCell>
                   <TableCell>
                     <Typography variant="body2" fontWeight="bold">{getHealthCenterName(employee)}</Typography>
-                    <Typography variant="caption" color="text.secondary">{employee.job_title || '-'}</Typography>
+                    <Typography variant="caption" color="text.secondary">{(isRtl ? employee.job_title || employee.job_title_en : employee.job_title_en || employee.job_title) || '-'}</Typography>
                   </TableCell>
                   <TableCell>
                     <Typography variant="body2">{isRtl ? 'العمر: ' : 'Age: '}{employee.age ?? '-'}</Typography>
@@ -633,8 +639,13 @@ export function EmployeesPage() {
               />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
-              <TextField fullWidth required label={isRtl ? 'المسمى الوظيفي' : 'Job Title'} value={form.job_title}
+              <TextField fullWidth required label={isRtl ? 'المسمى الوظيفي (بالعربية)' : 'Job Title (Arabic)'} value={form.job_title}
                 onChange={event => updateForm('job_title', event.target.value)} disabled={isReadOnly} />
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <TextField fullWidth label={isRtl ? 'المسمى الوظيفي (بالإنجليزية)' : 'Job Title (English)'} value={form.job_title_en}
+                onChange={event => updateForm('job_title_en', event.target.value)} disabled={isReadOnly}
+                helperText={isRtl ? 'ترجمة المسمى نفسه وليست وظيفة أخرى' : 'Translation of the same job title, not a second position'} />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
               <CalendarDateField required label={isRtl ? 'تاريخ التعيين' : 'Appointment Date'} value={form.appointment_date}

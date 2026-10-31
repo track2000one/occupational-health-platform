@@ -57,7 +57,8 @@ EMPLOYEE_ROSTER_ALIASES = {
     'gender': ['gender', 'sex', 'الجنس', 'النوع'],
     'marital_status': ['marital status', 'social status', 'الحالة الاجتماعية', 'الحالة'],
     'health_center': ['health center', 'facility', 'work facility', 'المركز الصحي', 'المركز', 'المنشأة الصحية', 'المرفق الصحي', 'جهة العمل'],
-    'job_title': ['job title', 'position', 'occupation', 'المسمى الوظيفي', 'الوظيفة', 'المهنة'],
+    'job_title': ['job title', 'position', 'occupation', 'المسمى الوظيفي', 'مسمى الوظيفي', 'الوظيفة', 'المهنة'],
+    'job_title_en': ['job title', 'job title (en)', 'job title english', 'english job title', 'المسمى الوظيفي بالإنجليزية'],
     'appointment_date': ['appointment date', 'hire date', 'start date', 'joining date', 'date hired', 'تاريخ التعيين', 'تاريخ المباشرة', 'تاريخ الالتحاق'],
     'periodic_exam_status': ['periodic exam status', 'حالة الفحص الدوري'],
     'vaccination_status': ['vaccination status', 'حالة التطعيم'],
@@ -396,7 +397,26 @@ def resolve_employee_field_mapping(
             mapping[field] = index
         else:
             field_candidates = candidates[field]
-            mapping[field] = field_candidates[0] if len(field_candidates) == 1 else None
+            if field == 'job_title':
+                # The same job title may have separate Arabic and English source columns.
+                # Keep the Arabic title canonical when both translations are provided.
+                arabic_columns = [index for index in field_candidates
+                                  if re.search(r'[\u0600-\u06ff]', clean_text(headers[index]))]
+                if len(arabic_columns) == 1:
+                    mapping[field] = arabic_columns[0]
+                else:
+                    mapping[field] = field_candidates[0] if len(field_candidates) == 1 else None
+            elif field == 'job_title_en':
+                english_columns = [index for index in field_candidates
+                                   if not re.search(r'[\u0600-\u06ff]', clean_text(headers[index]))]
+                mapping[field] = english_columns[0] if len(english_columns) == 1 else None
+            else:
+                mapping[field] = field_candidates[0] if len(field_candidates) == 1 else None
+
+    # A single English-only header is a legacy canonical title, not two distinct columns.
+    if supplied is None or ('job_title' not in supplied and 'job_title_en' not in supplied):
+        if mapping.get('job_title') is not None and mapping.get('job_title_en') == mapping['job_title']:
+            mapping['job_title_en'] = None
 
     used_columns: Dict[int, List[str]] = {}
     for field, index in mapping.items():
@@ -498,6 +518,8 @@ def import_employee_roster_sheet(
             for field in EMPLOYEE_ROSTER_ALIASES
         }
         raw = dict(raw_input)
+        if not raw['job_title'] and raw.get('job_title_en'):
+            raw['job_title'] = raw['job_title_en']  # English-only legacy workbook fallback.
         if center_corrections and str(row_number) in center_corrections:
             corrected_center = HealthCenter.objects.filter(pk=center_corrections[str(row_number)], is_active=True).first()
             if not corrected_center:
@@ -584,6 +606,7 @@ def import_employee_roster_sheet(
             'health_center_name': center.name if center else raw['health_center'],
             'health_center': center.id if center else None,
             'job_title': raw['job_title'],
+            'job_title_en': raw['job_title_en'],
             'appointment_date': appointment_date.isoformat() if appointment_date else '',
             'periodic_exam_status': periodic_exam_status or raw['periodic_exam_status'],
             'vaccination_status': vaccination_status or raw['vaccination_status'],
@@ -648,6 +671,7 @@ def import_employee_roster_sheet(
             'marital_status': marital_status,
             'health_center': center.name if center else '',
             'job_title': raw['job_title'],
+            'job_title_en': raw['job_title_en'],
             'appointment_date': appointment_date,
             'periodic_exam_status': periodic_exam_status,
             'vaccination_status': vaccination_status,

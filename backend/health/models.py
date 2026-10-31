@@ -125,6 +125,7 @@ class Employee(models.Model):
     marital_status = models.CharField(max_length=20, choices=MARITAL_STATUS, blank=True)
     health_center = models.ForeignKey(HealthCenter, on_delete=models.PROTECT, related_name='employees')
     job_title = models.CharField(max_length=150, blank=True)
+    job_title_en = models.CharField(max_length=150, blank=True)
     appointment_date = models.DateField(null=True, blank=True)
     years_of_experience = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
     periodic_exam_status = models.CharField(max_length=20, choices=STATUS, default='incomplete')

@@ -123,6 +123,7 @@ type ReviewForm = {
   marital_status: string;
   health_center: string;
   job_title: string;
+  job_title_en: string;
   appointment_date: string;
   periodic_exam_status: string;
   vaccination_status: string;
@@ -132,7 +133,7 @@ type ReviewForm = {
 const EMPTY_REVIEW_FORM: ReviewForm = {
   name: '', email: '', national_id: '', employee_number: '', national_address: '',
   mobile: '', date_of_birth: '', birth_place: '', gender: 'male', marital_status: '',
-  health_center: '', job_title: '', appointment_date: '', periodic_exam_status: 'incomplete',
+  health_center: '', job_title: '', job_title_en: '', appointment_date: '', periodic_exam_status: 'incomplete',
   vaccination_status: 'due', risk_level: 'low',
 };
 
@@ -148,7 +149,8 @@ const IMPORT_FIELD_LABELS_AR: Record<string, string> = {
   gender: 'الجنس',
   marital_status: 'الحالة الاجتماعية',
   health_center: 'المركز الصحي',
-  job_title: 'المسمى الوظيفي',
+  job_title: 'المسمى الوظيفي (عربي)',
+  job_title_en: 'المسمى الوظيفي (إنجليزي)',
   appointment_date: 'تاريخ التعيين',
   periodic_exam_status: 'حالة الفحص الدوري',
   vaccination_status: 'حالة التطعيم',
@@ -167,7 +169,8 @@ const IMPORT_FIELD_LABELS_EN: Record<string, string> = {
   gender: 'Gender',
   marital_status: 'Marital status',
   health_center: 'Health center',
-  job_title: 'Job title',
+  job_title: 'Job title (Arabic)',
+  job_title_en: 'Job title (English)',
   appointment_date: 'Appointment date',
   periodic_exam_status: 'Periodic exam status',
   vaccination_status: 'Vaccination status',
@@ -338,6 +341,7 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
       marital_status: allowedMarital,
       health_center: payloadText(payload, 'health_center'),
       job_title: payloadText(payload, 'job_title'),
+      job_title_en: payloadText(payload, 'job_title_en'),
       appointment_date: /^\d{4}-\d{2}-\d{2}$/.test(payloadText(payload, 'appointment_date')) ? payloadText(payload, 'appointment_date') : '',
       periodic_exam_status: ['completed', 'incomplete', 'overdue'].includes(payloadText(payload, 'periodic_exam_status')) ? payloadText(payload, 'periodic_exam_status') : 'incomplete',
       vaccination_status: ['completed', 'due', 'refused'].includes(payloadText(payload, 'vaccination_status')) ? payloadText(payload, 'vaccination_status') : 'due',
@@ -956,7 +960,8 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
             <Grid size={{ xs: 12, md: 6 }}><TextField select required fullWidth label={isRtl ? 'الجنس' : 'Gender'} value={reviewForm.gender} onChange={e => updateReviewField('gender', e.target.value)}><MenuItem value="male">{isRtl ? 'ذكر' : 'Male'}</MenuItem><MenuItem value="female">{isRtl ? 'أنثى' : 'Female'}</MenuItem></TextField></Grid>
             <Grid size={{ xs: 12, md: 6 }}><TextField select required fullWidth label={isRtl ? 'الحالة الاجتماعية' : 'Marital status'} value={reviewForm.marital_status} onChange={e => updateReviewField('marital_status', e.target.value)}><MenuItem value="single">{isRtl ? 'أعزب' : 'Single'}</MenuItem><MenuItem value="married">{isRtl ? 'متزوج' : 'Married'}</MenuItem><MenuItem value="divorced">{isRtl ? 'مطلق' : 'Divorced'}</MenuItem><MenuItem value="widowed">{isRtl ? 'أرمل' : 'Widowed'}</MenuItem></TextField></Grid>
             <Grid size={{ xs: 12, md: 6 }}><TextField select required fullWidth label={isRtl ? 'المركز الصحي' : 'Health center'} value={reviewForm.health_center} onChange={e => updateReviewField('health_center', e.target.value)}>{healthCenters.map(center => <MenuItem key={center.id} value={String(center.id)}>{center.name}</MenuItem>)}</TextField></Grid>
-            <Grid size={{ xs: 12, md: 6 }}><TextField required fullWidth label={isRtl ? 'المسمى الوظيفي' : 'Job title'} value={reviewForm.job_title} onChange={e => updateReviewField('job_title', e.target.value)} /></Grid>
+            <Grid size={{ xs: 12, md: 6 }}><TextField required fullWidth label={isRtl ? 'المسمى الوظيفي (عربي)' : 'Job title (Arabic)'} value={reviewForm.job_title} onChange={e => updateReviewField('job_title', e.target.value)} /></Grid>
+            <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label={isRtl ? 'المسمى الوظيفي (إنجليزي)' : 'Job title (English)'} value={reviewForm.job_title_en} onChange={e => updateReviewField('job_title_en', e.target.value)} /></Grid>
             <Grid size={{ xs: 12, md: 6 }}><CalendarDateField required label={isRtl ? 'تاريخ التعيين' : 'Appointment date'} value={reviewForm.appointment_date} onChange={value => updateReviewField('appointment_date', value)} /></Grid>
             <Grid size={{ xs: 12, md: 6 }}><TextField select fullWidth label={isRtl ? 'حالة الفحص الدوري' : 'Exam status'} value={reviewForm.periodic_exam_status} onChange={e => updateReviewField('periodic_exam_status', e.target.value)}><MenuItem value="completed">{isRtl ? 'مكتمل' : 'Completed'}</MenuItem><MenuItem value="incomplete">{isRtl ? 'غير مكتمل' : 'Incomplete'}</MenuItem><MenuItem value="overdue">{isRtl ? 'متأخر' : 'Overdue'}</MenuItem></TextField></Grid>
             <Grid size={{ xs: 12, md: 6 }}><TextField select fullWidth label={isRtl ? 'حالة التطعيم' : 'Vaccination status'} value={reviewForm.vaccination_status} onChange={e => updateReviewField('vaccination_status', e.target.value)}><MenuItem value="completed">{isRtl ? 'مكتمل' : 'Completed'}</MenuItem><MenuItem value="due">{isRtl ? 'مستحق' : 'Due'}</MenuItem><MenuItem value="refused">{isRtl ? 'مرفوض' : 'Refused'}</MenuItem></TextField></Grid>
