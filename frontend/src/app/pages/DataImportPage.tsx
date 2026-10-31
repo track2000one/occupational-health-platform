@@ -84,6 +84,8 @@ type ImportResult = {
   missing_required_fields?: string[];
   header_row?: number;
   employee_import_mode?: 'template' | 'flexible';
+  workforce_roster_preview?: boolean;
+  organization_groups?: { key: string; name: string; count: number; approved: boolean }[];
   summary: ImportSummary;
   sheet_results?: SheetImportResult[];
   duplicates: { row: number; national_id?: string; name?: string; reason: string }[];
@@ -450,6 +452,10 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
     }
 
     const shouldCommit = commitOverride ?? commitMode;
+    if (employeeMode && shouldCommit && result?.workforce_roster_preview) {
+      toast.error(isRtl ? 'هذا الملف مخصص للمعاينة فقط حتى اعتماد ربط الجهات بالمراكز.' : 'This source is preview-only until center mapping is approved.');
+      return;
+    }
     if (employeeMode && shouldCommit && (result?.mode !== 'preview' || mappingDirty)) return;
     setUploadError('');
     setResult(null);
@@ -602,7 +608,7 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
                     : (commitMode ? (isRtl ? 'فحص وحفظ في قاعدة البيانات' : 'Validate & Commit') : (isRtl ? 'فحص ومعاينة فقط' : 'Validate Preview Only'))}
                 </Button>
 
-                {employeeMode && result?.mode === 'preview' && (
+                {employeeMode && result?.mode === 'preview' && !result.workforce_roster_preview && (
                   <Button
                     onClick={() => void upload(true)}
                     disabled={loading || !file || mappingDirty || (result.summary.total_rows || 0) === 0}
@@ -620,7 +626,7 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
 
                 {loading && <LinearProgress />}
                 {uploadError && <Alert severity="error">{uploadError}</Alert>}
-                {employeeMode && result?.mode === 'preview' && <Alert severity="warning">{isRtl ? 'لم يتم حفظ أي موظف بعد. الصفوف غير السليمة ستُحفظ للمراجعة عند الاعتماد، ويمكن تصحيحها داخل المنصة.' : 'No employees saved yet. Invalid rows will be staged on confirmation and can be corrected here.'}</Alert>}
+                {employeeMode && result?.mode === 'preview' && !result.workforce_roster_preview && <Alert severity="warning">{isRtl ? 'لم يتم حفظ أي موظف بعد. الصفوف غير السليمة ستُحفظ للمراجعة عند الاعتماد، ويمكن تصحيحها داخل المنصة.' : 'No employees saved yet. Invalid rows will be staged on confirmation and can be corrected here.'}</Alert>}
                 {employeeMode && result?.mode === 'commit' && <Button component={Link} to="/employees" variant="outlined">{isRtl ? 'عرض قائمة الموظفين' : 'View employee list'}</Button>}
               </Stack>
             </CardContent>
@@ -667,7 +673,7 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
         <Box sx={{ mt: 3 }}>
           <Grid container spacing={2} sx={{ mb: 3 }}>
             <Grid size={{ xs: 12, sm: 6, md: 3 }}>{summaryCard(isRtl ? 'إجمالي الصفوف' : 'Total rows', result.summary.total_rows || 0, '#1e40af')}</Grid>
-            <Grid size={{ xs: 12, sm: 6, md: 3 }}>{summaryCard(isRtl ? 'صفوف صالحة' : 'Valid rows', result.summary.valid_rows || 0, '#16a34a')}</Grid>
+            <Grid size={{ xs: 12, sm: 6, md: 3 }}>{summaryCard(result.workforce_roster_preview ? (isRtl ? 'هويات موظفين سليمة مبدئيًا' : 'Valid source identities') : (isRtl ? 'صفوف صالحة' : 'Valid rows'), result.workforce_roster_preview ? (result.summary.source_verified_rows || 0) : (result.summary.valid_rows || 0), '#16a34a')}</Grid>
             <Grid size={{ xs: 12, sm: 6, md: 3 }}>{summaryCard(isRtl ? 'مكررة' : 'Duplicates', result.summary.duplicate_rows || 0, '#f59e0b')}</Grid>
             <Grid size={{ xs: 12, sm: 6, md: 3 }}>{summaryCard(isRtl ? 'أخطاء' : 'Errors', result.summary.errors_count || 0, '#dc2626')}</Grid>
           </Grid>
@@ -680,6 +686,43 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
               : (isRtl ? 'هذه نتيجة معاينة فقط، لم يتم الحفظ في قاعدة البيانات.' : 'Preview only. Nothing was saved to the database.')}
           </Alert>
 
+          {result.workforce_roster_preview && (
+            <Paper sx={{ p: 2.5, borderRadius: 3, mb: 2 }}>
+              <Alert severity="warning" sx={{ mb: 2 }}>
+                {isRtl
+                  ? 'تم التعرف على ملف الموظفين الأصلي المكوّن من 19 عمودًا. هذه معاينة تجميعية فقط: لم يُنشأ أي موظف، ولا يمكن اعتبار أسماء الجهات مراكز صحية معتمدة.'
+                  : 'The original 19-column workforce roster was recognised. This is an aggregate-only preview: no employees were created and organization names are not approved health centers.'}
+              </Alert>
+              <Stack direction="row" spacing={1} flexWrap="wrap" sx={{ mb: 2 }}>
+                <Chip label={isRtl ? `تنتظر ربط المركز: ${result.summary.pending_center_mapping || 0}` : `Awaiting center mapping: ${result.summary.pending_center_mapping || 0}`} color="warning" />
+                <Chip label={isRtl ? `مجموعات الجهات: ${result.summary.organization_groups || 0}` : `Organization groups: ${result.summary.organization_groups || 0}`} />
+                <Chip label={isRtl ? `هويات موجودة مسبقًا: ${result.summary.existing_identity_matches || 0}` : `Existing identities: ${result.summary.existing_identity_matches || 0}`} />
+              </Stack>
+              <Typography variant="h6" sx={{ mb: 1 }}>{isRtl ? 'الجهات التنظيمية — تحتاج اعتماد ربطها بالمراكز الصحية' : 'Organization groups — center mapping approval required'}</Typography>
+              <TableContainer sx={{ maxHeight: 370, borderRadius: 2 }}>
+                <Table size="small" stickyHeader>
+                  <TableHead><TableRow>
+                    <TableCell>{isRtl ? 'الجهة التنظيمية' : 'Organization'}</TableCell>
+                    <TableCell>{isRtl ? 'عدد الموظفين' : 'Employees'}</TableCell>
+                    <TableCell>{isRtl ? 'حالة الربط' : 'Mapping'}</TableCell>
+                  </TableRow></TableHead>
+                  <TableBody>
+                    {(result.organization_groups || []).map(group => (
+                      <TableRow key={group.key}>
+                        <TableCell>{group.name}</TableCell>
+                        <TableCell>{group.count}</TableCell>
+                        <TableCell><Chip size="small" color="warning" label={isRtl ? 'لم يعتمد' : 'Unapproved'} /></TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+              <Typography variant="caption" color="text.secondary">
+                {isRtl ? 'لا تعرض هذه المعاينة أرقام الهوية أو أرقام الجوال أو أسماء المديرين. لن يُتاح الحفظ إلا بمسار استيراد معتمد منفصل.' : 'No identities, phone numbers, or manager names are displayed. Import requires a separately approved workflow.'}
+              </Typography>
+            </Paper>
+          )}
+
           <Paper sx={{ p: 2.5, borderRadius: 3, mb: 2 }}>
             <Stack direction={isRtl ? 'row-reverse' : 'row'} spacing={1} flexWrap="wrap">
               <Chip label={`${isRtl ? 'الشيت' : 'Sheet'}: ${result.sheet_name}`} />
@@ -689,7 +732,7 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
             </Stack>
           </Paper>
 
-          {employeeMode && employeeImportMode === 'flexible' && result.mapping_options && (
+          {employeeMode && employeeImportMode === 'flexible' && !result.workforce_roster_preview && result.mapping_options && (
             <Paper sx={{ p: 2.5, borderRadius: 3, mb: 2, border: '1px solid', borderColor: mappingDirty ? 'warning.main' : 'primary.light' }}>
               <Stack direction={{ xs: 'column', md: isRtl ? 'row-reverse' : 'row' }} justifyContent="space-between" spacing={1.5} sx={{ mb: 2 }}>
                 <Box sx={{ textAlign: isRtl ? 'right' : 'left' }}>
