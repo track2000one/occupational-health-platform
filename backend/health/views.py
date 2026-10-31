@@ -879,6 +879,19 @@ class OrganizationCenterMappingViewSet(viewsets.ViewSet):
         ).all().order_by('organization_name')
         return Response([self._data(item) for item in mappings])
 
+    @action(detail=False, methods=['get'])
+    def centers(self, request):
+        # Full active center set: default employee/center lists are paginated at 25.
+        return Response([
+            {
+                'id': center.pk,
+                'name': center.name,
+                'name_ar': center.name_ar,
+                'name_en': center.name_en,
+            }
+            for center in HealthCenter.objects.filter(is_active=True).order_by('name')
+        ])
+
     def create(self, request):
         organization = str(request.data.get('organization_name') or '').strip()
         if (
