@@ -4,13 +4,15 @@ from datetime import date, timedelta
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.utils import timezone
+from django.shortcuts import get_object_or_404
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from .importers import process_excel_import
-from .models import AuditLog, ClinicVisit, CommitteeReferral, DataImportBatch, Employee, EmployeeHealthCard, EmployeeImportReview, HealthCenter, InjuryCase, LabTest, OccupationalHealthAssessment, Vaccination
+from .workforce_source_preview import normalize_organization_name, organization_key
+from .models import AuditLog, ClinicVisit, CommitteeReferral, DataImportBatch, Employee, EmployeeHealthCard, EmployeeImportReview, HealthCenter, OrganizationCenterMapping, InjuryCase, LabTest, OccupationalHealthAssessment, Vaccination
 from .serializers import AuditLogSerializer, ClinicVisitSerializer, CommitteeReferralSerializer, DataImportBatchSerializer, EmployeeHealthCardSerializer, EmployeeImportReviewSerializer, EmployeeSerializer, HealthCenterSerializer, InjuryCaseSerializer, LabTestSerializer, OccupationalHealthAssessmentSerializer, PlatformUserSerializer, VaccinationSerializer
 
 
@@ -851,3 +853,89 @@ class ClinicVisitViewSet(viewsets.ModelViewSet):
 class CommitteeReferralViewSet(viewsets.ModelViewSet): queryset=CommitteeReferral.objects.select_related('employee').all().order_by('-id'); serializer_class=CommitteeReferralSerializer; permission_classes=[permissions.IsAuthenticated]
 class InjuryCaseViewSet(viewsets.ModelViewSet): queryset=InjuryCase.objects.select_related('employee').all().order_by('-id'); serializer_class=InjuryCaseSerializer; permission_classes=[permissions.IsAuthenticated]
 class AuditLogViewSet(viewsets.ReadOnlyModelViewSet): queryset=AuditLog.objects.all().order_by('-created_at'); serializer_class=AuditLogSerializer; permission_classes=[permissions.IsAdminUser]
+
+
+class OrganizationCenterMappingViewSet(viewsets.ViewSet):
+    """Explicit administrative approvals; does not enable employee importing."""
+
+    permission_classes = [permissions.IsAdminUser]
+
+    @staticmethod
+    def _data(mapping):
+        return {
+            'id': mapping.pk,
+            'organization_name': mapping.organization_name,
+            'key': mapping.organization_key,
+            'health_center': mapping.health_center_id,
+            'center_name': mapping.health_center.name,
+            'approved_by': mapping.approved_by.get_username() if mapping.approved_by else '',
+            'approved_at': mapping.approved_at.isoformat() if mapping.approved_at else None,
+            'is_active': mapping.is_active,
+        }
+
+    def list(self, request):
+        mappings = OrganizationCenterMapping.objects.select_related(
+            'health_center', 'approved_by'
+        ).all().order_by('organization_name')
+        return Response([self._data(item) for item in mappings])
+
+    def create(self, request):
+        organization = str(request.data.get('organization_name') or '').strip()
+        if (
+            not organization or len(organization) > 250
+            or '\n' in organization or '\r' in organization
+            or normalize_organization_name(organization) in {'', '(unassigned organization)'}
+        ):
+            return Response(
+                {'detail': 'Provide a valid named organization (max 250 characters).'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            center_id = int(request.data.get('health_center_id'))
+        except (TypeError, ValueError):
+            return Response({'detail': 'Select an active health center.'}, status=status.HTTP_400_BAD_REQUEST)
+        center = HealthCenter.objects.filter(pk=center_id, is_active=True).first()
+        if not center:
+            return Response({'detail': 'Selected health center is inactive or missing.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        key = organization_key(organization)
+        with transaction.atomic():
+            mapping, created = OrganizationCenterMapping.objects.update_or_create(
+                organization_key=key,
+                defaults={
+                    'organization_name': organization,
+                    'health_center': center,
+                    'is_active': True,
+                    'approved_by': request.user,
+                    'approved_at': timezone.now(),
+                },
+            )
+            AuditLog.objects.create(
+                user=str(request.user),
+                action='approve_organization_center' if created else 'reapprove_organization_center',
+                model_name='OrganizationCenterMapping',
+                record_id=str(mapping.pk),
+            )
+        return Response(
+            self._data(mapping), status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+    @action(detail=True, methods=['post'])
+    def revoke(self, request, pk=None):
+        with transaction.atomic():
+            mapping = get_object_or_404(
+                OrganizationCenterMapping.objects.select_for_update().select_related(
+                    'health_center', 'approved_by',
+                ),
+                pk=pk,
+            )
+            if mapping.is_active:
+                mapping.is_active = False
+                mapping.save(update_fields=['is_active', 'updated_at'])
+                AuditLog.objects.create(
+                    user=str(request.user),
+                    action='revoke_organization_center',
+                    model_name='OrganizationCenterMapping',
+                    record_id=str(mapping.pk),
+                )
+        return Response(self._data(mapping))
