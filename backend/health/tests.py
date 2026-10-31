@@ -102,3 +102,49 @@ class WorkforceRosterPreviewTests(SimpleTestCase):
         self.assertEqual(report["summary"]["total_rows"], 3)
         self.assertEqual(report["summary"]["duplicate_rows"], 1)
         self.assertEqual(report["summary"]["source_verified_rows"], 2)
+
+
+from io import BytesIO
+
+from django.test import TestCase
+
+from .importers import process_excel_import
+from .models import Employee
+
+
+class WorkforceRosterImportGuardTests(TestCase):
+    def _upload(self):
+        workbook = Workbook()
+        worksheet = workbook.active
+        worksheet.title = "ورقة1"
+        worksheet.append(WorkforceRosterPreviewTests.SOURCE_HEADERS)
+        worksheet.append([
+            "مركز تجريبي", "", "FAKE MANAGER", "1999999999",
+            "manager@example.invalid", "0500000000", "001",
+            "1000000001", "موظف تجريبي", "ذكر", "", "", "0500000011",
+            "employee@example.invalid", "على رأس العمل",
+            "2020-01-01", "", "طبيب", "",
+        ])
+        data = BytesIO()
+        workbook.save(data)
+        data.seek(0)
+        data.name = "synthetic_roster.xlsx"
+        return data
+
+    def test_flexible_preview_returns_aggregate_only(self):
+        result = process_excel_import(
+            self._upload(), employee_import_mode="flexible", commit=False,
+        )
+        self.assertTrue(result["workforce_roster_preview"])
+        self.assertEqual(result["summary"]["source_verified_rows"], 1)
+        self.assertEqual(result["summary"]["valid_rows"], 0)
+        self.assertEqual(Employee.objects.count(), 0)
+
+    def test_explicit_commit_rejected_without_any_employee_insert(self):
+        for mode in ("flexible", "template", ""):
+            with self.subTest(mode=mode):
+                with self.assertRaisesRegex(ValueError, "cannot be committed"):
+                    process_excel_import(
+                        self._upload(), employee_import_mode=mode, commit=True,
+                    )
+        self.assertEqual(Employee.objects.count(), 0)
