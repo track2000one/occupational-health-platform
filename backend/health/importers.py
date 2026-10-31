@@ -10,6 +10,8 @@ from django.db import transaction
 from openpyxl import load_workbook
 from openpyxl.utils.datetime import from_excel
 
+from .workforce_source_preview import source_columns, preview_workforce_source
+
 from .models import (
     CampaignCoverage,
     ClinicVisit,
@@ -1221,6 +1223,23 @@ def process_excel_import(
     normalized_employee_mode = normalize_header(employee_import_mode)
     if normalized_employee_mode not in ('', 'template', 'flexible'):
         raise ValueError('Employee import mode must be template or flexible.')
+    # Never allow the original workforce file to enter the generic importer.
+    # It contains manager identities in columns distinct from employee identities.
+    source_sheets = [
+        sheet for sheet in workbook.sheetnames
+        if source_columns(list(next(workbook[sheet].iter_rows(
+            min_row=1, max_row=1, values_only=True), ()))) is not None
+    ]
+    if source_sheets:
+        if commit:
+            raise ValueError(
+                'The 19-column workforce source cannot be committed before '
+                'organization-to-center approval and a separately authorized import.'
+            )
+        if normalized_employee_mode != 'flexible':
+            raise ValueError(
+                'The original 19-column workforce source requires flexible preview mode.'
+            )
     importable_sheets = [sheet for sheet in workbook.sheetnames if resolve_processor(sheet) is not import_generic_sheet or sheet == 'Database']
 
     if normalized_employee_mode:
@@ -1230,6 +1249,26 @@ def process_excel_import(
             selected_sheet = requested or ('Employees' if 'Employees' in workbook.sheetnames else workbook.sheetnames[0])
         else:
             selected_sheet = requested or workbook.sheetnames[0]
+
+        if normalized_employee_mode == 'flexible':
+            worksheet = workbook[selected_sheet]
+            first_row = list(next(worksheet.iter_rows(min_row=1, max_row=1, values_only=True), ()))
+            if source_columns(first_row) is not None:
+                if commit:
+                    raise ValueError(
+                        'This 19-column workforce roster is preview-only. '
+                        'Approve organisation-to-center mappings and use a separately '
+                        'authorised import path before writing employees.'
+                    )
+                # Source is never sent to a public repository or stored as raw PII.
+                current_ids = Employee.objects.exclude(national_id='').values_list('national_id', flat=True)
+                result = preview_workforce_source(
+                    worksheet, selected_sheet, file_name, existing_ids=current_ids,
+                )
+                result['available_sheets'] = workbook.sheetnames
+                result['importable_sheets'] = workbook.sheetnames
+                return result
+
         result = process_single_sheet(
             workbook,
             selected_sheet,
