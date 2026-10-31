@@ -31,7 +31,7 @@ jobs:
         env:
           DEBUG: 'true'
       - name: Test workforce mapping on synthetic identities only
-        run: python manage.py test health.tests
+        run: python manage.py test health.tests health.test_organization_center_mappings
         env:
           DEBUG: 'true'
 
