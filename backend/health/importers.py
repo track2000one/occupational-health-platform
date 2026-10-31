@@ -1223,6 +1223,23 @@ def process_excel_import(
     normalized_employee_mode = normalize_header(employee_import_mode)
     if normalized_employee_mode not in ('', 'template', 'flexible'):
         raise ValueError('Employee import mode must be template or flexible.')
+    # Never allow the original workforce file to enter the generic importer.
+    # It contains manager identities in columns distinct from employee identities.
+    source_sheets = [
+        sheet for sheet in workbook.sheetnames
+        if source_columns(list(next(workbook[sheet].iter_rows(
+            min_row=1, max_row=1, values_only=True), ()))) is not None
+    ]
+    if source_sheets:
+        if commit:
+            raise ValueError(
+                'The 19-column workforce source cannot be committed before '
+                'organization-to-center approval and a separately authorized import.'
+            )
+        if normalized_employee_mode != 'flexible':
+            raise ValueError(
+                'The original 19-column workforce source requires flexible preview mode.'
+            )
     importable_sheets = [sheet for sheet in workbook.sheetnames if resolve_processor(sheet) is not import_generic_sheet or sheet == 'Database']
 
     if normalized_employee_mode:
