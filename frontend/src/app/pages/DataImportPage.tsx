@@ -112,6 +112,19 @@ type ImportReview = {
 
 type HealthCenterOption = { id: number | string; name: string };
 
+type ApprovedOrganizationMapping = {
+  id: number;
+  key: string;
+  organization_name: string;
+  health_center: number;
+  center_name: string;
+  approved_by: string;
+  approved_at: string | null;
+  is_active: boolean;
+};
+
+type CenterChoice = { id: number; name: string; name_ar: string; name_en: string };
+
 type ReviewForm = {
   name: string;
   email: string;
@@ -293,6 +306,12 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
   const [mappingDirty, setMappingDirty] = useState(false);
   const [centerCorrections, setCenterCorrections] = useState<Record<string, string>>({});
   const [uploadError, setUploadError] = useState('');
+  const [approvedMappings, setApprovedMappings] = useState<ApprovedOrganizationMapping[]>([]);
+  const [mappingCenters, setMappingCenters] = useState<CenterChoice[]>([]);
+  const [mappingSelections, setMappingSelections] = useState<Record<string, string>>({});
+  const [mappingSearch, setMappingSearch] = useState('');
+  const [mappingSavingKey, setMappingSavingKey] = useState<string | null>(null);
+  const [mappingLoadError, setMappingLoadError] = useState('');
 
   const loadReviews = async () => {
     if (!employeeMode) return;
@@ -320,6 +339,83 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
   useEffect(() => {
     void loadReviews();
   }, [employeeMode]);
+
+  const loadOrganizationMappings = async () => {
+    if (!employeeMode) return;
+    const token = getAccessToken();
+    if (!token) return;
+    try {
+      const headers = { Authorization: `Bearer ${token}` };
+      const [mapsResponse, centersResponse] = await Promise.all([
+        authFetch(`${API_BASE_URL}/organization-center-mappings/`, { headers }),
+        authFetch(`${API_BASE_URL}/organization-center-mappings/centers/`, { headers }),
+      ]);
+      if (!mapsResponse.ok || !centersResponse.ok) throw new Error('Mapping API unavailable');
+      const [maps, centers] = await Promise.all([mapsResponse.json(), centersResponse.json()]);
+      if (!Array.isArray(maps) || !Array.isArray(centers)) throw new Error('Invalid mapping response');
+      setApprovedMappings(maps as ApprovedOrganizationMapping[]);
+      setMappingCenters(centers as CenterChoice[]);
+      setMappingLoadError('');
+    } catch {
+      setMappingLoadError(isRtl
+        ? 'تعذر تحميل اعتماد المراكز. لا يتم الاعتماد أو الاستيراد حتى يعمل الاتصال.'
+        : 'Could not load center approvals. No approvals or imports are allowed until connected.');
+    }
+  };
+
+  useEffect(() => {
+    void loadOrganizationMappings();
+  }, [employeeMode]);
+
+  const approveCenterMapping = async (group: NonNullable<ImportResult['organization_groups']>[number], centerId: string) => {
+    if (!centerId || mappingSavingKey) return;
+    const token = getAccessToken();
+    if (!token) return;
+    setMappingSavingKey(group.key);
+    try {
+      const response = await authFetch(`${API_BASE_URL}/organization-center-mappings/`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ organization_name: group.name, health_center_id: Number(centerId) }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || body.key !== group.key) throw new Error(body.detail || 'Unexpected mapping result');
+      setApprovedMappings(current => [
+        ...current.filter(item => item.key !== group.key),
+        body as ApprovedOrganizationMapping,
+      ]);
+      toast.success(isRtl ? 'تم اعتماد ربط الجهة بالمركز وتسجيل المستخدم' : 'Center mapping approved and audited');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Center approval failed');
+    } finally {
+      setMappingSavingKey(null);
+    }
+  };
+
+  const revokeCenterMapping = async (mapping: ApprovedOrganizationMapping) => {
+    if (mappingSavingKey) return;
+    if (!window.confirm(isRtl
+      ? 'هل تريد إلغاء اعتماد هذا الربط؟ لن تُحذف بيانات الموظفين.'
+      : 'Revoke this approval? No employee data will be deleted.')) return;
+    const token = getAccessToken();
+    if (!token) return;
+    setMappingSavingKey(mapping.key);
+    try {
+      const response = await authFetch(`${API_BASE_URL}/organization-center-mappings/${mapping.id}/revoke/`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || body.key !== mapping.key) throw new Error(body.detail || 'Unable to revoke');
+      setApprovedMappings(current => current.map(item => item.key === mapping.key
+        ? body as ApprovedOrganizationMapping : item));
+      toast.success(isRtl ? 'تم إلغاء الاعتماد وتسجيل العملية' : 'Approval revoked and audited');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Revoke failed');
+    } finally {
+      setMappingSavingKey(null);
+    }
+  };
 
   const payloadText = (payload: Record<string, unknown>, key: string) => {
     const value = payload[key];
@@ -699,21 +795,78 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
                 <Chip label={isRtl ? `هويات موجودة مسبقًا: ${result.summary.existing_identity_matches || 0}` : `Existing identities: ${result.summary.existing_identity_matches || 0}`} />
               </Stack>
               <Typography variant="h6" sx={{ mb: 1 }}>{isRtl ? 'الجهات التنظيمية — تحتاج اعتماد ربطها بالمراكز الصحية' : 'Organization groups — center mapping approval required'}</Typography>
-              <TableContainer sx={{ maxHeight: 370, borderRadius: 2 }}>
+              {mappingLoadError && <Alert severity="error" sx={{ mb: 2 }}>{mappingLoadError}</Alert>}
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems="center" sx={{ mb: 2 }}>
+                <TextField
+                  size="small" fullWidth
+                  label={isRtl ? 'بحث باسم الجهة التنظيمية' : 'Search organizations'}
+                  value={mappingSearch} onChange={event => setMappingSearch(event.target.value)}
+                />
+                <Chip
+                  color="success"
+                  label={isRtl
+                    ? `جهات معتمدة: ${(result.organization_groups || []).filter(group => approvedMappings.some(item => item.key === group.key && item.is_active && mappingCenters.some(center => center.id === item.health_center))).length} / ${(result.organization_groups || []).length}`
+                    : `Approved: ${(result.organization_groups || []).filter(group => approvedMappings.some(item => item.key === group.key && item.is_active && mappingCenters.some(center => center.id === item.health_center))).length} / ${(result.organization_groups || []).length}`}
+                />
+              </Stack>
+              <TableContainer sx={{ maxHeight: 430, borderRadius: 2 }}>
                 <Table size="small" stickyHeader>
                   <TableHead><TableRow>
                     <TableCell>{isRtl ? 'الجهة التنظيمية' : 'Organization'}</TableCell>
                     <TableCell>{isRtl ? 'عدد الموظفين' : 'Employees'}</TableCell>
-                    <TableCell>{isRtl ? 'حالة الربط' : 'Mapping'}</TableCell>
+                    <TableCell>{isRtl ? 'المركز الصحي المعتمد' : 'Approved health center'}</TableCell>
+                    <TableCell>{isRtl ? 'حالة الاعتماد' : 'Status'}</TableCell>
+                    <TableCell>{isRtl ? 'الإجراء' : 'Action'}</TableCell>
                   </TableRow></TableHead>
                   <TableBody>
-                    {(result.organization_groups || []).map(group => (
-                      <TableRow key={group.key}>
-                        <TableCell>{group.name}</TableCell>
-                        <TableCell>{group.count}</TableCell>
-                        <TableCell><Chip size="small" color="warning" label={isRtl ? 'لم يعتمد' : 'Unapproved'} /></TableCell>
-                      </TableRow>
-                    ))}
+                    {(result.organization_groups || [])
+                      .filter(group => group.name.toLowerCase().includes(mappingSearch.trim().toLowerCase()))
+                      .map(group => {
+                        const mapping = approvedMappings.find(item => item.key === group.key);
+                        const active = !!mapping?.is_active && mappingCenters.some(center => center.id === mapping.health_center);
+                        const selection = mappingSelections[group.key] ?? (mapping ? String(mapping.health_center) : '');
+                        const unchanged = active && selection === String(mapping?.health_center);
+                        return (
+                          <TableRow key={group.key}>
+                            <TableCell sx={{ minWidth: 160 }}>{group.name}</TableCell>
+                            <TableCell>{group.count}</TableCell>
+                            <TableCell sx={{ minWidth: 220 }}>
+                              <TextField
+                                select size="small" fullWidth value={selection}
+                                disabled={!!mappingSavingKey || !!mappingLoadError || !mappingCenters.length}
+                                onChange={event => setMappingSelections(current => ({ ...current, [group.key]: event.target.value }))}
+                                label={isRtl ? 'اختر المركز' : 'Choose center'}
+                              >
+                                <MenuItem value="">{isRtl ? 'غير محدد' : 'Unassigned'}</MenuItem>
+                                {mappingCenters.map(center => (
+                                  <MenuItem key={center.id} value={String(center.id)}>
+                                    {(isRtl ? center.name_ar : center.name_en) || center.name}
+                                  </MenuItem>
+                                ))}
+                              </TextField>
+                            </TableCell>
+                            <TableCell>
+                              <Chip color={active ? 'success' : 'warning'} size="small"
+                                label={active ? (isRtl ? 'معتمد' : 'Approved') : (isRtl ? 'بانتظار الاعتماد' : 'Pending')} />
+                              {active && <Typography variant="caption" display="block" color="text.secondary">
+                                {mapping?.approved_by || ''}{mapping?.approved_at ? ` · ${new Date(mapping.approved_at).toLocaleDateString(isRtl ? 'ar-SA' : 'en-US')}` : ''}
+                              </Typography>}
+                            </TableCell>
+                            <TableCell>
+                              <Stack spacing={0.75} direction="row">
+                                <Button size="small" variant="contained"
+                                  disabled={!selection || unchanged || !!mappingSavingKey || !!mappingLoadError || !group.name.trim() || group.name === '(unassigned organization)'}
+                                  onClick={() => void approveCenterMapping(group, selection)}
+                                >{mappingSavingKey === group.key ? '...' : (isRtl ? (active ? 'تغيير الربط' : 'اعتماد') : (active ? 'Change' : 'Approve'))}</Button>
+                                {active && <Button color="warning" size="small" variant="outlined"
+                                  disabled={!!mappingSavingKey}
+                                  onClick={() => { if (mapping) void revokeCenterMapping(mapping); }}
+                                >{isRtl ? 'إلغاء' : 'Revoke'}</Button>}
+                              </Stack>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
                   </TableBody>
                 </Table>
               </TableContainer>
