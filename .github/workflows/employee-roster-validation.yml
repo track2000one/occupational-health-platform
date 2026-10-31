@@ -5,9 +5,11 @@ on:
     branches:
       - main
       - feature/bilingual-job-title-20261031
+      - feature/roster-19col-preview-20261031
   push:
     branches:
       - feature/roster-19col-preview-20261031
+      - feature/approve-center-mapping-20261031
 
 permissions:
   contents: read
