@@ -8,6 +8,7 @@ authorised import implementation are available.
 from collections import Counter
 from hashlib import sha256
 import re
+import unicodedata
 
 SOURCE_COLUMNS = {
     'organization': 'إسم الجهه',
@@ -26,6 +27,17 @@ SOURCE_COLUMNS = {
 def _label(value):
     return re.sub(r'\s+', '', str(value or '').strip().replace('إ', 'ا')
                   .replace('أ', 'ا').replace('آ', 'ا').replace('ى', 'ي'))
+
+
+def normalize_organization_name(name):
+    text = unicodedata.normalize('NFKC', str(name or ''))
+    text = re.sub(r'[\u064b-\u065f\u0670\u0640]', '', text)
+    text = text.translate(str.maketrans({'أ': 'ا', 'إ': 'ا', 'آ': 'ا', 'ى': 'ي'}))
+    return ' '.join(text.strip().split()).casefold()
+
+
+def organization_key(name):
+    return sha256(normalize_organization_name(name).encode('utf-8')).hexdigest()
 
 
 def source_columns(headers):
@@ -57,6 +69,7 @@ def preview_workforce_source(ws, sheet_name, file_name, existing_ids=()):
     existing = set(str(item) for item in existing_ids)
     seen = set()
     groups = Counter()
+    display_labels = {}
     problems = []
     total = 0
     structurally_valid = 0
@@ -68,7 +81,9 @@ def preview_workforce_source(ws, sheet_name, file_name, existing_ids=()):
         total += 1
         organization = cell(row, 'organization')
         # Organisation groups are only grouping labels; never considered approved centers.
-        groups[organization or '(unassigned organization)'] += 1
+        normalized = normalize_organization_name(organization)
+        groups[normalized] += 1
+        display_labels.setdefault(normalized, organization or '(unassigned organization)')
         identity = re.sub(r'\D', '', cell(row, 'national_id'))
         employee_name = cell(row, 'name')
         if not employee_name or len(identity) != 10:
@@ -87,12 +102,12 @@ def preview_workforce_source(ws, sheet_name, file_name, existing_ids=()):
 
     group_records = [
         {
-            'key': sha256(name.encode('utf-8')).hexdigest()[:16],
-            'name': name,
+            'key': organization_key(display_labels[normalized]),
+            'name': display_labels[normalized],
             'count': count,
             'approved': False,
         }
-        for name, count in sorted(groups.items(), key=lambda item: (-item[1], item[0]))
+        for normalized, count in sorted(groups.items(), key=lambda item: (-item[1], item[0]))
     ]
     return {
         'mode': 'preview',
