@@ -132,9 +132,9 @@ class Employee(models.Model):
         ('divorced', 'Divorced'),
         ('widowed', 'Widowed'),
     )
-    STATUS = (('completed', 'Completed'), ('incomplete', 'Incomplete'), ('overdue', 'Overdue'))
-    VACCINE = (('completed', 'Completed'), ('due', 'Due'), ('refused', 'Refused'))
-    RISK = (('low', 'Low'), ('medium', 'Medium'), ('high', 'High'))
+    STATUS = (('unassessed', 'Not assessed'), ('completed', 'Completed'), ('incomplete', 'Incomplete'), ('overdue', 'Overdue'))
+    VACCINE = (('unassessed', 'Not assessed'), ('completed', 'Completed'), ('due', 'Due'), ('refused', 'Refused'))
+    RISK = (('unassessed', 'Not assessed'), ('low', 'Low'), ('medium', 'Medium'), ('high', 'High'))
 
     name = models.CharField(max_length=200)
     email = models.EmailField(max_length=254, unique=True, null=True, blank=True)
@@ -145,26 +145,32 @@ class Employee(models.Model):
     date_of_birth = models.DateField(null=True, blank=True)
     birth_place = models.CharField(max_length=120, blank=True)
     age = models.PositiveIntegerField(default=0)
-    gender = models.CharField(max_length=10, choices=GENDER, default='male')
+    gender = models.CharField(max_length=10, choices=GENDER, default='', blank=True)
     marital_status = models.CharField(max_length=20, choices=MARITAL_STATUS, blank=True)
     health_center = models.ForeignKey(HealthCenter, on_delete=models.PROTECT, related_name='employees')
     job_title = models.CharField(max_length=150, blank=True)
     job_title_en = models.CharField(max_length=150, blank=True)
+    moh_id = models.CharField(max_length=80, blank=True)
+    children_count = models.PositiveSmallIntegerField(null=True, blank=True)
+    latest_virtual_visit = models.DateField(null=True, blank=True)
+    latest_field_visit = models.DateField(null=True, blank=True)
+    lab_request = models.CharField(max_length=120, blank=True)
+    lab_request_date = models.DateField(null=True, blank=True)
+    employment_start_date = models.DateField(null=True, blank=True)
     appointment_date = models.DateField(null=True, blank=True)
     years_of_experience = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
-    periodic_exam_status = models.CharField(max_length=20, choices=STATUS, default='incomplete')
-    vaccination_status = models.CharField(max_length=20, choices=VACCINE, default='due')
-    risk_level = models.CharField(max_length=20, choices=RISK, default='low')
+    periodic_exam_status = models.CharField(max_length=20, choices=STATUS, default='unassessed')
+    vaccination_status = models.CharField(max_length=20, choices=VACCINE, default='unassessed')
+    risk_level = models.CharField(max_length=20, choices=RISK, default='unassessed')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def save(self, *args, **kwargs):
         if self.email:
             self.email = self.email.strip().lower()
-        if self.date_of_birth:
-            self.age = full_years_between(self.date_of_birth)
-        if self.appointment_date:
-            self.years_of_experience = decimal_years_between(self.appointment_date)
+        self.age = full_years_between(self.date_of_birth) if self.date_of_birth else 0
+        start_date = self.employment_start_date or self.appointment_date
+        self.years_of_experience = decimal_years_between(start_date) if start_date else None
         super().save(*args, **kwargs)
 
     def __str__(self):
