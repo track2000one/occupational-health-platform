@@ -229,6 +229,8 @@ class Employee(models.Model):
     health_center = models.ForeignKey(HealthCenter, on_delete=models.PROTECT, related_name='employees')
     job_title = models.CharField(max_length=150, blank=True)
     job_title_en = models.CharField(max_length=150, blank=True)
+    nationality = models.CharField(max_length=2, blank=True, default='')
+    current_job = models.CharField(max_length=200, blank=True)
     latest_virtual_visit = models.DateField(null=True, blank=True)
     latest_field_visit = models.DateField(null=True, blank=True)
     lab_request = models.CharField(max_length=120, blank=True)
