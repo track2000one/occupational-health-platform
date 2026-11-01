@@ -61,17 +61,20 @@ EMPLOYEE_ROSTER_ALIASES = {
     'health_center': ['health center', 'facility', 'work facility', 'المركز الصحي', 'المركز', 'المنشأة الصحية', 'المرفق الصحي', 'جهة العمل'],
     'job_title': ['job title', 'position', 'occupation', 'المسمى الوظيفي', 'مسمى الوظيفي', 'الوظيفة', 'المهنة'],
     'job_title_en': ['job title', 'job title (en)', 'job title english', 'english job title', 'المسمى الوظيفي بالإنجليزية'],
-    'appointment_date': ['appointment date', 'hire date', 'start date', 'joining date', 'date hired', 'تاريخ التعيين', 'تاريخ المباشرة', 'تاريخ الالتحاق'],
+    'appointment_date': ['joined', 'appointment date', 'hire date', 'start date', 'joining date', 'date hired', 'تاريخ التعيين', 'تاريخ المباشرة', 'تاريخ الالتحاق'],
+    'moh_id': ['moh id', 'moh number', 'رقم وزارة الصحة'],
+    'children_count': ['# of child', 'children count', 'number of children', 'عدد الأطفال', 'عدد الابناء'],
+    'latest_virtual_visit': ['latest virtual visit', 'آخر زيارة افتراضية'],
+    'latest_field_visit': ['latest field visit', 'آخر زيارة ميدانية'],
+    'lab_request': ['lab request', 'طلب التحاليل'],
+    'lab_request_date': ['lab request date', 'تاريخ طلب التحاليل'],
+    'employment_start_date': ['date of start (old)', 'old start date', 'تاريخ بداية العمل السابق'],
     'periodic_exam_status': ['periodic exam status', 'حالة الفحص الدوري'],
     'vaccination_status': ['vaccination status', 'حالة التطعيم'],
     'risk_level': ['risk level', 'مستوى الخطورة'],
 }
 
-EMPLOYEE_REQUIRED_FIELDS = (
-    'name', 'email', 'national_id', 'employee_number', 'national_address', 'mobile',
-    'date_of_birth', 'birth_place', 'gender', 'marital_status', 'health_center',
-    'job_title', 'appointment_date',
-)
+EMPLOYEE_REQUIRED_FIELDS = ('name', 'national_id', 'health_center')
 
 EMPLOYEE_CHOICE_MAPS = {
     'gender': {
@@ -536,10 +539,11 @@ def import_employee_roster_sheet(
         for field in EMPLOYEE_REQUIRED_FIELDS:
             if not raw.get(field):
                 row_errors.append(f'Missing required field: {field}.')
-        try:
-            validate_email(raw['email'])
-        except DjangoValidationError:
-            row_errors.append('Invalid email address.')
+        if raw['email']:
+            try:
+                validate_email(raw['email'])
+            except DjangoValidationError:
+                row_errors.append('Invalid email address.')
         if raw['national_id'] and len(raw['national_id']) != 10:
             row_errors.append('National ID must contain exactly 10 digits.')
         mobile_digits = ''.join(ch for ch in raw['mobile'] if ch.isdigit())
@@ -548,6 +552,18 @@ def import_employee_roster_sheet(
 
         date_of_birth = parse_date(mapped_employee_cell(row, column_mapping, 'date_of_birth'))
         appointment_date = parse_date(mapped_employee_cell(row, column_mapping, 'appointment_date'))
+        employment_start_date = parse_date(mapped_employee_cell(row, column_mapping, 'employment_start_date'))
+        latest_virtual_visit = parse_date(mapped_employee_cell(row, column_mapping, 'latest_virtual_visit'))
+        latest_field_visit = parse_date(mapped_employee_cell(row, column_mapping, 'latest_field_visit'))
+        lab_request_date = parse_date(mapped_employee_cell(row, column_mapping, 'lab_request_date'))
+        children_count = None
+        if raw['children_count']:
+            try:
+                children_count = int(raw['children_count'])
+                if children_count < 0 or children_count > 100:
+                    raise ValueError()
+            except ValueError:
+                row_errors.append('Invalid children count. Enter an integer between 0 and 100.')
         if raw['date_of_birth'] and not date_of_birth:
             row_errors.append('Invalid date of birth. Use a real Excel date or YYYY-MM-DD.')
         if raw['appointment_date'] and not appointment_date:
@@ -558,12 +574,23 @@ def import_employee_roster_sheet(
             row_errors.append('Appointment date cannot be in the future.')
         if date_of_birth and appointment_date and appointment_date <= date_of_birth:
             row_errors.append('Appointment date must be after date of birth.')
+        for field, value in (
+            ('employment_start_date', employment_start_date),
+            ('latest_virtual_visit', latest_virtual_visit),
+            ('latest_field_visit', latest_field_visit),
+            ('lab_request_date', lab_request_date),
+        ):
+            if raw[field] and not value:
+                row_errors.append(f'Invalid date for {field}.')
+            if value and value > today:
+                row_errors.append(f'Future date not allowed for {field}.')
+
 
         gender = employee_choice('gender', raw['gender'])
         marital_status = employee_choice('marital_status', raw['marital_status'])
-        periodic_exam_status = employee_choice('periodic_exam_status', raw['periodic_exam_status'], 'incomplete')
-        vaccination_status = employee_choice('vaccination_status', raw['vaccination_status'], 'due')
-        risk_level = employee_choice('risk_level', raw['risk_level'], 'low')
+        periodic_exam_status = employee_choice('periodic_exam_status', raw['periodic_exam_status'], 'unassessed')
+        vaccination_status = employee_choice('vaccination_status', raw['vaccination_status'], 'unassessed')
+        risk_level = employee_choice('risk_level', raw['risk_level'], 'unassessed')
         if raw['gender'] and not gender:
             row_errors.append('Invalid gender. Use male/female or ذكر/أنثى.')
         if raw['marital_status'] and not marital_status:
@@ -583,15 +610,15 @@ def import_employee_roster_sheet(
         duplicate_reasons: List[str] = []
         if raw['national_id'] in seen_ids:
             duplicate_reasons.append('National ID is duplicated inside the file.')
-        if raw['email'] in seen_emails:
+        if raw['email'] and raw['email'] in seen_emails:
             duplicate_reasons.append('Email is duplicated inside the file.')
-        if raw['employee_number'] in seen_numbers:
+        if raw['employee_number'] and raw['employee_number'] in seen_numbers:
             duplicate_reasons.append('Employee number is duplicated inside the file.')
         if raw['national_id'] in existing_id_map:
             duplicate_reasons.append('National ID already exists in PostgreSQL.')
-        if raw['email'] in existing_email_map:
+        if raw['email'] and raw['email'] in existing_email_map:
             duplicate_reasons.append('Email already exists in PostgreSQL.')
-        if raw['employee_number'] in existing_number_map:
+        if raw['employee_number'] and raw['employee_number'] in existing_number_map:
             duplicate_reasons.append('Employee number already exists in PostgreSQL.')
 
         review_payload = {
@@ -609,6 +636,13 @@ def import_employee_roster_sheet(
             'health_center': center.id if center else None,
             'job_title': raw['job_title'],
             'job_title_en': raw['job_title_en'],
+            'moh_id': raw['moh_id'],
+            'children_count': children_count,
+            'latest_virtual_visit': latest_virtual_visit.isoformat() if latest_virtual_visit else '',
+            'latest_field_visit': latest_field_visit.isoformat() if latest_field_visit else '',
+            'lab_request': raw['lab_request'],
+            'lab_request_date': lab_request_date.isoformat() if lab_request_date else '',
+            'employment_start_date': employment_start_date.isoformat() if employment_start_date else '',
             'appointment_date': appointment_date.isoformat() if appointment_date else '',
             'periodic_exam_status': periodic_exam_status or raw['periodic_exam_status'],
             'vaccination_status': vaccination_status or raw['vaccination_status'],
@@ -662,9 +696,9 @@ def import_employee_roster_sheet(
 
         payload = {
             'name': raw['name'],
-            'email': raw['email'],
+            'email': raw['email'] or None,
             'national_id': raw['national_id'],
-            'employee_number': raw['employee_number'],
+            'employee_number': raw['employee_number'] or None,
             'national_address': raw['national_address'],
             'mobile': raw['mobile'],
             'date_of_birth': date_of_birth,
@@ -674,6 +708,13 @@ def import_employee_roster_sheet(
             'health_center': center.name if center else '',
             'job_title': raw['job_title'],
             'job_title_en': raw['job_title_en'],
+            'moh_id': raw['moh_id'],
+            'children_count': children_count,
+            'latest_virtual_visit': latest_virtual_visit,
+            'latest_field_visit': latest_field_visit,
+            'lab_request': raw['lab_request'],
+            'lab_request_date': lab_request_date,
+            'employment_start_date': employment_start_date,
             'appointment_date': appointment_date,
             'periodic_exam_status': periodic_exam_status,
             'vaccination_status': vaccination_status,
@@ -682,8 +723,10 @@ def import_employee_roster_sheet(
         }
         valid_payloads.append(payload)
         seen_ids.add(raw['national_id'])
-        seen_emails.add(raw['email'])
-        seen_numbers.add(raw['employee_number'])
+        if raw['email']:
+            seen_emails.add(raw['email'])
+        if raw['employee_number']:
+            seen_numbers.add(raw['employee_number'])
         if len(preview_rows) < 20:
             preview_rows.append({'row': row_number, **masked_preview(payload)})
 
