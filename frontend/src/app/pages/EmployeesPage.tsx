@@ -123,11 +123,6 @@ type EmployeeForm = {
   job_title_en: string;
   moh_id: string;
   children_count: string;
-  latest_virtual_visit: string;
-  latest_field_visit: string;
-  lab_request: string;
-  lab_request_date: string;
-  employment_start_date: string;
   appointment_date: string;
   periodic_exam_status: ExamStatus;
   vaccination_status: VaccineStatus;
@@ -150,11 +145,6 @@ const EMPTY_FORM: EmployeeForm = {
   job_title_en: '',
   moh_id: '',
   children_count: '',
-  latest_virtual_visit: '',
-  latest_field_visit: '',
-  lab_request: '',
-  lab_request_date: '',
-  employment_start_date: '',
   appointment_date: '',
   periodic_exam_status: 'incomplete',
   vaccination_status: 'due',
@@ -221,11 +211,6 @@ function asForm(employee: ApiEmployee): EmployeeForm {
     job_title_en: employee.job_title_en || '',
     moh_id: employee.moh_id || '',
     children_count: employee.children_count == null ? '' : String(employee.children_count),
-    latest_virtual_visit: normalizeDate(employee.latest_virtual_visit),
-    latest_field_visit: normalizeDate(employee.latest_field_visit),
-    lab_request: employee.lab_request || '',
-    lab_request_date: normalizeDate(employee.lab_request_date),
-    employment_start_date: normalizeDate(employee.employment_start_date),
     appointment_date: normalizeDate(employee.appointment_date),
     periodic_exam_status: employee.periodic_exam_status || 'unknown',
     vaccination_status: employee.vaccination_status || 'unknown',
@@ -250,11 +235,6 @@ function buildPayload(form: EmployeeForm) {
     job_title_en: form.job_title_en.trim(),
     moh_id: form.moh_id.trim(),
     children_count: form.children_count === '' ? null : Number(form.children_count),
-    latest_virtual_visit: form.latest_virtual_visit || null,
-    latest_field_visit: form.latest_field_visit || null,
-    lab_request: form.lab_request.trim(),
-    lab_request_date: form.lab_request_date || null,
-    employment_start_date: form.employment_start_date || null,
     appointment_date: form.appointment_date || null,
   };
 }
@@ -797,24 +777,8 @@ export function EmployeesPage() {
               </TextField>
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
-              <CalendarDateField label={isRtl ? 'آخر زيارة افتراضية' : 'Latest Virtual Visit'} value={form.latest_virtual_visit}
-                onChange={value => updateForm('latest_virtual_visit', value)} disabled={isReadOnly} />
-            </Grid>
-            <Grid size={{ xs: 12, md: 6 }}>
               <CalendarDateField label={isRtl ? 'تاريخ الالتحاق' : 'Joined'} value={form.appointment_date}
                 onChange={value => updateForm('appointment_date', value)} disabled={isReadOnly} />
-            </Grid>
-            <Grid size={{ xs: 12, md: 6 }}>
-              <CalendarDateField label={isRtl ? 'آخر زيارة ميدانية' : 'Latest Field Visit'} value={form.latest_field_visit}
-                onChange={value => updateForm('latest_field_visit', value)} disabled={isReadOnly} />
-            </Grid>
-            <Grid size={{ xs: 12, md: 6 }}>
-              <TextField fullWidth label={isRtl ? 'طلب التحاليل' : 'LAB Request'} value={form.lab_request}
-                onChange={event => updateForm('lab_request', event.target.value)} disabled={isReadOnly} />
-            </Grid>
-            <Grid size={{ xs: 12, md: 6 }}>
-              <CalendarDateField label={isRtl ? 'تاريخ طلب التحاليل' : 'LAB Request Date'} value={form.lab_request_date}
-                onChange={value => updateForm('lab_request_date', value)} disabled={isReadOnly} />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
               <TextField select fullWidth label={isRtl ? 'الحالة الاجتماعية' : 'Marital Status'} value={form.marital_status}
@@ -836,11 +800,6 @@ export function EmployeesPage() {
             <Grid size={{ xs: 12, md: 6 }}>
               <TextField fullWidth label={isRtl ? 'العمر (يُحسب تلقائيًا)' : 'Age'}
                 value={computedAge || (selectedEmployee?.date_of_birth ? String(selectedEmployee.age ?? '') : '')} disabled />
-            </Grid>
-            <Grid size={{ xs: 12, md: 6 }}>
-              <CalendarDateField label={isRtl ? 'تاريخ بداية العمل السابق' : 'Date of Start (Old)'}
-                value={form.employment_start_date} onChange={value => updateForm('employment_start_date', value)}
-                disabled={isReadOnly} />
             </Grid>
           </Grid>
         </DialogContent>
