@@ -301,17 +301,15 @@ class EmployeeSerializer(serializers.ModelSerializer):
         fields = '__all__'
         extra_kwargs = {
             'name': {'required': True, 'allow_blank': False},
-            'email': {'required': True, 'allow_blank': False},
             'national_id': {'required': True, 'allow_blank': False},
-            'employee_number': {'required': True, 'allow_blank': False},
-            'mobile': {'required': True, 'allow_blank': False},
-            'date_of_birth': {'required': True},
-            'birth_place': {'required': True, 'allow_blank': False},
-            'national_address': {'required': True, 'allow_blank': False},
-            'marital_status': {'required': True, 'allow_blank': False},
-            'job_title': {'required': True, 'allow_blank': False},
-            'appointment_date': {'required': True},
             'health_center': {'required': True},
+            'email': {'required': False, 'allow_blank': True, 'allow_null': True},
+            'employee_number': {'required': False, 'allow_blank': True, 'allow_null': True},
+            'mobile': {'required': False, 'allow_blank': True},
+            'date_of_birth': {'required': False, 'allow_null': True},
+            'marital_status': {'required': False, 'allow_blank': True},
+            'job_title': {'required': False, 'allow_blank': True},
+            'appointment_date': {'required': False, 'allow_null': True},
         }
 
     def _health_card(self, obj):
@@ -358,16 +356,16 @@ class EmployeeSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         attrs = self._normalize_identity(attrs)
 
-        self._require_for_create(attrs, 'email', 'Email is required and must be unique.')
+        # Only identity and approved health-center link are mandatory for the
+        # roster-aligned employee form. Never fabricate missing health data.
         self._require_for_create(attrs, 'national_id', 'National ID is required and must be unique.')
-        self._require_for_create(attrs, 'employee_number', 'Employee number is required and must be unique.')
-        self._require_for_create(attrs, 'mobile', 'Mobile number is required.')
-        self._require_for_create(attrs, 'date_of_birth', 'Date of birth is required.')
-        self._require_for_create(attrs, 'birth_place', 'Birth place is required.')
-        self._require_for_create(attrs, 'national_address', 'National address is required.')
-        self._require_for_create(attrs, 'marital_status', 'Marital status is required.')
-        self._require_for_create(attrs, 'job_title', 'Job title is required.')
-        self._require_for_create(attrs, 'appointment_date', 'Appointment date is required.')
+        self._require_for_create(attrs, 'name', 'Employee name is required.')
+        self._require_for_create(attrs, 'health_center', 'Health center is required.')
+
+        if attrs.get('national_id') and len(attrs['national_id']) != 10:
+            raise serializers.ValidationError({'national_id': 'National ID must contain exactly 10 digits.'})
+        if attrs.get('children_count') is not None and attrs['children_count'] > 100:
+            raise serializers.ValidationError({'children_count': 'Children count exceeds allowed range.'})
 
         self._check_unique_employee_field('email', attrs.get('email'), 'Email already exists for another employee.')
         self._check_unique_employee_field('national_id', attrs.get('national_id'), 'National ID already exists for another employee.')
@@ -380,6 +378,15 @@ class EmployeeSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'date_of_birth': 'Date of birth cannot be in the future.'})
         if appointment and appointment > today:
             raise serializers.ValidationError({'appointment_date': 'Appointment date cannot be in the future.'})
+        start_date = attrs.get('employment_start_date')
+        if start_date and start_date > today:
+            raise serializers.ValidationError({'employment_start_date': 'Previous employment start cannot be in the future.'})
+        if dob and appointment and appointment <= dob:
+            raise serializers.ValidationError({'appointment_date': 'Joined date must be after date of birth.'})
+        for field in ('latest_virtual_visit', 'latest_field_visit', 'lab_request_date'):
+            value = attrs.get(field)
+            if value and value > today:
+                raise serializers.ValidationError({field: 'Date cannot be in the future.'})
         return attrs
 
 

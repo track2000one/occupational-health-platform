@@ -166,7 +166,14 @@ const IMPORT_FIELD_LABELS_AR: Record<string, string> = {
   health_center: 'المركز الصحي',
   job_title: 'المسمى الوظيفي (عربي)',
   job_title_en: 'المسمى الوظيفي (إنجليزي)',
-  appointment_date: 'تاريخ التعيين',
+  moh_id: 'رقم وزارة الصحة',
+  children_count: 'عدد الأطفال',
+  latest_virtual_visit: 'آخر زيارة افتراضية',
+  latest_field_visit: 'آخر زيارة ميدانية',
+  lab_request: 'طلب التحاليل',
+  lab_request_date: 'تاريخ طلب التحاليل',
+  employment_start_date: 'تاريخ بداية العمل السابق',
+  appointment_date: 'تاريخ الالتحاق',
   periodic_exam_status: 'حالة الفحص الدوري',
   vaccination_status: 'حالة التطعيم',
   risk_level: 'مستوى الخطورة',
@@ -186,18 +193,21 @@ const IMPORT_FIELD_LABELS_EN: Record<string, string> = {
   health_center: 'Health center',
   job_title: 'Job title (Arabic)',
   job_title_en: 'Job title (English)',
-  appointment_date: 'Appointment date',
+  moh_id: 'MOH ID',
+  children_count: '# of Child',
+  latest_virtual_visit: 'Latest Virtual Visit',
+  latest_field_visit: 'Latest Field Visit',
+  lab_request: 'LAB Request',
+  lab_request_date: 'LAB Request Date',
+  employment_start_date: 'Date of Start (Old)',
+  appointment_date: 'Joined',
   periodic_exam_status: 'Periodic exam status',
   vaccination_status: 'Vaccination status',
   risk_level: 'Risk level',
 };
 
 const EMPLOYEE_IMPORT_FIELDS = Object.keys(IMPORT_FIELD_LABELS_AR);
-const EMPLOYEE_REQUIRED_FIELDS = new Set([
-  'name', 'email', 'national_id', 'employee_number', 'national_address', 'mobile',
-  'date_of_birth', 'birth_place', 'gender', 'marital_status', 'health_center',
-  'job_title', 'appointment_date',
-]);
+const EMPLOYEE_REQUIRED_FIELDS = new Set(['name', 'national_id', 'health_center']);
 
 const IMPORT_ISSUE_LABELS_AR: Record<string, string> = {
   'Invalid email address': 'صيغة البريد الإلكتروني غير صحيحة',

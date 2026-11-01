@@ -10,6 +10,7 @@ on:
     branches:
       - feature/roster-19col-preview-20261031
       - feature/approve-center-mapping-20261031
+      - feature/employee-form-roster-fields-20261101
 
 permissions:
   contents: read
@@ -33,7 +34,7 @@ jobs:
         env:
           DEBUG: 'true'
       - name: Test workforce mapping on synthetic identities only
-        run: python manage.py test health.tests health.test_organization_center_mappings
+        run: python manage.py test health.tests health.test_organization_center_mappings health.test_employee_roster_fields
         env:
           DEBUG: 'true'
 
