@@ -1,4 +1,5 @@
 from datetime import date
+import unicodedata
 
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
@@ -336,7 +337,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
         if 'email' in attrs and attrs.get('email'):
             attrs['email'] = str(attrs['email']).strip().lower()
         if 'national_id' in attrs and attrs.get('national_id'):
-            attrs['national_id'] = ''.join(ch for ch in str(attrs['national_id']) if ch.isdigit())
+            attrs['national_id'] = ''.join(str(unicodedata.digit(ch)) for ch in str(attrs['national_id']) if ch.isdecimal())
         if 'employee_number' in attrs and attrs.get('employee_number'):
             attrs['employee_number'] = str(attrs['employee_number']).strip()
         if 'mobile' in attrs and attrs.get('mobile'):
@@ -380,6 +381,10 @@ class EmployeeSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'date_of_birth': 'Date of birth cannot be in the future.'})
         if appointment and appointment > today:
             raise serializers.ValidationError({'appointment_date': 'Appointment date cannot be in the future.'})
+        if dob and appointment and appointment <= dob:
+            raise serializers.ValidationError({
+                'appointment_date': 'Joined date must be after date of birth.',
+            })
         for field in ('latest_virtual_visit', 'latest_field_visit', 'lab_request_date'):
             value = attrs.get(field)
             if value and value > today:
