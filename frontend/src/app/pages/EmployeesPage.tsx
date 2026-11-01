@@ -43,6 +43,11 @@ import { PERMISSIONS } from '../data/roles';
 import { CalendarDateField } from '../components/CalendarDateField';
 import { HealthCenterAutocomplete } from '../components/HealthCenterAutocomplete';
 import { EmployeeRegistryCard } from '../components/EmployeeRegistryCard';
+import {
+  normalizeNationalId, isValidNationalId, isValidEmployeeEmail,
+  isValidChildrenCount, toWesternDigits, calculateAgeFromIso,
+  joinedPrecedesOrEqualsBirth,
+} from '../utils/employeeFormValidation';
 
 const PRODUCTION_API_BASE_URL = 'https://occupational-health-platform-production.up.railway.app/api';
 const LOCAL_API_BASE_URL = 'http://localhost:8000/api';
@@ -166,17 +171,6 @@ function maskNationalId(value: string) {
   return `${digits.slice(0, 2)}****${digits.slice(-4)}`;
 }
 
-function calculateAge(dateValue: string) {
-  if (!dateValue) return '';
-  const dob = new Date(dateValue);
-  if (Number.isNaN(dob.getTime())) return '';
-  const today = new Date();
-  let age = today.getFullYear() - dob.getFullYear();
-  const monthDelta = today.getMonth() - dob.getMonth();
-  if (monthDelta < 0 || (monthDelta === 0 && today.getDate() < dob.getDate())) age -= 1;
-  return age >= 0 ? String(age) : '';
-}
-
 function calculateExperience(dateValue: string) {
   if (!dateValue) return '';
   const start = new Date(dateValue);
@@ -222,7 +216,7 @@ function buildPayload(form: EmployeeForm) {
   return {
     name: form.name.trim(),
     email: form.email.trim().toLowerCase(),
-    national_id: form.national_id.replace(/\D/g, ''),
+    national_id: normalizeNationalId(form.national_id),
     employee_number: form.employee_number.trim(),
     national_address: form.national_address.trim(),
     mobile: form.mobile.trim(),
@@ -234,7 +228,7 @@ function buildPayload(form: EmployeeForm) {
     job_title: form.job_title.trim(),
     job_title_en: form.job_title_en.trim(),
     moh_id: form.moh_id.trim(),
-    children_count: form.children_count === '' ? null : Number(form.children_count),
+    children_count: form.children_count === '' ? null : Number(toWesternDigits(form.children_count)),
     appointment_date: form.appointment_date || null,
   };
 }
@@ -290,7 +284,8 @@ export function EmployeesPage() {
   const [connectionError, setConnectionError] = useState('');
 
   const canWrite = can(PERMISSIONS.UPDATE_EMPLOYEE) || can(PERMISSIONS.UPDATE_EMPLOYEE_BASIC);
-  const computedAge = calculateAge(form.date_of_birth);
+  const ageValue = calculateAgeFromIso(form.date_of_birth);
+  const computedAge = ageValue === null ? '' : String(ageValue);
   const computedExperience = calculateExperience(form.appointment_date);
 
   async function loadData() {
@@ -406,23 +401,31 @@ export function EmployeesPage() {
       return;
     }
 
-    if (!/^\\d{10}$/.test(form.national_id)) {
+    if (!isValidNationalId(form.national_id)) {
       toast.error(isRtl ? 'يجب أن يتكون رقم الهوية من 10 أرقام' : 'National ID must contain 10 digits');
       return;
     }
-    if (form.children_count !== '' && (!/^\\d+$/.test(form.children_count) || Number(form.children_count) > 100)) {
+    if (!isValidChildrenCount(form.children_count)) {
       toast.error(isRtl ? 'عدد الأطفال يجب أن يكون عددًا صحيحًا' : 'Children count must be a whole number');
       return;
     }
-    if (form.email.trim() && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(form.email.trim())) {
+    if (!isValidEmployeeEmail(form.email)) {
       toast.error(isRtl ? 'صيغة البريد الإلكتروني غير صحيحة' : 'Invalid email address');
+      return;
+    }
+    if (form.date_of_birth && ageValue === null) {
+      toast.error(isRtl ? 'تاريخ الميلاد غير صالح أو يقع في المستقبل' : 'Date of birth is invalid or in the future');
+      return;
+    }
+    if (joinedPrecedesOrEqualsBirth(form.date_of_birth, form.appointment_date)) {
+      toast.error(isRtl ? 'تاريخ الالتحاق يجب أن يكون بعد تاريخ الميلاد' : 'Joined date must be after birth date');
       return;
     }
     if (findDuplicate('email', form.email)) {
       toast.error(isRtl ? 'البريد الإلكتروني مسجل مسبقًا لموظف آخر' : 'Email already exists for another employee');
       return;
     }
-    if (findDuplicate('national_id', form.national_id.replace(/\D/g, ''))) {
+    if (findDuplicate('national_id', normalizeNationalId(form.national_id))) {
       toast.error(isRtl ? 'رقم الهوية الوطنية مسجل مسبقًا لموظف آخر' : 'National ID already exists for another employee');
       return;
     }
@@ -739,7 +742,7 @@ export function EmployeesPage() {
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
               <TextField fullWidth required label={isRtl ? 'رقم الهوية الوطنية' : 'National ID'} value={form.national_id}
-                onChange={event => updateForm('national_id', event.target.value.replace(/\D/g, '').slice(0, 10))}
+                onChange={event => updateForm('national_id', normalizeNationalId(event.target.value).slice(0, 10))}
                 disabled={isReadOnly} helperText={isRtl ? 'فريد ولا يقبل التكرار' : 'Must be unique'} />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
@@ -799,7 +802,11 @@ export function EmployeesPage() {
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
               <TextField fullWidth label={isRtl ? 'العمر (يُحسب تلقائيًا)' : 'Age'}
-                value={computedAge || (selectedEmployee?.date_of_birth ? String(selectedEmployee.age ?? '') : '')} disabled />
+                value={computedAge}
+                helperText={isRtl
+                  ? (ageValue === 0 ? 'العمر أقل من سنة. تأكد من سنة الميلاد.' : 'العمر بالسنوات الميلادية المكتملة بعد اختيار تاريخ الميلاد')
+                  : (ageValue === 0 ? 'Under one year old. Check birth year.' : 'Completed Gregorian years from date of birth')}
+                disabled />
             </Grid>
           </Grid>
         </DialogContent>
