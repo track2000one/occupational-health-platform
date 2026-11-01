@@ -87,3 +87,24 @@ class StagingRosterFormCompatibilityTests(TestCase):
         self.assertEqual(self.client.post(self.url, payload, format='json').status_code, 201)
         self.assertEqual(self.client.post(self.url, payload, format='json').status_code, 400)
         self.assertEqual(Employee.objects.count(), 1)
+
+    def test_arabic_numerals_normalized_to_ascii_before_save(self):
+        result = self.client.post(self.url, {
+            'name': 'Synthetic numeral test',
+            'national_id': '٩٩٩١٢٣٤٥٦٧',
+            'health_center': self.center.pk,
+        }, format='json')
+        self.assertEqual(result.status_code, 201, result.data)
+        self.assertTrue(Employee.objects.filter(national_id='9991234567').exists())
+
+    def test_joining_date_cannot_precede_birth_date(self):
+        result = self.client.post(self.url, {
+            'name': 'Synthetic chronology test',
+            'national_id': '9991234568',
+            'health_center': self.center.pk,
+            'date_of_birth': '2026-10-14',
+            'appointment_date': '1987-12-23',
+        }, format='json')
+        self.assertEqual(result.status_code, 400, result.data)
+        self.assertIn('appointment_date', result.data)
+        self.assertFalse(Employee.objects.filter(national_id='9991234568').exists())
