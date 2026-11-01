@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 import {
   Alert,
+  Autocomplete,
   Box,
   Button,
   Chip,
@@ -43,6 +44,7 @@ import { PERMISSIONS } from '../data/roles';
 import { CalendarDateField } from '../components/CalendarDateField';
 import { HealthCenterAutocomplete } from '../components/HealthCenterAutocomplete';
 import { EmployeeRegistryCard } from '../components/EmployeeRegistryCard';
+import { JOB_TITLES, getNationalityOptions, normalizeNationalitySearch } from '../data/employeeFormOptions';
 import {
   normalizeNationalId, isValidNationalId, isValidEmployeeEmail,
   isValidChildrenCount, toWesternDigits, calculateAgeFromIso,
@@ -83,6 +85,8 @@ type ApiEmployee = {
   email?: string | null;
   national_id: string;
   employee_number?: string | null;
+  nationality?: string;
+  current_job?: string;
   national_address?: string;
   mobile?: string;
   date_of_birth?: string | null;
@@ -117,6 +121,8 @@ type EmployeeForm = {
   email: string;
   national_id: string;
   employee_number: string;
+  nationality: string;
+  current_job: string;
   national_address: string;
   mobile: string;
   date_of_birth: string;
@@ -139,6 +145,8 @@ const EMPTY_FORM: EmployeeForm = {
   email: '',
   national_id: '',
   employee_number: '',
+  nationality: '',
+  current_job: '',
   national_address: '',
   mobile: '',
   date_of_birth: '',
@@ -194,6 +202,8 @@ function asForm(employee: ApiEmployee): EmployeeForm {
     email: employee.email || '',
     national_id: employee.national_id || '',
     employee_number: employee.employee_number || '',
+    nationality: employee.nationality || '',
+    current_job: employee.current_job || '',
     national_address: employee.national_address || '',
     mobile: employee.mobile || '',
     date_of_birth: normalizeDate(employee.date_of_birth),
@@ -218,6 +228,8 @@ function buildPayload(form: EmployeeForm) {
     email: form.email.trim().toLowerCase(),
     national_id: normalizeNationalId(form.national_id),
     employee_number: form.employee_number.trim(),
+    nationality: form.nationality,
+    current_job: form.current_job.trim(),
     national_address: form.national_address.trim(),
     mobile: form.mobile.trim(),
     date_of_birth: form.date_of_birth || null,
@@ -252,7 +264,8 @@ async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T
   if (!response.ok) {
     const message =
       body?.detail || body?.email || body?.national_id || body?.employee_number || body?.health_center ||
-      body?.date_of_birth || body?.appointment_date || body?.name || body?.mobile || body?.non_field_errors ||
+      body?.date_of_birth || body?.appointment_date || body?.nationality || body?.current_job ||
+      body?.name || body?.mobile || body?.non_field_errors ||
       'Request failed';
     throw new Error(Array.isArray(message) ? message.join('، ') : String(message));
   }
@@ -287,6 +300,11 @@ export function EmployeesPage() {
   const ageValue = calculateAgeFromIso(form.date_of_birth);
   const computedAge = ageValue === null ? '' : String(ageValue);
   const computedExperience = calculateExperience(form.appointment_date);
+  const nationalityOptions = useMemo(() => getNationalityOptions(), []);
+  const selectedNationality = nationalityOptions.find(option => option.code === form.nationality) || null;
+  // Preserve a legacy/imported title in edit mode even when it is not in the 116-item reference file.
+  const jobTitleOptions = form.job_title && !JOB_TITLES.includes(form.job_title)
+    ? [form.job_title, ...JOB_TITLES] : [...JOB_TITLES];
 
   async function loadData() {
     setLoading(true);
@@ -741,9 +759,32 @@ export function EmployeesPage() {
                 onChange={event => updateForm('name', event.target.value)} disabled={isReadOnly} />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
-              <TextField fullWidth required label={isRtl ? 'رقم الهوية الوطنية' : 'National ID'} value={form.national_id}
+              <TextField fullWidth required label={isRtl ? 'رقم الهوية / الإقامة' : 'National ID / Iqama'} value={form.national_id}
                 onChange={event => updateForm('national_id', normalizeNationalId(event.target.value).slice(0, 10))}
-                disabled={isReadOnly} helperText={isRtl ? 'فريد ولا يقبل التكرار' : 'Must be unique'} />
+                slotProps={{ htmlInput: { inputMode: 'numeric', maxLength: 10 } }}
+                disabled={isReadOnly} helperText={isRtl ? '10 أرقام، فريد ولا يقبل التكرار' : '10 digits, must be unique'} />
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Autocomplete
+                options={nationalityOptions}
+                value={selectedNationality}
+                disabled={isReadOnly}
+                onChange={(_, option) => updateForm('nationality', option?.code || '')}
+                isOptionEqualToValue={(option, value) => option.code === value.code}
+                getOptionLabel={option => isRtl
+                  ? option.nationalityAr
+                    ? `${option.countryAr} — ${option.nationalityAr.replace(' ', ' / ')}`
+                    : option.countryAr
+                  : option.countryEn}
+                filterOptions={(options, state) => {
+                  const query = normalizeNationalitySearch(state.inputValue);
+                  return query ? options.filter(option => option.searchText.includes(query)) : options;
+                }}
+                renderInput={params => <TextField {...params}
+                  label={isRtl ? 'الجنسية' : 'Nationality'}
+                  placeholder={isRtl ? 'ابحث باسم البلد أو الجنسية' : 'Search country or nationality'}
+                  helperText={isRtl ? 'السعودية والدول العربية أولاً' : 'Saudi Arabia and Arab countries first'} />}
+              />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
               <CalendarDateField label={isRtl ? 'تاريخ الميلاد' : 'DOB'} value={form.date_of_birth}
@@ -754,8 +795,9 @@ export function EmployeesPage() {
                 onChange={event => updateForm('mobile', event.target.value)} disabled={isReadOnly} />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
-              <TextField fullWidth label={isRtl ? 'رقم وزارة الصحة' : 'MOH ID'} value={form.moh_id}
-                onChange={event => updateForm('moh_id', event.target.value)} disabled={isReadOnly} />
+              <TextField fullWidth label={isRtl ? 'الرقم الوظيفي' : 'Employee number'} value={form.employee_number}
+                onChange={event => updateForm('employee_number', event.target.value)}
+                disabled={isReadOnly} helperText={isRtl ? 'فريد ولا يقبل التكرار عند إدخاله' : 'Unique if provided'} />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
               <TextField fullWidth label={isRtl ? 'البريد الإلكتروني' : 'Email'} type="email" value={form.email}
@@ -763,13 +805,27 @@ export function EmployeesPage() {
                 helperText={isRtl ? 'اختياري، ويجب ألا يتكرر عند إدخاله' : 'Optional and unique if provided'} />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
-              <TextField fullWidth label={isRtl ? 'مسمى الوظيفي (بالعربية)' : 'Job Title (Arabic)'} value={form.job_title}
-                onChange={event => updateForm('job_title', event.target.value)} disabled={isReadOnly} />
+              <Autocomplete
+                options={jobTitleOptions}
+                value={form.job_title || null}
+                onChange={(_, title) => updateForm('job_title', title || '')}
+                disabled={isReadOnly}
+                renderInput={params => <TextField {...params}
+                  label={isRtl ? 'المسمى الوظيفي' : 'Job title'}
+                  placeholder={isRtl ? 'اختر أو ابحث عن المسمى الوظيفي' : 'Search job titles'}
+                  helperText={isRtl ? '116 مسمى من القائمة المعتمدة' : '116 titles from the reference workbook'} />}
+              />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
               <TextField fullWidth label={isRtl ? 'المسمى الوظيفي (بالإنجليزية)' : 'Job Title'} value={form.job_title_en}
                 onChange={event => updateForm('job_title_en', event.target.value)} disabled={isReadOnly}
                 helperText={isRtl ? 'ترجمة للمسمى نفسه' : 'Translation of the same title'} />
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <TextField fullWidth label={isRtl ? 'الوظيفة الحالية' : 'Current role / position'}
+                value={form.current_job}
+                onChange={event => updateForm('current_job', event.target.value)}
+                disabled={isReadOnly} helperText={isRtl ? 'حقل مستقل، يمكن إدخاله يدويًا' : 'Enter manually'} />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
               <TextField select fullWidth label={isRtl ? 'الجنس' : 'Gender'} value={form.gender}
