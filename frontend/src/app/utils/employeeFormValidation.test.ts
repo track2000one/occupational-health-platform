@@ -6,11 +6,11 @@ import {
 } from './employeeFormValidation.ts';
 
 test('accepts real ten-digit input and converts Arabic/Persian numerals', () => {
-  assert.equal(isValidNationalId('1007263013'), true);
-  assert.equal(isValidNationalId('١٠٠٧٢٦٣٠١٣'), true);
-  assert.equal(normalizeNationalId('۱۰۰۷۲۶۳۰۱۳'), '1007263013');
-  assert.equal(isValidNationalId('100726301'), false);
-  assert.equal(isValidNationalId('10072630130'), false);
+  assert.equal(isValidNationalId('9991234567'), true);
+  assert.equal(isValidNationalId('٩٩٩١٢٣٤٥٦٧'), true);
+  assert.equal(normalizeNationalId('۹۹۹۱۲۳۴۵۶۷'), '9991234567');
+  assert.equal(isValidNationalId('999123456'), false);
+  assert.equal(isValidNationalId('99912345670'), false);
 });
 
 test('validates optional email and children correctly', () => {
