@@ -88,6 +88,14 @@ type ApiEmployee = {
   health_center: number | string;
   health_center_name?: string;
   job_title?: string;
+  job_title_en?: string;
+  moh_id?: string;
+  children_count?: number | null;
+  latest_virtual_visit?: string | null;
+  latest_field_visit?: string | null;
+  lab_request?: string;
+  lab_request_date?: string | null;
+  employment_start_date?: string | null;
   appointment_date?: string | null;
   years_of_experience?: string | number | null;
   periodic_exam_status?: ExamStatus;
@@ -108,10 +116,18 @@ type EmployeeForm = {
   mobile: string;
   date_of_birth: string;
   birth_place: string;
-  gender: Gender;
+  gender: Gender | '';
   marital_status: MaritalStatus;
   health_center: string;
   job_title: string;
+  job_title_en: string;
+  moh_id: string;
+  children_count: string;
+  latest_virtual_visit: string;
+  latest_field_visit: string;
+  lab_request: string;
+  lab_request_date: string;
+  employment_start_date: string;
   appointment_date: string;
   periodic_exam_status: ExamStatus;
   vaccination_status: VaccineStatus;
@@ -127,10 +143,18 @@ const EMPTY_FORM: EmployeeForm = {
   mobile: '',
   date_of_birth: '',
   birth_place: '',
-  gender: 'male',
+  gender: '',
   marital_status: '',
   health_center: '',
   job_title: '',
+  job_title_en: '',
+  moh_id: '',
+  children_count: '',
+  latest_virtual_visit: '',
+  latest_field_visit: '',
+  lab_request: '',
+  lab_request_date: '',
+  employment_start_date: '',
   appointment_date: '',
   periodic_exam_status: 'incomplete',
   vaccination_status: 'due',
@@ -190,14 +214,22 @@ function asForm(employee: ApiEmployee): EmployeeForm {
     mobile: employee.mobile || '',
     date_of_birth: normalizeDate(employee.date_of_birth),
     birth_place: employee.birth_place || '',
-    gender: employee.gender || 'male',
+    gender: employee.gender || '',
     marital_status: employee.marital_status || '',
     health_center: String(employee.health_center || ''),
     job_title: employee.job_title || '',
+    job_title_en: employee.job_title_en || '',
+    moh_id: employee.moh_id || '',
+    children_count: employee.children_count == null ? '' : String(employee.children_count),
+    latest_virtual_visit: normalizeDate(employee.latest_virtual_visit),
+    latest_field_visit: normalizeDate(employee.latest_field_visit),
+    lab_request: employee.lab_request || '',
+    lab_request_date: normalizeDate(employee.lab_request_date),
+    employment_start_date: normalizeDate(employee.employment_start_date),
     appointment_date: normalizeDate(employee.appointment_date),
-    periodic_exam_status: employee.periodic_exam_status || 'incomplete',
-    vaccination_status: employee.vaccination_status || 'due',
-    risk_level: employee.risk_level || 'low',
+    periodic_exam_status: employee.periodic_exam_status || 'unknown',
+    vaccination_status: employee.vaccination_status || 'unknown',
+    risk_level: employee.risk_level || 'unknown',
   };
 }
 
@@ -215,10 +247,15 @@ function buildPayload(form: EmployeeForm) {
     marital_status: form.marital_status,
     health_center: Number(form.health_center),
     job_title: form.job_title.trim(),
+    job_title_en: form.job_title_en.trim(),
+    moh_id: form.moh_id.trim(),
+    children_count: form.children_count === '' ? null : Number(form.children_count),
+    latest_virtual_visit: form.latest_virtual_visit || null,
+    latest_field_visit: form.latest_field_visit || null,
+    lab_request: form.lab_request.trim(),
+    lab_request_date: form.lab_request_date || null,
+    employment_start_date: form.employment_start_date || null,
     appointment_date: form.appointment_date || null,
-    periodic_exam_status: form.periodic_exam_status,
-    vaccination_status: form.vaccination_status,
-    risk_level: form.risk_level,
   };
 }
 
@@ -378,18 +415,9 @@ export function EmployeesPage() {
 
   async function handleSave() {
     const required: Array<[keyof EmployeeForm, string]> = [
-      ['name', isRtl ? 'الاسم الكامل' : 'Full name'],
-      ['email', isRtl ? 'البريد الإلكتروني' : 'Email'],
+      ['name', isRtl ? 'اسم الموظف' : 'Name'],
       ['national_id', isRtl ? 'رقم الهوية الوطنية' : 'National ID'],
-      ['employee_number', isRtl ? 'الرقم الوظيفي' : 'Employee number'],
-      ['mobile', isRtl ? 'رقم الجوال' : 'Mobile'],
-      ['date_of_birth', isRtl ? 'تاريخ الميلاد' : 'Date of birth'],
-      ['birth_place', isRtl ? 'مكان الميلاد' : 'Birth place'],
-      ['national_address', isRtl ? 'العنوان الوطني' : 'National address'],
-      ['marital_status', isRtl ? 'الحالة الاجتماعية' : 'Marital status'],
       ['health_center', isRtl ? 'المركز الصحي' : 'Health center'],
-      ['job_title', isRtl ? 'المسمى الوظيفي' : 'Job title'],
-      ['appointment_date', isRtl ? 'تاريخ التعيين' : 'Appointment date'],
     ];
 
     const missing = required.find(([key]) => !String(form[key] || '').trim());
@@ -398,6 +426,18 @@ export function EmployeesPage() {
       return;
     }
 
+    if (!/^\\d{10}$/.test(form.national_id)) {
+      toast.error(isRtl ? 'يجب أن يتكون رقم الهوية من 10 أرقام' : 'National ID must contain 10 digits');
+      return;
+    }
+    if (form.children_count !== '' && (!/^\\d+$/.test(form.children_count) || Number(form.children_count) > 100)) {
+      toast.error(isRtl ? 'عدد الأطفال يجب أن يكون عددًا صحيحًا' : 'Children count must be a whole number');
+      return;
+    }
+    if (form.email.trim() && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(form.email.trim())) {
+      toast.error(isRtl ? 'صيغة البريد الإلكتروني غير صحيحة' : 'Invalid email address');
+      return;
+    }
     if (findDuplicate('email', form.email)) {
       toast.error(isRtl ? 'البريد الإلكتروني مسجل مسبقًا لموظف آخر' : 'Email already exists for another employee');
       return;
@@ -705,43 +745,81 @@ export function EmployeesPage() {
         <DialogContent dividers>
           <Grid container spacing={2}>
             <Grid size={{ xs: 12, md: 6 }}>
-              <TextField fullWidth required label={isRtl ? 'الاسم الكامل' : 'Full Name'} value={form.name}
+              <HealthCenterAutocomplete
+                options={healthCenters} value={form.health_center}
+                onChange={value => updateForm('health_center', value)}
+                label={isRtl ? 'المركز الصحي' : 'Health center'}
+                placeholder={isRtl ? 'اختر أو ابحث عن المركز' : 'Select or search for a center'}
+                required disabled={isReadOnly}
+              />
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <TextField fullWidth required label={isRtl ? 'اسم الموظف' : 'Name'} value={form.name}
                 onChange={event => updateForm('name', event.target.value)} disabled={isReadOnly} />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
-              <TextField fullWidth required label={isRtl ? 'البريد الإلكتروني' : 'Email'} type="email" value={form.email}
-                onChange={event => updateForm('email', event.target.value)} disabled={isReadOnly} helperText={isRtl ? 'فريد ولا يقبل التكرار' : 'Unique value'} />
-            </Grid>
-            <Grid size={{ xs: 12, md: 6 }}>
               <TextField fullWidth required label={isRtl ? 'رقم الهوية الوطنية' : 'National ID'} value={form.national_id}
-                onChange={event => updateForm('national_id', event.target.value.replace(/\D/g, ''))} disabled={isReadOnly} helperText={isRtl ? 'فريد ولا يقبل التكرار' : 'Unique value'} />
+                onChange={event => updateForm('national_id', event.target.value.replace(/\D/g, '').slice(0, 10))}
+                disabled={isReadOnly} helperText={isRtl ? 'فريد ولا يقبل التكرار' : 'Must be unique'} />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
-              <TextField fullWidth required label={isRtl ? 'الرقم الوظيفي' : 'Employee Number'} value={form.employee_number}
-                onChange={event => updateForm('employee_number', event.target.value)} disabled={isReadOnly} helperText={isRtl ? 'فريد ولا يقبل التكرار' : 'Unique value'} />
-            </Grid>
-            <Grid size={{ xs: 12, md: 6 }}>
-              <TextField fullWidth required label={isRtl ? 'رقم الجوال' : 'Mobile'} value={form.mobile}
-                onChange={event => updateForm('mobile', event.target.value)} disabled={isReadOnly} />
-            </Grid>
-            <Grid size={{ xs: 12, md: 6 }}>
-              <TextField fullWidth required label={isRtl ? 'العنوان الوطني' : 'National Address'} value={form.national_address}
-                onChange={event => updateForm('national_address', event.target.value)} disabled={isReadOnly} />
-            </Grid>
-            <Grid size={{ xs: 12, md: 6 }}>
-              <CalendarDateField required label={isRtl ? 'تاريخ الميلاد' : 'Date of Birth'} value={form.date_of_birth}
+              <CalendarDateField label={isRtl ? 'تاريخ الميلاد' : 'DOB'} value={form.date_of_birth}
                 onChange={value => updateForm('date_of_birth', value)} disabled={isReadOnly} />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
-              <TextField fullWidth label={isRtl ? 'العمر محسوب تلقائيًا' : 'Calculated Age'} value={computedAge || selectedEmployee?.age || ''} disabled />
+              <TextField fullWidth label={isRtl ? 'رقم الجوال' : 'Mobile #'} value={form.mobile}
+                onChange={event => updateForm('mobile', event.target.value)} disabled={isReadOnly} />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
-              <TextField fullWidth required label={isRtl ? 'مكان الميلاد' : 'Birth Place'} value={form.birth_place}
-                onChange={event => updateForm('birth_place', event.target.value)} disabled={isReadOnly} />
+              <TextField fullWidth label={isRtl ? 'رقم وزارة الصحة' : 'MOH ID'} value={form.moh_id}
+                onChange={event => updateForm('moh_id', event.target.value)} disabled={isReadOnly} />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
-              <TextField fullWidth required select label={isRtl ? 'الحالة الاجتماعية' : 'Marital Status'} value={form.marital_status}
+              <TextField fullWidth label={isRtl ? 'البريد الإلكتروني' : 'Email'} type="email" value={form.email}
+                onChange={event => updateForm('email', event.target.value)} disabled={isReadOnly}
+                helperText={isRtl ? 'اختياري، ويجب ألا يتكرر عند إدخاله' : 'Optional and unique if provided'} />
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <TextField fullWidth label={isRtl ? 'مسمى الوظيفي (بالعربية)' : 'Job Title (Arabic)'} value={form.job_title}
+                onChange={event => updateForm('job_title', event.target.value)} disabled={isReadOnly} />
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <TextField fullWidth label={isRtl ? 'المسمى الوظيفي (بالإنجليزية)' : 'Job Title'} value={form.job_title_en}
+                onChange={event => updateForm('job_title_en', event.target.value)} disabled={isReadOnly}
+                helperText={isRtl ? 'ترجمة للمسمى نفسه' : 'Translation of the same title'} />
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <TextField select fullWidth label={isRtl ? 'الجنس' : 'Gender'} value={form.gender}
+                onChange={event => updateForm('gender', event.target.value as Gender | '')} disabled={isReadOnly}>
+                <MenuItem value="">{isRtl ? 'غير محدد' : 'Not specified'}</MenuItem>
+                <MenuItem value="male">{isRtl ? 'ذكر' : 'Male'}</MenuItem>
+                <MenuItem value="female">{isRtl ? 'أنثى' : 'Female'}</MenuItem>
+              </TextField>
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <CalendarDateField label={isRtl ? 'آخر زيارة افتراضية' : 'Latest Virtual Visit'} value={form.latest_virtual_visit}
+                onChange={value => updateForm('latest_virtual_visit', value)} disabled={isReadOnly} />
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <CalendarDateField label={isRtl ? 'تاريخ الالتحاق' : 'Joined'} value={form.appointment_date}
+                onChange={value => updateForm('appointment_date', value)} disabled={isReadOnly} />
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <CalendarDateField label={isRtl ? 'آخر زيارة ميدانية' : 'Latest Field Visit'} value={form.latest_field_visit}
+                onChange={value => updateForm('latest_field_visit', value)} disabled={isReadOnly} />
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <TextField fullWidth label={isRtl ? 'طلب التحاليل' : 'LAB Request'} value={form.lab_request}
+                onChange={event => updateForm('lab_request', event.target.value)} disabled={isReadOnly} />
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <CalendarDateField label={isRtl ? 'تاريخ طلب التحاليل' : 'LAB Request Date'} value={form.lab_request_date}
+                onChange={value => updateForm('lab_request_date', value)} disabled={isReadOnly} />
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <TextField select fullWidth label={isRtl ? 'الحالة الاجتماعية' : 'Marital Status'} value={form.marital_status}
                 onChange={event => updateForm('marital_status', event.target.value as MaritalStatus)} disabled={isReadOnly}>
+                <MenuItem value="">{isRtl ? 'غير محددة' : 'Not specified'}</MenuItem>
                 <MenuItem value="single">{isRtl ? 'أعزب' : 'Single'}</MenuItem>
                 <MenuItem value="married">{isRtl ? 'متزوج' : 'Married'}</MenuItem>
                 <MenuItem value="divorced">{isRtl ? 'مطلق' : 'Divorced'}</MenuItem>
@@ -749,64 +827,20 @@ export function EmployeesPage() {
               </TextField>
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
-              <HealthCenterAutocomplete
-                options={healthCenters}
-                value={form.health_center}
-                onChange={value => updateForm('health_center', value)}
-                label={isRtl ? 'المركز الصحي' : 'Health Center'}
-                placeholder={isRtl ? 'اختر أو ابحث باسم المركز' : 'Select or search by center name'}
-                required
-                disabled={isReadOnly || dialogMode === 'edit'}
-              />
-            </Grid>
-            {dialogMode === 'edit' && (
-              <Grid size={{ xs: 12 }}>
-                <Alert severity="info">
-                  {isRtl ? 'تغيير المركز الصحي يتم من شاشة «الحالات الوظيفية والمتقاعدون» بإجراء نقل داخلي موثق.' : 'Change health center using the audited employment lifecycle transfer workflow.'}
-                </Alert>
-              </Grid>
-            )}
-            <Grid size={{ xs: 12, md: 6 }}>
-              <TextField fullWidth required label={isRtl ? 'المسمى الوظيفي' : 'Job Title'} value={form.job_title}
-                onChange={event => updateForm('job_title', event.target.value)} disabled={isReadOnly} />
+              <TextField fullWidth type="number" label={isRtl ? 'عدد الأطفال' : '# of Child'}
+                inputProps={{ min: 0, max: 100, step: 1 }}
+                value={form.children_count}
+                onChange={event => updateForm('children_count', event.target.value)}
+                disabled={isReadOnly} />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
-              <CalendarDateField required label={isRtl ? 'تاريخ التعيين' : 'Appointment Date'} value={form.appointment_date}
-                onChange={value => updateForm('appointment_date', value)} disabled={isReadOnly} />
+              <TextField fullWidth label={isRtl ? 'العمر (يُحسب تلقائيًا)' : 'Age'}
+                value={computedAge || (selectedEmployee?.date_of_birth ? String(selectedEmployee.age ?? '') : '')} disabled />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
-              <TextField fullWidth label={isRtl ? 'سنوات الخبرة محسوبة تلقائيًا' : 'Calculated Years of Experience'} value={computedExperience || selectedEmployee?.years_of_experience || ''} disabled />
-            </Grid>
-            <Grid size={{ xs: 12, md: 6 }}>
-              <TextField fullWidth select label={isRtl ? 'الجنس' : 'Gender'} value={form.gender}
-                onChange={event => updateForm('gender', event.target.value as Gender)} disabled={isReadOnly}>
-                <MenuItem value="male">{isRtl ? 'ذكر' : 'Male'}</MenuItem>
-                <MenuItem value="female">{isRtl ? 'أنثى' : 'Female'}</MenuItem>
-              </TextField>
-            </Grid>
-            <Grid size={{ xs: 12, md: 6 }}>
-              <TextField fullWidth select label={isRtl ? 'حالة الفحص الدوري' : 'Periodic Exam Status'} value={form.periodic_exam_status}
-                onChange={event => updateForm('periodic_exam_status', event.target.value as ExamStatus)} disabled={isReadOnly}>
-                <MenuItem value="completed">{isRtl ? 'مكتمل' : 'Completed'}</MenuItem>
-                <MenuItem value="incomplete">{isRtl ? 'غير مكتمل' : 'Incomplete'}</MenuItem>
-                <MenuItem value="overdue">{isRtl ? 'متأخر' : 'Overdue'}</MenuItem>
-              </TextField>
-            </Grid>
-            <Grid size={{ xs: 12, md: 6 }}>
-              <TextField fullWidth select label={isRtl ? 'حالة التطعيم' : 'Vaccination Status'} value={form.vaccination_status}
-                onChange={event => updateForm('vaccination_status', event.target.value as VaccineStatus)} disabled={isReadOnly}>
-                <MenuItem value="completed">{isRtl ? 'مكتمل' : 'Completed'}</MenuItem>
-                <MenuItem value="due">{isRtl ? 'مستحق' : 'Due'}</MenuItem>
-                <MenuItem value="refused">{isRtl ? 'رفض' : 'Refused'}</MenuItem>
-              </TextField>
-            </Grid>
-            <Grid size={{ xs: 12, md: 6 }}>
-              <TextField fullWidth select label={isRtl ? 'مستوى الخطورة' : 'Risk Level'} value={form.risk_level}
-                onChange={event => updateForm('risk_level', event.target.value as RiskLevel)} disabled={isReadOnly}>
-                <MenuItem value="low">{isRtl ? 'منخفض' : 'Low'}</MenuItem>
-                <MenuItem value="medium">{isRtl ? 'متوسط' : 'Medium'}</MenuItem>
-                <MenuItem value="high">{isRtl ? 'مرتفع' : 'High'}</MenuItem>
-              </TextField>
+              <CalendarDateField label={isRtl ? 'تاريخ بداية العمل السابق' : 'Date of Start (Old)'}
+                value={form.employment_start_date} onChange={value => updateForm('employment_start_date', value)}
+                disabled={isReadOnly} />
             </Grid>
           </Grid>
         </DialogContent>
