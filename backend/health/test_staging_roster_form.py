@@ -108,3 +108,52 @@ class StagingRosterFormCompatibilityTests(TestCase):
         self.assertEqual(result.status_code, 400, result.data)
         self.assertIn('appointment_date', result.data)
         self.assertFalse(Employee.objects.filter(national_id='9991234568').exists())
+
+    def test_staging_new_identity_fields_persist_and_old_moh_id_remains_intact(self):
+        payload = {
+            'name': 'موظف تجريبي حقول إضافية',
+            'national_id': '9991234569',
+            'health_center': self.center.pk,
+            'employee_number': 'QA-TEST-JOB-3001',
+            'nationality': 'SA',
+            'job_title': 'طبيب عام',
+            'current_job': 'مشرف المركز الصحي',
+            'moh_id': 'FAKE-MOH-009',
+        }
+        created = self.client.post(self.url, payload, format='json')
+        self.assertEqual(created.status_code, 201, created.data)
+        employee_id = created.data['id']
+        employee = Employee.objects.get(pk=employee_id)
+        self.assertEqual(employee.nationality, 'SA')
+        self.assertEqual(employee.employee_number, 'QA-TEST-JOB-3001')
+        self.assertEqual(employee.job_title, 'طبيب عام')
+        self.assertEqual(employee.current_job, 'مشرف المركز الصحي')
+        self.assertEqual(employee.detailed_health_profile.moh_id, 'FAKE-MOH-009')
+
+        detail_url = reverse('employee-detail', kwargs={'pk': employee_id})
+        detail = self.client.get(detail_url)
+        self.assertEqual(detail.status_code, 200)
+        self.assertEqual(detail.data['nationality'], 'SA')
+        self.assertEqual(detail.data['current_job'], 'مشرف المركز الصحي')
+
+        updated = self.client.patch(detail_url, {
+            'nationality': 'EG',
+            'current_job': 'مدير التشغيل',
+        }, format='json')
+        self.assertEqual(updated.status_code, 200, updated.data)
+        employee.refresh_from_db()
+        self.assertEqual(employee.nationality, 'EG')
+        self.assertEqual(employee.current_job, 'مدير التشغيل')
+        self.assertEqual(employee.employee_number, 'QA-TEST-JOB-3001')
+        self.assertEqual(employee.detailed_health_profile.moh_id, 'FAKE-MOH-009')
+
+    def test_duplicate_employee_number_rejected_without_saving_second_employee(self):
+        first = {
+            'name': 'تجريبي أ', 'national_id': '9991234561',
+            'health_center': self.center.pk, 'employee_number': 'QA-DUPLICATE-1',
+        }
+        second = {**first, 'name': 'تجريبي ب', 'national_id': '9991234562'}
+        self.assertEqual(self.client.post(self.url, first, format='json').status_code, 201)
+        response = self.client.post(self.url, second, format='json')
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertEqual(Employee.objects.count(), 1)
