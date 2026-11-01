@@ -121,6 +121,16 @@ export const JOB_TITLES: readonly string[] = [
 const ARAB_COUNTRY_CODES = 'SA AE BH KW OM QA YE EG SD JO LB SY IQ PS LY TN DZ MA MR SO DJ KM'.split(' ');
 const WORLD_COUNTRY_CODES = 'AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ BL BM BN BO BQ BR BS BT BV BW BY BZ CA CC CD CF CG CH CI CK CL CM CN CO CR CU CV CW CX CY CZ DE DJ DK DM DO DZ EC EE EG EH ER ES ET FI FJ FK FM FO FR GA GB GD GE GF GG GH GI GL GM GN GP GQ GR GS GT GU GW GY HK HM HN HR HT HU ID IE IL IM IN IO IQ IR IS IT JE JM JO JP KE KG KH KI KM KN KP KR KW KY KZ LA LB LC LI LK LR LS LT LU LV LY MA MC MD ME MF MG MH MK ML MM MN MO MP MQ MR MS MT MU MV MW MX MY MZ NA NC NE NF NG NI NL NO NP NR NU NZ OM PA PE PF PG PH PK PL PM PN PR PS PT PW PY QA RE RO RS RU RW SA SB SC SD SE SG SH SI SJ SK SL SM SN SO SR SS ST SV SX SY SZ TC TD TF TG TH TJ TK TL TM TN TO TR TT TV TW TZ UA UG UM US UY UZ VA VC VE VG VI VN VU WF WS YE YT ZA ZM ZW'.split(' ');
 
+/** Short country labels shown in the UI. Nationality aliases remain search-only. */
+const ARAB_COUNTRY_SHORT_NAMES: Record<string, string> = {
+  SA: 'السعودية', AE: 'الإمارات', BH: 'البحرين', KW: 'الكويت',
+  OM: 'عُمان', QA: 'قطر', YE: 'اليمن', EG: 'مصر',
+  SD: 'السودان', JO: 'الأردن', LB: 'لبنان', SY: 'سوريا',
+  IQ: 'العراق', PS: 'فلسطين', LY: 'ليبيا', TN: 'تونس',
+  DZ: 'الجزائر', MA: 'المغرب', MR: 'موريتانيا', SO: 'الصومال',
+  DJ: 'جيبوتي', KM: 'جزر القمر',
+};
+
 /** Common Arabic nationality names; search accepts either the country or nationality. */
 const ARAB_NATIONALITY_NAMES: Record<string, string> = {
   SA: 'سعودي سعودية', AE: 'إماراتي إماراتية', BH: 'بحريني بحرينية',
@@ -158,12 +168,12 @@ export function getNationalityOptions(): NationalityOption[] {
     ...WORLD_COUNTRY_CODES.filter(code => !seen.has(code)).sort((a,b) =>
       (arNames.of(a) || a).localeCompare(arNames.of(b) || b, 'ar'))];
   return ordered.map(code => {
-    const countryAr = arNames.of(code) || code;
+    const countryAr = ARAB_COUNTRY_SHORT_NAMES[code] || arNames.of(code) || code;
     const countryEn = enNames.of(code) || code;
     const nationalityAr = ARAB_NATIONALITY_NAMES[code] || '';
     return {
       code, countryAr, countryEn, nationalityAr,
-      searchText: normalizeNationalitySearch([countryAr, countryEn, nationalityAr, code].join(' ')),
+      searchText: normalizeNationalitySearch([countryAr, arNames.of(code) || '', countryEn, nationalityAr, code].join(' ')),
     };
   });
 }
