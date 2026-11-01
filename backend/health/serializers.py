@@ -2,7 +2,7 @@ from datetime import date
 
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
-from .models import AuditLog, ClinicVisit, CommitteeReferral, DataImportBatch, Employee, EmployeeHealthCard, EmployeeImportReview, HealthCenter, InjuryCase, LabTest, OccupationalHealthAssessment, UserProfile, Vaccination
+from .models import AuditLog, ClinicVisit, CommitteeReferral, DataImportBatch, Employee, EmployeeHealthCard, EmployeeHealthProfile, EmployeeImportReview, HealthCenter, InjuryCase, LabTest, OccupationalHealthAssessment, UserProfile, Vaccination
 
 
 ROLE_PERMISSIONS = {
@@ -290,6 +290,9 @@ class HealthCenterSerializer(serializers.ModelSerializer):
 
 class EmployeeSerializer(serializers.ModelSerializer):
     health_center_name = serializers.CharField(source='health_center.name', read_only=True)
+    moh_id = serializers.CharField(source='detailed_health_profile.moh_id', required=False, allow_blank=True)
+    children_count = serializers.IntegerField(source='detailed_health_profile.children_count', required=False, allow_null=True, min_value=0, max_value=100)
+    employment_start_date = serializers.DateField(source='detailed_health_profile.employment_start_date', required=False, allow_null=True)
     age = serializers.IntegerField(read_only=True)
     years_of_experience = serializers.DecimalField(max_digits=5, decimal_places=2, read_only=True)
     health_card_exists = serializers.SerializerMethodField()
@@ -302,17 +305,14 @@ class EmployeeSerializer(serializers.ModelSerializer):
         read_only_fields = ('employment_status',)
         extra_kwargs = {
             'name': {'required': True, 'allow_blank': False},
-            'email': {'required': True, 'allow_blank': False},
             'national_id': {'required': True, 'allow_blank': False},
-            'employee_number': {'required': True, 'allow_blank': False},
-            'mobile': {'required': True, 'allow_blank': False},
-            'date_of_birth': {'required': True},
-            'birth_place': {'required': True, 'allow_blank': False},
-            'national_address': {'required': True, 'allow_blank': False},
-            'marital_status': {'required': True, 'allow_blank': False},
-            'job_title': {'required': True, 'allow_blank': False},
-            'appointment_date': {'required': True},
             'health_center': {'required': True},
+            'email': {'required': False, 'allow_blank': True, 'allow_null': True},
+            'employee_number': {'required': False, 'allow_blank': True, 'allow_null': True},
+            'date_of_birth': {'required': False, 'allow_null': True},
+            'marital_status': {'required': False, 'allow_blank': True},
+            'job_title': {'required': False, 'allow_blank': True},
+            'appointment_date': {'required': False, 'allow_null': True},
         }
 
     def _health_card(self, obj):
@@ -364,17 +364,11 @@ class EmployeeSerializer(serializers.ModelSerializer):
                     'health_center': 'Transfer between centers requires an approved employment-status change.'
                 })
 
-        self._require_for_create(attrs, 'email', 'Email is required and must be unique.')
         self._require_for_create(attrs, 'national_id', 'National ID is required and must be unique.')
-        self._require_for_create(attrs, 'employee_number', 'Employee number is required and must be unique.')
-        self._require_for_create(attrs, 'mobile', 'Mobile number is required.')
-        self._require_for_create(attrs, 'date_of_birth', 'Date of birth is required.')
-        self._require_for_create(attrs, 'birth_place', 'Birth place is required.')
-        self._require_for_create(attrs, 'national_address', 'National address is required.')
-        self._require_for_create(attrs, 'marital_status', 'Marital status is required.')
-        self._require_for_create(attrs, 'job_title', 'Job title is required.')
-        self._require_for_create(attrs, 'appointment_date', 'Appointment date is required.')
-
+        self._require_for_create(attrs, 'name', 'Name is required.')
+        self._require_for_create(attrs, 'health_center', 'Health center is required.')
+        if attrs.get('national_id') and len(attrs['national_id']) != 10:
+            raise serializers.ValidationError({'national_id': 'National ID must contain exactly 10 digits.'})
         self._check_unique_employee_field('email', attrs.get('email'), 'Email already exists for another employee.')
         self._check_unique_employee_field('national_id', attrs.get('national_id'), 'National ID already exists for another employee.')
         self._check_unique_employee_field('employee_number', attrs.get('employee_number'), 'Employee number already exists for another employee.')
@@ -386,7 +380,43 @@ class EmployeeSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'date_of_birth': 'Date of birth cannot be in the future.'})
         if appointment and appointment > today:
             raise serializers.ValidationError({'appointment_date': 'Appointment date cannot be in the future.'})
+        for field in ('latest_virtual_visit', 'latest_field_visit', 'lab_request_date'):
+            value = attrs.get(field)
+            if value and value > today:
+                raise serializers.ValidationError({field: 'Date cannot be in the future.'})
+        profile_fields = attrs.get('detailed_health_profile', {})
+        old_start = profile_fields.get('employment_start_date')
+        if old_start and old_start > today:
+            raise serializers.ValidationError({'employment_start_date': 'Date cannot be in the future.'})
         return attrs
+
+    def create(self, validated_data):
+        # Reuse the existing EmployeeHealthProfile fields rather than
+        # duplicating confidential employment metadata on Employee.
+        profile_data = validated_data.pop('detailed_health_profile', {})
+        if not validated_data.get('email'):
+            validated_data['email'] = None
+        if not validated_data.get('employee_number'):
+            validated_data['employee_number'] = None
+        employee = super().create(validated_data)
+        if profile_data:
+            EmployeeHealthProfile.objects.update_or_create(
+                employee=employee, defaults=profile_data,
+            )
+        return employee
+
+    def update(self, instance, validated_data):
+        profile_data = validated_data.pop('detailed_health_profile', {})
+        if 'email' in validated_data and not validated_data['email']:
+            validated_data['email'] = None
+        if 'employee_number' in validated_data and not validated_data['employee_number']:
+            validated_data['employee_number'] = None
+        employee = super().update(instance, validated_data)
+        if profile_data:
+            EmployeeHealthProfile.objects.update_or_create(
+                employee=employee, defaults=profile_data,
+            )
+        return employee
 
 
 class EmployeeHealthCardSerializer(serializers.ModelSerializer):
