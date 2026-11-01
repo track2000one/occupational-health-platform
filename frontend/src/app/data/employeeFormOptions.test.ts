@@ -22,6 +22,13 @@ test('Saudi Arabia first, then Arab countries, then other searchable countries',
   const eg = options.find(item => item.code === 'EG');
   const us = options.find(item => item.code === 'US');
   assert.ok(sa && eg && us);
+  assert.equal(sa.countryAr, 'السعودية');
+  assert.equal(options.find(item => item.code === 'BH')?.countryAr, 'البحرين');
+  assert.equal(options.find(item => item.code === 'KW')?.countryAr, 'الكويت');
+  assert.equal(eg.countryAr, 'مصر');
+  assert.ok(!sa.countryAr.includes('—'));
+  assert.ok(sa.searchText.includes(normalizeNationalitySearch('المملكة العربية السعودية')));
+  assert.ok(options.find(item => item.code === 'BH')?.searchText.includes(normalizeNationalitySearch('بحريني')));
   assert.ok(sa.searchText.includes(normalizeNationalitySearch('السعودية')));
   assert.ok(sa.searchText.includes(normalizeNationalitySearch('سعودي')));
   assert.ok(eg.searchText.includes(normalizeNationalitySearch('مصري')));
