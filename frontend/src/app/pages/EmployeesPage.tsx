@@ -771,11 +771,7 @@ export function EmployeesPage() {
                 disabled={isReadOnly}
                 onChange={(_, option) => updateForm('nationality', option?.code || '')}
                 isOptionEqualToValue={(option, value) => option.code === value.code}
-                getOptionLabel={option => isRtl
-                  ? option.nationalityAr
-                    ? `${option.countryAr} — ${option.nationalityAr.replace(' ', ' / ')}`
-                    : option.countryAr
-                  : option.countryEn}
+                getOptionLabel={option => isRtl ? option.countryAr : option.countryEn}
                 filterOptions={(options, state) => {
                   const query = normalizeNationalitySearch(state.inputValue);
                   return query ? options.filter(option => option.searchText.includes(query)) : options;
