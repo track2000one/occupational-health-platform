@@ -333,6 +333,13 @@ class EmployeeSerializer(serializers.ModelSerializer):
         card = self._health_card(obj)
         return card.updated_at if card else None
 
+    def validate_nationality(self, value):
+        # Persist country codes, never display names; supports bilingual clients.
+        country_code = str(value or '').strip().upper()
+        if country_code and (len(country_code) != 2 or not country_code.isascii() or not country_code.isalpha()):
+            raise serializers.ValidationError('Choose a valid two-letter country code.')
+        return country_code
+
     def _normalize_identity(self, attrs):
         if 'email' in attrs and attrs.get('email'):
             attrs['email'] = str(attrs['email']).strip().lower()
