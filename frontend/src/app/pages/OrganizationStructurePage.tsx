@@ -308,20 +308,20 @@ export function OrganizationStructurePage() {
                   transition: 'transform 200ms ease, box-shadow 200ms ease, border-color 200ms ease',
                   '&:hover': { transform: 'translateY(-3px)', boxShadow: '0 15px 28px rgba(22, 65, 98, 0.18)', borderColor: '#69a0c4' },
                 }}>
-                  <CardContent sx={{ p: 2, pb: '14px !important', display: 'flex', flexDirection: 'column', flexGrow: 1, gap: 1.4, minWidth: 0 }}>
-                    <Stack direction="row" alignItems="flex-start" justifyContent="space-between" gap={1} sx={{ minHeight: 42 }}>
+                  <CardContent sx={{ p: 2.25, pb: '18px !important', display: 'flex', flexDirection: 'column', flexGrow: 1, gap: 1.3, minWidth: 0 }}>
+                    <Stack direction="row" alignItems="flex-start" justifyContent="space-between" gap={1} sx={{ minHeight: 38 }}>
                       <Chip size="small" color={unit.is_active ? 'success' : 'default'}
                         label={unit.is_active ? 'نشط' : 'غير نشط'}
-                        variant="outlined" sx={{ flexShrink: 0, fontWeight: 800 }} />
+                        variant="outlined" sx={{ flexShrink: 0, fontWeight: 800, fontSize: '12px', height: 29 }} />
                       <Typography component="h3" sx={{
-                        fontWeight: 900, color: '#143f61', fontSize: '0.99rem', textAlign: 'right',
-                        lineHeight: 1.5, overflowWrap: 'anywhere', minWidth: 0,
+                        fontWeight: 900, color: '#143f61', fontSize: '17px', textAlign: 'right',
+                        lineHeight: 1.5, overflowWrap: 'anywhere', minWidth: 0, wordBreak: 'break-word',
                       }}>{unit.name}</Typography>
                     </Stack>
 
-                    <Box title={unit.source_path || unit.name} sx={{ minHeight: 48, minWidth: 0 }}>
+                    <Box title={unit.source_path || unit.name} sx={{ minHeight: 40, minWidth: 0 }}>
                       <Typography sx={{
-                        textAlign: 'right', fontSize: '0.79rem', fontWeight: 550, lineHeight: 1.7,
+                        textAlign: 'right', fontSize: '13.5px', fontWeight: 600, lineHeight: 1.6,
                         color: '#4d6880', overflowWrap: 'anywhere',
                         display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
                         overflow: 'hidden',
@@ -329,22 +329,22 @@ export function OrganizationStructurePage() {
                     </Box>
 
                     <Box sx={{
-                      borderRadius: 2, px: 1.2, py: 0.9,
+                      borderRadius: 2, px: 1.5, py: 1.1,
                       bgcolor: '#ecf4fa', display: 'flex', alignItems: 'center',
                       justifyContent: 'space-between', gap: 1, minWidth: 0,
                     }}>
                       <Stack direction="row" alignItems="center" gap={0.5} sx={{ minWidth: 0 }}>
                         <Box sx={{ color: '#17638c', display: 'flex' }}>{kindIcon}</Box>
-                        <Typography sx={{ fontSize: '0.73rem', fontWeight: 800, color: '#34576c', overflowWrap: 'anywhere' }}>{KINDS[unit.kind]}</Typography>
+                        <Typography sx={{ fontSize: '12.5px', fontWeight: 800, color: '#34576c', overflowWrap: 'anywhere' }}>{KINDS[unit.kind]}</Typography>
                       </Stack>
-                      <Typography sx={{ fontSize: '0.73rem', color: '#174364', fontWeight: 850, flexShrink: 0 }} dir="ltr">{unit.code}</Typography>
+                      <Typography sx={{ fontSize: '12px', color: '#174364', fontWeight: 850, flexShrink: 0 }} dir="ltr">{unit.code}</Typography>
                     </Box>
 
                     <Box sx={{
                       display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)',
-                      columnGap: 1.3, rowGap: 1.15, minWidth: 0,
-                      '& .org-label': { fontSize: '0.68rem', fontWeight: 750, color: '#788da0', mb: 0.25 },
-                      '& .org-value': { fontSize: '0.76rem', fontWeight: 800, color: '#25445c', lineHeight: 1.5, overflowWrap: 'anywhere' },
+                      columnGap: 1.4, rowGap: 1.15, minWidth: 0,
+                      '& .org-label': { fontSize: '12px', fontWeight: 750, color: '#627d91', mb: 0.4 },
+                      '& .org-value': { fontSize: '13.5px', fontWeight: 800, color: '#25445c', lineHeight: 1.5, overflowWrap: 'anywhere' },
                     }}>
                       <Box sx={{ minWidth: 0 }}>
                         <Typography className="org-label">الجهة الأعلى</Typography>
@@ -359,8 +359,8 @@ export function OrganizationStructurePage() {
                     <Box sx={{ mt: 'auto', pt: 0.8 }}>
                       <Chip size="small" color={REVIEW_COLORS[unit.review_status] || 'default'}
                         label={REVIEW_LABELS[unit.review_status] || 'بانتظار المراجعة'}
-                        sx={{ maxWidth: '100%', fontWeight: 800, '& .MuiChip-label': { overflow: 'hidden', textOverflow: 'ellipsis' } }} />
-                      {needsReview && <Typography sx={{ fontSize: '0.68rem', lineHeight: 1.6, color: '#6a8191', mt: 0.5 }}>
+                        sx={{ maxWidth: '100%', height: 28, fontSize: '12px', fontWeight: 800, '& .MuiChip-label': { overflow: 'hidden', textOverflow: 'ellipsis' } }} />
+                      {needsReview && <Typography sx={{ fontSize: '12px', lineHeight: 1.6, color: '#607a90', mt: 0.5 }}>
                         {unit.review_status === 'await_parent' ? 'يجب اعتماد الجهة الأعلى أولًا' : 'يلزم التحقق من مطابقة المركز'}
                       </Typography>}
                     </Box>
@@ -369,19 +369,20 @@ export function OrganizationStructurePage() {
 
                     <Box sx={{
                       display: 'grid', gridTemplateColumns: 'repeat(4,minmax(0,1fr))',
-                      gap: 0.55, minWidth: 0, '& .MuiButton-root': {
-                        minWidth: 0, minHeight: 43, padding: '5px 3px',
-                        fontSize: '0.68rem', fontWeight: 850, lineHeight: 1.25,
+                      gap: 0.7, minWidth: 0, '& .MuiButton-root': {
+                        minWidth: 0, minHeight: 54, padding: '7px 4px',
+                        fontSize: '12.5px', fontWeight: 850, lineHeight: 1.3,
                         borderRadius: 2, whiteSpace: 'normal', textAlign: 'center',
                         flexDirection: 'column', gap: 0.3,
                       },
-                      '& .MuiButton-startIcon': { margin: 0, '& svg': { fontSize: 17 } },
+                      '& .MuiButton-startIcon': { margin: 0, '& svg': { fontSize: 20 } },
                     }}>
                       <Button variant="contained" size="small" startIcon={<ViewIcon />}
                         sx={{ bgcolor: '#14527e', '&:hover': { bgcolor: '#093c60' } }}
                         onClick={() => setDetailUnit(unit)}>مراجعة</Button>
                       <Button variant="outlined" size="small" color="success" startIcon={<ApproveIcon />}
                         disabled={busy || unit.review_status !== 'ready'}
+                        title={unit.review_status === 'ready' ? 'الاعتماد بعد إدخال المرجع الرسمي' : (REVIEW_LABELS[unit.review_status] || 'متطلبات الاعتماد غير مكتملة')}
                         onClick={() => setConfirmationUnit(unit)}>اعتماد</Button>
                       <Button variant="outlined" size="small" color="primary" startIcon={<EditIcon />}
                         disabled={busy || unit.is_approved}
@@ -440,14 +441,21 @@ export function OrganizationStructurePage() {
         <DialogActions><Button onClick={() => setDetailUnit(null)} disabled={busy}>إغلاق</Button></DialogActions>
       </Dialog>
 
-      <Dialog open={editUnit !== null} onClose={() => !busy && setEditUnit(null)} maxWidth="sm" fullWidth>
-        <DialogTitle sx={{ fontWeight: 900 }}>تعديل اسم الجهة قبل الاعتماد</DialogTitle>
-        <DialogContent dividers>
-          <Alert severity="info" sx={{ mb: 2 }}>يُسمح بتصحيح الاسم المعروض فقط. تبقى رموز الجهات والمسارات المصدرية والارتباطات الأصلية محفوظة.</Alert>
+      <Dialog open={editUnit !== null} onClose={() => !busy && setEditUnit(null)} maxWidth="sm" fullWidth
+        PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden' } }}>
+        <DialogTitle sx={{ fontWeight: 900, fontSize: '20px', color: '#143f61', py: 2.2 }}>تعديل اسم الجهة قبل الاعتماد</DialogTitle>
+        <DialogContent dividers sx={{ py: 2.5 }}>
+          <Alert severity="info" sx={{ mb: 2.5, '& .MuiAlert-message': { fontSize: '14px', lineHeight: 1.8 } }}>
+            يُسمح بتصحيح الاسم المعروض فقط. تبقى رموز الجهات والمسارات المصدرية والارتباطات الأصلية محفوظة.
+          </Alert>
           <TextField fullWidth required label="اسم الجهة / الوحدة" value={editName} onChange={event => setEditName(event.target.value)}
+            sx={{ '& .MuiInputBase-input': { fontSize: '16px', py: 1.7 }, '& .MuiInputLabel-root': { fontSize: '14px' } }}
             slotProps={{ htmlInput: { maxLength: 220 } }} />
+          <Typography sx={{ color: '#647c90', mt: 1.1, fontSize: '13px' }}>
+            التعديل يقتصر على الاسم الظاهر، دون اعتماد الجهة أو تغيير ارتباطاتها.
+          </Typography>
         </DialogContent>
-        <DialogActions>
+        <DialogActions sx={{ p: 2, gap: 1, '& .MuiButton-root': { fontSize: '14px', fontWeight: 800, minHeight: 39 } }}>
           <Button onClick={() => setEditUnit(null)} disabled={busy}>إلغاء</Button>
           <Button variant="contained" disabled={busy || !editName.trim() || editName.trim() === editUnit?.name}
             onClick={async () => { if (editUnit && await review(editUnit, 'edit-draft', editName)) setEditUnit(null); }}>حفظ التعديل</Button>
