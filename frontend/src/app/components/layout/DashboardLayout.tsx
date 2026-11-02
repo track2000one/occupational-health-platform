@@ -101,6 +101,7 @@ export function DashboardLayout() {
     { key: 'workforceTemporary', label: isRtl ? 'بيانات الموظفين الأصلية — مؤقت' : 'Original roster — temporary', icon: <CloudUploadIcon />, path: '/admin/temporary-workforce', group: 'admin', permission: PERMISSIONS.MANAGE_USERS },
     { key: 'employeeLifecycle', label: isRtl ? 'الحالات الوظيفية والمتقاعدون' : 'Employment Status & Retirees', icon: <WorkHistoryIcon />, path: '/admin/employee-lifecycle', group: 'admin', permission: PERMISSIONS.MANAGE_USERS },
     { key: 'healthCenters',      label: isRtl ? 'إدارة المراكز الصحية' : 'Health Centers',      icon: <BusinessIcon />,      path: '/admin/health-centers', group: 'admin', permission: PERMISSIONS.MANAGE_USERS },
+    { key: 'organizationStructure', label: isRtl ? 'الهيكل التنظيمي والجهات التابعة' : 'Organization Structure', icon: <BusinessIcon />, path: '/admin/organization-structure', group: 'admin', permission: PERMISSIONS.MANAGE_USERS },
     { key: 'auditLog',           label: isRtl ? 'سجل العمليات' : 'Audit Log',                  icon: <SecurityIcon />,      path: '/audit-log',   group: 'admin', permission: PERMISSIONS.VIEW_AUDIT_LOGS },
     { key: 'settings',           label: isRtl ? 'إعدادات المظهر والقراءة' : 'Appearance Settings', icon: <SettingsIcon />,   path: '/settings',    group: 'admin', permission: PERMISSIONS.MANAGE_SETTINGS },
     { key: 'roles',              label: isRtl ? 'الأدوار والصلاحيات' : 'Roles & Perms',        icon: <ShieldIcon />,        path: '/roles',       group: 'admin', permission: PERMISSIONS.MANAGE_USERS },
