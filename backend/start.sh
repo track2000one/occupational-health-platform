@@ -21,6 +21,14 @@ if [ "${STAGING_MODE:-false}" = "true" ] && [ "${SEED_STAGING_LOAD_DATA:-false}"
   python manage.py seed_staging_load
 fi
 
+# Explicit, Staging-only, replay-safe import of reviewed organizational proposals.
+# The actual organization names arrive as a private Railway environment variable,
+# never as a file committed to the public source repository.
+if [ "${OHP_ORG_DRAFTS_ZLIB_B64:-}" != "" ]; then
+  echo "[start] Loading reviewed organizational draft references (no approvals or employee writes)..."
+  python manage.py load_staging_org_drafts
+fi
+
 WORKERS="${GUNICORN_WORKERS:-2}"
 THREADS="${GUNICORN_THREADS:-4}"
 TIMEOUT="${GUNICORN_TIMEOUT:-45}"
