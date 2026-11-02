@@ -168,6 +168,11 @@ function AppRoutes() {
             <HealthCentersPage />
           </PermissionRoute>
         } />
+        <Route path="admin/organization-structure" element={
+          <PermissionRoute permission="manage:users">
+            <OrganizationStructurePage />
+          </PermissionRoute>
+        } />
         <Route path="roles" element={
           <PermissionRoute permission="manage:users">
             <RolesPermissionsPage />
