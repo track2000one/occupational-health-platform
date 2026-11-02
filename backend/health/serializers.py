@@ -339,7 +339,11 @@ class EmployeeSerializer(serializers.ModelSerializer):
         if not value.is_active or not value.is_approved:
             raise serializers.ValidationError('Choose an approved active organizational unit.')
         if value.kind == 'sector':
-            raise serializers.ValidationError('Choose a center, unit or administrative department instead.')
+            raise serializers.ValidationError('Choose a center or an approved unit instead.')
+        if value.kind == 'department' and not value.health_center_id:
+            raise serializers.ValidationError(
+                'Central departments require a separate approved assignment workflow.'
+            )
         return value
 
     def validate_nationality(self, value):
