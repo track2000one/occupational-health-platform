@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import {
-  Alert, Box, Button, Card, CardContent, Chip, CircularProgress, Divider, FormControl,
+  Alert, Box, Button, Card, CardContent, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Divider, FormControl,
   Grid, InputLabel, LinearProgress, MenuItem, Paper, Select, Stack, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, TextField, Typography,
 } from '@mui/material';
@@ -69,6 +69,7 @@ export function OrganizationStructurePage() {
   const [busy, setBusy] = useState(false);
   const [mappedCenters, setMappedCenters] = useState<Record<number, string>>({});
   const [approvalRefs, setApprovalRefs] = useState<Record<number, string>>({});
+  const [confirmationUnit, setConfirmationUnit] = useState<OrgUnit | null>(null);
 
   async function reload() {
     const [directory, centerList] = await Promise.all([
@@ -140,7 +141,7 @@ export function OrganizationStructurePage() {
     finally { setBusy(false); }
   }
 
-  async function review(item: OrgUnit, action: 'map-center' | 'approve') {
+  async function review(item: OrgUnit, action: 'map-center' | 'approve'): Promise<boolean> {
     setBusy(true);
     try {
       await apiRequest('/organization-units/' + item.id + '/review/', {
@@ -154,8 +155,11 @@ export function OrganizationStructurePage() {
       });
       await reload();
       toast.success(action === 'approve' ? 'تم اعتماد السجل وربط مرجع الاعتماد' : 'تمت مطابقة المركز بنجاح');
-    } catch (e) { toast.error(localizedError(e)); }
-    finally { setBusy(false); }
+      return true;
+    } catch (e) {
+      toast.error(localizedError(e));
+      return false;
+    } finally { setBusy(false); }
   }
 
   return (
@@ -195,6 +199,35 @@ export function OrganizationStructurePage() {
         ))}
       </Grid>
 
+      <Paper sx={{ p: 2.5, borderRadius: 3, mb: 3 }}>
+        <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ md: 'center' }} gap={1} sx={{ mb: 1.5 }}>
+          <Typography fontWeight={900} variant="h6">مراجعة الهيكل حسب القطاع</Typography>
+          <Chip color="info" label={`${stats.approved} معتمد من ${stats.total} سجل`} />
+        </Stack>
+        <LinearProgress variant="determinate" value={stats.total ? Math.round(100 * stats.approved / stats.total) : 0}
+          sx={{ height: 8, borderRadius: 4, mb: 2 }} />
+        <Stack direction="row" useFlexGap flexWrap="wrap" gap={1} sx={{ mb: 2 }}>
+          <Button variant={sectorFilter === 'all' ? 'contained' : 'outlined'} size="small" onClick={() => setSectorFilter('all')}>جميع الجهات ({stats.total})</Button>
+          {sectorSummaries.map(({ sector, centers: sectorCenters, units, approved }) => (
+            <Button key={sector.code} variant={sectorFilter === sector.code ? 'contained' : 'outlined'} size="small"
+              onClick={() => setSectorFilter(sector.code)}>
+              {sector.name} · {sectorCenters.length} مراكز · {units.length} وحدات · {approved} معتمد
+            </Button>
+          ))}
+          <Button variant={sectorFilter === 'central' ? 'contained' : 'outlined'} color="secondary" size="small"
+            onClick={() => setSectorFilter('central')}>الجهات المركزية ({stats.by_kind.department || 0})</Button>
+        </Stack>
+        <Stack direction="row" useFlexGap flexWrap="wrap" gap={1}>
+          <Chip color="success" variant="outlined" label={`جاهز للاعتماد: ${stats.by_review_status?.ready || 0}`}/>
+          <Chip color="warning" variant="outlined" label={`بانتظار مطابقة المركز: ${stats.by_review_status?.needs_center_mapping || 0}`}/>
+          <Chip variant="outlined" label={`ينتظر اعتماد الجهة الأعلى: ${stats.by_review_status?.await_parent || 0}`}/>
+          <Chip color="info" variant="outlined" label={`مطابق للمراكز القائمة: ${stats.mapped_centers || 0} من ${stats.by_kind.center || 0}`}/>
+        </Stack>
+        <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+          الترتيب: اعتماد القطاعات أولًا، ثم مطابقة المراكز المسجلة واعتمادها، ثم اعتماد الوحدات التابعة لها. الجهات المركزية تراجع منفصلة.
+        </Typography>
+      </Paper>
+
       <Paper sx={{ p: 3, borderRadius: 3, mb: 3 }}>
         <Stack direction="row" gap={1} alignItems="center" sx={{ mb: 2 }}>
           <TreeIcon color="primary"/><Typography variant="h6" fontWeight={900}>استيراد ملف المطابقة التنظيمية</Typography>
@@ -229,7 +262,9 @@ export function OrganizationStructurePage() {
 
       <Paper sx={{ p: 2.5, borderRadius: 3 }}>
         <Stack direction={{xs:'column',md:'row'}} gap={2} sx={{ mb: 2 }} alignItems={{md:'center'}}>
-          <Typography variant="h6" fontWeight={900} sx={{ flex: 1 }}>مراجعة واعتماد الجهات</Typography>
+          <Typography variant="h6" fontWeight={900} sx={{ flex: 1 }}>
+            مراجعة واعتماد الجهات <Typography component="span" variant="body2" color="text.secondary">({filtered.length} سجل)</Typography>
+          </Typography>
           <TextField size="small" value={search} onChange={e => setSearch(e.target.value)} label="بحث بالاسم أو المسار" sx={{ minWidth: 240 }} />
           <FormControl size="small" sx={{minWidth:160}}>
             <InputLabel>التصنيف</InputLabel>
@@ -264,21 +299,43 @@ export function OrganizationStructurePage() {
                   </TableCell>
                   <TableCell>{KINDS[unit.kind]}</TableCell>
                   <TableCell>{unit.parent_name || '—'}</TableCell>
-                  <TableCell><Chip size="small" color={unit.is_approved ? 'success' : 'warning'}
-                     label={unit.is_approved ? 'معتمد' : 'مسودة'} /></TableCell>
+                  <TableCell>
+                    <Stack gap={0.5} alignItems="flex-start">
+                      <Chip size="small" color={REVIEW_COLORS[unit.review_status] || 'default'}
+                        label={REVIEW_LABELS[unit.review_status] || 'بانتظار المراجعة'}/>
+                      {unit.health_center_name && <Typography variant="caption" color="text.secondary">↳ {unit.health_center_name}</Typography>}
+                    </Stack>
+                  </TableCell>
                   <TableCell sx={{minWidth:265}}>
                     {unit.is_approved ? <Typography variant="caption">{unit.approval_reference}</Typography> : (
                       <Stack gap={1} sx={{ minWidth: 255 }}>
                         {unit.kind==='center' && (
-                          <Stack direction="row" gap={1}>
-                            <TextField select size="small" fullWidth label="مطابقة مع مركز موجود"
-                              value={mappedCenters[unit.id] || unit.health_center_id || ''}
-                              onChange={e => setMappedCenters(prev=>({...prev,[unit.id]:String(e.target.value)}))}>
-                              <MenuItem value="">اختر مركزًا</MenuItem>
-                              {centers.map(c=><MenuItem key={c.id} value={String(c.id)}>{c.name_ar || c.name}</MenuItem>)}
-                            </TextField>
-                            <Button size="small" variant="outlined" disabled={busy || !mappedCenters[unit.id]}
-                              onClick={()=>void review(unit,'map-center')}>ربط</Button>
+                          <Stack gap={0.6}>
+                            {(() => {
+                              const proposals = exactCenterSuggestions(unit.name, centers);
+                              if (proposals.length === 1) return (
+                                <Button size="small" variant="text" disabled={busy} sx={{ alignSelf: 'flex-start' }}
+                                  onClick={() => setMappedCenters(prev => ({...prev, [unit.id]: String(proposals[0].id)}))}>
+                                  اقتراح مطابق بالاسم: {proposals[0].name_ar || proposals[0].name}
+                                </Button>
+                              );
+                              if (proposals.length > 1) return (
+                                <Typography color="warning.main" variant="caption">أكثر من مركز بنفس الاسم؛ تحقّق من المركز الصحيح يدويًا.</Typography>
+                              );
+                              return <Typography color="text.secondary" variant="caption">لا توجد مطابقة اسمية تامة؛ يُرجى التحقق من المركز المسجل.</Typography>;
+                            })()}
+                            <Stack direction="row" gap={1}>
+                              <TextField select size="small" fullWidth label="مطابقة مع مركز موجود"
+                                value={mappedCenters[unit.id] || String(unit.health_center_id || '')}
+                                onChange={e => setMappedCenters(prev=>({...prev,[unit.id]:String(e.target.value)}))}>
+                                <MenuItem value="">اختر مركزًا</MenuItem>
+                                {centers.map(c=><MenuItem key={c.id} value={String(c.id)}>{c.name_ar || c.name}</MenuItem>)}
+                              </TextField>
+                              <Button size="small" variant="outlined" disabled={
+                                busy || !mappedCenters[unit.id] || mappedCenters[unit.id] === String(unit.health_center_id)
+                              } onClick={()=>void review(unit,'map-center')}>حفظ المطابقة</Button>
+                            </Stack>
+                            <Typography color="text.secondary" variant="caption">الاقتراح لا يحفظ المطابقة ولا يعتمد المركز تلقائيًا.</Typography>
                           </Stack>
                         )}
                         <Stack direction="row" gap={1}>
@@ -286,8 +343,8 @@ export function OrganizationStructurePage() {
                             value={approvalRefs[unit.id] || ''}
                             onChange={e=>setApprovalRefs(prev=>({...prev,[unit.id]:e.target.value}))}/>
                           <Button size="small" color="success" variant="contained" startIcon={<ApproveIcon/>}
-                            disabled={busy || (approvalRefs[unit.id] || '').trim().length < 3}
-                            onClick={()=>void review(unit,'approve')}>اعتماد</Button>
+                            disabled={busy || unit.review_status !== 'ready' || (approvalRefs[unit.id] || '').trim().length < 3}
+                            onClick={() => setConfirmationUnit(unit)}>مراجعة الاعتماد</Button>
                         </Stack>
                       </Stack>
                     )}
@@ -302,6 +359,31 @@ export function OrganizationStructurePage() {
         </TableContainer>
         <Typography variant="caption" color="text.secondary">{filtered.length} سجل معروض — لا يظهر غير المعتمد في سجل الموظفين.</Typography>
       </Paper>
+      <Dialog open={confirmationUnit !== null} onClose={() => !busy && setConfirmationUnit(null)} maxWidth="sm" fullWidth>
+        <DialogTitle>تأكيد اعتماد جهة تنظيمية</DialogTitle>
+        <DialogContent dividers>
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            هذا الإجراء يجعل الجهة متاحة للربط ببيانات الموظفين عند استيفاء ضوابط المركز، ولا يمكن إلغاؤه من هذه الشاشة.
+          </Alert>
+          <Typography fontWeight={900}>{confirmationUnit?.name}</Typography>
+          <Typography color="text.secondary" variant="body2">
+            {confirmationUnit?.parent_name ? `تتبع: ${confirmationUnit.parent_name}` : 'جهة تنظيمية عليا'}
+          </Typography>
+          <Typography sx={{ mt: 2 }} variant="body2">
+            مرجع الاعتماد: <strong>{confirmationUnit ? approvalRefs[confirmationUnit.id] : ''}</strong>
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button disabled={busy} onClick={() => setConfirmationUnit(null)}>إلغاء</Button>
+          <Button disabled={busy || !confirmationUnit} variant="contained" color="success"
+            onClick={async () => {
+              if (!confirmationUnit) return;
+              if (await review(confirmationUnit, 'approve')) setConfirmationUnit(null);
+            }}>
+            تأكيد الاعتماد
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }
