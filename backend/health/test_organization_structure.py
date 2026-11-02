@@ -179,3 +179,51 @@ class OrganizationHierarchySafetyTests(TestCase):
         }, format='json')
         self.assertEqual(result.status_code, 400, result.data)
         self.assertFalse(Employee.objects.filter(national_id='9998999004').exists())
+
+    @patch.dict('os.environ', STAGING_ENV)
+    def test_directory_readiness_tracks_approval_sequence(self):
+        self.assertEqual(self.upload(confirm=True).status_code, 201)
+        listing = self.client.get('/api/organization-units/')
+        self.assertEqual(listing.status_code, 200)
+        self.assertEqual(listing.data['summary']['total'], 4)
+        self.assertEqual(listing.data['summary']['by_review_status']['await_parent'], 2)
+        self.assertEqual(listing.data['summary']['by_review_status']['ready'], 2)
+        self.assertEqual(listing.data['summary']['mapped_centers'], 0)
+
+        sector = OrganizationUnit.objects.get(kind='sector')
+        self.assertEqual(self.client.post('/api/organization-units/' + str(sector.pk) + '/review/', {
+            'action': 'approve', 'approval_reference': 'QA-SECTOR-01',
+        }, format='json').status_code, 200)
+        listing = self.client.get('/api/organization-units/')
+        statuses = {row['code']: row['review_status'] for row in listing.data['results']}
+        self.assertEqual(statuses['TMP-C001'], 'needs_center_mapping')
+        self.assertEqual(statuses['TMP-U001'], 'await_parent')
+
+        center = OrganizationUnit.objects.get(kind='center')
+        self.assertEqual(self.client.post('/api/organization-units/' + str(center.pk) + '/review/', {
+            'action': 'map-center', 'center_id': self.center.pk,
+        }, format='json').status_code, 200)
+        listing = self.client.get('/api/organization-units/')
+        self.assertEqual(listing.data['summary']['mapped_centers'], 1)
+        statuses = {row['code']: row['review_status'] for row in listing.data['results']}
+        self.assertEqual(statuses['TMP-C001'], 'ready')
+        self.assertEqual(statuses['TMP-U001'], 'await_parent')
+
+    @patch.dict('os.environ', STAGING_ENV)
+    def test_existing_center_cannot_be_assigned_to_two_proposed_centers(self):
+        self.assertEqual(self.upload(confirm=True).status_code, 201)
+        first = OrganizationUnit.objects.get(code='TMP-C001')
+        second = OrganizationUnit.objects.create(
+            code='TMP-C999', name='Second Proposed Center',
+            kind='center', parent=first.parent, is_approved=False,
+        )
+        mapped = self.client.post('/api/organization-units/' + str(first.pk) + '/review/', {
+            'action': 'map-center', 'center_id': self.center.pk,
+        }, format='json')
+        self.assertEqual(mapped.status_code, 200, mapped.data)
+        duplicate = self.client.post('/api/organization-units/' + str(second.pk) + '/review/', {
+            'action': 'map-center', 'center_id': self.center.pk,
+        }, format='json')
+        self.assertEqual(duplicate.status_code, 409, duplicate.data)
+        second.refresh_from_db()
+        self.assertIsNone(second.health_center_id)
