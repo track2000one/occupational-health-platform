@@ -333,6 +333,15 @@ class EmployeeSerializer(serializers.ModelSerializer):
         card = self._health_card(obj)
         return card.updated_at if card else None
 
+    def validate_organization_unit(self, value):
+        if value is None:
+            return None
+        if not value.is_active or not value.is_approved:
+            raise serializers.ValidationError('Choose an approved active organizational unit.')
+        if value.kind == 'sector':
+            raise serializers.ValidationError('Choose a center, unit or administrative department instead.')
+        return value
+
     def validate_nationality(self, value):
         # Persist country codes, never display names; supports bilingual clients.
         country_code = str(value or '').strip().upper()
@@ -372,6 +381,17 @@ class EmployeeSerializer(serializers.ModelSerializer):
                     'health_center': 'Transfer between centers requires an approved employment-status change.'
                 })
 
+        org = attrs.get('organization_unit', self.instance.organization_unit if self.instance else None)
+        if org:
+            center = attrs.get('health_center', self.instance.health_center if self.instance else None)
+            if org.health_center_id and center and org.health_center_id != center.pk:
+                raise serializers.ValidationError({
+                    'organization_unit': 'The selected unit belongs to a different health center.',
+                })
+            if org.kind in ('center', 'unit') and not org.health_center_id:
+                raise serializers.ValidationError({
+                    'organization_unit': 'Center mapping must be approved before employee assignment.',
+                })
         self._require_for_create(attrs, 'national_id', 'National ID is required and must be unique.')
         self._require_for_create(attrs, 'name', 'Name is required.')
         self._require_for_create(attrs, 'health_center', 'Health center is required.')
