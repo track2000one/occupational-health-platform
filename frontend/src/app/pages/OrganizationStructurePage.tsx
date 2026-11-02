@@ -8,7 +8,7 @@ import {
 import {
   AccountTree as TreeIcon, CloudUpload as UploadIcon, FactCheck as ApproveIcon,
   Refresh as RefreshIcon, VisibilityOutlined as ViewIcon, EditOutlined as EditIcon,
-  DescriptionOutlined as ReferenceIcon, CheckCircleOutline as CheckIcon,
+  DescriptionOutlined as ReferenceIcon,
   ApartmentOutlined as DepartmentIcon, AccountBalanceOutlined as SectorIcon,
   LocalHospitalOutlined as CenterIcon, GroupsOutlined as UnitIcon,
 } from '@mui/icons-material';
@@ -380,7 +380,7 @@ export function OrganizationStructurePage() {
                       <Button variant="contained" size="small" startIcon={<ViewIcon />}
                         sx={{ bgcolor: '#14527e', '&:hover': { bgcolor: '#093c60' } }}
                         onClick={() => setDetailUnit(unit)}>مراجعة</Button>
-                      <Button variant="outlined" size="small" color="success" startIcon={<CheckIcon />}
+                      <Button variant="outlined" size="small" color="success" startIcon={<ApproveIcon />}
                         disabled={busy || unit.review_status !== 'ready'}
                         onClick={() => setConfirmationUnit(unit)}>اعتماد</Button>
                       <Button variant="outlined" size="small" color="primary" startIcon={<EditIcon />}
@@ -486,12 +486,12 @@ export function OrganizationStructurePage() {
           <Typography color="text.secondary" variant="body2">
             {confirmationUnit?.parent_name ? `تتبع: ${confirmationUnit.parent_name}` : 'جهة تنظيمية عليا'}
           </Typography>
-          <Typography sx={{ mt: 2 }} variant="body2">
+          <Box sx={{ mt: 2 }}>
             <TextField fullWidth label="مرجع الاعتماد الرسمي" size="small" required
               value={confirmationUnit ? approvalRefs[confirmationUnit.id] || '' : ''}
               onChange={event => { if (confirmationUnit) setApprovalRefs(prev => ({ ...prev, [confirmationUnit.id]: event.target.value })); }}
               slotProps={{ htmlInput: { maxLength: 255 } }} />
-          </Typography>
+          </Box>
         </DialogContent>
         <DialogActions>
           <Button disabled={busy} onClick={() => setConfirmationUnit(null)}>إلغاء</Button>
