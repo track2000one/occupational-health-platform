@@ -106,6 +106,24 @@ def read_matching_workbook(upload):
         book.close()
 
 
+def readiness(item):
+    """Review status is informative only; backend remains final approval authority."""
+    if item.is_approved:
+        return 'approved'
+    if item.parent_id and not item.parent.is_approved:
+        return 'await_parent'
+    if item.kind == 'center' and (
+        not item.health_center_id or not item.health_center.is_active
+    ):
+        return 'needs_center_mapping'
+    if item.kind == 'unit' and (
+        not item.parent_id or item.parent.kind != 'center'
+        or not item.parent.health_center_id
+    ):
+        return 'await_parent'
+    return 'ready'
+
+
 def payload(item):
     return {
         'id': item.pk, 'code': item.code, 'name': item.name, 'kind': item.kind,
@@ -116,6 +134,7 @@ def payload(item):
         'source_path': item.source_path, 'source_rows': item.source_rows,
         'is_approved': item.is_approved, 'is_active': item.is_active,
         'approval_reference': item.approval_reference,
+        'review_status': readiness(item),
     }
 
 
@@ -137,6 +156,10 @@ class OrganizationDirectoryView(APIView):
                 'approved': sum(u.is_approved for u in items),
                 'pending': sum(not u.is_approved for u in items),
                 'by_kind': dict(Counter(u.kind for u in items)),
+                'by_review_status': dict(Counter(readiness(u) for u in items)),
+                'mapped_centers': sum(
+                    u.kind == 'center' and bool(u.health_center_id) for u in items
+                ),
             },
         })
 
@@ -213,6 +236,14 @@ class OrganizationUnitReviewView(APIView):
                 center = HealthCenter.objects.filter(pk=request.data.get('center_id'), is_active=True).first()
                 if not center:
                     return Response({'detail': 'Choose an active center.'}, status=400)
+                # Never permit a registered center to be mapped to two
+                # different proposed organizational centers.
+                if OrganizationUnit.objects.filter(
+                    kind='center', is_active=True, health_center=center,
+                ).exclude(pk=unit.pk).exists():
+                    return Response({
+                        'detail': 'This health center is already mapped to another organizational center.'
+                    }, status=409)
                 unit.health_center = center
                 unit.save(update_fields=['health_center', 'updated_at'])
             elif action == 'approve':
@@ -220,10 +251,13 @@ class OrganizationUnitReviewView(APIView):
                     return Response({'detail': 'Enter an official approval reference (3–255 characters).'}, status=400)
                 if unit.parent_id and not unit.parent.is_approved:
                     return Response({'detail': 'Approve the parent sector or center first.'}, status=409)
-                if unit.kind == 'center' and not unit.health_center_id:
-                    return Response({'detail': 'Map the center to an existing registered health center first.'}, status=409)
+                if unit.kind == 'center' and (
+                    not unit.health_center_id or not unit.health_center.is_active
+                ):
+                    return Response({'detail': 'Map the center to an active registered health center first.'}, status=409)
                 if unit.kind == 'unit':
-                    if unit.parent.kind != 'center' or not unit.parent.health_center_id:
+                    if (unit.parent.kind != 'center' or not unit.parent.health_center_id
+                            or not unit.parent.health_center.is_active):
                         return Response({'detail': 'The parent center must have an approved health-center mapping.'}, status=409)
                     unit.health_center_id = unit.parent.health_center_id
                 unit.is_approved = True
