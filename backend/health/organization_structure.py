@@ -230,7 +230,21 @@ class OrganizationUnitReviewView(APIView):
                 return Response({'detail': 'Organization not found.'}, status=404)
             if unit.is_approved:
                 return Response({'detail': 'Already approved. Revisions require a separate review.'}, status=409)
-            if action == 'map-center':
+            if action == 'edit-draft':
+                # Adjust only a proposal's display name; its original source_path,
+                # organization ID, approved parent, and employee links remain intact.
+                name = clean(request.data.get('name'))
+                if not name or len(name) > 220:
+                    return Response({'detail': 'Provide a valid organization name (1–220 characters).'}, status=400)
+                if name == unit.name:
+                    return Response({'detail': 'No changes to save.'}, status=400)
+                if OrganizationUnit.objects.filter(
+                    kind=unit.kind, parent_id=unit.parent_id, name=name, is_active=True,
+                ).exclude(pk=unit.pk).exists():
+                    return Response({'detail': 'Another organizational unit with this name exists under the same parent.'}, status=409)
+                unit.name = name
+                unit.save(update_fields=['name', 'updated_at'])
+            elif action == 'map-center':
                 if unit.kind != 'center':
                     return Response({'detail': 'Only a center entry can be mapped to a health center.'}, status=400)
                 center = HealthCenter.objects.filter(pk=request.data.get('center_id'), is_active=True).first()
