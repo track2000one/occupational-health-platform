@@ -315,8 +315,9 @@ export function EmployeesPage() {
   const nationalityOptions = useMemo(() => getNationalityOptions(), []);
   const selectedNationality = nationalityOptions.find(option => option.code === form.nationality) || null;
   const availableOrgUnits = approvedOrganizations.filter(unit =>
-    unit.is_approved && unit.is_active && unit.kind !== 'sector' &&
-    (unit.kind === 'department' || String(unit.health_center_id) === form.health_center));
+    unit.is_approved && unit.is_active &&
+    (unit.kind === 'center' || unit.kind === 'unit' || unit.kind === 'department') &&
+    unit.health_center_id !== null && String(unit.health_center_id) === form.health_center);
   const selectedOrgUnit = approvedOrganizations.find(item => String(item.id) === form.organization_unit) || null;
   // Preserve a legacy/imported title in edit mode even when it is not in the 116-item reference file.
   const jobTitleOptions = form.job_title && !JOB_TITLES.includes(form.job_title)
