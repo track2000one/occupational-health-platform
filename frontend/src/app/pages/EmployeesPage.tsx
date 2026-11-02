@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 import {
   Alert,
+  Autocomplete,
   Box,
   Button,
   Chip,
@@ -43,6 +44,12 @@ import { PERMISSIONS } from '../data/roles';
 import { CalendarDateField } from '../components/CalendarDateField';
 import { HealthCenterAutocomplete } from '../components/HealthCenterAutocomplete';
 import { EmployeeRegistryCard } from '../components/EmployeeRegistryCard';
+import { JOB_TITLES, getNationalityOptions, normalizeNationalitySearch } from '../data/employeeFormOptions';
+import {
+  normalizeNationalId, isValidNationalId, isValidEmployeeEmail,
+  isValidChildrenCount, toWesternDigits, calculateAgeFromIso,
+  joinedPrecedesOrEqualsBirth,
+} from '../utils/employeeFormValidation';
 
 const PRODUCTION_API_BASE_URL = 'https://occupational-health-platform-production.up.railway.app/api';
 const LOCAL_API_BASE_URL = 'http://localhost:8000/api';
@@ -72,12 +79,21 @@ type ApiHealthCenter = {
   is_active?: boolean;
 };
 
+type ApprovedOrganizationUnit = {
+  id: number; code: string; name: string; kind: 'department' | 'sector' | 'center' | 'unit';
+  parent_name: string; health_center_id: number | null; source_path: string;
+  is_approved: boolean; is_active: boolean;
+};
+
 type ApiEmployee = {
   id: number | string;
   name: string;
   email?: string | null;
   national_id: string;
   employee_number?: string | null;
+  organization_unit?: number | null;
+  nationality?: string;
+  current_job?: string;
   national_address?: string;
   mobile?: string;
   date_of_birth?: string | null;
@@ -88,6 +104,14 @@ type ApiEmployee = {
   health_center: number | string;
   health_center_name?: string;
   job_title?: string;
+  job_title_en?: string;
+  moh_id?: string;
+  children_count?: number | null;
+  latest_virtual_visit?: string | null;
+  latest_field_visit?: string | null;
+  lab_request?: string;
+  lab_request_date?: string | null;
+  employment_start_date?: string | null;
   appointment_date?: string | null;
   years_of_experience?: string | number | null;
   periodic_exam_status?: ExamStatus;
@@ -104,14 +128,20 @@ type EmployeeForm = {
   email: string;
   national_id: string;
   employee_number: string;
+  organization_unit: string;
+  nationality: string;
+  current_job: string;
   national_address: string;
   mobile: string;
   date_of_birth: string;
   birth_place: string;
-  gender: Gender;
+  gender: Gender | '';
   marital_status: MaritalStatus;
   health_center: string;
   job_title: string;
+  job_title_en: string;
+  moh_id: string;
+  children_count: string;
   appointment_date: string;
   periodic_exam_status: ExamStatus;
   vaccination_status: VaccineStatus;
@@ -123,14 +153,20 @@ const EMPTY_FORM: EmployeeForm = {
   email: '',
   national_id: '',
   employee_number: '',
+  organization_unit: '',
+  nationality: '',
+  current_job: '',
   national_address: '',
   mobile: '',
   date_of_birth: '',
   birth_place: '',
-  gender: 'male',
+  gender: '',
   marital_status: '',
   health_center: '',
   job_title: '',
+  job_title_en: '',
+  moh_id: '',
+  children_count: '',
   appointment_date: '',
   periodic_exam_status: 'incomplete',
   vaccination_status: 'due',
@@ -150,17 +186,6 @@ function maskNationalId(value: string) {
   if (digits.length <= 4) return digits || '-';
   if (digits.length <= 8) return `${digits.slice(0, 2)}****${digits.slice(-2)}`;
   return `${digits.slice(0, 2)}****${digits.slice(-4)}`;
-}
-
-function calculateAge(dateValue: string) {
-  if (!dateValue) return '';
-  const dob = new Date(dateValue);
-  if (Number.isNaN(dob.getTime())) return '';
-  const today = new Date();
-  let age = today.getFullYear() - dob.getFullYear();
-  const monthDelta = today.getMonth() - dob.getMonth();
-  if (monthDelta < 0 || (monthDelta === 0 && today.getDate() < dob.getDate())) age -= 1;
-  return age >= 0 ? String(age) : '';
 }
 
 function calculateExperience(dateValue: string) {
@@ -186,18 +211,24 @@ function asForm(employee: ApiEmployee): EmployeeForm {
     email: employee.email || '',
     national_id: employee.national_id || '',
     employee_number: employee.employee_number || '',
+    organization_unit: employee.organization_unit ? String(employee.organization_unit) : '',
+    nationality: employee.nationality || '',
+    current_job: employee.current_job || '',
     national_address: employee.national_address || '',
     mobile: employee.mobile || '',
     date_of_birth: normalizeDate(employee.date_of_birth),
     birth_place: employee.birth_place || '',
-    gender: employee.gender || 'male',
+    gender: employee.gender || '',
     marital_status: employee.marital_status || '',
     health_center: String(employee.health_center || ''),
     job_title: employee.job_title || '',
+    job_title_en: employee.job_title_en || '',
+    moh_id: employee.moh_id || '',
+    children_count: employee.children_count == null ? '' : String(employee.children_count),
     appointment_date: normalizeDate(employee.appointment_date),
-    periodic_exam_status: employee.periodic_exam_status || 'incomplete',
-    vaccination_status: employee.vaccination_status || 'due',
-    risk_level: employee.risk_level || 'low',
+    periodic_exam_status: employee.periodic_exam_status || 'unknown',
+    vaccination_status: employee.vaccination_status || 'unknown',
+    risk_level: employee.risk_level || 'unknown',
   };
 }
 
@@ -205,8 +236,11 @@ function buildPayload(form: EmployeeForm) {
   return {
     name: form.name.trim(),
     email: form.email.trim().toLowerCase(),
-    national_id: form.national_id.replace(/\D/g, ''),
+    national_id: normalizeNationalId(form.national_id),
     employee_number: form.employee_number.trim(),
+    organization_unit: form.organization_unit ? Number(form.organization_unit) : null,
+    nationality: form.nationality,
+    current_job: form.current_job.trim(),
     national_address: form.national_address.trim(),
     mobile: form.mobile.trim(),
     date_of_birth: form.date_of_birth || null,
@@ -215,10 +249,10 @@ function buildPayload(form: EmployeeForm) {
     marital_status: form.marital_status,
     health_center: Number(form.health_center),
     job_title: form.job_title.trim(),
+    job_title_en: form.job_title_en.trim(),
+    moh_id: form.moh_id.trim(),
+    children_count: form.children_count === '' ? null : Number(toWesternDigits(form.children_count)),
     appointment_date: form.appointment_date || null,
-    periodic_exam_status: form.periodic_exam_status,
-    vaccination_status: form.vaccination_status,
-    risk_level: form.risk_level,
   };
 }
 
@@ -241,7 +275,8 @@ async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T
   if (!response.ok) {
     const message =
       body?.detail || body?.email || body?.national_id || body?.employee_number || body?.health_center ||
-      body?.date_of_birth || body?.appointment_date || body?.name || body?.mobile || body?.non_field_errors ||
+      body?.date_of_birth || body?.appointment_date || body?.nationality || body?.current_job ||
+      body?.name || body?.mobile || body?.non_field_errors ||
       'Request failed';
     throw new Error(Array.isArray(message) ? message.join('، ') : String(message));
   }
@@ -258,6 +293,7 @@ export function EmployeesPage() {
   const [page, setPage] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
   const [healthCenters, setHealthCenters] = useState<ApiHealthCenter[]>([]);
+  const [approvedOrganizations, setApprovedOrganizations] = useState<ApprovedOrganizationUnit[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -273,8 +309,19 @@ export function EmployeesPage() {
   const [connectionError, setConnectionError] = useState('');
 
   const canWrite = can(PERMISSIONS.UPDATE_EMPLOYEE) || can(PERMISSIONS.UPDATE_EMPLOYEE_BASIC);
-  const computedAge = calculateAge(form.date_of_birth);
+  const ageValue = calculateAgeFromIso(form.date_of_birth);
+  const computedAge = ageValue === null ? '' : String(ageValue);
   const computedExperience = calculateExperience(form.appointment_date);
+  const nationalityOptions = useMemo(() => getNationalityOptions(), []);
+  const selectedNationality = nationalityOptions.find(option => option.code === form.nationality) || null;
+  const availableOrgUnits = approvedOrganizations.filter(unit =>
+    unit.is_approved && unit.is_active &&
+    (unit.kind === 'center' || unit.kind === 'unit' || unit.kind === 'department') &&
+    unit.health_center_id !== null && String(unit.health_center_id) === form.health_center);
+  const selectedOrgUnit = approvedOrganizations.find(item => String(item.id) === form.organization_unit) || null;
+  // Preserve a legacy/imported title in edit mode even when it is not in the 116-item reference file.
+  const jobTitleOptions = form.job_title && !JOB_TITLES.includes(form.job_title)
+    ? [form.job_title, ...JOB_TITLES] : [...JOB_TITLES];
 
   async function loadData() {
     setLoading(true);
@@ -330,6 +377,14 @@ export function EmployeesPage() {
 
   useEffect(() => { void loadCenters(); }, []);
 
+  useEffect(() => {
+    let mounted = true;
+    void apiRequest<{ results: ApprovedOrganizationUnit[] }>('/organization-units/?approved=1')
+      .then(result => { if (mounted) setApprovedOrganizations(result.results || []); })
+      .catch(() => { if (mounted) setApprovedOrganizations([]); });
+    return () => { mounted = false; };
+  }, []);
+
   const centerNameById = useMemo(() => {
     const map = new Map<string, string>();
     healthCenters.forEach(center => map.set(String(center.id), centerDisplayName(center, isRtl)));
@@ -378,18 +433,9 @@ export function EmployeesPage() {
 
   async function handleSave() {
     const required: Array<[keyof EmployeeForm, string]> = [
-      ['name', isRtl ? 'الاسم الكامل' : 'Full name'],
-      ['email', isRtl ? 'البريد الإلكتروني' : 'Email'],
+      ['name', isRtl ? 'اسم الموظف' : 'Name'],
       ['national_id', isRtl ? 'رقم الهوية الوطنية' : 'National ID'],
-      ['employee_number', isRtl ? 'الرقم الوظيفي' : 'Employee number'],
-      ['mobile', isRtl ? 'رقم الجوال' : 'Mobile'],
-      ['date_of_birth', isRtl ? 'تاريخ الميلاد' : 'Date of birth'],
-      ['birth_place', isRtl ? 'مكان الميلاد' : 'Birth place'],
-      ['national_address', isRtl ? 'العنوان الوطني' : 'National address'],
-      ['marital_status', isRtl ? 'الحالة الاجتماعية' : 'Marital status'],
       ['health_center', isRtl ? 'المركز الصحي' : 'Health center'],
-      ['job_title', isRtl ? 'المسمى الوظيفي' : 'Job title'],
-      ['appointment_date', isRtl ? 'تاريخ التعيين' : 'Appointment date'],
     ];
 
     const missing = required.find(([key]) => !String(form[key] || '').trim());
@@ -398,11 +444,31 @@ export function EmployeesPage() {
       return;
     }
 
+    if (!isValidNationalId(form.national_id)) {
+      toast.error(isRtl ? 'يجب أن يتكون رقم الهوية من 10 أرقام' : 'National ID must contain 10 digits');
+      return;
+    }
+    if (!isValidChildrenCount(form.children_count)) {
+      toast.error(isRtl ? 'عدد الأطفال يجب أن يكون عددًا صحيحًا' : 'Children count must be a whole number');
+      return;
+    }
+    if (!isValidEmployeeEmail(form.email)) {
+      toast.error(isRtl ? 'صيغة البريد الإلكتروني غير صحيحة' : 'Invalid email address');
+      return;
+    }
+    if (form.date_of_birth && ageValue === null) {
+      toast.error(isRtl ? 'تاريخ الميلاد غير صالح أو يقع في المستقبل' : 'Date of birth is invalid or in the future');
+      return;
+    }
+    if (joinedPrecedesOrEqualsBirth(form.date_of_birth, form.appointment_date)) {
+      toast.error(isRtl ? 'تاريخ الالتحاق يجب أن يكون بعد تاريخ الميلاد' : 'Joined date must be after birth date');
+      return;
+    }
     if (findDuplicate('email', form.email)) {
       toast.error(isRtl ? 'البريد الإلكتروني مسجل مسبقًا لموظف آخر' : 'Email already exists for another employee');
       return;
     }
-    if (findDuplicate('national_id', form.national_id.replace(/\D/g, ''))) {
+    if (findDuplicate('national_id', normalizeNationalId(form.national_id))) {
       toast.error(isRtl ? 'رقم الهوية الوطنية مسجل مسبقًا لموظف آخر' : 'National ID already exists for another employee');
       return;
     }
@@ -705,43 +771,119 @@ export function EmployeesPage() {
         <DialogContent dividers>
           <Grid container spacing={2}>
             <Grid size={{ xs: 12, md: 6 }}>
-              <TextField fullWidth required label={isRtl ? 'الاسم الكامل' : 'Full Name'} value={form.name}
+              <HealthCenterAutocomplete
+                options={healthCenters} value={form.health_center}
+                onChange={value => setForm(prev => ({ ...prev, health_center: value, organization_unit: '' }))}
+                label={isRtl ? 'المركز الصحي' : 'Health center'}
+                placeholder={isRtl ? 'اختر أو ابحث عن المركز' : 'Select or search for a center'}
+                required disabled={isReadOnly}
+              />
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Autocomplete
+                options={availableOrgUnits}
+                value={selectedOrgUnit}
+                disabled={isReadOnly || availableOrgUnits.length === 0}
+                onChange={(_, unit) => updateForm('organization_unit', unit ? String(unit.id) : '')}
+                isOptionEqualToValue={(option, value) => option.id === value.id}
+                getOptionLabel={option => option.source_path || option.parent_name
+                  ? `${option.name} — ${option.parent_name || option.source_path}`
+                  : option.name}
+                renderInput={params => <TextField {...params}
+                  label={isRtl ? 'الجهة / الوحدة التنظيمية المعتمدة' : 'Approved organization unit'}
+                  placeholder={isRtl ? 'ابحث عن الجهة أو الوحدة' : 'Search approved organization'}
+                  helperText={isRtl
+                    ? (approvedOrganizations.length
+                      ? 'تُعرض الجهات المعتمدة والمتوافقة مع المركز فقط'
+                      : 'بانتظار اعتماد الهيكل التنظيمي')
+                    : 'Only officially approved organizational links are available'} />}
+              />
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <TextField fullWidth required label={isRtl ? 'اسم الموظف' : 'Name'} value={form.name}
                 onChange={event => updateForm('name', event.target.value)} disabled={isReadOnly} />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
-              <TextField fullWidth required label={isRtl ? 'البريد الإلكتروني' : 'Email'} type="email" value={form.email}
-                onChange={event => updateForm('email', event.target.value)} disabled={isReadOnly} helperText={isRtl ? 'فريد ولا يقبل التكرار' : 'Unique value'} />
+              <TextField fullWidth required label={isRtl ? 'رقم الهوية / الإقامة' : 'National ID / Iqama'} value={form.national_id}
+                onChange={event => updateForm('national_id', normalizeNationalId(event.target.value).slice(0, 10))}
+                slotProps={{ htmlInput: { inputMode: 'numeric', maxLength: 10 } }}
+                disabled={isReadOnly} helperText={isRtl ? '10 أرقام، فريد ولا يقبل التكرار' : '10 digits, must be unique'} />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
-              <TextField fullWidth required label={isRtl ? 'رقم الهوية الوطنية' : 'National ID'} value={form.national_id}
-                onChange={event => updateForm('national_id', event.target.value.replace(/\D/g, ''))} disabled={isReadOnly} helperText={isRtl ? 'فريد ولا يقبل التكرار' : 'Unique value'} />
+              <Autocomplete
+                options={nationalityOptions}
+                value={selectedNationality}
+                disabled={isReadOnly}
+                onChange={(_, option) => updateForm('nationality', option?.code || '')}
+                isOptionEqualToValue={(option, value) => option.code === value.code}
+                getOptionLabel={option => isRtl ? option.countryAr : option.countryEn}
+                filterOptions={(options, state) => {
+                  const query = normalizeNationalitySearch(state.inputValue);
+                  return query ? options.filter(option => option.searchText.includes(query)) : options;
+                }}
+                renderInput={params => <TextField {...params}
+                  label={isRtl ? 'الجنسية' : 'Nationality'}
+                  placeholder={isRtl ? 'ابحث باسم البلد أو الجنسية' : 'Search country or nationality'}
+                  helperText={isRtl ? 'السعودية والدول العربية أولاً' : 'Saudi Arabia and Arab countries first'} />}
+              />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
-              <TextField fullWidth required label={isRtl ? 'الرقم الوظيفي' : 'Employee Number'} value={form.employee_number}
-                onChange={event => updateForm('employee_number', event.target.value)} disabled={isReadOnly} helperText={isRtl ? 'فريد ولا يقبل التكرار' : 'Unique value'} />
-            </Grid>
-            <Grid size={{ xs: 12, md: 6 }}>
-              <TextField fullWidth required label={isRtl ? 'رقم الجوال' : 'Mobile'} value={form.mobile}
-                onChange={event => updateForm('mobile', event.target.value)} disabled={isReadOnly} />
-            </Grid>
-            <Grid size={{ xs: 12, md: 6 }}>
-              <TextField fullWidth required label={isRtl ? 'العنوان الوطني' : 'National Address'} value={form.national_address}
-                onChange={event => updateForm('national_address', event.target.value)} disabled={isReadOnly} />
-            </Grid>
-            <Grid size={{ xs: 12, md: 6 }}>
-              <CalendarDateField required label={isRtl ? 'تاريخ الميلاد' : 'Date of Birth'} value={form.date_of_birth}
+              <CalendarDateField label={isRtl ? 'تاريخ الميلاد' : 'DOB'} value={form.date_of_birth}
                 onChange={value => updateForm('date_of_birth', value)} disabled={isReadOnly} />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
-              <TextField fullWidth label={isRtl ? 'العمر محسوب تلقائيًا' : 'Calculated Age'} value={computedAge || selectedEmployee?.age || ''} disabled />
+              <TextField fullWidth label={isRtl ? 'رقم الجوال' : 'Mobile #'} value={form.mobile}
+                onChange={event => updateForm('mobile', event.target.value)} disabled={isReadOnly} />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
-              <TextField fullWidth required label={isRtl ? 'مكان الميلاد' : 'Birth Place'} value={form.birth_place}
-                onChange={event => updateForm('birth_place', event.target.value)} disabled={isReadOnly} />
+              <TextField fullWidth label={isRtl ? 'الرقم الوظيفي' : 'Employee number'} value={form.employee_number}
+                onChange={event => updateForm('employee_number', event.target.value)}
+                disabled={isReadOnly} helperText={isRtl ? 'فريد ولا يقبل التكرار عند إدخاله' : 'Unique if provided'} />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
-              <TextField fullWidth required select label={isRtl ? 'الحالة الاجتماعية' : 'Marital Status'} value={form.marital_status}
+              <TextField fullWidth label={isRtl ? 'البريد الإلكتروني' : 'Email'} type="email" value={form.email}
+                onChange={event => updateForm('email', event.target.value)} disabled={isReadOnly}
+                helperText={isRtl ? 'اختياري، ويجب ألا يتكرر عند إدخاله' : 'Optional and unique if provided'} />
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Autocomplete
+                options={jobTitleOptions}
+                value={form.job_title || null}
+                onChange={(_, title) => updateForm('job_title', title || '')}
+                disabled={isReadOnly}
+                renderInput={params => <TextField {...params}
+                  label={isRtl ? 'المسمى الوظيفي' : 'Job title'}
+                  placeholder={isRtl ? 'اختر أو ابحث عن المسمى الوظيفي' : 'Search job titles'}
+                  helperText={isRtl ? '116 مسمى من القائمة المعتمدة' : '116 titles from the reference workbook'} />}
+              />
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <TextField fullWidth label={isRtl ? 'المسمى الوظيفي (بالإنجليزية)' : 'Job Title'} value={form.job_title_en}
+                onChange={event => updateForm('job_title_en', event.target.value)} disabled={isReadOnly}
+                helperText={isRtl ? 'ترجمة للمسمى نفسه' : 'Translation of the same title'} />
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <TextField fullWidth label={isRtl ? 'الوظيفة الحالية' : 'Current role / position'}
+                value={form.current_job}
+                onChange={event => updateForm('current_job', event.target.value)}
+                disabled={isReadOnly} helperText={isRtl ? 'حقل مستقل، يمكن إدخاله يدويًا' : 'Enter manually'} />
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <TextField select fullWidth label={isRtl ? 'الجنس' : 'Gender'} value={form.gender}
+                onChange={event => updateForm('gender', event.target.value as Gender | '')} disabled={isReadOnly}>
+                <MenuItem value="">{isRtl ? 'غير محدد' : 'Not specified'}</MenuItem>
+                <MenuItem value="male">{isRtl ? 'ذكر' : 'Male'}</MenuItem>
+                <MenuItem value="female">{isRtl ? 'أنثى' : 'Female'}</MenuItem>
+              </TextField>
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <CalendarDateField label={isRtl ? 'تاريخ الالتحاق' : 'Joined'} value={form.appointment_date}
+                onChange={value => updateForm('appointment_date', value)} disabled={isReadOnly} />
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <TextField select fullWidth label={isRtl ? 'الحالة الاجتماعية' : 'Marital Status'} value={form.marital_status}
                 onChange={event => updateForm('marital_status', event.target.value as MaritalStatus)} disabled={isReadOnly}>
+                <MenuItem value="">{isRtl ? 'غير محددة' : 'Not specified'}</MenuItem>
                 <MenuItem value="single">{isRtl ? 'أعزب' : 'Single'}</MenuItem>
                 <MenuItem value="married">{isRtl ? 'متزوج' : 'Married'}</MenuItem>
                 <MenuItem value="divorced">{isRtl ? 'مطلق' : 'Divorced'}</MenuItem>
@@ -749,64 +891,19 @@ export function EmployeesPage() {
               </TextField>
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
-              <HealthCenterAutocomplete
-                options={healthCenters}
-                value={form.health_center}
-                onChange={value => updateForm('health_center', value)}
-                label={isRtl ? 'المركز الصحي' : 'Health Center'}
-                placeholder={isRtl ? 'اختر أو ابحث باسم المركز' : 'Select or search by center name'}
-                required
-                disabled={isReadOnly || dialogMode === 'edit'}
-              />
-            </Grid>
-            {dialogMode === 'edit' && (
-              <Grid size={{ xs: 12 }}>
-                <Alert severity="info">
-                  {isRtl ? 'تغيير المركز الصحي يتم من شاشة «الحالات الوظيفية والمتقاعدون» بإجراء نقل داخلي موثق.' : 'Change health center using the audited employment lifecycle transfer workflow.'}
-                </Alert>
-              </Grid>
-            )}
-            <Grid size={{ xs: 12, md: 6 }}>
-              <TextField fullWidth required label={isRtl ? 'المسمى الوظيفي' : 'Job Title'} value={form.job_title}
-                onChange={event => updateForm('job_title', event.target.value)} disabled={isReadOnly} />
+              <TextField fullWidth type="number" label={isRtl ? 'عدد الأطفال' : '# of Child'}
+                inputProps={{ min: 0, max: 100, step: 1 }}
+                value={form.children_count}
+                onChange={event => updateForm('children_count', event.target.value)}
+                disabled={isReadOnly} />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
-              <CalendarDateField required label={isRtl ? 'تاريخ التعيين' : 'Appointment Date'} value={form.appointment_date}
-                onChange={value => updateForm('appointment_date', value)} disabled={isReadOnly} />
-            </Grid>
-            <Grid size={{ xs: 12, md: 6 }}>
-              <TextField fullWidth label={isRtl ? 'سنوات الخبرة محسوبة تلقائيًا' : 'Calculated Years of Experience'} value={computedExperience || selectedEmployee?.years_of_experience || ''} disabled />
-            </Grid>
-            <Grid size={{ xs: 12, md: 6 }}>
-              <TextField fullWidth select label={isRtl ? 'الجنس' : 'Gender'} value={form.gender}
-                onChange={event => updateForm('gender', event.target.value as Gender)} disabled={isReadOnly}>
-                <MenuItem value="male">{isRtl ? 'ذكر' : 'Male'}</MenuItem>
-                <MenuItem value="female">{isRtl ? 'أنثى' : 'Female'}</MenuItem>
-              </TextField>
-            </Grid>
-            <Grid size={{ xs: 12, md: 6 }}>
-              <TextField fullWidth select label={isRtl ? 'حالة الفحص الدوري' : 'Periodic Exam Status'} value={form.periodic_exam_status}
-                onChange={event => updateForm('periodic_exam_status', event.target.value as ExamStatus)} disabled={isReadOnly}>
-                <MenuItem value="completed">{isRtl ? 'مكتمل' : 'Completed'}</MenuItem>
-                <MenuItem value="incomplete">{isRtl ? 'غير مكتمل' : 'Incomplete'}</MenuItem>
-                <MenuItem value="overdue">{isRtl ? 'متأخر' : 'Overdue'}</MenuItem>
-              </TextField>
-            </Grid>
-            <Grid size={{ xs: 12, md: 6 }}>
-              <TextField fullWidth select label={isRtl ? 'حالة التطعيم' : 'Vaccination Status'} value={form.vaccination_status}
-                onChange={event => updateForm('vaccination_status', event.target.value as VaccineStatus)} disabled={isReadOnly}>
-                <MenuItem value="completed">{isRtl ? 'مكتمل' : 'Completed'}</MenuItem>
-                <MenuItem value="due">{isRtl ? 'مستحق' : 'Due'}</MenuItem>
-                <MenuItem value="refused">{isRtl ? 'رفض' : 'Refused'}</MenuItem>
-              </TextField>
-            </Grid>
-            <Grid size={{ xs: 12, md: 6 }}>
-              <TextField fullWidth select label={isRtl ? 'مستوى الخطورة' : 'Risk Level'} value={form.risk_level}
-                onChange={event => updateForm('risk_level', event.target.value as RiskLevel)} disabled={isReadOnly}>
-                <MenuItem value="low">{isRtl ? 'منخفض' : 'Low'}</MenuItem>
-                <MenuItem value="medium">{isRtl ? 'متوسط' : 'Medium'}</MenuItem>
-                <MenuItem value="high">{isRtl ? 'مرتفع' : 'High'}</MenuItem>
-              </TextField>
+              <TextField fullWidth label={isRtl ? 'العمر (يُحسب تلقائيًا)' : 'Age'}
+                value={computedAge}
+                helperText={isRtl
+                  ? (ageValue === 0 ? 'العمر أقل من سنة. تأكد من سنة الميلاد.' : 'العمر بالسنوات الميلادية المكتملة بعد اختيار تاريخ الميلاد')
+                  : (ageValue === 0 ? 'Under one year old. Check birth year.' : 'Completed Gregorian years from date of birth')}
+                disabled />
             </Grid>
           </Grid>
         </DialogContent>

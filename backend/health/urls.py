@@ -1,4 +1,5 @@
 from django.urls import path
+from .organization_structure import OrganizationDirectoryView, OrganizationImportView, OrganizationUnitReviewView
 from .workforce_preview import WorkforceRosterPreviewView, WorkforceCenterMappingView
 from .temporary_workforce import TemporaryWorkforceView
 from .workforce_import import WorkforceImportPlanView, WorkforceImportApproveView, WorkforceImportCommitView
@@ -20,6 +21,9 @@ router.register('injury-cases', InjuryCaseViewSet)
 router.register('audit-logs', AuditLogViewSet)
 
 urlpatterns = [
+    path('organization-units/', OrganizationDirectoryView.as_view(), name='organization-units'),
+    path('organization-units/import/', OrganizationImportView.as_view(), name='organization-units-import'),
+    path('organization-units/<int:pk>/review/', OrganizationUnitReviewView.as_view(), name='organization-units-review'),
     path('workforce-roster/temporary/', TemporaryWorkforceView.as_view(), name='workforce-temporary'),
     path('workforce-roster/import-plan/', WorkforceImportPlanView.as_view(), name='workforce-import-plan'),
     path('workforce-roster/import-plan/<int:pk>/approve/', WorkforceImportApproveView.as_view(), name='workforce-import-approve'),

@@ -144,6 +144,52 @@ class WorkforceCenterMappingRevision(models.Model):
         ordering = ['-created_at', '-id']
 
 
+class OrganizationUnit(models.Model):
+    """Approval-gated organizational hierarchy, independent of employment and medical history."""
+
+    class Kind(models.TextChoices):
+        DEPARTMENT = 'department', 'Department / central organization'
+        SECTOR = 'sector', 'Consultative sector'
+        CENTER = 'center', 'Health center organization'
+        UNIT = 'unit', 'Department or unit within a center'
+
+    code = models.CharField(max_length=80, unique=True)
+    name = models.CharField(max_length=220)
+    kind = models.CharField(max_length=20, choices=Kind.choices)
+    parent = models.ForeignKey('self', on_delete=models.PROTECT, null=True, blank=True,
+                               related_name='children')
+    health_center = models.ForeignKey(HealthCenter, on_delete=models.PROTECT,
+                                      null=True, blank=True, related_name='organization_units')
+    source_path = models.TextField(blank=True)
+    source_sheet = models.CharField(max_length=80, blank=True)
+    source_rows = models.CharField(max_length=255, blank=True)
+    is_approved = models.BooleanField(default=False, db_index=True)
+    is_active = models.BooleanField(default=True, db_index=True)
+    approval_reference = models.CharField(max_length=255, blank=True)
+    approved_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+                                    null=True, blank=True, related_name='approved_org_units')
+    approved_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['kind', 'name']
+
+    def __str__(self):
+        return self.name
+
+
+class OrganizationUnitApprovalLog(models.Model):
+    """Immutable trail: a code's source, reviewer and decision are never silently overwritten."""
+    unit = models.ForeignKey(OrganizationUnit, on_delete=models.PROTECT, related_name='approval_logs')
+    action = models.CharField(max_length=25)
+    approval_reference = models.CharField(max_length=255, blank=True)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+                             null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+
 
 class WorkforceImportPlan(models.Model):
     """Metadata-only two-person import approval; the workbook is never persisted."""
@@ -224,17 +270,26 @@ class Employee(models.Model):
     date_of_birth = models.DateField(null=True, blank=True)
     birth_place = models.CharField(max_length=120, blank=True)
     age = models.PositiveIntegerField(default=0)
-    gender = models.CharField(max_length=10, choices=GENDER, default='male')
+    gender = models.CharField(max_length=10, choices=GENDER, default='', blank=True)
     marital_status = models.CharField(max_length=20, choices=MARITAL_STATUS, blank=True)
     health_center = models.ForeignKey(HealthCenter, on_delete=models.PROTECT, related_name='employees')
+    organization_unit = models.ForeignKey(OrganizationUnit, null=True, blank=True,
+                                          on_delete=models.PROTECT, related_name='employees')
     job_title = models.CharField(max_length=150, blank=True)
+    job_title_en = models.CharField(max_length=150, blank=True)
+    nationality = models.CharField(max_length=2, blank=True, default='')
+    current_job = models.CharField(max_length=200, blank=True)
+    latest_virtual_visit = models.DateField(null=True, blank=True)
+    latest_field_visit = models.DateField(null=True, blank=True)
+    lab_request = models.CharField(max_length=120, blank=True)
+    lab_request_date = models.DateField(null=True, blank=True)
     roster_source_status = models.CharField(max_length=120, blank=True)
     roster_hijri_appointment_date = models.CharField(max_length=30, blank=True)
     appointment_date = models.DateField(null=True, blank=True)
     years_of_experience = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
-    periodic_exam_status = models.CharField(max_length=20, choices=STATUS, default='incomplete')
-    vaccination_status = models.CharField(max_length=20, choices=VACCINE, default='due')
-    risk_level = models.CharField(max_length=20, choices=RISK, default='low')
+    periodic_exam_status = models.CharField(max_length=20, choices=STATUS, default='unknown')
+    vaccination_status = models.CharField(max_length=20, choices=VACCINE, default='unknown')
+    risk_level = models.CharField(max_length=20, choices=RISK, default='unknown')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

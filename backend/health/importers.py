@@ -15,6 +15,7 @@ from .models import (
     ClinicVisit,
     Employee,
     EmployeeImportReview,
+    OrganizationUnit,
     EmployeeClinicVisit,
     EmployeeHealthProfile,
     HealthCenter,
@@ -62,6 +63,7 @@ EMPLOYEE_ROSTER_ALIASES = {
     'periodic_exam_status': ['periodic exam status', 'حالة الفحص الدوري'],
     'vaccination_status': ['vaccination status', 'حالة التطعيم'],
     'risk_level': ['risk level', 'مستوى الخطورة'],
+    'organization_unit_code': ['organization unit code', 'org unit code', 'رمز الوحدة التنظيمية', 'رمز الجهة التنظيمية'],
 }
 
 EMPLOYEE_REQUIRED_FIELDS = (
@@ -472,6 +474,12 @@ def import_employee_roster_sheet(
         normalize_header(center.name): center
         for center in HealthCenter.objects.filter(is_active=True)
     }
+    # Organizational references are optional and must already be formally approved.
+    approved_org_units = {
+        unit.code: unit for unit in OrganizationUnit.objects.filter(
+            is_approved=True, is_active=True,
+        ).select_related('health_center')
+    }
     existing_id_map = dict(Employee.objects.exclude(national_id='').values_list('national_id', 'id'))
     existing_email_map = dict(
         Employee.objects.exclude(email__isnull=True).exclude(email='').values_list('email', 'id')
@@ -555,6 +563,16 @@ def import_employee_roster_sheet(
         center = centers_by_name.get(normalize_header(raw['health_center']))
         if raw['health_center'] and not center:
             row_errors.append('Health center does not match an active center in the platform.')
+        org_code = raw.get('organization_unit_code', '').strip()
+        org_unit = approved_org_units.get(org_code) if org_code else None
+        if org_code and not org_unit:
+            row_errors.append('Organization unit reference is not approved or does not exist.')
+        elif org_unit and org_unit.kind == 'sector':
+            row_errors.append('Organizational sector cannot be assigned directly to an employee.')
+        elif org_unit and org_unit.kind in ('center', 'unit') and not org_unit.health_center_id:
+            row_errors.append('Organizational unit does not have an approved center mapping.')
+        elif org_unit and org_unit.health_center_id and center and org_unit.health_center_id != center.pk:
+            row_errors.append('Organizational unit belongs to a different health center.')
 
         duplicate_reasons: List[str] = []
         if raw['national_id'] in seen_ids:
@@ -583,6 +601,7 @@ def import_employee_roster_sheet(
             'marital_status': marital_status or raw['marital_status'],
             'health_center_name': center.name if center else raw['health_center'],
             'health_center': center.id if center else None,
+            'organization_unit': org_unit.pk if org_unit else None,
             'job_title': raw['job_title'],
             'appointment_date': appointment_date.isoformat() if appointment_date else '',
             'periodic_exam_status': periodic_exam_status or raw['periodic_exam_status'],
@@ -653,6 +672,7 @@ def import_employee_roster_sheet(
             'vaccination_status': vaccination_status,
             'risk_level': risk_level,
             '_center': center,
+            '_organization_unit': org_unit,
         }
         valid_payloads.append(payload)
         seen_ids.add(raw['national_id'])
@@ -678,9 +698,9 @@ def import_employee_roster_sheet(
             for payload in valid_payloads:
                 employee_values = {
                     key: value for key, value in payload.items()
-                    if key not in {'health_center', '_center'}
+                    if key not in {'health_center', '_center', '_organization_unit'}
                 }
-                Employee.objects.create(health_center=payload['_center'], **employee_values)
+                Employee.objects.create(health_center=payload['_center'], organization_unit=payload['_organization_unit'], **employee_values)
                 summary['imported_employees'] += 1
             for candidate in review_candidates:
                 fingerprint = review_fingerprint(
