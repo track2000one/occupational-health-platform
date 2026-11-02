@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import {
   Alert, Box, Button, Card, CardContent, Chip, CircularProgress, Divider, FormControl,
-  Grid, InputLabel, MenuItem, Paper, Select, Stack, Table, TableBody, TableCell,
+  Grid, InputLabel, LinearProgress, MenuItem, Paper, Select, Stack, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, TextField, Typography,
 } from '@mui/material';
 import {
@@ -11,6 +11,7 @@ import {
   Refresh as RefreshIcon,
 } from '@mui/icons-material';
 import { authFetch, getAccessToken } from '../context/AuthContext';
+import { exactCenterSuggestions } from '../utils/organizationMatching';
 
 const API = (import.meta.env.VITE_API_URL || 'https://occupational-health-platform-production.up.railway.app/api').replace(/\/$/, '');
 type OrgUnit = {
@@ -18,14 +19,23 @@ type OrgUnit = {
   parent_code: string; parent_name: string; health_center_id: number | null;
   health_center_name: string; source_path: string; source_rows: string;
   is_approved: boolean; approval_reference: string;
+  review_status: 'approved' | 'ready' | 'await_parent' | 'needs_center_mapping';
 };
 type OrgSummary = {
   total: number; pending: number; approved: number; by_kind: Record<string, number>;
+  by_review_status?: Record<string, number>; mapped_centers?: number;
 };
 type Center = { id: number; name: string; name_ar?: string; name_en?: string };
 type Preview = {
   total: number; kinds: Record<string, number>; mode: string; created: number;
   notice?: string; preview?: Array<{code: string; name: string; kind: string}>;
+};
+const REVIEW_LABELS: Record<OrgUnit['review_status'], string> = {
+  approved: 'معتمد', ready: 'جاهز للمراجعة', await_parent: 'ينتظر اعتماد الجهة الأعلى',
+  needs_center_mapping: 'بانتظار مطابقة المركز',
+};
+const REVIEW_COLORS: Record<OrgUnit['review_status'], 'success' | 'warning' | 'default' | 'info'> = {
+  approved: 'success', ready: 'info', await_parent: 'default', needs_center_mapping: 'warning',
 };
 const KINDS: Record<OrgUnit['kind'], string> = {
   department: 'جهة / إدارة مركزية', sector: 'قطاع استشاري',
@@ -52,6 +62,7 @@ export function OrganizationStructurePage() {
   const [centers, setCenters] = useState<Center[]>([]);
   const [filter, setFilter] = useState<'all' | 'pending' | 'approved'>('all');
   const [kindFilter, setKindFilter] = useState('all');
+  const [sectorFilter, setSectorFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -78,13 +89,37 @@ export function OrganizationStructurePage() {
   }
   useEffect(() => { void reload().catch(e => toast.error(localizedError(e))); }, []);
 
+  const sectorSummaries = useMemo(() =>
+    items.filter(item => item.kind === 'sector').map(sector => {
+      const directCenters = items.filter(item => item.kind === 'center' && item.parent_code === sector.code);
+      const centerCodes = new Set(directCenters.map(item => item.code));
+      const linkedUnits = items.filter(item => item.kind === 'unit' && centerCodes.has(item.parent_code));
+      return { sector, centers: directCenters, units: linkedUnits, approved: [sector, ...directCenters, ...linkedUnits].filter(x => x.is_approved).length };
+    }), [items]);
+
   const filtered = useMemo(() => items.filter(item => {
+    if (sectorFilter === 'central' && item.kind !== 'department') return false;
+    if (sectorFilter !== 'all' && sectorFilter !== 'central') {
+      const centerCodes = new Set(items.filter(unit => unit.kind === 'center' && unit.parent_code === sectorFilter).map(unit => unit.code));
+      if (item.code !== sectorFilter && item.parent_code !== sectorFilter && !centerCodes.has(item.parent_code)) return false;
+    }
     if (filter === 'pending' && item.is_approved) return false;
     if (filter === 'approved' && !item.is_approved) return false;
     if (kindFilter !== 'all' && item.kind !== kindFilter) return false;
     return [item.name, item.code, item.parent_name, item.source_path].join(' ')
       .toLocaleLowerCase().includes(search.toLocaleLowerCase().trim());
-  }), [items, filter, kindFilter, search]);
+  }).sort((a, b) => {
+    const byCode = new Map(items.map(item => [item.code, item]));
+    const key = (item: OrgUnit) => {
+      const parent = byCode.get(item.parent_code);
+      const sector = item.kind === 'unit' ? byCode.get(parent?.parent_code || '') : parent;
+      return (item.kind === 'department' ? '~~~~' : sector?.kind === 'sector' ? sector.code : item.kind === 'sector' ? item.code : '~~~')
+        + '/' + (parent?.kind === 'center' ? parent.name : '')
+        + '/' + ({ sector: 0, center: 1, unit: 2, department: 3 }[item.kind])
+        + '/' + item.name;
+    };
+    return key(a).localeCompare(key(b), 'ar');
+  }), [items, filter, kindFilter, sectorFilter, search]);
 
   async function upload(commit: boolean) {
     if (!selectedFile) return;
@@ -141,7 +176,7 @@ export function OrganizationStructurePage() {
       </Stack>
 
       <Alert severity="warning" sx={{ mb: 3 }}>
-        جميع مسارات ملف المطابقة مقترحة حتى اعتمادها. الاستيراد يضيف مسودات للمراجعة فقط، ولا ينقل موظفين ولا ينشئ مراكز فعلية.
+        أسماء ومسارات الجهات المقترحة تحتاج إلى مراجعة واعتماد رسمي. المطابقة مع مركز قائم لا تعني الاعتماد، ولا تغيّر سجلات الموظفين أو المراكز.
       </Alert>
       <Grid container spacing={2} sx={{ mb: 3 }}>
         {[
