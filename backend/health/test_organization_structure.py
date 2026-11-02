@@ -227,3 +227,50 @@ class OrganizationHierarchySafetyTests(TestCase):
         self.assertEqual(duplicate.status_code, 409, duplicate.data)
         second.refresh_from_db()
         self.assertIsNone(second.health_center_id)
+
+    @patch.dict('os.environ', STAGING_ENV)
+    def test_edit_draft_only_changes_name_and_logs_revision(self):
+        from .models import OrganizationUnitApprovalLog
+        self.assertEqual(self.upload(confirm=True).status_code, 201)
+        center = OrganizationUnit.objects.get(kind='center')
+        original_path = center.source_path
+        updated = self.client.post('/api/organization-units/' + str(center.pk) + '/review/', {
+            'action': 'edit-draft', 'name': 'المركز الصحي بعد تصحيح الاسم',
+        }, format='json')
+        self.assertEqual(updated.status_code, 200, updated.data)
+        center.refresh_from_db()
+        self.assertEqual(center.name, 'المركز الصحي بعد تصحيح الاسم')
+        self.assertEqual(center.source_path, original_path)
+        self.assertFalse(center.is_approved)
+        self.assertTrue(OrganizationUnitApprovalLog.objects.filter(
+            unit=center, action='edit-draft').exists())
+
+        sector = OrganizationUnit.objects.get(kind='sector')
+        self.assertEqual(self.client.post('/api/organization-units/' + str(sector.pk) + '/review/', {
+            'action': 'approve', 'approval_reference': 'QA-APPROVED-001',
+        }, format='json').status_code, 200)
+        refused = self.client.post('/api/organization-units/' + str(sector.pk) + '/review/', {
+            'action': 'edit-draft', 'name': 'Must not rename after approval',
+        }, format='json')
+        self.assertEqual(refused.status_code, 409)
+        sector.refresh_from_db()
+        self.assertNotEqual(sector.name, 'Must not rename after approval')
+
+    @patch.dict('os.environ', STAGING_ENV)
+    def test_draft_edit_rejects_unchanged_invalid_and_duplicate_name(self):
+        self.assertEqual(self.upload(confirm=True).status_code, 201)
+        sector = OrganizationUnit.objects.get(kind='sector')
+        unchanged = self.client.post('/api/organization-units/' + str(sector.pk) + '/review/', {
+            'action': 'edit-draft', 'name': sector.name,
+        }, format='json')
+        self.assertEqual(unchanged.status_code, 400)
+        blank = self.client.post('/api/organization-units/' + str(sector.pk) + '/review/', {
+            'action': 'edit-draft', 'name': ' ',
+        }, format='json')
+        self.assertEqual(blank.status_code, 400)
+        duplicate = OrganizationUnit.objects.create(code='TMP-S-FFFFFFFFFFFF', kind='sector',
+                                                     name='Another sector')
+        response = self.client.post('/api/organization-units/' + str(duplicate.pk) + '/review/', {
+            'action': 'edit-draft', 'name': sector.name,
+        }, format='json')
+        self.assertEqual(response.status_code, 409)
