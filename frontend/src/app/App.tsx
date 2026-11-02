@@ -55,6 +55,7 @@ import { DataImportPage } from './pages/DataImportPage';
 import { AppearanceSettingsPage } from './pages/AppearanceSettingsPage';
 import { PeriodicStatisticsPage } from './pages/PeriodicStatisticsPage';
 import { HealthCentersPage } from './pages/HealthCentersPage';
+import { OrganizationStructurePage } from './pages/OrganizationStructurePage';
 import { EmployeeLifecyclePage } from './pages/EmployeeLifecyclePage';
 import { WorkforceRosterPreviewPage } from './pages/WorkforceRosterPreviewPage';
 import { WorkforceTemporaryPage } from './pages/WorkforceTemporaryPage';
