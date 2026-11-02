@@ -79,12 +79,19 @@ type ApiHealthCenter = {
   is_active?: boolean;
 };
 
+type ApprovedOrganizationUnit = {
+  id: number; code: string; name: string; kind: 'department' | 'sector' | 'center' | 'unit';
+  parent_name: string; health_center_id: number | null; source_path: string;
+  is_approved: boolean; is_active: boolean;
+};
+
 type ApiEmployee = {
   id: number | string;
   name: string;
   email?: string | null;
   national_id: string;
   employee_number?: string | null;
+  organization_unit?: number | null;
   nationality?: string;
   current_job?: string;
   national_address?: string;
@@ -121,6 +128,7 @@ type EmployeeForm = {
   email: string;
   national_id: string;
   employee_number: string;
+  organization_unit: string;
   nationality: string;
   current_job: string;
   national_address: string;
@@ -145,6 +153,7 @@ const EMPTY_FORM: EmployeeForm = {
   email: '',
   national_id: '',
   employee_number: '',
+  organization_unit: '',
   nationality: '',
   current_job: '',
   national_address: '',
@@ -202,6 +211,7 @@ function asForm(employee: ApiEmployee): EmployeeForm {
     email: employee.email || '',
     national_id: employee.national_id || '',
     employee_number: employee.employee_number || '',
+    organization_unit: employee.organization_unit ? String(employee.organization_unit) : '',
     nationality: employee.nationality || '',
     current_job: employee.current_job || '',
     national_address: employee.national_address || '',
@@ -228,6 +238,7 @@ function buildPayload(form: EmployeeForm) {
     email: form.email.trim().toLowerCase(),
     national_id: normalizeNationalId(form.national_id),
     employee_number: form.employee_number.trim(),
+    organization_unit: form.organization_unit ? Number(form.organization_unit) : null,
     nationality: form.nationality,
     current_job: form.current_job.trim(),
     national_address: form.national_address.trim(),
@@ -282,6 +293,7 @@ export function EmployeesPage() {
   const [page, setPage] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
   const [healthCenters, setHealthCenters] = useState<ApiHealthCenter[]>([]);
+  const [approvedOrganizations, setApprovedOrganizations] = useState<ApprovedOrganizationUnit[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -302,6 +314,10 @@ export function EmployeesPage() {
   const computedExperience = calculateExperience(form.appointment_date);
   const nationalityOptions = useMemo(() => getNationalityOptions(), []);
   const selectedNationality = nationalityOptions.find(option => option.code === form.nationality) || null;
+  const availableOrgUnits = approvedOrganizations.filter(unit =>
+    unit.is_approved && unit.is_active && unit.kind !== 'sector' &&
+    (unit.kind === 'department' || String(unit.health_center_id) === form.health_center));
+  const selectedOrgUnit = approvedOrganizations.find(item => String(item.id) === form.organization_unit) || null;
   // Preserve a legacy/imported title in edit mode even when it is not in the 116-item reference file.
   const jobTitleOptions = form.job_title && !JOB_TITLES.includes(form.job_title)
     ? [form.job_title, ...JOB_TITLES] : [...JOB_TITLES];
@@ -359,6 +375,14 @@ export function EmployeesPage() {
   }, [page, searchTerm, centerFilter, statusFilter, sourceFilter, sortMode]);
 
   useEffect(() => { void loadCenters(); }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    void apiRequest<{ results: ApprovedOrganizationUnit[] }>('/organization-units/?approved=1')
+      .then(result => { if (mounted) setApprovedOrganizations(result.results || []); })
+      .catch(() => { if (mounted) setApprovedOrganizations([]); });
+    return () => { mounted = false; };
+  }, []);
 
   const centerNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -748,10 +772,30 @@ export function EmployeesPage() {
             <Grid size={{ xs: 12, md: 6 }}>
               <HealthCenterAutocomplete
                 options={healthCenters} value={form.health_center}
-                onChange={value => updateForm('health_center', value)}
+                onChange={value => setForm(prev => ({ ...prev, health_center: value, organization_unit: '' }))}
                 label={isRtl ? 'المركز الصحي' : 'Health center'}
                 placeholder={isRtl ? 'اختر أو ابحث عن المركز' : 'Select or search for a center'}
                 required disabled={isReadOnly}
+              />
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Autocomplete
+                options={availableOrgUnits}
+                value={selectedOrgUnit}
+                disabled={isReadOnly || availableOrgUnits.length === 0}
+                onChange={(_, unit) => updateForm('organization_unit', unit ? String(unit.id) : '')}
+                isOptionEqualToValue={(option, value) => option.id === value.id}
+                getOptionLabel={option => option.source_path || option.parent_name
+                  ? `${option.name} — ${option.parent_name || option.source_path}`
+                  : option.name}
+                renderInput={params => <TextField {...params}
+                  label={isRtl ? 'الجهة / الوحدة التنظيمية المعتمدة' : 'Approved organization unit'}
+                  placeholder={isRtl ? 'ابحث عن الجهة أو الوحدة' : 'Search approved organization'}
+                  helperText={isRtl
+                    ? (approvedOrganizations.length
+                      ? 'تُعرض الجهات المعتمدة والمتوافقة مع المركز فقط'
+                      : 'بانتظار اعتماد الهيكل التنظيمي')
+                    : 'Only officially approved organizational links are available'} />}
               />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
