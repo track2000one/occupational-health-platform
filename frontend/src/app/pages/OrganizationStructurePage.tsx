@@ -3,12 +3,14 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import {
   Alert, Box, Button, Card, CardContent, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Divider, FormControl,
-  Grid, InputLabel, LinearProgress, MenuItem, Paper, Select, Stack, Table, TableBody, TableCell,
-  TableContainer, TableHead, TableRow, TextField, Typography,
+  Grid, InputLabel, LinearProgress, MenuItem, Paper, Select, Stack, TextField, Typography,
 } from '@mui/material';
 import {
   AccountTree as TreeIcon, CloudUpload as UploadIcon, FactCheck as ApproveIcon,
-  Refresh as RefreshIcon,
+  Refresh as RefreshIcon, VisibilityOutlined as ViewIcon, EditOutlined as EditIcon,
+  DescriptionOutlined as ReferenceIcon, CheckCircleOutline as CheckIcon,
+  ApartmentOutlined as DepartmentIcon, AccountBalanceOutlined as SectorIcon,
+  LocalHospitalOutlined as CenterIcon, GroupsOutlined as UnitIcon,
 } from '@mui/icons-material';
 import { authFetch, getAccessToken } from '../context/AuthContext';
 import { exactCenterSuggestions } from '../utils/organizationMatching';
@@ -18,7 +20,7 @@ type OrgUnit = {
   id: number; code: string; name: string; kind: 'department' | 'sector' | 'center' | 'unit';
   parent_code: string; parent_name: string; health_center_id: number | null;
   health_center_name: string; source_path: string; source_rows: string;
-  is_approved: boolean; approval_reference: string;
+  is_approved: boolean; is_active: boolean; approval_reference: string;
   review_status: 'approved' | 'ready' | 'await_parent' | 'needs_center_mapping';
 };
 type OrgSummary = {
@@ -70,6 +72,10 @@ export function OrganizationStructurePage() {
   const [mappedCenters, setMappedCenters] = useState<Record<number, string>>({});
   const [approvalRefs, setApprovalRefs] = useState<Record<number, string>>({});
   const [confirmationUnit, setConfirmationUnit] = useState<OrgUnit | null>(null);
+  const [detailUnit, setDetailUnit] = useState<OrgUnit | null>(null);
+  const [editUnit, setEditUnit] = useState<OrgUnit | null>(null);
+  const [referenceUnit, setReferenceUnit] = useState<OrgUnit | null>(null);
+  const [editName, setEditName] = useState('');
 
   async function reload() {
     const [directory, centerList] = await Promise.all([
@@ -141,7 +147,7 @@ export function OrganizationStructurePage() {
     finally { setBusy(false); }
   }
 
-  async function review(item: OrgUnit, action: 'map-center' | 'approve'): Promise<boolean> {
+  async function review(item: OrgUnit, action: 'map-center' | 'approve' | 'edit-draft', editedName?: string): Promise<boolean> {
     setBusy(true);
     try {
       await apiRequest('/organization-units/' + item.id + '/review/', {
@@ -150,11 +156,13 @@ export function OrganizationStructurePage() {
         body: JSON.stringify({
           action,
           ...(action === 'map-center' ? { center_id: mappedCenters[item.id] }
-            : { approval_reference: approvalRefs[item.id] || '' }),
+            : action === 'edit-draft' ? { name: editedName || '' }
+              : { approval_reference: approvalRefs[item.id] || '' }),
         }),
       });
       await reload();
-      toast.success(action === 'approve' ? 'تم اعتماد السجل وربط مرجع الاعتماد' : 'تمت مطابقة المركز بنجاح');
+      toast.success(action === 'approve' ? 'تم اعتماد السجل وربط مرجع الاعتماد'
+        : action === 'map-center' ? 'تمت مطابقة المركز بنجاح' : 'تم حفظ تعديل الاسم مع الاحتفاظ بالمصدر الأصلي');
       return true;
     } catch (e) {
       toast.error(localizedError(e));
@@ -282,100 +290,212 @@ export function OrganizationStructurePage() {
           </FormControl>
         </Stack>
         <Divider sx={{mb:2}}/>
-        <TableContainer sx={{ maxHeight: 650 }}>
-          <Table stickyHeader size="small">
-            <TableHead>
-              <TableRow>
-                {['الرمز','اسم الجهة / الوحدة','التصنيف','الجهة الأعلى','الاعتماد','الإجراء'].map(x=><TableCell key={x} sx={{fontWeight:900}}>{x}</TableCell>)}
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {filtered.map(unit=>(
-                <TableRow key={unit.id} hover>
-                  <TableCell sx={{whiteSpace:'nowrap',fontSize:12}}>{unit.code}</TableCell>
-                  <TableCell sx={{minWidth:180}}>
-                    <Typography fontWeight={700} variant="body2">{unit.name}</Typography>
-                    <Typography variant="caption" color="text.secondary">{unit.source_path}</Typography>
-                  </TableCell>
-                  <TableCell>{KINDS[unit.kind]}</TableCell>
-                  <TableCell>{unit.parent_name || '—'}</TableCell>
-                  <TableCell>
-                    <Stack gap={0.5} alignItems="flex-start">
-                      <Chip size="small" color={REVIEW_COLORS[unit.review_status] || 'default'}
-                        label={REVIEW_LABELS[unit.review_status] || 'بانتظار المراجعة'}/>
-                      {unit.health_center_name && <Typography variant="caption" color="text.secondary">↳ {unit.health_center_name}</Typography>}
+
+        <Grid container spacing={{ xs: 2, md: 2.25 }} sx={{ pt: 0.5 }}>
+          {filtered.map(unit => {
+            const kindIcon = unit.kind === 'center' ? <CenterIcon fontSize="small" />
+              : unit.kind === 'sector' ? <SectorIcon fontSize="small" />
+              : unit.kind === 'unit' ? <UnitIcon fontSize="small" />
+              : <DepartmentIcon fontSize="small" />;
+            const needsReview = unit.review_status !== 'ready' && !unit.is_approved;
+            return (
+              <Grid key={unit.id} size={{ xs: 12, sm: 6, lg: 4, xl: 3 }} sx={{ display: 'flex', minWidth: 0 }}>
+                <Card sx={{
+                  width: '100%', display: 'flex', flexDirection: 'column', minWidth: 0,
+                  background: 'linear-gradient(155deg, #ffffff 0%, #f5faff 100%)',
+                  border: '1px solid #bdd3e4', borderTop: '4px solid #155d86',
+                  borderRadius: '15px', boxShadow: '0 7px 17px rgba(22, 65, 98, 0.12)',
+                  transition: 'transform 200ms ease, box-shadow 200ms ease, border-color 200ms ease',
+                  '&:hover': { transform: 'translateY(-3px)', boxShadow: '0 15px 28px rgba(22, 65, 98, 0.18)', borderColor: '#69a0c4' },
+                }}>
+                  <CardContent sx={{ p: 2, pb: '14px !important', display: 'flex', flexDirection: 'column', flexGrow: 1, gap: 1.4, minWidth: 0 }}>
+                    <Stack direction="row" alignItems="flex-start" justifyContent="space-between" gap={1} sx={{ minHeight: 42 }}>
+                      <Chip size="small" color={unit.is_active ? 'success' : 'default'}
+                        label={unit.is_active ? 'نشط' : 'غير نشط'}
+                        variant="outlined" sx={{ flexShrink: 0, fontWeight: 800 }} />
+                      <Typography component="h3" sx={{
+                        fontWeight: 900, color: '#143f61', fontSize: '0.99rem', textAlign: 'right',
+                        lineHeight: 1.5, overflowWrap: 'anywhere', minWidth: 0,
+                      }}>{unit.name}</Typography>
                     </Stack>
-                  </TableCell>
-                  <TableCell sx={{minWidth:265}}>
-                    {unit.is_approved ? <Typography variant="caption">{unit.approval_reference}</Typography> : (
-                      <Stack gap={1} sx={{ minWidth: 255 }}>
-                        {unit.kind==='center' && (
-                          <Stack gap={0.6}>
-                            {(() => {
-                              const proposals = exactCenterSuggestions(unit.name, centers);
-                              if (proposals.length === 1) return (
-                                <Button size="small" variant="text" disabled={busy} sx={{ alignSelf: 'flex-start' }}
-                                  onClick={() => setMappedCenters(prev => ({...prev, [unit.id]: String(proposals[0].id)}))}>
-                                  اقتراح مطابق بالاسم: {proposals[0].name_ar || proposals[0].name}
-                                </Button>
-                              );
-                              if (proposals.length > 1) return (
-                                <Typography color="warning.main" variant="caption">أكثر من مركز بنفس الاسم؛ تحقّق من المركز الصحيح يدويًا.</Typography>
-                              );
-                              return <Typography color="text.secondary" variant="caption">لا توجد مطابقة اسمية تامة؛ يُرجى التحقق من المركز المسجل.</Typography>;
-                            })()}
-                            <Stack direction="row" gap={1}>
-                              <TextField select size="small" fullWidth label="مطابقة مع مركز موجود"
-                                value={mappedCenters[unit.id] || String(unit.health_center_id || '')}
-                                onChange={e => setMappedCenters(prev=>({...prev,[unit.id]:String(e.target.value)}))}>
-                                <MenuItem value="">اختر مركزًا</MenuItem>
-                                {centers.map(c=><MenuItem key={c.id} value={String(c.id)}>{c.name_ar || c.name}</MenuItem>)}
-                              </TextField>
-                              <Button size="small" variant="outlined" disabled={
-                                busy || !mappedCenters[unit.id] || mappedCenters[unit.id] === String(unit.health_center_id)
-                              } onClick={()=>void review(unit,'map-center')}>حفظ المطابقة</Button>
-                            </Stack>
-                            <Typography color="text.secondary" variant="caption">الاقتراح لا يحفظ المطابقة ولا يعتمد المركز تلقائيًا.</Typography>
-                          </Stack>
-                        )}
-                        <Stack direction="row" gap={1}>
-                          <TextField size="small" label="مرجع الاعتماد الرسمي" fullWidth
-                            value={approvalRefs[unit.id] || ''}
-                            onChange={e=>setApprovalRefs(prev=>({...prev,[unit.id]:e.target.value}))}/>
-                          <Button size="small" color="success" variant="contained" startIcon={<ApproveIcon/>}
-                            disabled={busy || unit.review_status !== 'ready' || (approvalRefs[unit.id] || '').trim().length < 3}
-                            onClick={() => setConfirmationUnit(unit)}>مراجعة الاعتماد</Button>
-                        </Stack>
+
+                    <Box title={unit.source_path || unit.name} sx={{ minHeight: 48, minWidth: 0 }}>
+                      <Typography sx={{
+                        textAlign: 'right', fontSize: '0.79rem', fontWeight: 550, lineHeight: 1.7,
+                        color: '#4d6880', overflowWrap: 'anywhere',
+                        display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                        overflow: 'hidden',
+                      }}>{unit.source_path || unit.parent_name || 'جهة تنظيمية رئيسية'}</Typography>
+                    </Box>
+
+                    <Box sx={{
+                      borderRadius: 2, px: 1.2, py: 0.9,
+                      bgcolor: '#ecf4fa', display: 'flex', alignItems: 'center',
+                      justifyContent: 'space-between', gap: 1, minWidth: 0,
+                    }}>
+                      <Stack direction="row" alignItems="center" gap={0.5} sx={{ minWidth: 0 }}>
+                        <Box sx={{ color: '#17638c', display: 'flex' }}>{kindIcon}</Box>
+                        <Typography sx={{ fontSize: '0.73rem', fontWeight: 800, color: '#34576c', overflowWrap: 'anywhere' }}>{KINDS[unit.kind]}</Typography>
                       </Stack>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-              {!filtered.length && <TableRow><TableCell colSpan={6} align="center">
-                لا توجد بيانات ضمن هذا التصنيف. ارفع ملف المطابقة للمعاينة ثم حفظ المسودات.
-              </TableCell></TableRow>}
-            </TableBody>
-          </Table>
-        </TableContainer>
+                      <Typography sx={{ fontSize: '0.73rem', color: '#174364', fontWeight: 850, flexShrink: 0 }} dir="ltr">{unit.code}</Typography>
+                    </Box>
+
+                    <Box sx={{
+                      display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)',
+                      columnGap: 1.3, rowGap: 1.15, minWidth: 0,
+                      '& .org-label': { fontSize: '0.68rem', fontWeight: 750, color: '#788da0', mb: 0.25 },
+                      '& .org-value': { fontSize: '0.76rem', fontWeight: 800, color: '#25445c', lineHeight: 1.5, overflowWrap: 'anywhere' },
+                    }}>
+                      <Box sx={{ minWidth: 0 }}>
+                        <Typography className="org-label">الجهة الأعلى</Typography>
+                        <Typography className="org-value">{unit.parent_name || 'جهة / إدارة مركزية'}</Typography>
+                      </Box>
+                      <Box sx={{ minWidth: 0 }}>
+                        <Typography className="org-label">المركز المرتبط</Typography>
+                        <Typography className="org-value">{unit.health_center_name || '—'}</Typography>
+                      </Box>
+                    </Box>
+
+                    <Box sx={{ mt: 'auto', pt: 0.8 }}>
+                      <Chip size="small" color={REVIEW_COLORS[unit.review_status] || 'default'}
+                        label={REVIEW_LABELS[unit.review_status] || 'بانتظار المراجعة'}
+                        sx={{ maxWidth: '100%', fontWeight: 800, '& .MuiChip-label': { overflow: 'hidden', textOverflow: 'ellipsis' } }} />
+                      {needsReview && <Typography sx={{ fontSize: '0.68rem', lineHeight: 1.6, color: '#6a8191', mt: 0.5 }}>
+                        {unit.review_status === 'await_parent' ? 'يجب اعتماد الجهة الأعلى أولًا' : 'يلزم التحقق من مطابقة المركز'}
+                      </Typography>}
+                    </Box>
+
+                    <Divider sx={{ borderColor: '#d6e4ec' }} />
+
+                    <Box sx={{
+                      display: 'grid', gridTemplateColumns: 'repeat(4,minmax(0,1fr))',
+                      gap: 0.55, minWidth: 0, '& .MuiButton-root': {
+                        minWidth: 0, minHeight: 43, padding: '5px 3px',
+                        fontSize: '0.68rem', fontWeight: 850, lineHeight: 1.25,
+                        borderRadius: 2, whiteSpace: 'normal', textAlign: 'center',
+                        flexDirection: 'column', gap: 0.3,
+                      },
+                      '& .MuiButton-startIcon': { margin: 0, '& svg': { fontSize: 17 } },
+                    }}>
+                      <Button variant="contained" size="small" startIcon={<ViewIcon />}
+                        sx={{ bgcolor: '#14527e', '&:hover': { bgcolor: '#093c60' } }}
+                        onClick={() => setDetailUnit(unit)}>مراجعة</Button>
+                      <Button variant="outlined" size="small" color="success" startIcon={<CheckIcon />}
+                        disabled={busy || unit.review_status !== 'ready'}
+                        onClick={() => setConfirmationUnit(unit)}>اعتماد</Button>
+                      <Button variant="outlined" size="small" color="primary" startIcon={<EditIcon />}
+                        disabled={busy || unit.is_approved}
+                        onClick={() => { setEditUnit(unit); setEditName(unit.name); }}>تعديل</Button>
+                      <Button variant="outlined" size="small" color="inherit" startIcon={<ReferenceIcon />}
+                        onClick={() => setReferenceUnit(unit)}>مرجع الاعتماد</Button>
+                    </Box>
+                  </CardContent>
+                </Card>
+              </Grid>
+            );
+          })}
+          {!filtered.length && (
+            <Grid size={{ xs: 12 }}>
+              <Alert severity="info">لا توجد جهات مطابقة للتصفية الحالية. جرّب تغيير القطاع أو حالة الاعتماد.</Alert>
+            </Grid>
+          )}
+        </Grid>
         <Typography variant="caption" color="text.secondary">{filtered.length} سجل معروض — لا يظهر غير المعتمد في سجل الموظفين.</Typography>
       </Paper>
+
+      <Dialog open={detailUnit !== null} onClose={() => !busy && setDetailUnit(null)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ fontWeight: 900 }}>مراجعة بيانات الجهة التنظيمية</DialogTitle>
+        <DialogContent dividers>
+          {detailUnit && <Stack spacing={2}>
+            <Typography variant="h6" sx={{ fontWeight: 900, overflowWrap: 'anywhere' }}>{detailUnit.name}</Typography>
+            <Chip color={REVIEW_COLORS[detailUnit.review_status]} label={REVIEW_LABELS[detailUnit.review_status]} sx={{ alignSelf: 'flex-start' }} />
+            <Box sx={{ display: 'grid', gridTemplateColumns: '110px minmax(0,1fr)', gap: 1.2, '& > *': { overflowWrap: 'anywhere' } }}>
+              <Typography color="text.secondary">رمز السجل</Typography><Typography fontWeight={750}>{detailUnit.code}</Typography>
+              <Typography color="text.secondary">التصنيف</Typography><Typography>{KINDS[detailUnit.kind]}</Typography>
+              <Typography color="text.secondary">الجهة الأعلى</Typography><Typography>{detailUnit.parent_name || '—'}</Typography>
+              <Typography color="text.secondary">المركز المرتبط</Typography><Typography>{detailUnit.health_center_name || 'غير مرتبط'}</Typography>
+              <Typography color="text.secondary">المسار المصدر</Typography><Typography>{detailUnit.source_path || '—'}</Typography>
+              <Typography color="text.secondary">صفوف المصدر</Typography><Typography>{detailUnit.source_rows || '—'}</Typography>
+            </Box>
+            {detailUnit.kind === 'center' && !detailUnit.is_approved && <Box sx={{ p: 2, borderRadius: 2, bgcolor: '#edf6fc' }}>
+              <Typography fontWeight={850} sx={{ mb: 1 }}>مطابقة مع مركز صحي قائم</Typography>
+              {(() => {
+                const proposals = exactCenterSuggestions(detailUnit.name, centers);
+                return proposals.length === 1
+                  ? <Alert severity="info" sx={{ mb: 1 }}>اقتراح بالاسم: {proposals[0].name_ar || proposals[0].name} — يلزم تأكيد الاختيار يدويًا.</Alert>
+                  : proposals.length > 1 ? <Alert severity="warning" sx={{ mb: 1 }}>توجد أسماء متشابهة؛ اختر المركز بعد التحقق.</Alert> : null;
+              })()}
+              <TextField select fullWidth size="small" label="المركز المسجل" sx={{ mb: 1.5 }}
+                value={mappedCenters[detailUnit.id] || String(detailUnit.health_center_id || '')}
+                onChange={event => setMappedCenters(prev => ({...prev, [detailUnit.id]: String(event.target.value)}))}>
+                <MenuItem value="">اختر المركز</MenuItem>
+                {centers.map(center => <MenuItem key={center.id} value={String(center.id)}>{center.name_ar || center.name}</MenuItem>)}
+              </TextField>
+              <Button variant="contained" disabled={busy || !mappedCenters[detailUnit.id] || mappedCenters[detailUnit.id] === String(detailUnit.health_center_id)}
+                onClick={async () => { if (await review(detailUnit, 'map-center')) setDetailUnit(null); }}>حفظ مطابقة المركز</Button>
+            </Box>}
+            {detailUnit.is_approved && <Alert severity="success">مرجع الاعتماد: {detailUnit.approval_reference || '—'}</Alert>}
+          </Stack>}
+        </DialogContent>
+        <DialogActions><Button onClick={() => setDetailUnit(null)} disabled={busy}>إغلاق</Button></DialogActions>
+      </Dialog>
+
+      <Dialog open={editUnit !== null} onClose={() => !busy && setEditUnit(null)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ fontWeight: 900 }}>تعديل اسم الجهة قبل الاعتماد</DialogTitle>
+        <DialogContent dividers>
+          <Alert severity="info" sx={{ mb: 2 }}>يُسمح بتصحيح الاسم المعروض فقط. تبقى رموز الجهات والمسارات المصدرية والارتباطات الأصلية محفوظة.</Alert>
+          <TextField fullWidth required label="اسم الجهة / الوحدة" value={editName} onChange={event => setEditName(event.target.value)}
+            slotProps={{ htmlInput: { maxLength: 220 } }} />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEditUnit(null)} disabled={busy}>إلغاء</Button>
+          <Button variant="contained" disabled={busy || !editName.trim() || editName.trim() === editUnit?.name}
+            onClick={async () => { if (editUnit && await review(editUnit, 'edit-draft', editName)) setEditUnit(null); }}>حفظ التعديل</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={referenceUnit !== null} onClose={() => setReferenceUnit(null)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ fontWeight: 900 }}>مرجع الاعتماد الرسمي</DialogTitle>
+        <DialogContent dividers>
+          <Typography fontWeight={800} sx={{ mb: 1 }}>{referenceUnit?.name}</Typography>
+          {referenceUnit?.is_approved
+            ? <Alert severity="success">المرجع المعتمد: {referenceUnit.approval_reference}</Alert>
+            : <>
+                <TextField label="الرقم / المرجع الرسمي" fullWidth value={referenceUnit ? approvalRefs[referenceUnit.id] || '' : ''}
+                  onChange={e => { if (referenceUnit) setApprovalRefs(prev => ({ ...prev, [referenceUnit.id]: e.target.value })); }}
+                  helperText="يُستخدم المرجع عند الاعتماد النهائي، ولا يُحفظ في قاعدة البيانات قبل الاعتماد."
+                  slotProps={{ htmlInput: { maxLength: 255 } }} />
+                <Alert severity="info" sx={{ mt: 2 }}>المرجع مُعد للإدخال فقط. لا يُعتمد السجل دون التأكيد من زر «اعتماد».</Alert>
+              </>}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setReferenceUnit(null)}>إغلاق</Button>
+          {referenceUnit && !referenceUnit.is_approved && referenceUnit.review_status === 'ready' && (
+            <Button color="success" variant="contained" disabled={(approvalRefs[referenceUnit.id] || '').trim().length < 3}
+              onClick={() => { setConfirmationUnit(referenceUnit); setReferenceUnit(null); }}>متابعة الاعتماد</Button>
+          )}
+        </DialogActions>
+      </Dialog>
       <Dialog open={confirmationUnit !== null} onClose={() => !busy && setConfirmationUnit(null)} maxWidth="sm" fullWidth>
         <DialogTitle>تأكيد اعتماد جهة تنظيمية</DialogTitle>
         <DialogContent dividers>
           <Alert severity="warning" sx={{ mb: 2 }}>
-            هذا الإجراء يجعل الجهة متاحة للربط ببيانات الموظفين عند استيفاء ضوابط المركز، ولا يمكن إلغاؤه من هذه الشاشة.
+            يرجى التحقق من المرجع الرسمي قبل الاعتماد. يصبح السجل متاحًا للربط حسب ضوابط المركز، ولا يمكن التراجع من هذه الشاشة.
           </Alert>
           <Typography fontWeight={900}>{confirmationUnit?.name}</Typography>
           <Typography color="text.secondary" variant="body2">
             {confirmationUnit?.parent_name ? `تتبع: ${confirmationUnit.parent_name}` : 'جهة تنظيمية عليا'}
           </Typography>
           <Typography sx={{ mt: 2 }} variant="body2">
-            مرجع الاعتماد: <strong>{confirmationUnit ? approvalRefs[confirmationUnit.id] : ''}</strong>
+            <TextField fullWidth label="مرجع الاعتماد الرسمي" size="small" required
+              value={confirmationUnit ? approvalRefs[confirmationUnit.id] || '' : ''}
+              onChange={event => { if (confirmationUnit) setApprovalRefs(prev => ({ ...prev, [confirmationUnit.id]: event.target.value })); }}
+              slotProps={{ htmlInput: { maxLength: 255 } }} />
           </Typography>
         </DialogContent>
         <DialogActions>
           <Button disabled={busy} onClick={() => setConfirmationUnit(null)}>إلغاء</Button>
-          <Button disabled={busy || !confirmationUnit} variant="contained" color="success"
+          <Button disabled={busy || !confirmationUnit || confirmationUnit.review_status !== 'ready' || (confirmationUnit && (approvalRefs[confirmationUnit.id] || '').trim().length < 3)} variant="contained" color="success"
             onClick={async () => {
               if (!confirmationUnit) return;
               if (await review(confirmationUnit, 'approve')) setConfirmationUnit(null);
