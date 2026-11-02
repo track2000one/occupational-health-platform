@@ -174,7 +174,6 @@ class OrganizationUnit(models.Model):
 
     class Meta:
         ordering = ['kind', 'name']
-        indexes = [models.Index(fields=['parent', 'is_approved'])]
 
     def __str__(self):
         return self.name
