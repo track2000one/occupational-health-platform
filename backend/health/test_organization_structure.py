@@ -163,3 +163,19 @@ class OrganizationHierarchySafetyTests(TestCase):
             'organization_unit': unit.pk,
         }, format='json')
         self.assertEqual(response.status_code, 400, response.data)
+
+    @patch.dict('os.environ', STAGING_ENV)
+    def test_central_department_cannot_be_arbitrarily_linked_to_health_center(self):
+        self.assertEqual(self.upload(confirm=True).status_code, 201)
+        central = OrganizationUnit.objects.get(kind='department')
+        self.assertEqual(self.client.post(
+            '/api/organization-units/' + str(central.pk) + '/review/',
+            {'action': 'approve', 'approval_reference': 'QA-APPROVAL-002'},
+            format='json',
+        ).status_code, 200)
+        result = self.client.post('/api/employees/', {
+            'name': 'Central unit synthetic test', 'national_id': '9998999004',
+            'health_center': self.center.pk, 'organization_unit': central.pk,
+        }, format='json')
+        self.assertEqual(result.status_code, 400, result.data)
+        self.assertFalse(Employee.objects.filter(national_id='9998999004').exists())
