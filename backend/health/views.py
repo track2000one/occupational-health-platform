@@ -400,6 +400,21 @@ class EmployeeImportReviewViewSet(viewsets.ReadOnlyModelViewSet):
                 {'detail': 'Only pending or conflicting reviews can be activated.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        # A legacy review may still contain a free-text center from Excel.
+        # Do not pass missing/invalid numeric values (such as 0) to the serializer;
+        # an administrator must explicitly select an active master center.
+        raw_center_id = request.data.get('health_center')
+        try:
+            center_id = int(raw_center_id)
+        except (TypeError, ValueError):
+            center_id = 0
+        if center_id <= 0 or not HealthCenter.objects.filter(
+            pk=center_id, is_active=True,
+        ).exists():
+            return Response({
+                'health_center': 'يرجى اختيار مركز صحي مسجل ونشط من القائمة قبل تفعيل البطاقة.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
         employee_serializer = EmployeeSerializer(data=request.data, context={'request': request})
         employee_serializer.is_valid(raise_exception=True)
         with transaction.atomic():
