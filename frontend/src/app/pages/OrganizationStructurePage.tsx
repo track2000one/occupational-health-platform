@@ -2,13 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import {
-  Alert, Box, Button, Card, CardContent, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Divider, FormControl,
+  Alert, Box, Button, Card, CardContent, Checkbox, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Divider, FormControl, FormControlLabel,
   Grid, InputLabel, LinearProgress, MenuItem, Paper, Select, Stack, TextField, Typography,
 } from '@mui/material';
 import {
   AccountTree as TreeIcon, CloudUpload as UploadIcon, FactCheck as ApproveIcon,
   Refresh as RefreshIcon, VisibilityOutlined as ViewIcon, EditOutlined as EditIcon,
-  DescriptionOutlined as ReferenceIcon,
+  DescriptionOutlined as ReferenceIcon, ChecklistOutlined as BulkIcon,
   ApartmentOutlined as DepartmentIcon, AccountBalanceOutlined as SectorIcon,
   LocalHospitalOutlined as CenterIcon, GroupsOutlined as UnitIcon,
 } from '@mui/icons-material';
@@ -31,6 +31,27 @@ type Center = { id: number; name: string; name_ar?: string; name_en?: string };
 type Preview = {
   total: number; kinds: Record<string, number>; mode: string; created: number;
   notice?: string; preview?: Array<{code: string; name: string; kind: string}>;
+};
+type BulkBlocked = {
+  id: number; code: string; name: string; kind: OrgUnit['kind']; reason: string;
+};
+type BulkPreview = {
+  mode: 'preview'; selected_count: number; eligible_count: number; blocked_count: number;
+  already_approved_count: number; eligible_by_kind: Record<string, number>;
+  eligible_ids: number[]; blocked: BulkBlocked[]; preview_token: string;
+};
+type BulkResult = {
+  mode: 'approved'; approved_count: number; approved_ids: number[];
+  blocked_count: number; blocked: BulkBlocked[]; approval_reference: string;
+};
+const BLOCK_REASON_LABELS: Record<string, string> = {
+  inactive: 'جهة غير نشطة', parent_not_approved_or_selected: 'الجهة الأعلى لم تعتمد ولم تُحدد',
+  center_mapping_required: 'يلزم ربط المركز بمركز صحي نشط',
+  duplicate_center_mapping: 'المركز مسجل لجهة أخرى',
+  invalid_parent_center: 'الجهة الأعلى ليست مركزًا صحيًا',
+  parent_center_mapping_required: 'المركز الأعلى يحتاج مطابقة',
+  unexpected_root_parent: 'وجود ارتباط أعلى غير متوقع',
+  invalid_kind: 'تصنيف غير صالح للاعتماد',
 };
 const REVIEW_LABELS: Record<OrgUnit['review_status'], string> = {
   approved: 'معتمد', ready: 'جاهز للمراجعة', await_parent: 'ينتظر اعتماد الجهة الأعلى',
@@ -76,6 +97,11 @@ export function OrganizationStructurePage() {
   const [editUnit, setEditUnit] = useState<OrgUnit | null>(null);
   const [referenceUnit, setReferenceUnit] = useState<OrgUnit | null>(null);
   const [editName, setEditName] = useState('');
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [bulkPreview, setBulkPreview] = useState<BulkPreview | null>(null);
+  const [bulkReference, setBulkReference] = useState('');
+  const [bulkRequestIds, setBulkRequestIds] = useState<number[]>([]);
+  const [bulkConsent, setBulkConsent] = useState(false);
 
   async function reload() {
     const [directory, centerList] = await Promise.all([
@@ -83,6 +109,8 @@ export function OrganizationStructurePage() {
       apiRequest<{results: Center[]; next: string | null} | Center[]>('/health-centers/?active=true&page=1'),
     ]);
     setItems(directory.results);
+    setSelectedIds(current => current.filter(id =>
+      directory.results.some(unit => unit.id === id && !unit.is_approved && unit.is_active)));
     setStats(directory.summary);
     const allCenters = Array.isArray(centerList) ? centerList : centerList.results;
     if (!Array.isArray(centerList) && centerList.next) {
@@ -128,7 +156,66 @@ export function OrganizationStructurePage() {
     return key(a).localeCompare(key(b), 'ar');
   }), [items, filter, kindFilter, sectorFilter, search]);
 
-  async function upload(commit: boolean) {
+  function selectPendingScope(scope: 'visible' | 'all' | 'ready') {
+    const candidates = scope === 'visible' ? filtered : items;
+    setSelectedIds(candidates
+      .filter(unit => !unit.is_approved && unit.is_active &&
+        (scope !== 'ready' || unit.review_status === 'ready'))
+      .map(unit => unit.id));
+  }
+
+  async function openBulkReview(unitIds: number[]) {
+    if (!unitIds.length) {
+      toast.error('اختر سجلًا واحدًا على الأقل للمراجعة الجماعية.');
+      return;
+    }
+    setBusy(true);
+    setBulkPreview(null);
+    setBulkRequestIds([...unitIds]);
+    setBulkReference('');
+    setBulkConsent(false);
+    try {
+      const data = await apiRequest<BulkPreview>('/organization-units/bulk-approval/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'preview', unit_ids: unitIds }),
+      });
+      setBulkPreview(data);
+    } catch (error) {
+      toast.error(localizedError(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirmBulkReview() {
+    if (!bulkPreview || bulkReference.trim().length < 3 || !bulkConsent) return;
+    setBusy(true);
+    try {
+      const result = await apiRequest<BulkResult>('/organization-units/bulk-approval/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'approve',
+          unit_ids: bulkRequestIds,
+          preview_token: bulkPreview.preview_token,
+          approval_reference: bulkReference.trim(),
+          reference_covers_all: true,
+        }),
+      });
+      setBulkPreview(null);
+      setSelectedIds([]);
+      await reload();
+      toast.success(`تم اعتماد ${result.approved_count} سجلًا. بقي ${result.blocked_count} سجلًا يحتاج استكمال المتطلبات.`);
+    } catch (error) {
+      toast.error(localizedError(error) + ' — أعد المعاينة قبل المحاولة مجددًا.');
+      setBulkPreview(null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+    async function upload(commit: boolean) {
     if (!selectedFile) return;
     setBusy(true);
     try {
@@ -289,6 +376,32 @@ export function OrganizationStructurePage() {
             </Select>
           </FormControl>
         </Stack>
+        <Paper variant="outlined" sx={{ mb: 2.5, px: 2, py: 1.5, borderRadius: 2.5, bgcolor: '#f0f7fd', borderColor: '#c6ddeb' }}>
+          <Stack direction={{ xs: 'column', lg: 'row' }} alignItems={{ lg: 'center' }} gap={1.25} justifyContent="space-between">
+            <Stack direction="row" useFlexGap flexWrap="wrap" gap={0.75} alignItems="center">
+              <Chip label={`المحدد: ${selectedIds.length}`} color={selectedIds.length ? 'primary' : 'default'} sx={{ fontWeight: 900 }} />
+              <Button size="small" variant="outlined" disabled={busy} onClick={() => selectPendingScope('all')}>تحديد الكل</Button>
+              <Button size="small" variant="outlined" disabled={busy} onClick={() => selectPendingScope('visible')}>تحديد المعروض</Button>
+              <Button size="small" variant="text" disabled={busy} onClick={() => selectPendingScope('ready')}>تحديد الجاهز</Button>
+              <Button size="small" color="inherit" disabled={!selectedIds.length || busy} onClick={() => setSelectedIds([])}>إلغاء التحديد</Button>
+            </Stack>
+            <Stack direction={{ xs: 'column', sm: 'row' }} gap={1}>
+              <Button variant="outlined" disabled={busy || !selectedIds.length} startIcon={<BulkIcon />}
+                onClick={() => void openBulkReview(selectedIds)}>
+                اعتماد المحدد ({selectedIds.length})
+              </Button>
+              <Button variant="contained" color="success" disabled={busy || !items.some(unit => !unit.is_approved && unit.is_active)}
+                startIcon={<ApproveIcon />}
+                onClick={() => void openBulkReview(items.filter(unit => !unit.is_approved && unit.is_active).map(unit => unit.id))}>
+                اعتماد جميع السجلات المؤهلة
+              </Button>
+            </Stack>
+          </Stack>
+          <Typography sx={{ color: '#536c80', fontSize: '13px', mt: 1, lineHeight: 1.6 }}>
+            قبل الاعتماد ستظهر معاينة توضح السجلات المؤهلة والمعلّقة، ولا يُعتمد أي سجل دون مرجع رسمي وتأكيد صريح.
+            يمكن اعتماد القطاع ثم المركز ثم الوحدة في دفعة واحدة إذا اكتملت مطابقة المركز.
+          </Typography>
+        </Paper>
         <Divider sx={{mb:2}}/>
 
         <Grid container spacing={{ xs: 2, md: 2.25 }} sx={{ pt: 0.5 }}>
@@ -310,6 +423,14 @@ export function OrganizationStructurePage() {
                 }}>
                   <CardContent sx={{ p: 2.25, pb: '18px !important', display: 'flex', flexDirection: 'column', flexGrow: 1, gap: 1.3, minWidth: 0 }}>
                     <Stack direction="row" alignItems="flex-start" justifyContent="space-between" gap={1} sx={{ minHeight: 38 }}>
+                      {!unit.is_approved && <Checkbox
+                        size="small" disabled={busy || !unit.is_active}
+                        checked={selectedIds.includes(unit.id)}
+                        onChange={(_, checked) => setSelectedIds(current =>
+                          checked ? Array.from(new Set([...current, unit.id])) : current.filter(id => id !== unit.id))}
+                        inputProps={{ 'aria-label': `تحديد ${unit.name} للاعتماد الجماعي` }}
+                        sx={{ flexShrink: 0, p: 0.3, color: '#155d86' }}
+                      />}
                       <Chip size="small" color={unit.is_active ? 'success' : 'default'}
                         label={unit.is_active ? 'نشط' : 'غير نشط'}
                         variant="outlined" sx={{ flexShrink: 0, fontWeight: 800, fontSize: '12px', height: 29 }} />
@@ -482,6 +603,62 @@ export function OrganizationStructurePage() {
             <Button color="success" variant="contained" disabled={(approvalRefs[referenceUnit.id] || '').trim().length < 3}
               onClick={() => { setConfirmationUnit(referenceUnit); setReferenceUnit(null); }}>متابعة الاعتماد</Button>
           )}
+        </DialogActions>
+      </Dialog>
+      <Dialog open={bulkPreview !== null} onClose={() => !busy && setBulkPreview(null)} maxWidth="sm" fullWidth
+        PaperProps={{ sx: { borderRadius: 3 } }}>
+        <DialogTitle sx={{ fontWeight: 900 }}>اعتماد جماعي — معاينة قبل التنفيذ</DialogTitle>
+        <DialogContent dividers>
+          {bulkPreview && <Stack spacing={2}>
+            <Alert severity={bulkPreview.blocked_count ? 'warning' : 'info'}>
+              لن يعتمد النظام جميع السجلات دون استيفاء الشروط. المعاينة تحدد السجلات التي سيُعتمد وضعها فقط.
+            </Alert>
+            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: 1 }}>
+              {[
+                ['المحددة', bulkPreview.selected_count],
+                ['مؤهلة للاعتماد', bulkPreview.eligible_count],
+                ['تحتاج معالجة', bulkPreview.blocked_count],
+              ].map(([label, number]) => <Box key={label} sx={{ border: '1px solid #c7ddea', borderRadius: 2, p: 1.5, textAlign: 'center' }}>
+                <Typography sx={{ fontSize: 23, fontWeight: 900 }}>{number}</Typography>
+                <Typography sx={{ fontSize: 12, fontWeight: 750, color: 'text.secondary' }}>{label}</Typography>
+              </Box>)}
+            </Box>
+            <Typography fontWeight={800}>سيُعتمد من هذه الدفعة:</Typography>
+            <Typography variant="body2">
+              {[
+                ['القطاعات', bulkPreview.eligible_by_kind.sector || 0],
+                ['المراكز', bulkPreview.eligible_by_kind.center || 0],
+                ['الوحدات', bulkPreview.eligible_by_kind.unit || 0],
+                ['الجهات المركزية', bulkPreview.eligible_by_kind.department || 0],
+              ].map(([name, total]) => `${name}: ${total}`).join(' | ')}
+            </Typography>
+            {bulkPreview.blocked_count > 0 && <Box sx={{ maxHeight: 175, overflowY: 'auto', bgcolor: '#fff7eb', borderRadius: 2, p: 1.5 }}>
+              <Typography fontWeight={900} sx={{ mb: 1 }}>السجلات التي ستبقى معلّقة:</Typography>
+              {bulkPreview.blocked.map(item => <Typography key={item.id} variant="body2" sx={{ mb: 0.6 }}>
+                {item.name} — {BLOCK_REASON_LABELS[item.reason] || item.reason}
+              </Typography>)}
+            </Box>}
+            <TextField fullWidth required label="مرجع الاعتماد الرسمي للدفعة" value={bulkReference}
+              onChange={event => setBulkReference(event.target.value)}
+              helperText="أدخل مرجعًا معتمدًا يغطي جميع السجلات المؤهلة في هذه الدفعة."
+              slotProps={{ htmlInput: { maxLength: 255 } }} />
+            <FormControlLabel
+              control={<Checkbox checked={bulkConsent} onChange={(_, checked) => setBulkConsent(checked)} />}
+              label={<Typography variant="body2" fontWeight={750}>
+                أقر بأن مرجع الاعتماد يغطي جميع السجلات التي ستُعتمد، وأنني راجعت القائمة المؤهلة والمعلّقة.
+              </Typography>}
+            />
+            <Alert severity="info">سيتم توثيق الاعتماد باسم المستخدم ومرجعه. لن تتغير بيانات الموظفين أو سجلات المراكز الصحية.</Alert>
+          </Stack>}
+        </DialogContent>
+        <DialogActions sx={{ p: 2, gap: 1 }}>
+          <Button disabled={busy} onClick={() => setBulkPreview(null)}>إلغاء</Button>
+          <Button variant="contained" color="success" disabled={
+            busy || !bulkPreview || !bulkPreview.eligible_count ||
+            bulkReference.trim().length < 3 || !bulkConsent
+          } onClick={() => void confirmBulkReview()}>
+            {busy ? 'جارٍ الاعتماد...' : `تأكيد اعتماد ${bulkPreview?.eligible_count || 0} سجل`}
+          </Button>
         </DialogActions>
       </Dialog>
       <Dialog open={confirmationUnit !== null} onClose={() => !busy && setConfirmationUnit(null)} maxWidth="sm" fullWidth>
