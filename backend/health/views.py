@@ -422,14 +422,35 @@ class EmployeeImportReviewViewSet(viewsets.ReadOnlyModelViewSet):
                 'health_center': 'يرجى اختيار مركز صحي مسجل ونشط من القائمة قبل تفعيل البطاقة.'
             }, status=status.HTTP_400_BAD_REQUEST)
 
+        skipped_optional = []
         if basic_only:
-            # Explicit allowlist: invalid dates, nationality, unapproved
-            # organizational units, duplicate optional email/job number, and
-            # incorrect clinical fields are never guessed or silently saved.
+            # Start with the mandatory identity/center, then save every optional
+            # employment/contact field that validates independently. Bad values
+            # stay in the original review for later correction. We never infer
+            # clinical assessments or assign an unapproved organizational unit.
             submitted = {
                 key: request.data.get(key)
                 for key in ('name', 'national_id', 'health_center')
             }
+            optional_fields = (
+                'employee_number', 'email', 'mobile', 'national_address',
+                'birth_place', 'gender', 'marital_status', 'job_title',
+                'job_title_en', 'current_job', 'nationality', 'children_count',
+                'date_of_birth', 'appointment_date',
+            )
+            for field in optional_fields:
+                value = request.data.get(field)
+                if value in (None, ''):
+                    continue
+                candidate = dict(submitted)
+                candidate[field] = value
+                candidate_serializer = EmployeeSerializer(
+                    data=candidate, context={'request': request},
+                )
+                if candidate_serializer.is_valid():
+                    submitted = candidate
+                else:
+                    skipped_optional.append(field)
         else:
             submitted = request.data
 
@@ -456,9 +477,13 @@ class EmployeeImportReviewViewSet(viewsets.ReadOnlyModelViewSet):
                     # review, even if the uploaded Excel is no longer available.
                     locked_review.employee_payload['_original_import_payload'] = original_review_payload
                     locked_review.warnings = list(locked_review.warnings or []) + [
-                        'أُضيف الموظف بالبيانات الأساسية فقط (الاسم، الهوية/الإقامة، المركز الصحي). '
-                        'بقية البيانات محفوظة في سجل المراجعة الأصلي ولم تُنقل إلى بيانات الموظف.'
+                        'تم إدراج الموظف بالحد الأدنى من البيانات مع الحقول الاختيارية الصالحة؛ '
+                        'بقية بيانات المصدر محفوظة بالمراجعة الأصلية للاستكمال.'
                     ]
+                    if skipped_optional:
+                        locked_review.warnings.append(
+                            'حقول لم تُنقل لعدم اجتياز التحقق: ' + ', '.join(skipped_optional)
+                        )
                 locked_review.status = 'activated'
                 locked_review.activated_employee = employee
                 locked_review.resolved_by = request.user
@@ -488,8 +513,9 @@ class EmployeeImportReviewViewSet(viewsets.ReadOnlyModelViewSet):
             'mode': 'basic_only' if basic_only else 'full',
             'review': EmployeeImportReviewSerializer(locked_review).data,
             'employee': EmployeeSerializer(employee, context={'request': request}).data,
-            'notice': ('أُضيف الموظف بالبيانات الأساسية فقط؛ الحقول الاختيارية '
-                       'محفوظة في سجل المراجعة للاستكمال لاحقًا.'
+            'skipped_optional_fields': skipped_optional,
+            'notice': ('أُضيف الموظف بالبيانات الأساسية والحقول الاختيارية الصالحة. '
+                       'القيم غير الصالحة محفوظة في سجل المراجعة للاستكمال لاحقًا.'
                        if basic_only else ''),
         })
 
