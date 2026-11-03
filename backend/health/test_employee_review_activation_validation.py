@@ -84,3 +84,87 @@ class EmployeeReviewActivationValidationTests(TestCase):
         self.review.refresh_from_db()
         self.assertEqual(self.review.status, 'activated')
         self.assertEqual(self.review.issues, [])
+
+    def test_available_data_activation_keeps_valid_fields_and_skips_only_bad_optional_values(self):
+        payload = self.payload(self.center.pk)
+        payload.update({
+            'basic_only': True, 'confirm_basic_only': True,
+            'nationality': 'ليست دولة',
+            'date_of_birth': '2035-01-01',
+            'appointment_date': '2019-04-01',
+            'email': 'invalid-email',
+            'employee_number': 'STAGING-QA-100',
+            'mobile': '966500000000',
+            'job_title': 'مسمى وظيفي اختباري',
+            'current_job': 'وظيفة اختبار',
+            'organization_unit': self.unit.pk,
+            'periodic_exam_status': 'completed',
+        })
+        result = self.client.post(self.url, payload, format='json')
+        self.assertEqual(result.status_code, 200, result.data)
+        self.assertEqual(result.data['mode'], 'basic_only')
+        self.assertEqual(set(result.data['skipped_optional_fields']),
+                         {'nationality', 'date_of_birth', 'email'})
+        employee = Employee.objects.get(national_id='9995771398')
+        self.assertEqual(employee.health_center_id, self.center.id)
+        self.assertEqual(employee.mobile, '966500000000')
+        self.assertEqual(employee.job_title, 'مسمى وظيفي اختباري')
+        self.assertEqual(employee.current_job, 'وظيفة اختبار')
+        self.assertEqual(employee.employee_number, 'STAGING-QA-100')
+        self.assertEqual(employee.appointment_date.isoformat(), '2019-04-01')
+        self.assertIsNone(employee.date_of_birth)
+        self.assertIsNone(employee.email)
+        self.assertEqual(employee.nationality, '')
+        self.assertIsNone(employee.organization_unit)
+        self.assertEqual(employee.periodic_exam_status, 'unknown')
+        self.review.refresh_from_db()
+        self.assertEqual(self.review.status, 'activated')
+        self.assertEqual(self.review.employee_payload['_original_import_payload']['nationality'], 'السعودية')
+        self.assertIn('حقول لم تُنقل', ' '.join(self.review.warnings))
+        from .models import AuditLog
+        self.assertTrue(AuditLog.objects.filter(
+            action='activate_employee_import_review_basic', record_id=str(self.review.pk),
+        ).exists())
+
+    def test_available_data_activation_requires_explicit_confirmation(self):
+        payload = self.payload(self.center.pk)
+        payload.update({'basic_only': True})
+        result = self.client.post(self.url, payload, format='json')
+        self.assertEqual(result.status_code, 400, result.data)
+        self.assertIn('confirm_basic_only', result.data)
+        self.assertEqual(Employee.objects.count(), 0)
+
+    def test_available_data_still_rejects_missing_center_and_duplicate_national_id(self):
+        payload = self.payload(0)
+        payload.update({'basic_only': True, 'confirm_basic_only': True})
+        self.assertEqual(self.client.post(self.url, payload, format='json').status_code, 400)
+        self.assertEqual(Employee.objects.count(), 0)
+        Employee.objects.create(
+            name='Original QA employee', national_id='9995771398',
+            health_center=self.center,
+        )
+        payload['health_center'] = self.center.pk
+        result = self.client.post(self.url, payload, format='json')
+        self.assertEqual(result.status_code, 400, result.data)
+        self.assertEqual(Employee.objects.count(), 1)
+        self.review.refresh_from_db()
+        self.assertEqual(self.review.status, 'pending')
+
+    def test_available_data_does_not_activate_review_twice(self):
+        payload = self.payload(self.center.pk)
+        payload.update({'basic_only': True, 'confirm_basic_only': True})
+        first = self.client.post(self.url, payload, format='json')
+        self.assertEqual(first.status_code, 200, first.data)
+        second = self.client.post(self.url, payload, format='json')
+        self.assertIn(second.status_code, [400, 404, 409], second.data)
+        self.assertEqual(Employee.objects.count(), 1)
+
+    def test_minimal_flag_cannot_be_bypassed_with_string_or_without_identity(self):
+        payload = self.payload(self.center.pk)
+        payload['basic_only'] = 'true'
+        payload['confirm_basic_only'] = True
+        self.assertEqual(self.client.post(self.url, payload, format='json').status_code, 400)
+        payload['basic_only'] = True
+        payload['national_id'] = ''
+        self.assertEqual(self.client.post(self.url, payload, format='json').status_code, 400)
+        self.assertEqual(Employee.objects.count(), 0)
