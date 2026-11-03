@@ -213,3 +213,17 @@ class StagingEmployeeBulkActivationTests(TestCase):
         self.assertIsNone(new_employee.email)
         self.assertEqual(new_employee.current_job, 'QA front desk')
         self.assertEqual(Employee.objects.count(), 2)
+
+    @patch.dict('os.environ', STAGING_ENV)
+    def test_signed_preview_cannot_be_used_by_another_superuser(self):
+        row = self.review(15)
+        preview = self.preview([row.pk])
+        User = get_user_model()
+        second = User.objects.create_superuser(
+            username='other_qa_superuser', email='other-qa-admin@example.invalid',
+            password='fake-qa-password',
+        )
+        self.client.force_authenticate(second)
+        response = self.commit(preview, [row.pk])
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(Employee.objects.count(), 0)
