@@ -109,6 +109,18 @@ type ImportReview = {
   } | null;
 };
 
+type BulkBlockedReason = { reason: string; label: string; count: number };
+type BulkReviewPreview = {
+  mode: 'preview'; selection: 'all' | 'selected';
+  selected_count: number; eligible_count: number; blocked_count: number;
+  eligible_ids: number[]; blocked_reasons: BulkBlockedReason[];
+  preview_token: string; batch_size: number;
+};
+type BulkCommitResult = {
+  mode: 'committed'; processed_count: number; created_count: number;
+  skipped_count: number; skipped_reasons: BulkBlockedReason[];
+};
+
 type HealthCenterOption = { id: number | string; name: string; name_ar?: string; code?: string; is_active?: boolean };
 
 type ReviewForm = {
@@ -295,6 +307,11 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
   const [activeReview, setActiveReview] = useState<ImportReview | null>(null);
   const [reviewForm, setReviewForm] = useState<ReviewForm>(EMPTY_REVIEW_FORM);
   const [reviewLoading, setReviewLoading] = useState(false);
+  const [selectedReviewIds, setSelectedReviewIds] = useState<number[]>([]);
+  const [bulkPreview, setBulkPreview] = useState<BulkReviewPreview | null>(null);
+  const [bulkAcknowledged, setBulkAcknowledged] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState({ processed: 0, created: 0, skipped: 0 });
   const [basicActivationConfirmOpen, setBasicActivationConfirmOpen] = useState(false);
   const [reviewCenterSource, setReviewCenterSource] = useState('');
   const [reviewNationalitySource, setReviewNationalitySource] = useState('');
@@ -332,6 +349,8 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
         collectPaged<HealthCenterOption>('/health-centers/'),
       ]);
       setReviews(allReviews);
+      setSelectedReviewIds(previous => previous.filter(id =>
+        allReviews.some(review => review.id === id)));
       setHealthCenters(allCenters);
     } catch {
       // The main import flow remains usable if review cards cannot be refreshed.
@@ -341,6 +360,98 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
   useEffect(() => {
     void loadReviews();
   }, [employeeMode]);
+
+  const previewBulkActivation = async (selection: 'all' | 'selected') => {
+    if (bulkBusy || !API_BASE_URL) return;
+    if (selection === 'selected' && !selectedReviewIds.length) {
+      toast.error(isRtl ? 'حدد بطاقة واحدة على الأقل.' : 'Select at least one card.');
+      return;
+    }
+    const token = getAccessToken();
+    if (!token) {
+      toast.error(isRtl ? 'انتهت جلسة الدخول؛ سجّل الدخول من جديد.' : 'Please sign in again.');
+      return;
+    }
+    setBulkBusy(true);
+    setBulkPreview(null);
+    setBulkAcknowledged(false);
+    setBulkProgress({ processed: 0, created: 0, skipped: 0 });
+    try {
+      const response = await authFetch(`${API_BASE_URL}/employee-import-reviews/bulk-activate/`, {
+        method: 'POST', headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          action: 'preview', selection,
+          ...(selection === 'selected' ? { review_ids: selectedReviewIds } : {}),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || 'تعذر معاينة تفعيل الموظفين');
+      setBulkPreview(data as BulkReviewPreview);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'تعذر معاينة التفعيل الجماعي');
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const confirmBulkActivation = async () => {
+    if (!bulkPreview || !bulkAcknowledged || bulkBusy || !bulkPreview.eligible_count) return;
+    const token = getAccessToken();
+    if (!token) {
+      toast.error('انتهت جلسة الدخول؛ سجّل الدخول من جديد.');
+      return;
+    }
+    setBulkBusy(true);
+    const ids = bulkPreview.eligible_ids;
+    const batchSize = Math.min(bulkPreview.batch_size, 100);
+    let processed = 0, created = 0, skipped = 0;
+    const failed: string[] = [];
+    try {
+      for (let index = 0; index < ids.length; index += batchSize) {
+        const chunk = ids.slice(index, index + batchSize);
+        const response = await authFetch(`${API_BASE_URL}/employee-import-reviews/bulk-activate/`, {
+          method: 'POST', headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            action: 'commit', confirmed: true, review_ids: chunk,
+            preview_token: bulkPreview.preview_token,
+          }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || 'تعذر تنفيذ دفعة من التفعيل');
+        const summary = data as BulkCommitResult;
+        processed += summary.processed_count;
+        created += summary.created_count;
+        skipped += summary.skipped_count;
+        failed.push(...summary.skipped_reasons.map(item => `${item.label}: ${item.count}`));
+        setBulkProgress({ processed, created, skipped });
+      }
+      toast.success(
+        isRtl
+          ? `اكتمل التفعيل الجماعي: أضيف ${created} موظفًا، وتخطى النظام ${skipped} من المؤهلين بعد إعادة التحقق.`
+          : `Bulk activation complete: ${created} added, ${skipped} skipped at final validation.`,
+        { duration: 10000 },
+      );
+      if (failed.length) toast.warning(failed.slice(0, 5).join('؛ '), { duration: 12000 });
+      setBulkPreview(null);
+      setSelectedReviewIds([]);
+    } catch (error) {
+      toast.error(
+        (error instanceof Error ? error.message : 'تعذر إكمال التفعيل') +
+        ` — تمت معالجة ${processed} من ${ids.length} سجلًا. أعد المعاينة قبل المتابعة.`,
+        { duration: 13000 },
+      );
+      setBulkPreview(null);
+    } finally {
+      await loadReviews();
+      setBulkBusy(false);
+    }
+  };
 
   const payloadText = (payload: Record<string, unknown>, key: string) => {
     const value = payload[key];
@@ -998,9 +1109,50 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
                 {isRtl ? 'لا تظهر في سجلات الموظفين الفعالة حتى تتم معالجة جميع الملاحظات.' : 'These records stay inactive until all issues are corrected.'}
               </Typography>
             </Box>
-            <Chip color={reviews.length ? 'warning' : 'success'} label={`${isRtl ? 'المعلقة' : 'Pending'}: ${reviews.length}`} />
+            <Stack direction="row" flexWrap="wrap" gap={1} alignItems="center">
+              <Chip color={reviews.length ? 'warning' : 'success'}
+                label={`${isRtl ? 'المعلقة المعروضة' : 'Shown pending'}: ${reviews.length}`} />
+              <Chip color={selectedReviewIds.length ? 'primary' : 'default'}
+                label={`${isRtl ? 'المحدد' : 'Selected'}: ${selectedReviewIds.length}`} />
+            </Stack>
           </Stack>
 
+          {reviews.length > 0 && <Paper variant="outlined" sx={{
+            p: 2, mb: 2.5, borderRadius: 3, borderColor: '#b9d3e2', bgcolor: '#f1f8fc',
+          }}>
+            <Stack direction={{ xs: 'column', lg: 'row' }} justifyContent="space-between" alignItems={{ lg: 'center' }} gap={1.5}>
+              <Stack direction="row" gap={1} flexWrap="wrap" alignItems="center">
+                <Button variant="outlined" size="small" disabled={bulkBusy}
+                  onClick={() => setSelectedReviewIds(reviews.map(review => review.id))}>
+                  {isRtl ? 'تحديد الكل' : 'Select all shown'}
+                </Button>
+                <Button variant="outlined" size="small" disabled={bulkBusy || !selectedReviewIds.length}
+                  onClick={() => setSelectedReviewIds([])}>
+                  {isRtl ? 'إلغاء التحديد' : 'Clear selection'}
+                </Button>
+                <Typography color="text.secondary" fontSize={13}>
+                  {isRtl ? `المحدد: ${selectedReviewIds.length}` : `Selected: ${selectedReviewIds.length}`}
+                </Typography>
+              </Stack>
+              <Stack direction={{ xs: 'column', sm: 'row' }} gap={1}>
+                <Button variant="outlined" color="primary" startIcon={<CheckCircleIcon />}
+                  disabled={bulkBusy || !selectedReviewIds.length}
+                  onClick={() => void previewBulkActivation('selected')}>
+                  {isRtl ? `تفعيل المحدد (${selectedReviewIds.length})` : `Activate selected (${selectedReviewIds.length})`}
+                </Button>
+                <Button variant="contained" color="success" startIcon={<CheckCircleIcon />}
+                  disabled={bulkBusy}
+                  onClick={() => void previewBulkActivation('all')}>
+                  {isRtl ? 'تفعيل جميع البطاقات المؤهلة' : 'Activate all eligible'}
+                </Button>
+              </Stack>
+            </Stack>
+            <Typography color="text.secondary" fontSize={13} sx={{ mt: 1 }}>
+              {isRtl
+                ? 'التفعيل الجماعي لا يبدأ إلا بعد المعاينة والتأكيد. لن تُقبل البطاقات ناقصة الاسم أو الهوية أو المركز، أو التي تحتوي على هوية مكررة.'
+                : 'A preview and explicit confirmation are required. Missing names, identities, centers, and duplicate IDs are excluded.'}
+            </Typography>
+          </Paper>}
           {!reviews.length ? (
             <Alert severity="success">{isRtl ? 'لا توجد حاليًا بطاقات موظفين معلقة للمراجعة.' : 'There are no pending employee review cards.'}</Alert>
           ) : (
@@ -1009,9 +1161,22 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
                 const payload = review.employee_payload || {};
                 return (
                   <Grid key={review.id} size={{ xs: 12, md: 6, xl: 4 }}>
-                    <Card sx={{ height: '100%', borderRadius: 4, border: '1px solid', borderColor: review.status === 'conflict' ? 'error.light' : 'warning.light' }}>
+                    <Card sx={{ height: '100%', borderRadius: 4, border: '1px solid',
+                      borderColor: selectedReviewIds.includes(review.id)
+                        ? 'primary.main' : review.status === 'conflict' ? 'error.light' : 'warning.light',
+                      boxShadow: selectedReviewIds.includes(review.id) ? '0 0 0 2px #c8e4fa' : undefined }}>
                       <CardContent>
                         <Stack spacing={1.5}>
+                          <FormControlLabel
+                            control={<Checkbox size="small"
+                              checked={selectedReviewIds.includes(review.id)}
+                              disabled={bulkBusy}
+                              onChange={(_, checked) => setSelectedReviewIds(current =>
+                                checked ? [...new Set([...current, review.id])] : current.filter(pk => pk !== review.id))}
+                              inputProps={{ 'aria-label': `تحديد بطاقة الموظف رقم ${review.id}` }} />}
+                            label={<Typography fontWeight={800} fontSize={13}>
+                              {isRtl ? 'تحديد للإضافة الجماعية' : 'Select for bulk activation'}
+                            </Typography>} />
                           <Stack direction={isRtl ? 'row-reverse' : 'row'} justifyContent="space-between" alignItems="center">
                             <Typography variant="h6" fontWeight={950}>{payloadText(payload, 'name') || (isRtl ? 'اسم غير مكتمل' : 'Incomplete name')}</Typography>
                             <Chip
@@ -1061,6 +1226,77 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
         </Box>
       )}
 
+      <Dialog open={Boolean(bulkPreview)}
+        onClose={() => !bulkBusy && setBulkPreview(null)}
+        fullWidth maxWidth="sm" dir={isRtl ? 'rtl' : 'ltr'}>
+        <DialogTitle sx={{ fontWeight: 900, color: '#153f64' }}>
+          {isRtl ? 'معاينة التفعيل الجماعي للموظفين' : 'Bulk employee activation preview'}
+        </DialogTitle>
+        <DialogContent dividers>
+          {bulkPreview && <Stack gap={2}>
+            <Alert severity="info">
+              {isRtl
+                ? 'توضح المعاينة العدد المؤهل فقط؛ لا يمكن إنشاء موظف دون اسم وهوية صحيحة ومركز صحي مطابق، ولا يمكن تجاوز منع التكرار.'
+                : 'Only eligible employees may be created. Valid name, ID, exact center and uniqueness are mandatory.'}
+            </Alert>
+            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 1 }}>
+              {[
+                [isRtl ? 'المحددة' : 'Selected', bulkPreview.selected_count],
+                [isRtl ? 'مؤهلة' : 'Eligible', bulkPreview.eligible_count],
+                [isRtl ? 'مستبعدة' : 'Excluded', bulkPreview.blocked_count],
+              ].map(([label, value]) =>
+                <Paper key={String(label)} variant="outlined" sx={{ p: 1.3, textAlign: 'center', borderRadius: 2 }}>
+                  <Typography fontSize={23} fontWeight={900}>{value}</Typography>
+                  <Typography fontSize={12} color="text.secondary">{label}</Typography>
+                </Paper>)}
+            </Box>
+            {bulkPreview.blocked_reasons.length > 0 && <Paper variant="outlined" sx={{
+              bgcolor: '#fff9ed', borderColor: '#edcf97', p: 2, borderRadius: 2,
+            }}>
+              <Typography fontWeight={900} sx={{ mb: 1 }}>
+                {isRtl ? 'أسباب الاستبعاد' : 'Reasons for exclusion'}
+              </Typography>
+              {bulkPreview.blocked_reasons.map(reason =>
+                <Typography key={reason.reason} variant="body2" sx={{ py: 0.3 }}>
+                  {reason.label}: {reason.count}
+                </Typography>)}
+            </Paper>}
+            {bulkBusy && <Box>
+              <LinearProgress variant="determinate"
+                value={bulkPreview.eligible_count
+                  ? bulkProgress.processed / bulkPreview.eligible_count * 100 : 0} />
+              <Typography color="text.secondary" fontSize={13} sx={{ mt: 0.8 }}>
+                تمت معالجة {bulkProgress.processed} من {bulkPreview.eligible_count} —
+                أُضيف {bulkProgress.created}، وتخطى {bulkProgress.skipped}.
+              </Typography>
+            </Box>}
+            <FormControlLabel
+              control={<Checkbox checked={bulkAcknowledged} disabled={bulkBusy || !bulkPreview.eligible_count}
+                onChange={(_, checked) => setBulkAcknowledged(checked)} />}
+              label={<Typography variant="body2" fontWeight={750}>
+                {isRtl
+                  ? 'راجعت الأعداد وأؤكد إضافة الموظفين المؤهلين بالبيانات المتاحة، مع إبقاء غير المؤهلين معلّقين.'
+                  : 'I reviewed the totals and confirm adding only eligible employees using available validated data.'}
+              </Typography>} />
+            <Alert severity="warning" sx={{ fontSize: 13 }}>
+              {isRtl
+                ? 'ستُنشأ سجلات جديدة في قاعدة Staging بعد التأكيد. لن يُنشأ أي موظف مكرر، ولن تُنقل بيانات صحية غير موثقة.'
+                : 'New Staging records are created only after confirmation. No duplicates or unverified clinical data will be added.'}
+            </Alert>
+          </Stack>}
+        </DialogContent>
+        <DialogActions sx={{ p: 2, gap: 1 }}>
+          <Button disabled={bulkBusy} onClick={() => setBulkPreview(null)}>
+            {isRtl ? 'إلغاء' : 'Cancel'}
+          </Button>
+          <Button variant="contained" color="success" disabled={bulkBusy || !bulkAcknowledged ||
+            !bulkPreview?.eligible_count}
+            onClick={() => void confirmBulkActivation()}>
+            {isRtl ? `تأكيد إضافة ${bulkPreview?.eligible_count || 0} موظف`
+              : `Confirm ${bulkPreview?.eligible_count || 0} employees`}
+          </Button>
+        </DialogActions>
+      </Dialog>
       <Dialog open={Boolean(activeReview)} onClose={() => !reviewLoading && setActiveReview(null)} fullWidth maxWidth="md" dir={isRtl ? 'rtl' : 'ltr'}>
         <DialogTitle fontWeight={950}>{isRtl ? 'معالجة ملاحظات الموظف وتفعيل البطاقة' : 'Correct Employee & Activate Card'}</DialogTitle>
         <DialogContent dividers>
