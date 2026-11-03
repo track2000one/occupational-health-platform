@@ -1,6 +1,7 @@
 import hashlib
 import json
 import re
+import unicodedata
 from datetime import datetime, date
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -10,6 +11,7 @@ from django.db import transaction
 from openpyxl import load_workbook
 from openpyxl.utils.datetime import from_excel
 
+from .employee_import_countries import resolve_import_nationality
 from .models import (
     CampaignCoverage,
     ClinicVisit,
@@ -49,7 +51,7 @@ HEADER_ALIASES = {
 EMPLOYEE_ROSTER_ALIASES = {
     'name': ['name', 'employee name', 'full name', 'staff name', 'اسم الموظف', 'الاسم', 'الاسم الكامل', 'الاسم الرباعي'],
     'email': ['email', 'email address', 'e-mail', 'البريد', 'البريد الإلكتروني', 'البريد الالكتروني'],
-    'national_id': ['national id', 'national_id', 'id number', 'civil id', 'رقم الهوية الوطنية', 'رقم الهوية', 'الهوية', 'السجل المدني', 'رقم السجل المدني'],
+    'national_id': ['national id', 'national_id', 'id number', 'civil id', 'national id / iqama', 'رقم الهوية الوطنية', 'رقم الهوية / الإقامة', 'رقم الهوية / الاقامة', 'رقم الهوية/الإقامة', 'رقم الهوية', 'الهوية', 'السجل المدني', 'رقم السجل المدني'],
     'employee_number': ['employee number', 'employee no', 'employee id', 'staff id', 'staff number', 'الرقم الوظيفي', 'رقم الموظف', 'رقم المنسوب'],
     'national_address': ['national address', 'address', 'العنوان الوطني', 'العنوان'],
     'mobile': ['mobile', 'mobile number', 'mobile no', 'phone', 'phone number', 'رقم الجوال', 'الجوال', 'رقم الهاتف', 'الهاتف'],
@@ -64,13 +66,13 @@ EMPLOYEE_ROSTER_ALIASES = {
     'vaccination_status': ['vaccination status', 'حالة التطعيم'],
     'risk_level': ['risk level', 'مستوى الخطورة'],
     'organization_unit_code': ['organization unit code', 'org unit code', 'رمز الوحدة التنظيمية', 'رمز الجهة التنظيمية'],
+    'nationality': ['nationality', 'country', 'citizenship', 'الجنسية', 'الدولة', 'بلد الجنسية'],
+    'current_job': ['current job', 'current position', 'current role', 'الوظيفة الحالية', 'الوظيفة المشغولة حاليا'],
+    'job_title_en': ['job title english', 'job title en', 'english job title', 'المسمى الوظيفي بالإنجليزية', 'المسمى الوظيفي بالانجليزية'],
+    'children_count': ['number of children', 'children count', '# of child', 'عدد الأطفال', 'عدد الابناء'],
 }
 
-EMPLOYEE_REQUIRED_FIELDS = (
-    'name', 'email', 'national_id', 'employee_number', 'national_address', 'mobile',
-    'date_of_birth', 'birth_place', 'gender', 'marital_status', 'health_center',
-    'job_title', 'appointment_date',
-)
+EMPLOYEE_REQUIRED_FIELDS = ('name', 'national_id', 'health_center')
 
 EMPLOYEE_CHOICE_MAPS = {
     'gender': {
@@ -470,10 +472,19 @@ def import_employee_roster_sheet(
     if missing_columns and not flexible:
         raise ValueError(f"Missing required employee columns: {', '.join(missing_columns)}")
 
-    centers_by_name = {
-        normalize_header(center.name): center
-        for center in HealthCenter.objects.filter(is_active=True)
-    }
+    centers_by_name = {}
+    ambiguous_center_names = set()
+    for option in HealthCenter.objects.filter(is_active=True):
+        for label in (option.name, option.name_ar):
+            alias = normalize_header(label)
+            if not alias:
+                continue
+            if alias in centers_by_name and centers_by_name[alias].pk != option.pk:
+                ambiguous_center_names.add(alias)
+            else:
+                centers_by_name[alias] = option
+    for alias in ambiguous_center_names:
+        centers_by_name.pop(alias, None)
     # Organizational references are optional and must already be formally approved.
     approved_org_units = {
         unit.code: unit for unit in OrganizationUnit.objects.filter(
@@ -512,7 +523,7 @@ def import_employee_roster_sheet(
                 raise ValueError('Selected health center is not active or does not exist.')
             raw['health_center'] = corrected_center.name
         raw['email'] = raw['email'].strip().lower()
-        raw['national_id'] = ''.join(ch for ch in raw['national_id'] if ch.isdigit())
+        raw['national_id'] = ''.join(str(unicodedata.digit(ch)) for ch in raw['national_id'] if ch.isdecimal())
         raw['employee_number'] = raw['employee_number'].strip()
         raw['mobile'] = ''.join(ch for ch in raw['mobile'] if ch.isdigit() or ch == '+')
         row_errors: List[str] = []
@@ -520,10 +531,11 @@ def import_employee_roster_sheet(
         for field in EMPLOYEE_REQUIRED_FIELDS:
             if not raw.get(field):
                 row_errors.append(f'Missing required field: {field}.')
-        try:
-            validate_email(raw['email'])
-        except DjangoValidationError:
-            row_errors.append('Invalid email address.')
+        if raw['email']:
+            try:
+                validate_email(raw['email'])
+            except DjangoValidationError:
+                row_errors.append('Invalid email address.')
         if raw['national_id'] and len(raw['national_id']) != 10:
             row_errors.append('National ID must contain exactly 10 digits.')
         mobile_digits = ''.join(ch for ch in raw['mobile'] if ch.isdigit())
@@ -545,9 +557,24 @@ def import_employee_roster_sheet(
 
         gender = employee_choice('gender', raw['gender'])
         marital_status = employee_choice('marital_status', raw['marital_status'])
-        periodic_exam_status = employee_choice('periodic_exam_status', raw['periodic_exam_status'], 'incomplete')
-        vaccination_status = employee_choice('vaccination_status', raw['vaccination_status'], 'due')
-        risk_level = employee_choice('risk_level', raw['risk_level'], 'low')
+        # No clinical assessment is inferred from the basic employee roster.
+        periodic_exam_status = employee_choice('periodic_exam_status', raw['periodic_exam_status'], 'unknown')
+        vaccination_status = employee_choice('vaccination_status', raw['vaccination_status'], 'unknown')
+        risk_level = employee_choice('risk_level', raw['risk_level'], 'unknown')
+        nationality = resolve_import_nationality(raw.get('nationality', ''))
+        if raw.get('nationality') and not nationality:
+            row_errors.append('Invalid nationality. Choose a country from the template or use a two-letter ISO code.')
+        children_text = raw.get('children_count', '').strip()
+        children_count = None
+        if children_text:
+            try:
+                children_count = int(children_text)
+                if not 0 <= children_count <= 100:
+                    raise ValueError()
+            except ValueError:
+                row_errors.append('Children count must be a whole number between 0 and 100.')
+        if len(raw.get('job_title_en', '')) > 150 or len(raw.get('current_job', '')) > 200:
+            row_errors.append('Job title or current job exceeds the allowed length.')
         if raw['gender'] and not gender:
             row_errors.append('Invalid gender. Use male/female or ذكر/أنثى.')
         if raw['marital_status'] and not marital_status:
@@ -560,8 +587,11 @@ def import_employee_roster_sheet(
             if raw[field] and not parsed:
                 row_errors.append(f'Invalid value for {field}.')
 
-        center = centers_by_name.get(normalize_header(raw['health_center']))
-        if raw['health_center'] and not center:
+        center_key = normalize_header(raw['health_center'])
+        center = centers_by_name.get(center_key)
+        if center_key in ambiguous_center_names:
+            row_errors.append('More than one active center has this name. Select a center manually.')
+        elif raw['health_center'] and not center:
             row_errors.append('Health center does not match an active center in the platform.')
         org_code = raw.get('organization_unit_code', '').strip()
         org_unit = approved_org_units.get(org_code) if org_code else None
@@ -577,15 +607,15 @@ def import_employee_roster_sheet(
         duplicate_reasons: List[str] = []
         if raw['national_id'] in seen_ids:
             duplicate_reasons.append('National ID is duplicated inside the file.')
-        if raw['email'] in seen_emails:
+        if raw['email'] and raw['email'] in seen_emails:
             duplicate_reasons.append('Email is duplicated inside the file.')
-        if raw['employee_number'] in seen_numbers:
+        if raw['employee_number'] and raw['employee_number'] in seen_numbers:
             duplicate_reasons.append('Employee number is duplicated inside the file.')
         if raw['national_id'] in existing_id_map:
             duplicate_reasons.append('National ID already exists in PostgreSQL.')
-        if raw['email'] in existing_email_map:
+        if raw['email'] and raw['email'] in existing_email_map:
             duplicate_reasons.append('Email already exists in PostgreSQL.')
-        if raw['employee_number'] in existing_number_map:
+        if raw['employee_number'] and raw['employee_number'] in existing_number_map:
             duplicate_reasons.append('Employee number already exists in PostgreSQL.')
 
         review_payload = {
@@ -594,6 +624,10 @@ def import_employee_roster_sheet(
             'national_id': raw['national_id'],
             'employee_number': raw['employee_number'],
             'national_address': raw['national_address'],
+            'nationality': nationality or '',
+            'current_job': raw['current_job'],
+            'job_title_en': raw['job_title_en'],
+            'children_count': children_count,
             'mobile': raw['mobile'],
             'date_of_birth': date_of_birth.isoformat() if date_of_birth else '',
             'birth_place': raw['birth_place'],
@@ -656,9 +690,9 @@ def import_employee_roster_sheet(
 
         payload = {
             'name': raw['name'],
-            'email': raw['email'],
+            'email': raw['email'] or None,
             'national_id': raw['national_id'],
-            'employee_number': raw['employee_number'],
+            'employee_number': raw['employee_number'] or None,
             'national_address': raw['national_address'],
             'mobile': raw['mobile'],
             'date_of_birth': date_of_birth,
@@ -667,17 +701,24 @@ def import_employee_roster_sheet(
             'marital_status': marital_status,
             'health_center': center.name if center else '',
             'job_title': raw['job_title'],
+            'job_title_en': raw['job_title_en'],
+            'nationality': nationality or '',
+            'current_job': raw['current_job'],
             'appointment_date': appointment_date,
             'periodic_exam_status': periodic_exam_status,
             'vaccination_status': vaccination_status,
             'risk_level': risk_level,
             '_center': center,
             '_organization_unit': org_unit,
+            '_children_count': children_count,
         }
         valid_payloads.append(payload)
-        seen_ids.add(raw['national_id'])
-        seen_emails.add(raw['email'])
-        seen_numbers.add(raw['employee_number'])
+        if raw['national_id']:
+            seen_ids.add(raw['national_id'])
+        if raw['email']:
+            seen_emails.add(raw['email'])
+        if raw['employee_number']:
+            seen_numbers.add(raw['employee_number'])
         if len(preview_rows) < 20:
             preview_rows.append({'row': row_number, **masked_preview(payload)})
 
@@ -698,9 +739,15 @@ def import_employee_roster_sheet(
             for payload in valid_payloads:
                 employee_values = {
                     key: value for key, value in payload.items()
-                    if key not in {'health_center', '_center', '_organization_unit'}
+                    if key not in {'health_center', '_center', '_organization_unit', '_children_count'}
                 }
-                Employee.objects.create(health_center=payload['_center'], organization_unit=payload['_organization_unit'], **employee_values)
+                employee = Employee.objects.create(
+                    health_center=payload['_center'], organization_unit=payload['_organization_unit'], **employee_values,
+                )
+                if payload['_children_count'] is not None:
+                    EmployeeHealthProfile.objects.update_or_create(
+                        employee=employee, defaults={'children_count': payload['_children_count']},
+                    )
                 summary['imported_employees'] += 1
             for candidate in review_candidates:
                 fingerprint = review_fingerprint(
