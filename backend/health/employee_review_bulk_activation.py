@@ -225,6 +225,7 @@ class StagingEmployeeReviewBulkActivationView(APIView):
             token = signing.dumps({
                 'ids': {str(pk): record for pk, record in eligible.items()},
                 'selection': selection,
+                'owner_user_id': request.user.pk,
             }, salt=TOKEN_SALT, compress=True)
             return Response({
                 'mode': 'preview', 'selection': selection,
@@ -248,8 +249,9 @@ class StagingEmployeeReviewBulkActivationView(APIView):
         except (signing.BadSignature, signing.SignatureExpired, TypeError, ValueError):
             return Response({'detail': 'The preview token is invalid or expired. Preview again.'},
                             status=409)
-        if not isinstance(signed, dict) or not isinstance(signed.get('ids'), dict):
-            return Response({'detail': 'Invalid preview data.'}, status=409)
+        if (not isinstance(signed, dict) or not isinstance(signed.get('ids'), dict)
+                or signed.get('owner_user_id') != request.user.pk):
+            return Response({'detail': 'Invalid preview data or wrong administrator.'}, status=409)
         all_eligible = signed['ids']
         batch_ids = request.data.get('review_ids')
         if (not isinstance(batch_ids, list) or not batch_ids
