@@ -98,10 +98,12 @@ def linked_employee_ids(ids):
 
 def make_snapshot(scope):
     verified = verified_candidates(scope)
-    marked = Employee.objects.filter(
+    marked_records = list(Employee.objects.select_related('health_center').filter(
         Q(employee_number__startswith='OHP-LOAD-') |
         Q(employee_number__startswith='OHP-QA-')
-    ).count()
+    ))
+    marked = len(marked_records)
+    invalid_marker_count = sum(not is_verified_synthetic(item) for item in marked_records)
     total = Employee.objects.count()
     ids = [employee.pk for employee in verified]
     protected = linked_employee_ids(ids)
@@ -126,12 +128,7 @@ def make_snapshot(scope):
         'eligible_load_count': category['load'],
         'eligible_example_count': category['examples'],
         'excluded_with_related_records': len(protected),
-        'excluded_unverified_markers': marked - (len(verified) if scope == 'all_synthetic'
-                                                  else sum(is_verified_synthetic(e) for e in
-                                                           Employee.objects.select_related('health_center').filter(
-                                                               Q(employee_number__startswith='OHP-LOAD-') |
-                                                               Q(employee_number__startswith='OHP-QA-')
-                                                           ))),
+        'excluded_unverified_markers': invalid_marker_count,
         'other_records_to_keep': total - len(eligible),
         'eligible_ids': [employee.pk for employee in eligible],
         'fingerprint': digest,
