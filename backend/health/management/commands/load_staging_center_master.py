@@ -103,7 +103,7 @@ class Command(BaseCommand):
         with transaction.atomic():
             units = {
                 row.code: row for row in OrganizationUnit.objects
-                .select_for_update().select_related('parent', 'health_center')
+                .select_for_update()
                 .filter(code__in=[entry['code'] for entry in records])
             }
             if len(units) != len(records):
