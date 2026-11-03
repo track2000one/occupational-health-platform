@@ -2,6 +2,7 @@ from django.urls import path
 from .organization_structure import OrganizationDirectoryView, OrganizationImportView, OrganizationUnitReviewView
 from .organization_bulk_approval import OrganizationBulkApprovalView
 from .employee_roster_template import EmployeeRosterTemplateView
+from .staging_employee_reset import StagingEmployeeCardResetView
 from .workforce_preview import WorkforceRosterPreviewView, WorkforceCenterMappingView
 from .temporary_workforce import TemporaryWorkforceView
 from .workforce_import import WorkforceImportPlanView, WorkforceImportApproveView, WorkforceImportCommitView
@@ -24,6 +25,7 @@ router.register('audit-logs', AuditLogViewSet)
 
 urlpatterns = [
     path('employee-roster-template/', EmployeeRosterTemplateView.as_view(), name='employee-roster-template'),
+    path('staging-employee-card-reset/', StagingEmployeeCardResetView.as_view(), name='staging-employee-card-reset'),
     path('organization-units/', OrganizationDirectoryView.as_view(), name='organization-units'),
     path('organization-units/import/', OrganizationImportView.as_view(), name='organization-units-import'),
     path('organization-units/bulk-approval/', OrganizationBulkApprovalView.as_view(), name='organization-units-bulk-approval'),
