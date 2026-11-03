@@ -164,7 +164,7 @@ def make_template():
         if count <= 0:
             return
         safe_sheet = "'قوائم الاختيار'"
-        formula = f'{safe_sheet}!${source_col}$2:${source_col}${count+1}'
+        formula = f'INDIRECT("{safe_sheet}!${source_col}$2:${source_col}${count+1}")'
         validation = DataValidation(type='list', formula1=formula, allow_blank=True)
         validation.errorTitle = 'قيمة غير موجودة في القائمة'
         validation.error = 'اختر قيمة من قائمة الاختيار المعتمدة.'
