@@ -11,12 +11,12 @@ if [ "${STAGING_MODE:-false}" = "true" ]; then
   python manage.py purge_temporary_workforce
 fi
 
-if [ "${STAGING_MODE:-false}" = "true" ] && [ "${SEED_STAGING_SYNTHETIC:-false}" = "true" ]; then
+if [ "${STAGING_MODE:-false}" = "true" ] && [ "${OHP_ALLOW_AUTOMATIC_QA_SEED:-false}" = "true" ] && [ "${SEED_STAGING_SYNTHETIC:-false}" = "true" ]; then
   echo "[start] Seeding synthetic-only staging employees..."
   python manage.py seed_staging_synthetic
 fi
 
-if [ "${STAGING_MODE:-false}" = "true" ] && [ "${SEED_STAGING_LOAD_DATA:-false}" = "true" ]; then
+if [ "${STAGING_MODE:-false}" = "true" ] && [ "${OHP_ALLOW_AUTOMATIC_QA_SEED:-false}" = "true" ] && [ "${SEED_STAGING_LOAD_DATA:-false}" = "true" ]; then
   echo "[start] Creating isolated, synthetic workforce load-test dataset..."
   python manage.py seed_staging_load
 fi
