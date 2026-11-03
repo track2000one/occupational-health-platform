@@ -295,6 +295,7 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
   const [activeReview, setActiveReview] = useState<ImportReview | null>(null);
   const [reviewForm, setReviewForm] = useState<ReviewForm>(EMPTY_REVIEW_FORM);
   const [reviewLoading, setReviewLoading] = useState(false);
+  const [basicActivationConfirmOpen, setBasicActivationConfirmOpen] = useState(false);
   const [reviewCenterSource, setReviewCenterSource] = useState('');
   const [reviewNationalitySource, setReviewNationalitySource] = useState('');
   const [reviewValidationError, setReviewValidationError] = useState('');
@@ -384,7 +385,7 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
     setReviewForm(current => ({ ...current, [field]: value }));
   };
 
-  const activateReview = async () => {
+  const activateReview = async (basicOnly = false) => {
     if (!activeReview) return;
     setReviewValidationError('');
     const matchedCenter = healthCenters.find(center =>
@@ -398,7 +399,7 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
       setReviewValidationError('اسم الموظف ورقم الهوية أو الإقامة حقول إلزامية.');
       return;
     }
-    if (reviewForm.nationality &&
+    if (!basicOnly && reviewForm.nationality &&
         !REVIEW_NATIONALITIES.some(country => country.code === reviewForm.nationality)) {
       setReviewValidationError('اختر الجنسية من قائمة الدول أو اتركها غير محددة.');
       return;
@@ -406,7 +407,9 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
     const token = getAccessToken();
     if (!token) return;
     setReviewLoading(true);
-    const loadingToast = toast.loading(isRtl ? 'جاري التحقق وتفعيل الموظف...' : 'Validating and activating employee...');
+    const loadingToast = toast.loading(basicOnly
+      ? (isRtl ? 'جارٍ إضافة الموظف بالبيانات المتاحة...' : 'Saving available employee data...')
+      : (isRtl ? 'جاري التحقق وتفعيل الموظف...' : 'Validating and activating employee...'));
     try {
       const response = await authFetch(`${API_BASE_URL}/employee-import-reviews/${activeReview.id}/activate/`, {
         method: 'POST',
@@ -417,6 +420,8 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
           children_count: reviewForm.children_count ? Number(reviewForm.children_count) : null,
           nationality: reviewForm.nationality,
           health_center: Number(matchedCenter.id),
+          basic_only: basicOnly,
+          confirm_basic_only: basicOnly,
         }),
       });
       const body = await response.json().catch(() => ({}));
@@ -425,7 +430,15 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
         setReviewValidationError(String(detail || 'تعذر تفعيل البطاقة. راجع البيانات المدخلة.'));
         throw new Error(detail || 'Activation failed');
       }
-      toast.success(isRtl ? 'تم تصحيح الموظف وتفعيل بطاقته' : 'Employee corrected and activated', { id: loadingToast });
+      const omitted = Array.isArray(body.skipped_optional_fields)
+        ? (body.skipped_optional_fields as string[]) : [];
+      toast.success(basicOnly
+        ? (isRtl
+          ? `أُضيف الموظف بالبيانات المتاحة. ${omitted.length ? `${omitted.length} حقل اختياري يحتاج مراجعة.` : 'لم تُستبعد حقول غير صالحة.'}`
+          : 'Employee added using verified available fields.')
+        : (isRtl ? 'تم تصحيح الموظف وتفعيل بطاقته' : 'Employee corrected and activated'),
+      { id: loadingToast, duration: basicOnly ? 8000 : 4500 });
+      setBasicActivationConfirmOpen(false);
       setActiveReview(null);
       await loadReviews();
     } catch (error) {
@@ -1139,10 +1152,45 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setActiveReview(null)} disabled={reviewLoading}>{isRtl ? 'إلغاء' : 'Cancel'}</Button>
+          <Button variant="outlined" color="warning"
+            onClick={() => setBasicActivationConfirmOpen(true)}
+            disabled={reviewLoading || !reviewForm.health_center || !reviewForm.name.trim() || !reviewForm.national_id.trim()}>
+            {isRtl ? 'إضافة الموظف بالبيانات المتاحة' : 'Add using available data'}
+          </Button>
           <Button variant="contained" color="success" onClick={() => void activateReview()}
             disabled={reviewLoading || !reviewForm.health_center || !reviewForm.name.trim() || !reviewForm.national_id.trim()}
             startIcon={<CheckCircleIcon />}>
-            {reviewLoading ? (isRtl ? 'جاري التحقق...' : 'Validating...') : (isRtl ? 'حفظ التصحيح وتفعيل البطاقة' : 'Save & Activate Card')}
+            {reviewLoading ? (isRtl ? 'جاري التحقق...' : 'Validating...') : (isRtl ? 'حفظ جميع البيانات وتفعيل البطاقة' : 'Save All Valid Details & Activate')}
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog open={basicActivationConfirmOpen && Boolean(activeReview)}
+        onClose={() => !reviewLoading && setBasicActivationConfirmOpen(false)}
+        maxWidth="sm" fullWidth dir={isRtl ? 'rtl' : 'ltr'}>
+        <DialogTitle fontWeight={900}>
+          {isRtl ? 'تأكيد إضافة الموظف بالبيانات المتاحة' : 'Confirm available-data activation'}
+        </DialogTitle>
+        <DialogContent dividers>
+          <Stack gap={1.5}>
+            <Alert severity="warning">
+              {isRtl
+                ? 'سيُضاف الموظف بالاسم ورقم الهوية أو الإقامة والمركز الصحي، مع حفظ كل حقل اختياري صالح. ستُستبعد فقط القيم غير الصحيحة، وتبقى تفاصيلها في سجل المراجعة الأصلي لاستكمالها لاحقًا.'
+                : 'The employee will be added with name, ID and a confirmed center, plus any valid optional fields. Invalid optional values are skipped and retained in the original review for later correction.'}
+            </Alert>
+            <Typography fontSize={14} color="text.secondary">
+              {isRtl
+                ? 'لن تُقبل هوية مكررة أو مركز غير محدد. ولن يُعتمد ربط تنظيمي غير موثق أو تُنشأ بيانات صحية افتراضية.'
+                : 'Duplicate identities, missing centers, unapproved organizational assignments and fabricated medical information are never allowed.'}
+            </Typography>
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 2, py: 2, gap: 1 }}>
+          <Button disabled={reviewLoading} onClick={() => setBasicActivationConfirmOpen(false)}>
+            {isRtl ? 'إلغاء' : 'Cancel'}
+          </Button>
+          <Button variant="contained" color="warning" disabled={reviewLoading}
+            onClick={() => void activateReview(true)}>
+            {isRtl ? 'تأكيد إضافة الموظف' : 'Confirm employee activation'}
           </Button>
         </DialogActions>
       </Dialog>
