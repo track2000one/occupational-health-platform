@@ -35,7 +35,7 @@ def normalized_name(value):
     # Accept only explicit generic "health center" title variants as aliases.
     # Exact place names remain distinct: بدر != بدر الغربي.
     val = re.sub(r'^(?:مركز صحي|المركز الصحي|مركز)\s+', '', val)
-    return re.sub(r'\s+الصحي
+    return re.sub(r'\s+الصحي$', '', val).strip()
 
 
 def parse_source(payload, fingerprint):
