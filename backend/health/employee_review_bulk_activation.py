@@ -278,6 +278,15 @@ class StagingEmployeeReviewBulkActivationView(APIView):
                         reasons['missing_center'] += 1
                         skipped += 1
                         continue
+                    # Health-center names and aliases might change between
+                    # preview and commit. Re-evaluate to avoid misassignment.
+                    live_center_id, live_reason = determine_center(
+                        review.employee_payload or {}, *center_index(),
+                    )
+                    if live_reason or live_center_id != center_id:
+                        reasons['record_changed'] += 1
+                        skipped += 1
+                        continue
                     submitted, omitted = optional_employee_data(review, center_id)
                     serializer = EmployeeSerializer(data=submitted, context={'request': request})
                     if not serializer.is_valid():
