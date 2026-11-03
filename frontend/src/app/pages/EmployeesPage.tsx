@@ -7,11 +7,13 @@ import {
   Box,
   Button,
   Chip,
+  Checkbox,
   CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormControlLabel,
   InputAdornment,
   MenuItem,
   Paper,
@@ -37,6 +39,7 @@ import {
   UploadFile as UploadFileIcon,
   Visibility as VisibilityIcon,
   BadgeOutlined as HealthCardIcon,
+  DeleteSweepOutlined as ResetTestCardsIcon,
 } from '@mui/icons-material';
 import { toast } from 'sonner';
 import { authFetch, getAccessToken, useAuth } from '../context/AuthContext';
@@ -51,14 +54,26 @@ import {
   joinedPrecedesOrEqualsBirth,
 } from '../utils/employeeFormValidation';
 
-const PRODUCTION_API_BASE_URL = 'https://occupational-health-platform-production.up.railway.app/api';
-const LOCAL_API_BASE_URL = 'http://localhost:8000/api';
-const API_BASE_URL = (
-  import.meta.env.VITE_API_URL ||
+// A Staging write must never fall back to the Production API.
+const API_BASE_URL = (import.meta.env.VITE_API_URL ||
   (typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
-    ? LOCAL_API_BASE_URL
-    : PRODUCTION_API_BASE_URL)
-).replace(/\/$/, '');
+    ? 'http://localhost:8000/api' : '')).replace(/\/$/, '');
+const IS_STAGING_UI = typeof window !== 'undefined' &&
+  (/staging/i.test(window.location.hostname) ||
+  ['localhost', '127.0.0.1'].includes(window.location.hostname));
+
+type ResetScope = 'all_synthetic' | 'load_only' | 'examples_only';
+type ResetPreview = {
+  mode: 'preview'; scope: ResetScope; total_employees: number;
+  marked_test_records: number; verified_test_records: number;
+  eligible_count: number; eligible_load_count: number; eligible_example_count: number;
+  excluded_with_related_records: number; excluded_unverified_markers: number;
+  other_records_to_keep: number; preview_token: string;
+};
+type ResetResult = {
+  mode: 'reset'; deleted_test_cards: number; remaining_employee_cards: number; notice: string;
+};
+const RESET_CONFIRMATION_TEXT = 'تصفير بطاقات الاختبار';
 
 type Gender = 'male' | 'female';
 type MaritalStatus = '' | 'single' | 'married' | 'divorced' | 'widowed';
@@ -262,6 +277,7 @@ async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T
     throw new Error('لا يوجد رمز دخول من Django. أعد تسجيل الدخول بحساب Backend وليس الحساب التجريبي.');
   }
 
+  if (!API_BASE_URL) throw new Error('الاتصال بقاعدة بيانات Staging غير مضبوط. تم إيقاف العملية لحماية Production.');
   const response = await authFetch(`${API_BASE_URL}${path}`, {
     ...options,
     headers: {
@@ -307,6 +323,12 @@ export function EmployeesPage() {
   const [selectedEmployee, setSelectedEmployee] = useState<ApiEmployee | null>(null);
   const [form, setForm] = useState<EmployeeForm>(EMPTY_FORM);
   const [connectionError, setConnectionError] = useState('');
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const [resetScope, setResetScope] = useState<ResetScope>('all_synthetic');
+  const [resetPreview, setResetPreview] = useState<ResetPreview | null>(null);
+  const [resetConfirmation, setResetConfirmation] = useState('');
+  const [resetAcknowledged, setResetAcknowledged] = useState(false);
+  const [resetBusy, setResetBusy] = useState(false);
 
   const canWrite = can(PERMISSIONS.UPDATE_EMPLOYEE) || can(PERMISSIONS.UPDATE_EMPLOYEE_BASIC);
   const ageValue = calculateAgeFromIso(form.date_of_birth);
@@ -503,6 +525,56 @@ export function EmployeesPage() {
     }
   }
 
+  async function prepareTestCardReset(scope: ResetScope = resetScope) {
+    setResetBusy(true);
+    setResetScope(scope);
+    setResetPreview(null);
+    setResetConfirmation('');
+    setResetAcknowledged(false);
+    try {
+      const preview = await apiRequest<ResetPreview>('/staging-employee-card-reset/', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'preview', scope }),
+      });
+      setResetPreview(preview);
+      setResetDialogOpen(true);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'تعذر معاينة بطاقات الاختبار');
+    } finally {
+      setResetBusy(false);
+    }
+  }
+
+  async function confirmTestCardReset() {
+    if (!resetPreview || resetConfirmation !== RESET_CONFIRMATION_TEXT ||
+        !resetAcknowledged || resetBusy) return;
+    setResetBusy(true);
+    try {
+      const result = await apiRequest<ResetResult>('/staging-employee-card-reset/', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'reset', scope: resetPreview.scope,
+          preview_token: resetPreview.preview_token,
+          confirm_text: resetConfirmation,
+          acknowledge_irreversible: true,
+        }),
+      });
+      setResetDialogOpen(false);
+      setResetPreview(null);
+      setResetConfirmation('');
+      setResetAcknowledged(false);
+      setPage(0);
+      await loadData();
+      toast.success(`تم تصفير ${result.deleted_test_cards} بطاقة اختبار. السجلات المتبقية: ${result.remaining_employee_cards}.`);
+    } catch (error) {
+      setResetPreview(null);
+      toast.error((error instanceof Error ? error.message : 'تعذر التصفير') +
+        ' — أعد معاينة البيانات قبل إعادة المحاولة.');
+    } finally {
+      setResetBusy(false);
+    }
+  }
+
   const activeOnPage = employees.filter(emp => emp.employment_status === 'active').length;
   const sourceOtherOnPage = employees.filter(emp =>
     Boolean(emp.roster_source_status) && emp.roster_source_status !== 'تعيين نشط'
@@ -538,6 +610,12 @@ export function EmployeesPage() {
           {can(PERMISSIONS.MANAGE_USERS) && (
             <Button variant="outlined" startIcon={<UploadFileIcon />} onClick={() => navigate('/employees/import')}>
               {isRtl ? 'استيراد Excel' : 'Import Excel'}
+            </Button>
+          )}
+          {IS_STAGING_UI && can(PERMISSIONS.MANAGE_USERS) && (
+            <Button variant="outlined" color="error" startIcon={<ResetTestCardsIcon />}
+              disabled={resetBusy} onClick={() => void prepareTestCardReset('all_synthetic')}>
+              {isRtl ? 'تصفير بطاقات الاختبار' : 'Clear QA test cards'}
             </Button>
           )}
           {can(PERMISSIONS.CREATE_EMPLOYEE) && (
@@ -758,6 +836,80 @@ export function EmployeesPage() {
         </>
       )}
 
+      <Dialog open={resetDialogOpen} onClose={() => !resetBusy && setResetDialogOpen(false)} maxWidth="sm" fullWidth
+        PaperProps={{ sx: { borderRadius: 3 } }}>
+        <DialogTitle sx={{ fontSize: 20, fontWeight: 900, color: '#802c26' }}>
+          {isRtl ? 'تصفير بطاقات الموظفين التجريبية' : 'Reset synthetic employee test cards'}
+        </DialogTitle>
+        <DialogContent dividers>
+          <Stack gap={2}>
+            <Alert severity="warning" sx={{ fontWeight: 650 }}>
+              يقتصر الإجراء على بيانات الاختبار الاصطناعية المؤكدة في Staging فقط.
+              لا يشمل سجلات الموظفين الفعلية، أو السجلات التي لديها ملفات صحية أو تاريخ وظيفي مرتبط.
+              الحذف نهائي بعد التأكيد.
+            </Alert>
+            <TextField select fullWidth label="نطاق التصفير" value={resetScope}
+              disabled={resetBusy}
+              onChange={event => {
+                const next = event.target.value as ResetScope;
+                setResetScope(next);
+                setResetPreview(null);
+                setResetAcknowledged(false);
+                setResetConfirmation('');
+              }}>
+              <MenuItem value="all_synthetic">جميع البطاقات التجريبية المؤكدة</MenuItem>
+              <MenuItem value="load_only">بطاقات اختبارات التحميل OHP-LOAD فقط</MenuItem>
+              <MenuItem value="examples_only">بطاقات الاختبار الأساسية OHP-QA فقط</MenuItem>
+            </TextField>
+            <Button variant="outlined" disabled={resetBusy} onClick={() => void prepareTestCardReset(resetScope)}>
+              معاينة العدد قبل التصفير
+            </Button>
+            {resetPreview && <>
+              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 1.3 }}>
+                {[
+                  ['إجمالي بطاقات الموظفين', resetPreview.total_employees],
+                  ['بطاقات مؤهلة للتصفير', resetPreview.eligible_count],
+                  ['مستبعدة لوجود سجلات مرتبطة', resetPreview.excluded_with_related_records],
+                  ['ستبقى محفوظة بعد التصفير', resetPreview.other_records_to_keep],
+                ].map(([label, value]) => <Paper key={String(label)} variant="outlined" sx={{ p: 1.6, textAlign: 'center', borderRadius: 2 }}>
+                  <Typography fontWeight={900} fontSize={23}>{value}</Typography>
+                  <Typography fontSize={12.5} color="text.secondary">{label}</Typography>
+                </Paper>)}
+              </Box>
+              <Typography variant="body2" color="text.secondary">
+                من البطاقات المؤهلة: {resetPreview.eligible_load_count} اختبار تحميل،
+                و{resetPreview.eligible_example_count} بطاقات QA أساسية.
+                {resetPreview.excluded_unverified_markers > 0
+                  ? ` وهناك ${resetPreview.excluded_unverified_markers} سجلات تحمل علامة اختبار غير موثقة ولن تُحذف.`
+                  : ''}
+              </Typography>
+              <TextField fullWidth required
+                label="اكتب عبارة التأكيد كما هي"
+                placeholder={RESET_CONFIRMATION_TEXT}
+                value={resetConfirmation}
+                onChange={event => setResetConfirmation(event.target.value)}
+                helperText={RESET_CONFIRMATION_TEXT}
+                disabled={resetBusy || !resetPreview.eligible_count} />
+              <FormControlLabel
+                control={<Checkbox checked={resetAcknowledged}
+                  onChange={(_, checked) => setResetAcknowledged(checked)}
+                  disabled={resetBusy || !resetPreview.eligible_count}/>}
+                label={<Typography fontSize={13.5} fontWeight={750}>
+                  أؤكد حذف بطاقات الاختبار المؤهلة فقط، وأعلم أن هذا الإجراء لا يمكن التراجع عنه.
+                </Typography>}/>
+            </>}
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 2.5, py: 2, gap: 1 }}>
+          <Button disabled={resetBusy} onClick={() => setResetDialogOpen(false)}>إلغاء</Button>
+          <Button color="error" variant="contained"
+            disabled={resetBusy || !resetPreview?.eligible_count || !resetAcknowledged ||
+              resetConfirmation !== RESET_CONFIRMATION_TEXT}
+            onClick={() => void confirmTestCardReset()}>
+            {resetBusy ? 'جارٍ تنفيذ التصفير...' : `تأكيد تصفير ${resetPreview?.eligible_count || 0} بطاقة`}
+          </Button>
+        </DialogActions>
+      </Dialog>
       <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="md" fullWidth>
         <DialogTitle component="div">
           <Typography variant="h6" component="span" fontWeight="bold">
