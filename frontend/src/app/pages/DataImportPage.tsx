@@ -301,19 +301,26 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
     const token = getAccessToken();
     if (!token) return;
     try {
-      const [reviewsResponse, centersResponse] = await Promise.all([
-        authFetch(`${API_BASE_URL}/employee-import-reviews/?status=pending,conflict`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }),
-        authFetch(`${API_BASE_URL}/health-centers/`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }),
+      async function collectPaged<T>(endpoint: string): Promise<T[]> {
+        const results: T[] = [];
+        for (let page = 1; page <= 60; page++) {
+          const separator = endpoint.includes('?') ? '&' : '?';
+          const response = await authFetch(`${API_BASE_URL}${endpoint}${separator}page=${page}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (!response.ok) throw new Error('Failed to retrieve import review or center page.');
+          const body = await response.json();
+          results.push(...(Array.isArray(body) ? body : (body.results || [])));
+          if (Array.isArray(body) || !body.next) break;
+        }
+        return results;
+      }
+      const [allReviews, allCenters] = await Promise.all([
+        collectPaged<ImportReview>('/employee-import-reviews/?status=pending,conflict'),
+        collectPaged<HealthCenterOption>('/health-centers/'),
       ]);
-      if (!reviewsResponse.ok || !centersResponse.ok) return;
-      const reviewBody = await reviewsResponse.json();
-      const centerBody = await centersResponse.json();
-      setReviews(Array.isArray(reviewBody) ? reviewBody : (reviewBody.results || []));
-      setHealthCenters(Array.isArray(centerBody) ? centerBody : (centerBody.results || []));
+      setReviews(allReviews);
+      setHealthCenters(allCenters);
     } catch {
       // The main import flow remains usable if review cards cannot be refreshed.
     }
@@ -372,6 +379,8 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...reviewForm,
+          date_of_birth: reviewForm.date_of_birth || null,
+          appointment_date: reviewForm.appointment_date || null,
           children_count: reviewForm.children_count ? Number(reviewForm.children_count) : null,
           nationality: reviewForm.nationality.toUpperCase(),
           health_center: Number(reviewForm.health_center),
