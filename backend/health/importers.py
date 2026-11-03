@@ -311,7 +311,10 @@ def employee_roster_value(row: Tuple[Any, ...], headers: List[str], field: str) 
 
 
 def employee_header_variants(value: Any) -> set:
-    raw = normalize_header(value)
+    """Match formatting variants of Arabic Excel headers without touching cell data."""
+    raw = unicodedata.normalize('NFKC', clean_text(value)).lower()
+    raw = re.sub(r'[\u064b-\u065f\u0670\u0640\u200b-\u200f\ufeff]', '', raw)
+    raw = re.sub(r'[أإآٱ]', 'ا', raw).replace('ى', 'ي')
     variants = set()
     for segment in [raw, *re.split(r'[/|\\()\[\]{}]+', raw)]:
         cleaned = re.sub(r'[^\w\u0600-\u06ff]+', ' ', segment.replace('_', ' '))
@@ -469,8 +472,12 @@ def import_employee_roster_sheet(
     header_row, headers = find_employee_header_row(ws) if flexible else find_header_row(ws)
     column_mapping, mapping_candidates = resolve_employee_field_mapping(headers, field_mapping)
     missing_columns = [field for field in EMPLOYEE_REQUIRED_FIELDS if column_mapping.get(field) is None]
-    if missing_columns and not flexible:
-        raise ValueError(f"Missing required employee columns: {', '.join(missing_columns)}")
+    if missing_columns and (not flexible or commit):
+        readable = ', '.join(missing_columns)
+        raise ValueError(
+            f'Employee import needs column mapping for: {readable}. '
+            'Choose Flexible File, map the required fields and preview again before saving.'
+        )
 
     centers_by_name = {}
     ambiguous_center_names = set()
