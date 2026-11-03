@@ -4,6 +4,7 @@ import { Link } from 'react-router';
 import { toast } from 'sonner';
 import {
   Alert,
+  Autocomplete,
   Checkbox,
   FormControlLabel,
   Box,
@@ -44,6 +45,8 @@ import {
 } from '@mui/icons-material';
 import { authFetch, getAccessToken } from '../context/AuthContext';
 import { CalendarDateField } from '../components/CalendarDateField';
+import { getNationalityOptions, normalizeNationalitySearch } from '../data/employeeFormOptions';
+import { restoreReviewCenterId, restoreReviewNationality } from '../utils/employeeReviewValidation';
 
 // Prevent Staging imports from silently falling back to the Production API.
 const API_BASE_URL = (import.meta.env.VITE_API_URL ||
@@ -106,7 +109,7 @@ type ImportReview = {
   } | null;
 };
 
-type HealthCenterOption = { id: number | string; name: string };
+type HealthCenterOption = { id: number | string; name: string; name_ar?: string; code?: string; is_active?: boolean };
 
 type ReviewForm = {
   name: string;
@@ -130,6 +133,8 @@ type ReviewForm = {
   vaccination_status: string;
   risk_level: string;
 };
+
+const REVIEW_NATIONALITIES = getNationalityOptions();
 
 const EMPTY_REVIEW_FORM: ReviewForm = {
   name: '', email: '', national_id: '', employee_number: '', national_address: '',
@@ -290,6 +295,9 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
   const [activeReview, setActiveReview] = useState<ImportReview | null>(null);
   const [reviewForm, setReviewForm] = useState<ReviewForm>(EMPTY_REVIEW_FORM);
   const [reviewLoading, setReviewLoading] = useState(false);
+  const [reviewCenterSource, setReviewCenterSource] = useState('');
+  const [reviewNationalitySource, setReviewNationalitySource] = useState('');
+  const [reviewValidationError, setReviewValidationError] = useState('');
   const [employeeImportMode, setEmployeeImportMode] = useState<'template' | 'flexible'>('flexible');
   const [employeeSheetName, setEmployeeSheetName] = useState('');
   const [availableEmployeeSheets, setAvailableEmployeeSheets] = useState<string[]>([]);
@@ -342,6 +350,11 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
     const payload = review.employee_payload || {};
     const allowedGender = ['male', 'female'].includes(payloadText(payload, 'gender')) ? payloadText(payload, 'gender') : '';
     const allowedMarital = ['single', 'married', 'divorced', 'widowed'].includes(payloadText(payload, 'marital_status')) ? payloadText(payload, 'marital_status') : '';
+    const originalCenter = payloadText(payload, 'health_center_name') || payloadText(payload, 'health_center');
+    const originalNationality = payloadText(payload, 'nationality');
+    setReviewCenterSource(originalCenter);
+    setReviewNationalitySource(originalNationality);
+    setReviewValidationError('');
     setReviewForm({
       name: payloadText(payload, 'name'),
       email: payloadText(payload, 'email'),
@@ -353,10 +366,10 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
       birth_place: payloadText(payload, 'birth_place'),
       gender: allowedGender,
       marital_status: allowedMarital,
-      health_center: payloadText(payload, 'health_center'),
+      health_center: restoreReviewCenterId(payload, healthCenters),
       job_title: payloadText(payload, 'job_title'),
       appointment_date: /^\d{4}-\d{2}-\d{2}$/.test(payloadText(payload, 'appointment_date')) ? payloadText(payload, 'appointment_date') : '',
-      nationality: payloadText(payload, 'nationality'),
+      nationality: restoreReviewNationality(payload.nationality, REVIEW_NATIONALITIES),
       current_job: payloadText(payload, 'current_job'),
       job_title_en: payloadText(payload, 'job_title_en'),
       children_count: payloadText(payload, 'children_count'),
@@ -373,6 +386,23 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
 
   const activateReview = async () => {
     if (!activeReview) return;
+    setReviewValidationError('');
+    const matchedCenter = healthCenters.find(center =>
+      center.is_active !== false && String(center.id) === reviewForm.health_center);
+    if (!matchedCenter || !Number.isSafeInteger(Number(matchedCenter.id)) ||
+        Number(matchedCenter.id) <= 0) {
+      setReviewValidationError('يرجى اختيار مركز صحي مسجل ونشط من القائمة قبل تفعيل البطاقة.');
+      return;
+    }
+    if (!reviewForm.name.trim() || !reviewForm.national_id.trim()) {
+      setReviewValidationError('اسم الموظف ورقم الهوية أو الإقامة حقول إلزامية.');
+      return;
+    }
+    if (reviewForm.nationality &&
+        !REVIEW_NATIONALITIES.some(country => country.code === reviewForm.nationality)) {
+      setReviewValidationError('اختر الجنسية من قائمة الدول أو اتركها غير محددة.');
+      return;
+    }
     const token = getAccessToken();
     if (!token) return;
     setReviewLoading(true);
@@ -385,13 +415,14 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
           date_of_birth: reviewForm.date_of_birth || null,
           appointment_date: reviewForm.appointment_date || null,
           children_count: reviewForm.children_count ? Number(reviewForm.children_count) : null,
-          nationality: reviewForm.nationality.toUpperCase(),
-          health_center: Number(reviewForm.health_center),
+          nationality: reviewForm.nationality,
+          health_center: Number(matchedCenter.id),
         }),
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) {
         const detail = body.detail || Object.entries(body).map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join('، ') : value}`).join(' | ');
+        setReviewValidationError(String(detail || 'تعذر تفعيل البطاقة. راجع البيانات المدخلة.'));
         throw new Error(detail || 'Activation failed');
       }
       toast.success(isRtl ? 'تم تصحيح الموظف وتفعيل بطاقته' : 'Employee corrected and activated', { id: loadingToast });
@@ -1021,15 +1052,24 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
         <DialogTitle fontWeight={950}>{isRtl ? 'معالجة ملاحظات الموظف وتفعيل البطاقة' : 'Correct Employee & Activate Card'}</DialogTitle>
         <DialogContent dividers>
           {activeReview && (
-            <Alert severity={activeReview.status === 'conflict' ? 'error' : 'warning'} sx={{ mb: 2 }}>
-              <Box component="ul" sx={{ m: 0, ps: 2.5 }}>
-                {activeReview.issues.flatMap(issue => localizeImportReason(issue, isRtl)).map((issue, index) => (
-                  <Typography component="li" key={index} variant="body2">
-                    {localizeImportIssue(issue, isRtl)}
-                  </Typography>
-                ))}
-              </Box>
-            </Alert>
+            <Stack gap={1.3} sx={{ mb: 2 }}>
+              <Alert severity="info" sx={{ fontSize: 13.5 }}>
+                هذه ملاحظات محفوظة عند فحص الملف سابقًا، وليست نتائج فحص الحقول الحالية.
+                تاريخ الميلاد والتعيين، والجنسية، والوحدة التنظيمية حقول اختيارية عند إنشاء الموظف.
+                يلزم التأكد من اسم الموظف ورقم الهوية أو الإقامة والمركز الصحي فقط.
+              </Alert>
+              {!!activeReview.issues.length && <Alert severity={activeReview.status === 'conflict' ? 'error' : 'warning'}>
+                <Typography variant="body2" fontWeight={800} sx={{ mb: 0.8 }}>ملاحظات الاستيراد السابقة:</Typography>
+                <Box component="ul" sx={{ m: 0, ps: 2.5 }}>
+                  {activeReview.issues.flatMap(issue => localizeImportReason(issue, isRtl)).map((issue, index) => (
+                    <Typography component="li" key={index} variant="body2">
+                      {localizeImportIssue(issue, isRtl)}
+                    </Typography>
+                  ))}
+                </Box>
+              </Alert>}
+              {reviewValidationError && <Alert severity="error" role="alert">{reviewValidationError}</Alert>}
+            </Stack>
           )}
           <Grid container spacing={2}>
             <Grid size={{ xs: 12, md: 6 }}><TextField required fullWidth label={isRtl ? 'اسم الموظف' : 'Employee name'} value={reviewForm.name} onChange={e => updateReviewField('name', e.target.value)} /></Grid>
@@ -1042,10 +1082,53 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
             <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label={isRtl ? 'مكان الميلاد' : 'Birth place'} value={reviewForm.birth_place} onChange={e => updateReviewField('birth_place', e.target.value)} /></Grid>
             <Grid size={{ xs: 12, md: 6 }}><TextField select fullWidth label={isRtl ? 'الجنس' : 'Gender'} value={reviewForm.gender} onChange={e => updateReviewField('gender', e.target.value)}><MenuItem value="">غير محدد</MenuItem><MenuItem value="male">{isRtl ? 'ذكر' : 'Male'}</MenuItem><MenuItem value="female">{isRtl ? 'أنثى' : 'Female'}</MenuItem></TextField></Grid>
             <Grid size={{ xs: 12, md: 6 }}><TextField select fullWidth label={isRtl ? 'الحالة الاجتماعية' : 'Marital status'} value={reviewForm.marital_status} onChange={e => updateReviewField('marital_status', e.target.value)}><MenuItem value="">غير محدد</MenuItem><MenuItem value="single">{isRtl ? 'أعزب' : 'Single'}</MenuItem><MenuItem value="married">{isRtl ? 'متزوج' : 'Married'}</MenuItem><MenuItem value="divorced">{isRtl ? 'مطلق' : 'Divorced'}</MenuItem><MenuItem value="widowed">{isRtl ? 'أرمل' : 'Widowed'}</MenuItem></TextField></Grid>
-            <Grid size={{ xs: 12, md: 6 }}><TextField select required fullWidth label={isRtl ? 'المركز الصحي' : 'Health center'} value={reviewForm.health_center} onChange={e => updateReviewField('health_center', e.target.value)}>{healthCenters.map(center => <MenuItem key={center.id} value={String(center.id)}>{center.name}</MenuItem>)}</TextField></Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Autocomplete
+                options={healthCenters.filter(center => center.is_active !== false)
+                  .sort((a,b) => Number(Boolean(b.code?.startsWith('OHP-REF-'))) -
+                    Number(Boolean(a.code?.startsWith('OHP-REF-'))))}
+                value={healthCenters.find(center => String(center.id) === reviewForm.health_center) || null}
+                onChange={(_, center) => {
+                  updateReviewField('health_center', center ? String(center.id) : '');
+                  setReviewValidationError('');
+                }}
+                getOptionLabel={center => center.name_ar || center.name}
+                isOptionEqualToValue={(option, value) => String(option.id) === String(value.id)}
+                renderOption={(props, center) => <li {...props} key={center.id}>
+                  {center.name_ar || center.name} {center.code ? `(${center.code})` : ''}
+                </li>}
+                renderInput={params => <TextField {...params} required
+                  label={isRtl ? 'المركز الصحي – ابحث بالاسم' : 'Health center – search by name'}
+                  error={Boolean(reviewValidationError && !reviewForm.health_center)}
+                  helperText={reviewForm.health_center
+                    ? 'المركز المختار مسجل في قاعدة البيانات.'
+                    : `يجب اختيار مركز من القائمة. ${reviewCenterSource ? 'الاسم في الملف: ' + reviewCenterSource : ''}`}
+                />}
+                noOptionsText="لا يوجد مركز مطابق؛ راجع إدارة المراكز الصحية"
+                fullWidth
+              />
+            </Grid>
             <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label={isRtl ? 'المسمى الوظيفي' : 'Job title'} value={reviewForm.job_title} onChange={e => updateReviewField('job_title', e.target.value)} /></Grid>
             <Grid size={{ xs: 12, md: 6 }}><CalendarDateField label={isRtl ? 'تاريخ التعيين' : 'Appointment date'} value={reviewForm.appointment_date} onChange={value => updateReviewField('appointment_date', value)} /></Grid>
-            <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label="الجنسية (رمز الدولة مثل SA)" value={reviewForm.nationality} onChange={e => updateReviewField('nationality', e.target.value)} /></Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Autocomplete
+                options={REVIEW_NATIONALITIES}
+                value={REVIEW_NATIONALITIES.find(item => item.code === reviewForm.nationality) || null}
+                onChange={(_, selected) => updateReviewField('nationality', selected?.code || '')}
+                getOptionLabel={item => item.countryAr}
+                isOptionEqualToValue={(option,value) => option.code === value.code}
+                filterOptions={(items, state) => {
+                  const search = normalizeNationalitySearch(state.inputValue);
+                  return search ? items.filter(item => item.searchText.includes(search)) : items;
+                }}
+                renderInput={params => <TextField {...params} label="الجنسية (اختياري)"
+                  helperText={reviewNationalitySource && !reviewForm.nationality
+                    ? `لم يُتعرف على الجنسية الواردة: ${reviewNationalitySource}. اختر الدولة أو اترك الحقل فارغًا.`
+                    : 'اختر اسم الدولة؛ سيحفظ النظام رمزها الصحيح.'} />}
+                noOptionsText="لا توجد دولة مطابقة"
+                fullWidth
+              />
+            </Grid>
             <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label="الوظيفة الحالية" value={reviewForm.current_job} onChange={e => updateReviewField('current_job', e.target.value)} /></Grid>
             <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label="المسمى الوظيفي بالإنجليزية" value={reviewForm.job_title_en} onChange={e => updateReviewField('job_title_en', e.target.value)} /></Grid>
             <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth type="number" label="عدد الأطفال" value={reviewForm.children_count} onChange={e => updateReviewField('children_count', e.target.value)} inputProps={{ min: 0, max: 100, step: 1 }} /></Grid>
@@ -1056,7 +1139,9 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setActiveReview(null)} disabled={reviewLoading}>{isRtl ? 'إلغاء' : 'Cancel'}</Button>
-          <Button variant="contained" color="success" onClick={() => void activateReview()} disabled={reviewLoading} startIcon={<CheckCircleIcon />}>
+          <Button variant="contained" color="success" onClick={() => void activateReview()}
+            disabled={reviewLoading || !reviewForm.health_center || !reviewForm.name.trim() || !reviewForm.national_id.trim()}
+            startIcon={<CheckCircleIcon />}>
             {reviewLoading ? (isRtl ? 'جاري التحقق...' : 'Validating...') : (isRtl ? 'حفظ التصحيح وتفعيل البطاقة' : 'Save & Activate Card')}
           </Button>
         </DialogActions>
