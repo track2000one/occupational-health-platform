@@ -29,6 +29,11 @@ if [ "${OHP_ORG_DRAFTS_ZLIB_B64:-}" != "" ]; then
   python manage.py load_staging_org_drafts
 fi
 
+if [ "${OHP_CENTER_MASTER_ZLIB_B64:-}" != "" ]; then
+  echo "[start] Reconciling 25 reviewed center names with existing Staging center records..."
+  python manage.py load_staging_center_master
+fi
+
 WORKERS="${GUNICORN_WORKERS:-2}"
 THREADS="${GUNICORN_THREADS:-4}"
 TIMEOUT="${GUNICORN_TIMEOUT:-45}"
