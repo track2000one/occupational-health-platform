@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react';
 import logoImg from '@/imports/ChatGPT_Image_21______2026__10_06_18__.png';
 import { Outlet, useLocation, useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
+import { rememberAppLanguage } from '../i18n/languagePreference';
 import { useAuth } from '../../context/AuthContext';
 import { useAppTheme } from '../../context/ThemeContext';
 import { ThemeSwitcher } from '../ThemeSwitcher';
@@ -139,8 +140,8 @@ export function DashboardLayout() {
 
   const toggleLanguage = () => {
     const newLang = i18n.language === 'en' ? 'ar' : 'en';
-    i18n.changeLanguage(newLang);
-    document.dir = newLang === 'ar' ? 'rtl' : 'ltr';
+    rememberAppLanguage(newLang);
+    void i18n.changeLanguage(newLang);
     handleMenuClose();
   };
 
