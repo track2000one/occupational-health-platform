@@ -182,3 +182,34 @@ class StagingEmployeeBulkActivationTests(TestCase):
         with patch.dict('os.environ', {'STAGING_MODE': 'true', 'RAILWAY_PROJECT_ID': 'production-elsewhere'}):
             self.assertEqual(self.preview([row.pk]).status_code, 403)
         self.assertEqual(Employee.objects.count(), 0)
+
+    @patch.dict('os.environ', STAGING_ENV)
+    def test_renamed_center_after_preview_does_not_assign_wrong_master(self):
+        row = self.review(13)
+        preview = self.preview([row.pk])
+        self.assertEqual(preview.data['eligible_count'], 1)
+        self.center.name_ar = 'اسم مركز تغير بعد المعاينة'
+        self.center.save()
+        response = self.commit(preview, [row.pk])
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['created_count'], 0)
+        self.assertEqual(response.data['skipped_count'], 1)
+        self.assertEqual(Employee.objects.count(), 0)
+
+    @patch.dict('os.environ', STAGING_ENV)
+    def test_duplicate_optional_email_does_not_block_new_distinct_employee(self):
+        row = self.review(14, email='existing@example.invalid',
+                          current_job='QA front desk')
+        Employee.objects.create(name='Synthetic existing employee',
+                                national_id='9998999977',
+                                email='existing@example.invalid',
+                                health_center=self.center)
+        preview = self.preview([row.pk])
+        self.assertEqual(preview.data['eligible_count'], 1, preview.data)
+        result = self.commit(preview, [row.pk])
+        self.assertEqual(result.status_code, 200, result.data)
+        self.assertEqual(result.data['created_count'], 1)
+        new_employee = Employee.objects.get(national_id='9998000014')
+        self.assertIsNone(new_employee.email)
+        self.assertEqual(new_employee.current_job, 'QA front desk')
+        self.assertEqual(Employee.objects.count(), 2)
