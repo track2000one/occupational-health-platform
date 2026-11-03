@@ -165,7 +165,7 @@ class OrganizationBulkApprovalView(APIView):
             AuditLog.objects.create(
                 user=str(request.user), action='organization_bulk_approve',
                 model_name='OrganizationUnit',
-                record_id='ids:' + ','.join(str(unit.pk) for unit in eligible),
+                record_id='bulk:' + sha256(','.join(str(unit.pk) for unit in eligible).encode()).hexdigest()[:20],
             )
             return Response({
                 'mode': 'approved', 'approved_count': len(eligible),
