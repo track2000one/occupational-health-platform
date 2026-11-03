@@ -135,3 +135,17 @@ class StagingCenterMasterTests(TestCase):
         with patch.dict('os.environ', trimmed):
             with self.assertRaises(CommandError):
                 call_command('load_staging_center_master', stdout=StringIO())
+
+    @patch.dict('os.environ', staging_env())
+    def test_existing_center_with_generic_prefix_is_reused_not_duplicated(self):
+        prior = HealthCenter.objects.create(name='مركز صحي اختباري 001', name_ar='مركز صحي اختباري 001')
+        call_command('load_staging_center_master', stdout=StringIO())
+        self.assertEqual(HealthCenter.objects.count(), 25)
+        self.assertEqual(OrganizationUnit.objects.get(code='TMP-C001').health_center_id, prior.pk)
+
+    def test_distinct_similar_names_remain_distinct(self):
+        from .management.commands.load_staging_center_master import normalized_name
+        self.assertEqual(normalized_name('مركز صحي بدر'), normalized_name('بدر'))
+        self.assertNotEqual(normalized_name('بدر'), normalized_name('بدر الغربي'))
+        self.assertNotEqual(normalized_name('الضاحية'),
+                            normalized_name('حمد العمار الخالدي بالضاحية'))
