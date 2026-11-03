@@ -43,14 +43,10 @@ import {
 import { authFetch, getAccessToken } from '../context/AuthContext';
 import { CalendarDateField } from '../components/CalendarDateField';
 
-const PRODUCTION_API_BASE_URL = 'https://occupational-health-platform-production.up.railway.app/api';
-const LOCAL_API_BASE_URL = 'http://localhost:8000/api';
-const API_BASE_URL = (
-  import.meta.env.VITE_API_URL ||
+// Prevent Staging imports from silently falling back to the Production API.
+const API_BASE_URL = (import.meta.env.VITE_API_URL ||
   (typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
-    ? LOCAL_API_BASE_URL
-    : PRODUCTION_API_BASE_URL)
-).replace(/\/$/, '');
+    ? 'http://localhost:8000/api' : '')).replace(/\/$/, '');
 
 type ImportSummary = Record<string, number> & {
   total_rows: number;
@@ -124,6 +120,10 @@ type ReviewForm = {
   health_center: string;
   job_title: string;
   appointment_date: string;
+  nationality: string;
+  current_job: string;
+  job_title_en: string;
+  children_count: string;
   periodic_exam_status: string;
   vaccination_status: string;
   risk_level: string;
@@ -131,15 +131,16 @@ type ReviewForm = {
 
 const EMPTY_REVIEW_FORM: ReviewForm = {
   name: '', email: '', national_id: '', employee_number: '', national_address: '',
-  mobile: '', date_of_birth: '', birth_place: '', gender: 'male', marital_status: '',
-  health_center: '', job_title: '', appointment_date: '', periodic_exam_status: 'incomplete',
-  vaccination_status: 'due', risk_level: 'low',
+  mobile: '', date_of_birth: '', birth_place: '', gender: '', marital_status: '',
+  health_center: '', job_title: '', appointment_date: '', nationality: '', current_job: '',
+  job_title_en: '', children_count: '', periodic_exam_status: 'unknown',
+  vaccination_status: 'unknown', risk_level: 'unknown',
 };
 
 const IMPORT_FIELD_LABELS_AR: Record<string, string> = {
   name: 'اسم الموظف',
   email: 'البريد الإلكتروني',
-  national_id: 'رقم الهوية الوطنية',
+  national_id: 'رقم الهوية / الإقامة',
   employee_number: 'الرقم الوظيفي',
   national_address: 'العنوان الوطني',
   mobile: 'رقم الجوال',
@@ -149,6 +150,10 @@ const IMPORT_FIELD_LABELS_AR: Record<string, string> = {
   marital_status: 'الحالة الاجتماعية',
   health_center: 'المركز الصحي',
   organization_unit_code: 'رمز الوحدة التنظيمية المعتمدة',
+  nationality: 'الجنسية',
+  current_job: 'الوظيفة الحالية',
+  job_title_en: 'المسمى الوظيفي بالإنجليزية',
+  children_count: 'عدد الأطفال',
   job_title: 'المسمى الوظيفي',
   appointment_date: 'تاريخ التعيين',
   periodic_exam_status: 'حالة الفحص الدوري',
@@ -169,6 +174,10 @@ const IMPORT_FIELD_LABELS_EN: Record<string, string> = {
   marital_status: 'Marital status',
   health_center: 'Health center',
   organization_unit_code: 'Approved organization unit code',
+  nationality: 'Nationality',
+  current_job: 'Current job',
+  job_title_en: 'English job title',
+  children_count: 'Children count',
   job_title: 'Job title',
   appointment_date: 'Appointment date',
   periodic_exam_status: 'Periodic exam status',
@@ -177,11 +186,7 @@ const IMPORT_FIELD_LABELS_EN: Record<string, string> = {
 };
 
 const EMPLOYEE_IMPORT_FIELDS = Object.keys(IMPORT_FIELD_LABELS_AR);
-const EMPLOYEE_REQUIRED_FIELDS = new Set([
-  'name', 'email', 'national_id', 'employee_number', 'national_address', 'mobile',
-  'date_of_birth', 'birth_place', 'gender', 'marital_status', 'health_center',
-  'job_title', 'appointment_date',
-]);
+const EMPLOYEE_REQUIRED_FIELDS = new Set(['name', 'national_id', 'health_center']);
 
 const IMPORT_ISSUE_LABELS_AR: Record<string, string> = {
   'Invalid email address': 'صيغة البريد الإلكتروني غير صحيحة',
@@ -292,7 +297,7 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
   const [uploadError, setUploadError] = useState('');
 
   const loadReviews = async () => {
-    if (!employeeMode) return;
+    if (!employeeMode || !API_BASE_URL) return;
     const token = getAccessToken();
     if (!token) return;
     try {
@@ -325,7 +330,7 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
 
   const openReview = (review: ImportReview) => {
     const payload = review.employee_payload || {};
-    const allowedGender = ['male', 'female'].includes(payloadText(payload, 'gender')) ? payloadText(payload, 'gender') : 'male';
+    const allowedGender = ['male', 'female'].includes(payloadText(payload, 'gender')) ? payloadText(payload, 'gender') : '';
     const allowedMarital = ['single', 'married', 'divorced', 'widowed'].includes(payloadText(payload, 'marital_status')) ? payloadText(payload, 'marital_status') : '';
     setReviewForm({
       name: payloadText(payload, 'name'),
@@ -341,9 +346,13 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
       health_center: payloadText(payload, 'health_center'),
       job_title: payloadText(payload, 'job_title'),
       appointment_date: /^\d{4}-\d{2}-\d{2}$/.test(payloadText(payload, 'appointment_date')) ? payloadText(payload, 'appointment_date') : '',
-      periodic_exam_status: ['completed', 'incomplete', 'overdue'].includes(payloadText(payload, 'periodic_exam_status')) ? payloadText(payload, 'periodic_exam_status') : 'incomplete',
-      vaccination_status: ['completed', 'due', 'refused'].includes(payloadText(payload, 'vaccination_status')) ? payloadText(payload, 'vaccination_status') : 'due',
-      risk_level: ['low', 'medium', 'high'].includes(payloadText(payload, 'risk_level')) ? payloadText(payload, 'risk_level') : 'low',
+      nationality: payloadText(payload, 'nationality'),
+      current_job: payloadText(payload, 'current_job'),
+      job_title_en: payloadText(payload, 'job_title_en'),
+      children_count: payloadText(payload, 'children_count'),
+      periodic_exam_status: ['completed', 'incomplete', 'overdue'].includes(payloadText(payload, 'periodic_exam_status')) ? payloadText(payload, 'periodic_exam_status') : 'unknown',
+      vaccination_status: ['completed', 'due', 'refused'].includes(payloadText(payload, 'vaccination_status')) ? payloadText(payload, 'vaccination_status') : 'unknown',
+      risk_level: ['low', 'medium', 'high'].includes(payloadText(payload, 'risk_level')) ? payloadText(payload, 'risk_level') : 'unknown',
     });
     setActiveReview(review);
   };
@@ -362,7 +371,11 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
       const response = await authFetch(`${API_BASE_URL}/employee-import-reviews/${activeReview.id}/activate/`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...reviewForm, health_center: Number(reviewForm.health_center) }),
+        body: JSON.stringify({ ...reviewForm,
+          children_count: reviewForm.children_count ? Number(reviewForm.children_count) : null,
+          nationality: reviewForm.nationality.toUpperCase(),
+          health_center: Number(reviewForm.health_center),
+        }),
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -434,6 +447,28 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
     setMappingDirty(true);
   };
 
+  const downloadRosterTemplate = async () => {
+    try {
+      const token = getAccessToken();
+      if (!token || !API_BASE_URL) throw new Error('تحقق من تسجيل الدخول وإعداد الاتصال بالمنصة.');
+      const response = await authFetch(`${API_BASE_URL}/employee-roster-template/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error('تعذّر تنزيل القالب المحدث؛ تحقق من صلاحية المسؤول.');
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = 'قالب_الموظفين_الصحة_المهنية_المحدث.xlsx';
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => window.URL.revokeObjectURL(url), 30000);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'تعذّر تنزيل القالب');
+    }
+  };
+
   const upload = async (commitOverride?: boolean, selectedFile?: File) => {
     if (loading) return;
     const uploadFile = selectedFile || file;
@@ -442,8 +477,8 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
       return;
     }
     const token = getAccessToken();
-    if (!token) {
-      toast.error(isRtl ? 'انتهت الجلسة. سجّل الدخول مرة أخرى.' : 'Session expired. Login again.');
+    if (!token || !API_BASE_URL) {
+      toast.error(isRtl ? 'إعداد اتصال Staging أو جلسة الدخول غير مكتمل.' : 'API connection or session is not configured.');
       return;
     }
 
@@ -554,8 +589,8 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
                   </Paper>
                 )}
                 {employeeMode && employeeImportMode === 'template' && (
-                  <Button component="a" href="/templates/employee-import-template.xlsx" download variant="outlined" size="large" startIcon={<DownloadIcon />} sx={{ borderRadius: 3, py: 1.4 }}>
-                    {isRtl ? 'تنزيل قالب بيانات الموظفين' : 'Download Employee Template'}
+                  <Button onClick={() => void downloadRosterTemplate()} variant="outlined" size="large" startIcon={<DownloadIcon />} sx={{ borderRadius: 3, py: 1.4 }}>
+                    {isRtl ? 'تنزيل قالب الموظفين المحدث (المراكز الحالية)' : 'Download Current Employee Template'}
                   </Button>
                 )}
                 {employeeMode && <Alert severity="info">{isRtl ? '١. اختر الملف ليُفحص تلقائيًا · ٢. راجع النتائج · ٣. اضغط إضافة الموظفين الآن' : '1. Select a file for automatic preview · 2. Review results · 3. Add employees'}</Alert>}
@@ -948,21 +983,25 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
           )}
           <Grid container spacing={2}>
             <Grid size={{ xs: 12, md: 6 }}><TextField required fullWidth label={isRtl ? 'اسم الموظف' : 'Employee name'} value={reviewForm.name} onChange={e => updateReviewField('name', e.target.value)} /></Grid>
-            <Grid size={{ xs: 12, md: 6 }}><TextField required fullWidth label={isRtl ? 'البريد الإلكتروني' : 'Email'} value={reviewForm.email} onChange={e => updateReviewField('email', e.target.value)} /></Grid>
-            <Grid size={{ xs: 12, md: 6 }}><TextField required fullWidth label={isRtl ? 'رقم الهوية الوطنية' : 'National ID'} value={reviewForm.national_id} onChange={e => updateReviewField('national_id', e.target.value)} /></Grid>
-            <Grid size={{ xs: 12, md: 6 }}><TextField required fullWidth label={isRtl ? 'الرقم الوظيفي' : 'Employee number'} value={reviewForm.employee_number} onChange={e => updateReviewField('employee_number', e.target.value)} /></Grid>
-            <Grid size={{ xs: 12, md: 6 }}><TextField required fullWidth label={isRtl ? 'رقم الجوال' : 'Mobile'} value={reviewForm.mobile} onChange={e => updateReviewField('mobile', e.target.value)} /></Grid>
-            <Grid size={{ xs: 12, md: 6 }}><TextField required fullWidth label={isRtl ? 'العنوان الوطني' : 'National address'} value={reviewForm.national_address} onChange={e => updateReviewField('national_address', e.target.value)} /></Grid>
-            <Grid size={{ xs: 12, md: 6 }}><CalendarDateField required label={isRtl ? 'تاريخ الميلاد' : 'Date of birth'} value={reviewForm.date_of_birth} onChange={value => updateReviewField('date_of_birth', value)} /></Grid>
-            <Grid size={{ xs: 12, md: 6 }}><TextField required fullWidth label={isRtl ? 'مكان الميلاد' : 'Birth place'} value={reviewForm.birth_place} onChange={e => updateReviewField('birth_place', e.target.value)} /></Grid>
-            <Grid size={{ xs: 12, md: 6 }}><TextField select required fullWidth label={isRtl ? 'الجنس' : 'Gender'} value={reviewForm.gender} onChange={e => updateReviewField('gender', e.target.value)}><MenuItem value="male">{isRtl ? 'ذكر' : 'Male'}</MenuItem><MenuItem value="female">{isRtl ? 'أنثى' : 'Female'}</MenuItem></TextField></Grid>
-            <Grid size={{ xs: 12, md: 6 }}><TextField select required fullWidth label={isRtl ? 'الحالة الاجتماعية' : 'Marital status'} value={reviewForm.marital_status} onChange={e => updateReviewField('marital_status', e.target.value)}><MenuItem value="single">{isRtl ? 'أعزب' : 'Single'}</MenuItem><MenuItem value="married">{isRtl ? 'متزوج' : 'Married'}</MenuItem><MenuItem value="divorced">{isRtl ? 'مطلق' : 'Divorced'}</MenuItem><MenuItem value="widowed">{isRtl ? 'أرمل' : 'Widowed'}</MenuItem></TextField></Grid>
+            <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label={isRtl ? 'البريد الإلكتروني (اختياري)' : 'Email (optional)'} value={reviewForm.email} onChange={e => updateReviewField('email', e.target.value)} /></Grid>
+            <Grid size={{ xs: 12, md: 6 }}><TextField required fullWidth label={isRtl ? 'رقم الهوية / الإقامة' : 'National ID / Iqama'} value={reviewForm.national_id} onChange={e => updateReviewField('national_id', e.target.value)} /></Grid>
+            <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label={isRtl ? 'الرقم الوظيفي (اختياري)' : 'Employee number (optional)'} value={reviewForm.employee_number} onChange={e => updateReviewField('employee_number', e.target.value)} /></Grid>
+            <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label={isRtl ? 'رقم الجوال' : 'Mobile'} value={reviewForm.mobile} onChange={e => updateReviewField('mobile', e.target.value)} /></Grid>
+            <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label={isRtl ? 'العنوان الوطني' : 'National address'} value={reviewForm.national_address} onChange={e => updateReviewField('national_address', e.target.value)} /></Grid>
+            <Grid size={{ xs: 12, md: 6 }}><CalendarDateField label={isRtl ? 'تاريخ الميلاد' : 'Date of birth'} value={reviewForm.date_of_birth} onChange={value => updateReviewField('date_of_birth', value)} /></Grid>
+            <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label={isRtl ? 'مكان الميلاد' : 'Birth place'} value={reviewForm.birth_place} onChange={e => updateReviewField('birth_place', e.target.value)} /></Grid>
+            <Grid size={{ xs: 12, md: 6 }}><TextField select fullWidth label={isRtl ? 'الجنس' : 'Gender'} value={reviewForm.gender} onChange={e => updateReviewField('gender', e.target.value)}><MenuItem value="">غير محدد</MenuItem><MenuItem value="male">{isRtl ? 'ذكر' : 'Male'}</MenuItem><MenuItem value="female">{isRtl ? 'أنثى' : 'Female'}</MenuItem></TextField></Grid>
+            <Grid size={{ xs: 12, md: 6 }}><TextField select fullWidth label={isRtl ? 'الحالة الاجتماعية' : 'Marital status'} value={reviewForm.marital_status} onChange={e => updateReviewField('marital_status', e.target.value)}><MenuItem value="">غير محدد</MenuItem><MenuItem value="single">{isRtl ? 'أعزب' : 'Single'}</MenuItem><MenuItem value="married">{isRtl ? 'متزوج' : 'Married'}</MenuItem><MenuItem value="divorced">{isRtl ? 'مطلق' : 'Divorced'}</MenuItem><MenuItem value="widowed">{isRtl ? 'أرمل' : 'Widowed'}</MenuItem></TextField></Grid>
             <Grid size={{ xs: 12, md: 6 }}><TextField select required fullWidth label={isRtl ? 'المركز الصحي' : 'Health center'} value={reviewForm.health_center} onChange={e => updateReviewField('health_center', e.target.value)}>{healthCenters.map(center => <MenuItem key={center.id} value={String(center.id)}>{center.name}</MenuItem>)}</TextField></Grid>
-            <Grid size={{ xs: 12, md: 6 }}><TextField required fullWidth label={isRtl ? 'المسمى الوظيفي' : 'Job title'} value={reviewForm.job_title} onChange={e => updateReviewField('job_title', e.target.value)} /></Grid>
-            <Grid size={{ xs: 12, md: 6 }}><CalendarDateField required label={isRtl ? 'تاريخ التعيين' : 'Appointment date'} value={reviewForm.appointment_date} onChange={value => updateReviewField('appointment_date', value)} /></Grid>
-            <Grid size={{ xs: 12, md: 6 }}><TextField select fullWidth label={isRtl ? 'حالة الفحص الدوري' : 'Exam status'} value={reviewForm.periodic_exam_status} onChange={e => updateReviewField('periodic_exam_status', e.target.value)}><MenuItem value="completed">{isRtl ? 'مكتمل' : 'Completed'}</MenuItem><MenuItem value="incomplete">{isRtl ? 'غير مكتمل' : 'Incomplete'}</MenuItem><MenuItem value="overdue">{isRtl ? 'متأخر' : 'Overdue'}</MenuItem></TextField></Grid>
-            <Grid size={{ xs: 12, md: 6 }}><TextField select fullWidth label={isRtl ? 'حالة التطعيم' : 'Vaccination status'} value={reviewForm.vaccination_status} onChange={e => updateReviewField('vaccination_status', e.target.value)}><MenuItem value="completed">{isRtl ? 'مكتمل' : 'Completed'}</MenuItem><MenuItem value="due">{isRtl ? 'مستحق' : 'Due'}</MenuItem><MenuItem value="refused">{isRtl ? 'مرفوض' : 'Refused'}</MenuItem></TextField></Grid>
-            <Grid size={{ xs: 12, md: 6 }}><TextField select fullWidth label={isRtl ? 'مستوى الخطورة' : 'Risk level'} value={reviewForm.risk_level} onChange={e => updateReviewField('risk_level', e.target.value)}><MenuItem value="low">{isRtl ? 'منخفض' : 'Low'}</MenuItem><MenuItem value="medium">{isRtl ? 'متوسط' : 'Medium'}</MenuItem><MenuItem value="high">{isRtl ? 'مرتفع' : 'High'}</MenuItem></TextField></Grid>
+            <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label={isRtl ? 'المسمى الوظيفي' : 'Job title'} value={reviewForm.job_title} onChange={e => updateReviewField('job_title', e.target.value)} /></Grid>
+            <Grid size={{ xs: 12, md: 6 }}><CalendarDateField label={isRtl ? 'تاريخ التعيين' : 'Appointment date'} value={reviewForm.appointment_date} onChange={value => updateReviewField('appointment_date', value)} /></Grid>
+            <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label="الجنسية (رمز الدولة مثل SA)" value={reviewForm.nationality} onChange={e => updateReviewField('nationality', e.target.value)} /></Grid>
+            <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label="الوظيفة الحالية" value={reviewForm.current_job} onChange={e => updateReviewField('current_job', e.target.value)} /></Grid>
+            <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label="المسمى الوظيفي بالإنجليزية" value={reviewForm.job_title_en} onChange={e => updateReviewField('job_title_en', e.target.value)} /></Grid>
+            <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth type="number" label="عدد الأطفال" value={reviewForm.children_count} onChange={e => updateReviewField('children_count', e.target.value)} inputProps={{ min: 0, max: 100, step: 1 }} /></Grid>
+            <Grid size={{ xs: 12, md: 6 }}><TextField select fullWidth label={isRtl ? 'حالة الفحص الدوري' : 'Exam status'} value={reviewForm.periodic_exam_status} onChange={e => updateReviewField('periodic_exam_status', e.target.value)}><MenuItem value="unknown">غير محدد</MenuItem><MenuItem value="completed">{isRtl ? 'مكتمل' : 'Completed'}</MenuItem><MenuItem value="incomplete">{isRtl ? 'غير مكتمل' : 'Incomplete'}</MenuItem><MenuItem value="overdue">{isRtl ? 'متأخر' : 'Overdue'}</MenuItem></TextField></Grid>
+            <Grid size={{ xs: 12, md: 6 }}><TextField select fullWidth label={isRtl ? 'حالة التطعيم' : 'Vaccination status'} value={reviewForm.vaccination_status} onChange={e => updateReviewField('vaccination_status', e.target.value)}><MenuItem value="unknown">غير محدد</MenuItem><MenuItem value="completed">{isRtl ? 'مكتمل' : 'Completed'}</MenuItem><MenuItem value="due">{isRtl ? 'مستحق' : 'Due'}</MenuItem><MenuItem value="refused">{isRtl ? 'مرفوض' : 'Refused'}</MenuItem></TextField></Grid>
+            <Grid size={{ xs: 12, md: 6 }}><TextField select fullWidth label={isRtl ? 'مستوى الخطورة' : 'Risk level'} value={reviewForm.risk_level} onChange={e => updateReviewField('risk_level', e.target.value)}><MenuItem value="unknown">غير محدد</MenuItem><MenuItem value="low">{isRtl ? 'منخفض' : 'Low'}</MenuItem><MenuItem value="medium">{isRtl ? 'متوسط' : 'Medium'}</MenuItem><MenuItem value="high">{isRtl ? 'مرتفع' : 'High'}</MenuItem></TextField></Grid>
           </Grid>
         </DialogContent>
         <DialogActions>
