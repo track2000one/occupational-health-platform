@@ -3,6 +3,7 @@ import json
 import re
 import unicodedata
 from datetime import datetime, date
+from collections import Counter
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -12,6 +13,10 @@ from openpyxl import load_workbook
 from openpyxl.utils.datetime import from_excel
 
 from .employee_import_countries import resolve_import_nationality
+from .employee_import_classification import (
+    compare_employee, matched_employee_summary, normalize_person_name,
+    optional_missing_fields,
+)
 from .models import (
     CampaignCoverage,
     ClinicVisit,
@@ -298,6 +303,9 @@ def employee_roster_preview_row(
     date_of_birth=None,
     appointment_date=None,
     center_matched: bool = False,
+    missing_optional=None,
+    existing_employee=None,
+    field_differences=None,
 ) -> Dict[str, Any]:
     return {
         'row': row_number,
@@ -324,6 +332,9 @@ def employee_roster_preview_row(
         'mobile': mask_value(raw.get('mobile', '')),
         'national_address': mask_value(raw.get('national_address', '')),
         'issues': list(issues),
+        'missing_optional_fields': list(missing_optional or []),
+        'existing_employee': matched_employee_summary(existing_employee),
+        'field_differences': list(field_differences or []),
     }
 
 
@@ -541,7 +552,14 @@ def import_employee_roster_sheet(
             is_approved=True, is_active=True,
         ).select_related('health_center')
     }
-    existing_id_map = dict(Employee.objects.exclude(national_id='').values_list('national_id', 'id'))
+    existing_employees = {
+        employee.national_id: employee
+        for employee in Employee.objects.select_related('health_center').all()
+        if employee.national_id
+    }
+    existing_id_map = {
+        national_id: employee.pk for national_id, employee in existing_employees.items()
+    }
     existing_email_map = dict(
         Employee.objects.exclude(email__isnull=True).exclude(email='').values_list('email', 'id')
     )
@@ -557,6 +575,8 @@ def import_employee_roster_sheet(
     errors: List[Dict[str, Any]] = []
     preview_rows: List[Dict[str, Any]] = []
     review_candidates: List[Dict[str, Any]] = []
+    classification_counts = Counter()
+    optional_incomplete_count = 0
     total_rows = 0
     today = date.today()
 
@@ -654,19 +674,63 @@ def import_employee_roster_sheet(
         elif org_unit and org_unit.health_center_id and center and org_unit.health_center_id != center.pk:
             row_errors.append('Organizational unit belongs to a different health center.')
 
+        matched_employee = existing_employees.get(raw['national_id'])
+        missing_optional = optional_missing_fields(raw)
+        if missing_optional:
+            optional_incomplete_count += 1
+        normalized_values = {
+            'date_of_birth': date_of_birth,
+            'appointment_date': appointment_date,
+            'gender': gender,
+            'marital_status': marital_status,
+            'nationality': nationality,
+        }
+        field_differences = (
+            compare_employee(matched_employee, raw, normalized_values, center)
+            if matched_employee else []
+        )
+
         duplicate_reasons: List[str] = []
-        if raw['national_id'] in seen_ids:
+        if raw['national_id'] and raw['national_id'] in seen_ids:
             duplicate_reasons.append('National ID is duplicated inside the file.')
         if raw['email'] and raw['email'] in seen_emails:
             duplicate_reasons.append('Email is duplicated inside the file.')
         if raw['employee_number'] and raw['employee_number'] in seen_numbers:
             duplicate_reasons.append('Employee number is duplicated inside the file.')
-        if raw['national_id'] in existing_id_map:
-            duplicate_reasons.append('National ID already exists in PostgreSQL.')
-        if raw['email'] and raw['email'] in existing_email_map:
-            duplicate_reasons.append('Email already exists in PostgreSQL.')
-        if raw['employee_number'] and raw['employee_number'] in existing_number_map:
-            duplicate_reasons.append('Employee number already exists in PostgreSQL.')
+
+        # An identity match is not by itself a data contradiction. A different
+        # staff name for the same ID or a unique field assigned to a DIFFERENT
+        # person does require manual investigation.
+        true_conflict = bool(duplicate_reasons)
+        if matched_employee:
+            duplicate_reasons.append('Employee already exists with this national ID.')
+            if (raw['name'] and normalize_person_name(raw['name'])
+                    != normalize_person_name(matched_employee.name)):
+                duplicate_reasons.append('Same national ID has a different employee name.')
+                true_conflict = True
+            if (raw['employee_number'] and matched_employee.employee_number
+                    and raw['employee_number'] != matched_employee.employee_number):
+                duplicate_reasons.append('Same national ID has a different employee number.')
+                true_conflict = True
+
+        other_email_owner = existing_email_map.get(raw['email']) if raw['email'] else None
+        if other_email_owner and (not matched_employee or other_email_owner != matched_employee.pk):
+            duplicate_reasons.append('Email belongs to a different employee.')
+            true_conflict = True
+        other_number_owner = (
+            existing_number_map.get(raw['employee_number'])
+            if raw['employee_number'] else None
+        )
+        if other_number_owner and (not matched_employee or other_number_owner != matched_employee.pk):
+            duplicate_reasons.append('Employee number belongs to a different employee.')
+            true_conflict = True
+
+        classification = (
+            'conflict' if true_conflict else
+            'error' if row_errors else
+            'existing' if matched_employee else 'valid'
+        )
+        classification_counts[classification] += 1
 
         review_payload = {
             'name': raw['name'],
@@ -691,6 +755,8 @@ def import_employee_roster_sheet(
             'periodic_exam_status': periodic_exam_status or raw['periodic_exam_status'],
             'vaccination_status': vaccination_status or raw['vaccination_status'],
             'risk_level': risk_level or raw['risk_level'],
+            '_import_classification': classification,
+            '_optional_missing_fields': missing_optional,
         }
         conflict_employee_id = (
             existing_id_map.get(raw['national_id'])
@@ -701,8 +767,10 @@ def import_employee_roster_sheet(
         if row_errors:
             if len(preview_rows) < MAX_EMPLOYEE_PREVIEW_ROWS:
                 preview_rows.append(employee_roster_preview_row(
-                    row_number, raw, 'error', row_errors,
+                    row_number, raw, classification, row_errors + duplicate_reasons,
                     date_of_birth, appointment_date, center_matched=bool(center),
+                    missing_optional=missing_optional, existing_employee=matched_employee,
+                    field_differences=field_differences,
                 ))
             errors.append({'row': row_number, 'reason': ' '.join(row_errors)})
             review_candidates.append({
@@ -710,7 +778,7 @@ def import_employee_roster_sheet(
                 'status': 'pending',
                 'raw_payload': raw_input,
                 'employee_payload': review_payload,
-                'issues': row_errors,
+                'issues': row_errors + duplicate_reasons,
                 'conflict_employee_id': conflict_employee_id,
             })
             if raw['national_id']:
@@ -723,8 +791,10 @@ def import_employee_roster_sheet(
         if duplicate_reasons:
             if len(preview_rows) < MAX_EMPLOYEE_PREVIEW_ROWS:
                 preview_rows.append(employee_roster_preview_row(
-                    row_number, raw, 'conflict', duplicate_reasons,
+                    row_number, raw, classification, duplicate_reasons,
                     date_of_birth, appointment_date, center_matched=bool(center),
+                    missing_optional=missing_optional, existing_employee=matched_employee,
+                    field_differences=field_differences,
                 ))
             duplicates.append({
                 'row': row_number,
@@ -781,8 +851,9 @@ def import_employee_roster_sheet(
             seen_numbers.add(raw['employee_number'])
         if len(preview_rows) < MAX_EMPLOYEE_PREVIEW_ROWS:
             preview_rows.append(employee_roster_preview_row(
-                row_number, raw, 'valid', [],
+                row_number, raw, classification, [],
                 date_of_birth, appointment_date, center_matched=bool(center),
+                missing_optional=missing_optional,
             ))
 
     summary = {
@@ -795,6 +866,11 @@ def import_employee_roster_sheet(
         'pending_reviews': len([item for item in review_candidates if item['status'] == 'pending']),
         'conflict_reviews': len([item for item in review_candidates if item['status'] == 'conflict']),
         'staged_for_review': len(review_candidates),
+        'new_ready': classification_counts['valid'],
+        'already_existing': classification_counts['existing'],
+        'true_conflicts': classification_counts['conflict'],
+        'needs_correction': classification_counts['error'],
+        'optional_incomplete': optional_incomplete_count,
     }
     review_ids: List[int] = []
     if commit:
