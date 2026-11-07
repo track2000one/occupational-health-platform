@@ -27,7 +27,7 @@ jobs:
       - run: pip install -r requirements.txt
       - run: python manage.py check
       - run: python manage.py makemigrations --check --dry-run
-      - run: python manage.py test health.test_staging_roster_form health.test_organization_structure health.test_organization_bulk_approval health.test_staging_org_drafts_variable health.test_staging_center_master health.test_staging_employee_reset health.test_employee_master_import_alignment health.test_staging_original_employee_excel_mapping health.test_employee_review_activation_validation health.test_employee_review_bulk_activation health.test_employment_lifecycle health.test_workforce_preview health.test_workforce_import --verbosity 1
+      - run: python manage.py test health.test_staging_roster_form health.test_organization_structure health.test_organization_bulk_approval health.test_staging_org_drafts_variable health.test_staging_center_master health.test_staging_employee_reset health.test_employee_master_import_alignment health.test_staging_original_employee_excel_mapping health.test_employee_review_activation_validation health.test_employee_review_bulk_activation health.test_staging_review_center_reconciliation health.test_employment_lifecycle health.test_workforce_preview health.test_workforce_import --verbosity 1
   frontend:
     runs-on: ubuntu-latest
     defaults:
