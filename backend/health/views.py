@@ -484,6 +484,18 @@ class EmployeeImportReviewViewSet(viewsets.ReadOnlyModelViewSet):
                         'detail': 'تمت معالجة هذه البطاقة سابقًا؛ لا يمكن إضافتها مرتين.'
                     }, status=status.HTTP_409_CONFLICT)
 
+                # Review edits must never detach an import that has already
+                # been matched to an existing employee (by ID, email or number).
+                # Comparisons are read-only; changes require a separate,
+                # authorized employee update/transfer workflow.
+                if (locked_review.conflict_employee_id is not None
+                        or (locked_review.employee_payload or {}).get('_import_classification') == 'existing'):
+                    return Response({
+                        'detail': 'هذه البطاقة مرتبطة بموظف مسجل مسبقًا. '
+                                  'راجع الفروقات ولا تنشئ سجلًا جديدًا؛ '
+                                  'تصحيح السجل القائم يتطلب إجراءً مستقلًا.'
+                    }, status=status.HTTP_409_CONFLICT)
+
                 employee_serializer = EmployeeSerializer(
                     data=submitted, context={'request': request},
                 )
