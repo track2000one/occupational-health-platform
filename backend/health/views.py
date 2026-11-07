@@ -340,6 +340,23 @@ class ExcelImportViewSet(viewsets.ReadOnlyModelViewSet):
             )
             result=normalize_import_result(result)
             summary=result['summary']
+            # The expanded employee preview is for the current authenticated
+            # response only. Never store row-level personal information in
+            # DataImportBatch.summary, even in preview (non-commit) mode.
+            batch_summary = result
+            if employee_import_mode in ('template', 'flexible'):
+                batch_summary = {
+                    'mode': result.get('mode'),
+                    'file_name': uploaded.name,
+                    'sheet_name': result.get('sheet_name'),
+                    'summary': dict(summary),
+                    'detected_headers': result.get('detected_headers', []),
+                    'mapped_fields': result.get('mapped_fields', {}),
+                    'missing_required_fields': result.get('missing_required_fields', []),
+                    'preview_rows_total': result.get('preview_rows_total', 0),
+                    'preview_rows_truncated': result.get('preview_rows_truncated', False),
+                    'privacy_note': 'Detailed employee preview is response-only.',
+                }
             batch=DataImportBatch.objects.create(
                 file_name=uploaded.name,
                 sheet_name=result.get('sheet_name',''),
@@ -351,7 +368,7 @@ class ExcelImportViewSet(viewsets.ReadOnlyModelViewSet):
                 imported_records=imported_total_from_summary(summary),
                 skipped_rows=summary.get('skipped_rows',0),
                 errors_count=summary.get('errors_count',0),
-                summary=result,
+                summary=batch_summary,
                 created_by=request.user,
             )
             review_ids = result.get('review_ids') or []
