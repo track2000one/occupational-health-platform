@@ -1,5 +1,6 @@
 """Synthetic-only staff import classification tests: no real identities or Excel data."""
 from io import BytesIO
+from datetime import date
 
 from django.test import TestCase
 from openpyxl import Workbook
@@ -37,7 +38,7 @@ class EmployeeImportClassificationTests(TestCase):
         self.existing = Employee.objects.create(
             name='موظف تجريبي', national_id='9998000001',
             employee_number='QA-1234', email='qa-original@example.invalid',
-            date_of_birth='1980-01-01', health_center=self.center,
+            date_of_birth=date(1980, 1, 1), health_center=self.center,
             job_title='فني',
         )
 
