@@ -1,7 +1,9 @@
 import hashlib
 import json
 import re
+import unicodedata
 from datetime import datetime, date
+from collections import Counter
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -10,11 +12,17 @@ from django.db import transaction
 from openpyxl import load_workbook
 from openpyxl.utils.datetime import from_excel
 
+from .employee_import_countries import resolve_import_nationality
+from .employee_import_classification import (
+    compare_employee, matched_employee_summary, normalize_person_name,
+    optional_missing_fields,
+)
 from .models import (
     CampaignCoverage,
     ClinicVisit,
     Employee,
     EmployeeImportReview,
+    OrganizationUnit,
     EmployeeClinicVisit,
     EmployeeHealthProfile,
     HealthCenter,
@@ -48,7 +56,7 @@ HEADER_ALIASES = {
 EMPLOYEE_ROSTER_ALIASES = {
     'name': ['name', 'employee name', 'full name', 'staff name', 'اسم الموظف', 'الاسم', 'الاسم الكامل', 'الاسم الرباعي'],
     'email': ['email', 'email address', 'e-mail', 'البريد', 'البريد الإلكتروني', 'البريد الالكتروني'],
-    'national_id': ['national id', 'national_id', 'id number', 'civil id', 'رقم الهوية الوطنية', 'رقم الهوية', 'الهوية', 'السجل المدني', 'رقم السجل المدني'],
+    'national_id': ['national id', 'national_id', 'id number', 'civil id', 'national id / iqama', 'رقم الهوية الوطنية', 'رقم الهوية / الإقامة', 'رقم الهوية / الاقامة', 'رقم الهوية/الإقامة', 'رقم الهوية', 'الهوية', 'السجل المدني', 'رقم السجل المدني'],
     'employee_number': ['employee number', 'employee no', 'employee id', 'staff id', 'staff number', 'الرقم الوظيفي', 'رقم الموظف', 'رقم المنسوب'],
     'national_address': ['national address', 'address', 'العنوان الوطني', 'العنوان'],
     'mobile': ['mobile', 'mobile number', 'mobile no', 'phone', 'phone number', 'رقم الجوال', 'الجوال', 'رقم الهاتف', 'الهاتف'],
@@ -62,13 +70,14 @@ EMPLOYEE_ROSTER_ALIASES = {
     'periodic_exam_status': ['periodic exam status', 'حالة الفحص الدوري'],
     'vaccination_status': ['vaccination status', 'حالة التطعيم'],
     'risk_level': ['risk level', 'مستوى الخطورة'],
+    'organization_unit_code': ['organization unit code', 'org unit code', 'رمز الوحدة التنظيمية', 'رمز الجهة التنظيمية'],
+    'nationality': ['nationality', 'country', 'citizenship', 'الجنسية', 'الدولة', 'بلد الجنسية'],
+    'current_job': ['current job', 'current position', 'current role', 'الوظيفة الحالية', 'الوظيفة المشغولة حاليا'],
+    'job_title_en': ['job title english', 'job title en', 'english job title', 'المسمى الوظيفي بالإنجليزية', 'المسمى الوظيفي بالانجليزية'],
+    'children_count': ['number of children', 'children count', '# of child', 'عدد الأطفال', 'عدد الابناء'],
 }
 
-EMPLOYEE_REQUIRED_FIELDS = (
-    'name', 'email', 'national_id', 'employee_number', 'national_address', 'mobile',
-    'date_of_birth', 'birth_place', 'gender', 'marital_status', 'health_center',
-    'job_title', 'appointment_date',
-)
+EMPLOYEE_REQUIRED_FIELDS = ('name', 'national_id', 'health_center')
 
 EMPLOYEE_CHOICE_MAPS = {
     'gender': {
@@ -280,6 +289,55 @@ def masked_preview(payload: Dict[str, Any]) -> Dict[str, Any]:
     return safe
 
 
+# A bounded, masked overview for all imported employee rows, valid or invalid.
+# It is returned to the signed-in administrator but NEVER persisted in a
+# DataImportBatch record. Do not add full IDs, contact details, or medical data.
+MAX_EMPLOYEE_PREVIEW_ROWS = 5000
+
+
+def employee_roster_preview_row(
+    row_number: int,
+    raw: Dict[str, str],
+    status: str,
+    issues: List[str],
+    date_of_birth=None,
+    appointment_date=None,
+    center_matched: bool = False,
+    missing_optional=None,
+    existing_employee=None,
+    field_differences=None,
+) -> Dict[str, Any]:
+    return {
+        'row': row_number,
+        'status': status,
+        'name': raw.get('name', ''),
+        'national_id': mask_value(raw.get('national_id', '')),
+        'employee_number': raw.get('employee_number', ''),
+        'health_center': raw.get('health_center', ''),
+        'health_center_matched': center_matched,
+        'date_of_birth': (date_of_birth.isoformat() if date_of_birth
+                          else raw.get('date_of_birth', '')),
+        'appointment_date': (appointment_date.isoformat() if appointment_date
+                             else raw.get('appointment_date', '')),
+        'job_title': raw.get('job_title', ''),
+        'current_job': raw.get('current_job', ''),
+        'gender': raw.get('gender', ''),
+        'marital_status': raw.get('marital_status', ''),
+        'nationality': raw.get('nationality', ''),
+        'birth_place': raw.get('birth_place', ''),
+        'job_title_en': raw.get('job_title_en', ''),
+        'children_count': raw.get('children_count', ''),
+        'organization_unit_code': raw.get('organization_unit_code', ''),
+        'email': mask_value(raw.get('email', '')),
+        'mobile': mask_value(raw.get('mobile', '')),
+        'national_address': mask_value(raw.get('national_address', '')),
+        'issues': list(issues),
+        'missing_optional_fields': list(missing_optional or []),
+        'existing_employee': matched_employee_summary(existing_employee),
+        'field_differences': list(field_differences or []),
+    }
+
+
 def update_or_create_by_filter(model, filter_kwargs: Dict[str, Any], defaults: Dict[str, Any]):
     instance = model.objects.filter(**filter_kwargs).first()
     if instance:
@@ -307,7 +365,10 @@ def employee_roster_value(row: Tuple[Any, ...], headers: List[str], field: str) 
 
 
 def employee_header_variants(value: Any) -> set:
-    raw = normalize_header(value)
+    """Match formatting variants of Arabic Excel headers without touching cell data."""
+    raw = unicodedata.normalize('NFKC', clean_text(value)).lower()
+    raw = re.sub(r'[\u064b-\u065f\u0670\u0640\u200b-\u200f\ufeff]', '', raw)
+    raw = re.sub(r'[أإآٱ]', 'ا', raw).replace('ى', 'ي')
     variants = set()
     for segment in [raw, *re.split(r'[/|\\()\[\]{}]+', raw)]:
         cleaned = re.sub(r'[^\w\u0600-\u06ff]+', ' ', segment.replace('_', ' '))
@@ -465,14 +526,40 @@ def import_employee_roster_sheet(
     header_row, headers = find_employee_header_row(ws) if flexible else find_header_row(ws)
     column_mapping, mapping_candidates = resolve_employee_field_mapping(headers, field_mapping)
     missing_columns = [field for field in EMPLOYEE_REQUIRED_FIELDS if column_mapping.get(field) is None]
-    if missing_columns and not flexible:
-        raise ValueError(f"Missing required employee columns: {', '.join(missing_columns)}")
+    if missing_columns and (not flexible or commit):
+        readable = ', '.join(missing_columns)
+        raise ValueError(
+            f'Employee import needs column mapping for: {readable}. '
+            'Choose Flexible File, map the required fields and preview again before saving.'
+        )
 
-    centers_by_name = {
-        normalize_header(center.name): center
-        for center in HealthCenter.objects.filter(is_active=True)
+    centers_by_name = {}
+    ambiguous_center_names = set()
+    for option in HealthCenter.objects.filter(is_active=True):
+        for label in (option.name, option.name_ar):
+            alias = normalize_header(label)
+            if not alias:
+                continue
+            if alias in centers_by_name and centers_by_name[alias].pk != option.pk:
+                ambiguous_center_names.add(alias)
+            else:
+                centers_by_name[alias] = option
+    for alias in ambiguous_center_names:
+        centers_by_name.pop(alias, None)
+    # Organizational references are optional and must already be formally approved.
+    approved_org_units = {
+        unit.code: unit for unit in OrganizationUnit.objects.filter(
+            is_approved=True, is_active=True,
+        ).select_related('health_center')
     }
-    existing_id_map = dict(Employee.objects.exclude(national_id='').values_list('national_id', 'id'))
+    existing_employees = {
+        employee.national_id: employee
+        for employee in Employee.objects.select_related('health_center').all()
+        if employee.national_id
+    }
+    existing_id_map = {
+        national_id: employee.pk for national_id, employee in existing_employees.items()
+    }
     existing_email_map = dict(
         Employee.objects.exclude(email__isnull=True).exclude(email='').values_list('email', 'id')
     )
@@ -488,6 +575,9 @@ def import_employee_roster_sheet(
     errors: List[Dict[str, Any]] = []
     preview_rows: List[Dict[str, Any]] = []
     review_candidates: List[Dict[str, Any]] = []
+    classification_counts = Counter()
+    optional_incomplete_count = 0
+    new_incomplete_count = 0
     total_rows = 0
     today = date.today()
 
@@ -504,7 +594,7 @@ def import_employee_roster_sheet(
                 raise ValueError('Selected health center is not active or does not exist.')
             raw['health_center'] = corrected_center.name
         raw['email'] = raw['email'].strip().lower()
-        raw['national_id'] = ''.join(ch for ch in raw['national_id'] if ch.isdigit())
+        raw['national_id'] = ''.join(str(unicodedata.digit(ch)) for ch in raw['national_id'] if ch.isdecimal())
         raw['employee_number'] = raw['employee_number'].strip()
         raw['mobile'] = ''.join(ch for ch in raw['mobile'] if ch.isdigit() or ch == '+')
         row_errors: List[str] = []
@@ -512,10 +602,11 @@ def import_employee_roster_sheet(
         for field in EMPLOYEE_REQUIRED_FIELDS:
             if not raw.get(field):
                 row_errors.append(f'Missing required field: {field}.')
-        try:
-            validate_email(raw['email'])
-        except DjangoValidationError:
-            row_errors.append('Invalid email address.')
+        if raw['email']:
+            try:
+                validate_email(raw['email'])
+            except DjangoValidationError:
+                row_errors.append('Invalid email address.')
         if raw['national_id'] and len(raw['national_id']) != 10:
             row_errors.append('National ID must contain exactly 10 digits.')
         mobile_digits = ''.join(ch for ch in raw['mobile'] if ch.isdigit())
@@ -537,9 +628,24 @@ def import_employee_roster_sheet(
 
         gender = employee_choice('gender', raw['gender'])
         marital_status = employee_choice('marital_status', raw['marital_status'])
-        periodic_exam_status = employee_choice('periodic_exam_status', raw['periodic_exam_status'], 'incomplete')
-        vaccination_status = employee_choice('vaccination_status', raw['vaccination_status'], 'due')
-        risk_level = employee_choice('risk_level', raw['risk_level'], 'low')
+        # No clinical assessment is inferred from the basic employee roster.
+        periodic_exam_status = employee_choice('periodic_exam_status', raw['periodic_exam_status'], 'unknown')
+        vaccination_status = employee_choice('vaccination_status', raw['vaccination_status'], 'unknown')
+        risk_level = employee_choice('risk_level', raw['risk_level'], 'unknown')
+        nationality = resolve_import_nationality(raw.get('nationality', ''))
+        if raw.get('nationality') and not nationality:
+            row_errors.append('Invalid nationality. Choose a country from the template or use a two-letter ISO code.')
+        children_text = raw.get('children_count', '').strip()
+        children_count = None
+        if children_text:
+            try:
+                children_count = int(children_text)
+                if not 0 <= children_count <= 100:
+                    raise ValueError()
+            except ValueError:
+                row_errors.append('Children count must be a whole number between 0 and 100.')
+        if len(raw.get('job_title_en', '')) > 150 or len(raw.get('current_job', '')) > 200:
+            row_errors.append('Job title or current job exceeds the allowed length.')
         if raw['gender'] and not gender:
             row_errors.append('Invalid gender. Use male/female or ذكر/أنثى.')
         if raw['marital_status'] and not marital_status:
@@ -552,23 +658,89 @@ def import_employee_roster_sheet(
             if raw[field] and not parsed:
                 row_errors.append(f'Invalid value for {field}.')
 
-        center = centers_by_name.get(normalize_header(raw['health_center']))
-        if raw['health_center'] and not center:
+        center_key = normalize_header(raw['health_center'])
+        center = centers_by_name.get(center_key)
+        if center_key in ambiguous_center_names:
+            row_errors.append('More than one active center has this name. Select a center manually.')
+        elif raw['health_center'] and not center:
             row_errors.append('Health center does not match an active center in the platform.')
+        org_code = raw.get('organization_unit_code', '').strip()
+        org_unit = approved_org_units.get(org_code) if org_code else None
+        if org_code and not org_unit:
+            row_errors.append('Organization unit reference is not approved or does not exist.')
+        elif org_unit and org_unit.kind == 'sector':
+            row_errors.append('Organizational sector cannot be assigned directly to an employee.')
+        elif org_unit and org_unit.kind in ('center', 'unit') and not org_unit.health_center_id:
+            row_errors.append('Organizational unit does not have an approved center mapping.')
+        elif org_unit and org_unit.health_center_id and center and org_unit.health_center_id != center.pk:
+            row_errors.append('Organizational unit belongs to a different health center.')
+
+        matched_employee = existing_employees.get(raw['national_id'])
+        missing_optional = optional_missing_fields(raw)
+        if missing_optional:
+            optional_incomplete_count += 1
+        normalized_values = {
+            'date_of_birth': date_of_birth,
+            'appointment_date': appointment_date,
+            'gender': gender,
+            'marital_status': marital_status,
+            'nationality': nationality,
+        }
+        field_differences = (
+            compare_employee(matched_employee, raw, normalized_values, center)
+            if matched_employee else []
+        )
 
         duplicate_reasons: List[str] = []
-        if raw['national_id'] in seen_ids:
+        if raw['national_id'] and raw['national_id'] in seen_ids:
             duplicate_reasons.append('National ID is duplicated inside the file.')
-        if raw['email'] in seen_emails:
+        if raw['email'] and raw['email'] in seen_emails:
             duplicate_reasons.append('Email is duplicated inside the file.')
-        if raw['employee_number'] in seen_numbers:
+        if raw['employee_number'] and raw['employee_number'] in seen_numbers:
             duplicate_reasons.append('Employee number is duplicated inside the file.')
-        if raw['national_id'] in existing_id_map:
-            duplicate_reasons.append('National ID already exists in PostgreSQL.')
-        if raw['email'] in existing_email_map:
-            duplicate_reasons.append('Email already exists in PostgreSQL.')
-        if raw['employee_number'] in existing_number_map:
-            duplicate_reasons.append('Employee number already exists in PostgreSQL.')
+
+        # An identity match is not by itself a data contradiction. A different
+        # staff name for the same ID or a unique field assigned to a DIFFERENT
+        # person does require manual investigation.
+        true_conflict = bool(duplicate_reasons)
+        if matched_employee:
+            if (raw['name'] and normalize_person_name(raw['name'])
+                    != normalize_person_name(matched_employee.name)):
+                duplicate_reasons.append('Same national ID has a different employee name.')
+                true_conflict = True
+            if (raw['employee_number'] and matched_employee.employee_number
+                    and raw['employee_number'] != matched_employee.employee_number):
+                duplicate_reasons.append('Same national ID has a different employee number.')
+                true_conflict = True
+
+        other_email_owner = existing_email_map.get(raw['email']) if raw['email'] else None
+        if other_email_owner and (not matched_employee or other_email_owner != matched_employee.pk):
+            duplicate_reasons.append('Email belongs to a different employee.')
+            true_conflict = True
+        other_number_owner = (
+            existing_number_map.get(raw['employee_number'])
+            if raw['employee_number'] else None
+        )
+        if other_number_owner and (not matched_employee or other_number_owner != matched_employee.pk):
+            duplicate_reasons.append('Employee number belongs to a different employee.')
+            true_conflict = True
+
+        # A matching identity is an existing employee, not a collision.
+        # Keep the informational notice separate from real duplicate reasons.
+        # Only identity/name/unique-field inconsistencies are hard conflicts.
+        existing_notice = (
+            ['Employee already exists with this national ID.']
+            if matched_employee else []
+        )
+        review_issues = duplicate_reasons + existing_notice
+        classification = (
+            'conflict' if true_conflict else
+            'error' if row_errors else
+            'existing' if matched_employee else 'valid'
+        )
+        classification_counts[classification] += 1
+        if classification == 'valid' and missing_optional:
+            new_incomplete_count += 1
 
         review_payload = {
             'name': raw['name'],
@@ -576,6 +748,10 @@ def import_employee_roster_sheet(
             'national_id': raw['national_id'],
             'employee_number': raw['employee_number'],
             'national_address': raw['national_address'],
+            'nationality': nationality or '',
+            'current_job': raw['current_job'],
+            'job_title_en': raw['job_title_en'],
+            'children_count': children_count,
             'mobile': raw['mobile'],
             'date_of_birth': date_of_birth.isoformat() if date_of_birth else '',
             'birth_place': raw['birth_place'],
@@ -583,11 +759,15 @@ def import_employee_roster_sheet(
             'marital_status': marital_status or raw['marital_status'],
             'health_center_name': center.name if center else raw['health_center'],
             'health_center': center.id if center else None,
+            'organization_unit': org_unit.pk if org_unit else None,
             'job_title': raw['job_title'],
             'appointment_date': appointment_date.isoformat() if appointment_date else '',
             'periodic_exam_status': periodic_exam_status or raw['periodic_exam_status'],
             'vaccination_status': vaccination_status or raw['vaccination_status'],
             'risk_level': risk_level or raw['risk_level'],
+            '_import_classification': classification,
+            '_optional_missing_fields': missing_optional,
+            '_field_differences': field_differences,
         }
         conflict_employee_id = (
             existing_id_map.get(raw['national_id'])
@@ -596,13 +776,20 @@ def import_employee_roster_sheet(
         )
 
         if row_errors:
+            if len(preview_rows) < MAX_EMPLOYEE_PREVIEW_ROWS:
+                preview_rows.append(employee_roster_preview_row(
+                    row_number, raw, classification, row_errors + review_issues,
+                    date_of_birth, appointment_date, center_matched=bool(center),
+                    missing_optional=missing_optional, existing_employee=matched_employee,
+                    field_differences=field_differences,
+                ))
             errors.append({'row': row_number, 'reason': ' '.join(row_errors)})
             review_candidates.append({
                 'row': row_number,
-                'status': 'pending',
+                'status': 'conflict' if true_conflict else 'pending',
                 'raw_payload': raw_input,
                 'employee_payload': review_payload,
-                'issues': row_errors,
+                'issues': row_errors + review_issues,
                 'conflict_employee_id': conflict_employee_id,
             })
             if raw['national_id']:
@@ -612,19 +799,27 @@ def import_employee_roster_sheet(
             if raw['employee_number']:
                 seen_numbers.add(raw['employee_number'])
             continue
-        if duplicate_reasons:
-            duplicates.append({
-                'row': row_number,
-                'national_id': mask_value(raw['national_id']),
-                'name': raw['name'],
-                'reason': ' '.join(duplicate_reasons) + ' The row requires review before activation.',
-            })
+        if duplicate_reasons or matched_employee:
+            if len(preview_rows) < MAX_EMPLOYEE_PREVIEW_ROWS:
+                preview_rows.append(employee_roster_preview_row(
+                    row_number, raw, classification, review_issues,
+                    date_of_birth, appointment_date, center_matched=bool(center),
+                    missing_optional=missing_optional, existing_employee=matched_employee,
+                    field_differences=field_differences,
+                ))
+            if duplicate_reasons:
+                duplicates.append({
+                    'row': row_number,
+                    'national_id': mask_value(raw['national_id']),
+                    'name': raw['name'],
+                    'reason': ' '.join(duplicate_reasons) + ' The row requires review before activation.',
+                })
             review_candidates.append({
                 'row': row_number,
-                'status': 'conflict',
+                'status': 'conflict' if true_conflict else 'pending',
                 'raw_payload': raw_input,
                 'employee_payload': review_payload,
-                'issues': duplicate_reasons,
+                'issues': review_issues,
                 'conflict_employee_id': conflict_employee_id,
             })
             if raw['national_id']:
@@ -637,9 +832,9 @@ def import_employee_roster_sheet(
 
         payload = {
             'name': raw['name'],
-            'email': raw['email'],
+            'email': raw['email'] or None,
             'national_id': raw['national_id'],
-            'employee_number': raw['employee_number'],
+            'employee_number': raw['employee_number'] or None,
             'national_address': raw['national_address'],
             'mobile': raw['mobile'],
             'date_of_birth': date_of_birth,
@@ -648,18 +843,30 @@ def import_employee_roster_sheet(
             'marital_status': marital_status,
             'health_center': center.name if center else '',
             'job_title': raw['job_title'],
+            'job_title_en': raw['job_title_en'],
+            'nationality': nationality or '',
+            'current_job': raw['current_job'],
             'appointment_date': appointment_date,
             'periodic_exam_status': periodic_exam_status,
             'vaccination_status': vaccination_status,
             'risk_level': risk_level,
             '_center': center,
+            '_organization_unit': org_unit,
+            '_children_count': children_count,
         }
         valid_payloads.append(payload)
-        seen_ids.add(raw['national_id'])
-        seen_emails.add(raw['email'])
-        seen_numbers.add(raw['employee_number'])
-        if len(preview_rows) < 20:
-            preview_rows.append({'row': row_number, **masked_preview(payload)})
+        if raw['national_id']:
+            seen_ids.add(raw['national_id'])
+        if raw['email']:
+            seen_emails.add(raw['email'])
+        if raw['employee_number']:
+            seen_numbers.add(raw['employee_number'])
+        if len(preview_rows) < MAX_EMPLOYEE_PREVIEW_ROWS:
+            preview_rows.append(employee_roster_preview_row(
+                row_number, raw, classification, [],
+                date_of_birth, appointment_date, center_matched=bool(center),
+                missing_optional=missing_optional,
+            ))
 
     summary = {
         'total_rows': total_rows,
@@ -671,6 +878,15 @@ def import_employee_roster_sheet(
         'pending_reviews': len([item for item in review_candidates if item['status'] == 'pending']),
         'conflict_reviews': len([item for item in review_candidates if item['status'] == 'conflict']),
         'staged_for_review': len(review_candidates),
+        'new_ready': classification_counts['valid'],
+        # New employees with optional gaps remain eligible for import, but
+        # must not be counted as fully complete (green) in the UI.
+        'new_complete': classification_counts['valid'] - new_incomplete_count,
+        'new_optional_incomplete': new_incomplete_count,
+        'already_existing': classification_counts['existing'],
+        'true_conflicts': classification_counts['conflict'],
+        'needs_correction': classification_counts['error'],
+        'optional_incomplete': optional_incomplete_count,
     }
     review_ids: List[int] = []
     if commit:
@@ -678,9 +894,15 @@ def import_employee_roster_sheet(
             for payload in valid_payloads:
                 employee_values = {
                     key: value for key, value in payload.items()
-                    if key not in {'health_center', '_center'}
+                    if key not in {'health_center', '_center', '_organization_unit', '_children_count'}
                 }
-                Employee.objects.create(health_center=payload['_center'], **employee_values)
+                employee = Employee.objects.create(
+                    health_center=payload['_center'], organization_unit=payload['_organization_unit'], **employee_values,
+                )
+                if payload['_children_count'] is not None:
+                    EmployeeHealthProfile.objects.update_or_create(
+                        employee=employee, defaults={'children_count': payload['_children_count']},
+                    )
                 summary['imported_employees'] += 1
             for candidate in review_candidates:
                 fingerprint = review_fingerprint(
@@ -734,6 +956,8 @@ def import_employee_roster_sheet(
         'duplicates': duplicates[:100],
         'errors': errors[:100],
         'preview_rows': preview_rows,
+        'preview_rows_total': total_rows,
+        'preview_rows_truncated': total_rows > len(preview_rows),
         'review_ids': review_ids,
     }
 

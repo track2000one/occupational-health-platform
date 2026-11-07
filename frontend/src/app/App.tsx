@@ -55,6 +55,7 @@ import { DataImportPage } from './pages/DataImportPage';
 import { AppearanceSettingsPage } from './pages/AppearanceSettingsPage';
 import { PeriodicStatisticsPage } from './pages/PeriodicStatisticsPage';
 import { HealthCentersPage } from './pages/HealthCentersPage';
+import { OrganizationStructurePage } from './pages/OrganizationStructurePage';
 import { EmployeeLifecyclePage } from './pages/EmployeeLifecyclePage';
 import { WorkforceRosterPreviewPage } from './pages/WorkforceRosterPreviewPage';
 import { WorkforceTemporaryPage } from './pages/WorkforceTemporaryPage';
@@ -165,6 +166,11 @@ function AppRoutes() {
         <Route path="admin/health-centers" element={
           <PermissionRoute permission="manage:users">
             <HealthCentersPage />
+          </PermissionRoute>
+        } />
+        <Route path="admin/organization-structure" element={
+          <PermissionRoute permission="manage:users">
+            <OrganizationStructurePage />
           </PermissionRoute>
         } />
         <Route path="roles" element={

@@ -2,7 +2,7 @@ import json
 from datetime import date, timedelta
 
 from django.contrib.auth import get_user_model
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils import timezone
 from django.utils.dateparse import parse_date
@@ -340,6 +340,23 @@ class ExcelImportViewSet(viewsets.ReadOnlyModelViewSet):
             )
             result=normalize_import_result(result)
             summary=result['summary']
+            # The expanded employee preview is for the current authenticated
+            # response only. Never store row-level personal information in
+            # DataImportBatch.summary, even in preview (non-commit) mode.
+            batch_summary = result
+            if employee_import_mode in ('template', 'flexible'):
+                batch_summary = {
+                    'mode': result.get('mode'),
+                    'file_name': uploaded.name,
+                    'sheet_name': result.get('sheet_name'),
+                    'summary': dict(summary),
+                    'detected_headers': result.get('detected_headers', []),
+                    'mapped_fields': result.get('mapped_fields', {}),
+                    'missing_required_fields': result.get('missing_required_fields', []),
+                    'preview_rows_total': result.get('preview_rows_total', 0),
+                    'preview_rows_truncated': result.get('preview_rows_truncated', False),
+                    'privacy_note': 'Detailed employee preview is response-only.',
+                }
             batch=DataImportBatch.objects.create(
                 file_name=uploaded.name,
                 sheet_name=result.get('sheet_name',''),
@@ -351,7 +368,7 @@ class ExcelImportViewSet(viewsets.ReadOnlyModelViewSet):
                 imported_records=imported_total_from_summary(summary),
                 skipped_rows=summary.get('skipped_rows',0),
                 errors_count=summary.get('errors_count',0),
-                summary=result,
+                summary=batch_summary,
                 created_by=request.user,
             )
             review_ids = result.get('review_ids') or []
@@ -359,7 +376,10 @@ class ExcelImportViewSet(viewsets.ReadOnlyModelViewSet):
                 EmployeeImportReview.objects.filter(id__in=review_ids, batch__isnull=True).update(batch=batch)
             AuditLog.objects.create(user=str(request.user), action='excel_import_commit' if commit else 'excel_import_preview', model_name='DataImportBatch', record_id=str(batch.id))
             result['batch_id']=batch.id
-            return Response(result)
+            response = Response(result)
+            if employee_import_mode in ('template', 'flexible'):
+                response['Cache-Control'] = 'no-store, private'
+            return response
         except Exception as exc:
             batch=DataImportBatch.objects.create(
                 file_name=uploaded.name,
@@ -394,35 +414,141 @@ class EmployeeImportReviewViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=True, methods=['post'])
     def activate(self, request, pk=None):
+        """Create one real employee from a pending import review.
+
+        basic_only is an explicit escape hatch for invalid OPTIONAL columns,
+        never for a missing identity, ambiguous center, or duplicate employee.
+        The skipped original values remain in the review's immutable source.
+        """
         review = self.get_object()
-        if review.status not in ('pending', 'conflict'):
-            return Response(
-                {'detail': 'Only pending or conflicting reviews can be activated.'},
-                status=status.HTTP_400_BAD_REQUEST,
+        basic_only = request.data.get('basic_only', False)
+        if type(basic_only) is not bool:
+            return Response({'basic_only': 'يجب تحديد وضع الحفظ بشكل صحيح.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if basic_only and request.data.get('confirm_basic_only') is not True:
+            return Response({
+                'confirm_basic_only': 'يجب تأكيد إدراج البيانات الأساسية فقط، دون نقل الحقول الاختيارية.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # The center is the mandatory, verified master foreign key. Sending
+        # PK=0, an inactive center, or a text label cannot create an employee.
+        raw_center_id = request.data.get('health_center')
+        try:
+            center_id = int(raw_center_id)
+        except (TypeError, ValueError):
+            center_id = 0
+        if center_id <= 0 or not HealthCenter.objects.filter(pk=center_id, is_active=True).exists():
+            return Response({
+                'health_center': 'يرجى اختيار مركز صحي مسجل ونشط من القائمة قبل تفعيل البطاقة.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        skipped_optional = []
+        if basic_only:
+            # Start with the mandatory identity/center, then save every optional
+            # employment/contact field that validates independently. Bad values
+            # stay in the original review for later correction. We never infer
+            # clinical assessments or assign an unapproved organizational unit.
+            submitted = {
+                key: request.data.get(key)
+                for key in ('name', 'national_id', 'health_center')
+            }
+            optional_fields = (
+                'employee_number', 'email', 'mobile', 'national_address',
+                'birth_place', 'gender', 'marital_status', 'job_title',
+                'job_title_en', 'current_job', 'nationality', 'children_count',
+                'date_of_birth', 'appointment_date',
             )
-        employee_serializer = EmployeeSerializer(data=request.data, context={'request': request})
-        employee_serializer.is_valid(raise_exception=True)
-        with transaction.atomic():
-            employee = employee_serializer.save()
-            review.employee_payload = dict(employee_serializer.data)
-            review.status = 'activated'
-            review.activated_employee = employee
-            review.resolved_by = request.user
-            review.resolved_at = timezone.now()
-            review.issues = []
-            review.save(update_fields=[
-                'employee_payload', 'status', 'activated_employee', 'resolved_by',
-                'resolved_at', 'issues', 'updated_at',
-            ])
-            AuditLog.objects.create(
-                user=str(request.user),
-                action='activate_employee_import_review',
-                model_name='EmployeeImportReview',
-                record_id=str(review.id),
-            )
+            for field in optional_fields:
+                value = request.data.get(field)
+                if value in (None, ''):
+                    continue
+                candidate = dict(submitted)
+                candidate[field] = value
+                candidate_serializer = EmployeeSerializer(
+                    data=candidate, context={'request': request},
+                )
+                if candidate_serializer.is_valid():
+                    submitted = candidate
+                else:
+                    skipped_optional.append(field)
+        else:
+            submitted = request.data
+
+        try:
+            with transaction.atomic():
+                locked_review = EmployeeImportReview.objects.select_for_update().get(
+                    pk=review.pk,
+                )
+                if locked_review.status not in ('pending', 'conflict'):
+                    return Response({
+                        'detail': 'تمت معالجة هذه البطاقة سابقًا؛ لا يمكن إضافتها مرتين.'
+                    }, status=status.HTTP_409_CONFLICT)
+
+                # Review edits must never detach an import that has already
+                # been matched to an existing employee (by ID, email or number).
+                # Comparisons are read-only; changes require a separate,
+                # authorized employee update/transfer workflow.
+                if (locked_review.conflict_employee_id is not None
+                        or (locked_review.employee_payload or {}).get('_import_classification') == 'existing'):
+                    return Response({
+                        'detail': 'هذه البطاقة مرتبطة بموظف مسجل مسبقًا. '
+                                  'راجع الفروقات ولا تنشئ سجلًا جديدًا؛ '
+                                  'تصحيح السجل القائم يتطلب إجراءً مستقلًا.'
+                    }, status=status.HTTP_409_CONFLICT)
+
+                employee_serializer = EmployeeSerializer(
+                    data=submitted, context={'request': request},
+                )
+                employee_serializer.is_valid(raise_exception=True)
+                employee = employee_serializer.save()
+
+                original_review_payload = locked_review.employee_payload
+                locked_review.employee_payload = dict(employee_serializer.data)
+                if basic_only:
+                    # Preserve previously parsed optional values in the original
+                    # review, even if the uploaded Excel is no longer available.
+                    locked_review.employee_payload['_original_import_payload'] = original_review_payload
+                    locked_review.warnings = list(locked_review.warnings or []) + [
+                        'تم إدراج الموظف بالحد الأدنى من البيانات مع الحقول الاختيارية الصالحة؛ '
+                        'بقية بيانات المصدر محفوظة بالمراجعة الأصلية للاستكمال.'
+                    ]
+                    if skipped_optional:
+                        locked_review.warnings.append(
+                            'حقول لم تُنقل لعدم اجتياز التحقق: ' + ', '.join(skipped_optional)
+                        )
+                locked_review.status = 'activated'
+                locked_review.activated_employee = employee
+                locked_review.resolved_by = request.user
+                locked_review.resolved_at = timezone.now()
+                locked_review.issues = []
+                updated = [
+                    'employee_payload', 'status', 'activated_employee',
+                    'resolved_by', 'resolved_at', 'issues', 'updated_at',
+                ]
+                if basic_only:
+                    updated.append('warnings')
+                locked_review.save(update_fields=updated)
+                AuditLog.objects.create(
+                    user=str(request.user),
+                    action=('activate_employee_import_review_basic' if basic_only
+                            else 'activate_employee_import_review'),
+                    model_name='EmployeeImportReview',
+                    record_id=str(locked_review.id),
+                )
+        except IntegrityError:
+            return Response({
+                'detail': 'تعذر إضافة الموظف بسبب تعارض فريد (الهوية أو البيانات). '
+                          'راجع السجل الموجود ولا تنشئ موظفًا مكررًا.'
+            }, status=status.HTTP_409_CONFLICT)
+
         return Response({
-            'review': EmployeeImportReviewSerializer(review).data,
+            'mode': 'basic_only' if basic_only else 'full',
+            'review': EmployeeImportReviewSerializer(locked_review).data,
             'employee': EmployeeSerializer(employee, context={'request': request}).data,
+            'skipped_optional_fields': skipped_optional,
+            'notice': ('أُضيف الموظف بالبيانات الأساسية والحقول الاختيارية الصالحة. '
+                       'القيم غير الصالحة محفوظة في سجل المراجعة للاستكمال لاحقًا.'
+                       if basic_only else ''),
         })
 
     @action(detail=True, methods=['post'])

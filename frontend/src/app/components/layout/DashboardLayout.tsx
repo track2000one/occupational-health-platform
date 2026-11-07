@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react';
 import logoImg from '@/imports/ChatGPT_Image_21______2026__10_06_18__.png';
 import { Outlet, useLocation, useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
+import { rememberAppLanguage } from '../../i18n/languagePreference';
 import { useAuth } from '../../context/AuthContext';
 import { useAppTheme } from '../../context/ThemeContext';
 import { ThemeSwitcher } from '../ThemeSwitcher';
@@ -101,6 +102,7 @@ export function DashboardLayout() {
     { key: 'workforceTemporary', label: isRtl ? 'بيانات الموظفين الأصلية — مؤقت' : 'Original roster — temporary', icon: <CloudUploadIcon />, path: '/admin/temporary-workforce', group: 'admin', permission: PERMISSIONS.MANAGE_USERS },
     { key: 'employeeLifecycle', label: isRtl ? 'الحالات الوظيفية والمتقاعدون' : 'Employment Status & Retirees', icon: <WorkHistoryIcon />, path: '/admin/employee-lifecycle', group: 'admin', permission: PERMISSIONS.MANAGE_USERS },
     { key: 'healthCenters',      label: isRtl ? 'إدارة المراكز الصحية' : 'Health Centers',      icon: <BusinessIcon />,      path: '/admin/health-centers', group: 'admin', permission: PERMISSIONS.MANAGE_USERS },
+    { key: 'organizationStructure', label: isRtl ? 'الهيكل التنظيمي والجهات التابعة' : 'Organization Structure', icon: <BusinessIcon />, path: '/admin/organization-structure', group: 'admin', permission: PERMISSIONS.MANAGE_USERS },
     { key: 'auditLog',           label: isRtl ? 'سجل العمليات' : 'Audit Log',                  icon: <SecurityIcon />,      path: '/audit-log',   group: 'admin', permission: PERMISSIONS.VIEW_AUDIT_LOGS },
     { key: 'settings',           label: isRtl ? 'إعدادات المظهر والقراءة' : 'Appearance Settings', icon: <SettingsIcon />,   path: '/settings',    group: 'admin', permission: PERMISSIONS.MANAGE_SETTINGS },
     { key: 'roles',              label: isRtl ? 'الأدوار والصلاحيات' : 'Roles & Perms',        icon: <ShieldIcon />,        path: '/roles',       group: 'admin', permission: PERMISSIONS.MANAGE_USERS },
@@ -138,8 +140,8 @@ export function DashboardLayout() {
 
   const toggleLanguage = () => {
     const newLang = i18n.language === 'en' ? 'ar' : 'en';
-    i18n.changeLanguage(newLang);
-    document.dir = newLang === 'ar' ? 'rtl' : 'ltr';
+    rememberAppLanguage(newLang);
+    void i18n.changeLanguage(newLang);
     handleMenuClose();
   };
 
