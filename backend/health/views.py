@@ -376,7 +376,10 @@ class ExcelImportViewSet(viewsets.ReadOnlyModelViewSet):
                 EmployeeImportReview.objects.filter(id__in=review_ids, batch__isnull=True).update(batch=batch)
             AuditLog.objects.create(user=str(request.user), action='excel_import_commit' if commit else 'excel_import_preview', model_name='DataImportBatch', record_id=str(batch.id))
             result['batch_id']=batch.id
-            return Response(result)
+            response = Response(result)
+            if employee_import_mode in ('template', 'flexible'):
+                response['Cache-Control'] = 'no-store, private'
+            return response
         except Exception as exc:
             batch=DataImportBatch.objects.create(
                 file_name=uploaded.name,
