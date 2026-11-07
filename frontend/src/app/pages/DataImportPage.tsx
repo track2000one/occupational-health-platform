@@ -997,7 +997,7 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
           <Grid container spacing={2} sx={{ mb: 3 }}>
             <Grid size={{ xs: 12, sm: 6, md: 3 }}>{summaryCard(isRtl ? 'إجمالي الصفوف' : 'Total rows', result.summary.total_rows || 0, '#1e40af')}</Grid>
             <Grid size={{ xs: 12, sm: 6, md: 3 }}>{summaryCard(isRtl ? 'صفوف صالحة' : 'Valid rows', result.summary.valid_rows || 0, '#16a34a')}</Grid>
-            <Grid size={{ xs: 12, sm: 6, md: 3 }}>{summaryCard(isRtl ? 'مكررة' : 'Duplicates', result.summary.duplicate_rows || 0, '#f59e0b')}</Grid>
+            <Grid size={{ xs: 12, sm: 6, md: 3 }}>{summaryCard(isRtl ? 'ازدواجيات فعلية' : 'Duplicate collisions', result.summary.duplicate_rows || 0, '#f59e0b')}</Grid>
             <Grid size={{ xs: 12, sm: 6, md: 3 }}>{summaryCard(isRtl ? 'أخطاء' : 'Errors', result.summary.errors_count || 0, '#dc2626')}</Grid>
           </Grid>
 
@@ -1009,8 +1009,11 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
               </Typography>
               <Stack direction="row" gap={1} flexWrap="wrap">
                 <Chip color="success" label={isRtl
-                  ? `جديد وجاهز: ${result.summary.new_ready}`
-                  : `New and eligible: ${result.summary.new_ready}`} />
+                  ? `جديد مكتمل: ${result.summary.new_complete ?? result.summary.new_ready}`
+                  : `New complete: ${result.summary.new_complete ?? result.summary.new_ready}`} />
+                <Chip color="info" variant="outlined" label={isRtl
+                  ? `جديد قابل للإضافة: ${result.summary.new_ready}`
+                  : `New eligible: ${result.summary.new_ready}`} />
                 <Chip color="info" label={isRtl
                   ? `موجود مسبقًا: ${result.summary.already_existing || 0}`
                   : `Already existing: ${result.summary.already_existing || 0}`} />
@@ -1329,6 +1332,10 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
                 const payload = review.employee_payload || {};
                 const importClassification = payload['_import_classification'];
                 const isExistingMatch = importClassification === 'existing';
+                const isLinkedToExisting = Boolean(review.conflict_employee_summary) || isExistingMatch;
+                const reviewDifferences = Array.isArray(payload['_field_differences'])
+                  ? (payload['_field_differences'] as Array<{field: string; existing: string; incoming: string}>)
+                  : [];
                 const isActualConflict = importClassification === 'conflict' || (
                   !isExistingMatch && review.status === 'conflict'
                 );
@@ -1389,6 +1396,20 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
                             {isRtl ? 'بيانات اختيارية غير متوفرة:' : 'Missing optional data:'}
                             {' '}{reviewMissing.map(field => IMPORT_FIELD_LABELS_AR[field] || field).join('، ')}
                           </Alert>}
+                          {isLinkedToExisting && <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2, bgcolor: '#f1f7ff' }}>
+                            <Typography fontWeight={900} fontSize={13} sx={{ mb: 0.5 }}>
+                              {isRtl ? 'مقارنة السجل الحالي بملف Excel' : 'Existing record vs Excel'}
+                            </Typography>
+                            {reviewDifferences.length ? reviewDifferences.map((difference, index) => (
+                              <Typography key={index} fontSize={12.5} sx={{ py: 0.3 }}>
+                                <strong>{IMPORT_FIELD_LABELS_AR[difference.field] || difference.field}</strong>
+                                {' — '}{isRtl ? 'المسجل:' : 'Stored:'} {String(difference.existing ?? '—')}
+                                {' | '}{isRtl ? 'الوارد:' : 'Excel:'} {String(difference.incoming ?? '—')}
+                              </Typography>
+                            )) : <Typography variant="body2">
+                              {isRtl ? 'لم تُرصد اختلافات في البيانات المقارنة.' : 'No compared field differences found.'}
+                            </Typography>}
+                          </Paper>}
                           <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2, bgcolor: 'warning.50' }}>
                             <Typography fontWeight={900} variant="body2" sx={{ mb: 0.5 }}>{isRtl ? 'الملاحظات المطلوب معالجتها' : 'Issues to resolve'}</Typography>
                             <Box component="ul" sx={{ m: 0, ps: 2.5 }}>
@@ -1400,9 +1421,17 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
                             </Box>
                           </Paper>
                           <Stack direction={isRtl ? 'row-reverse' : 'row'} spacing={1}>
-                            <Button fullWidth variant="contained" startIcon={<EditIcon />} onClick={() => openReview(review)}>
-                              {isRtl ? 'معالجة وتفعيل' : 'Correct & Activate'}
-                            </Button>
+                            {isLinkedToExisting ? (
+                              <Alert severity="info" sx={{ flex: 1 }}>
+                                {isRtl
+                                  ? 'سجل مرتبط بموظف موجود. للمقارنة فقط؛ أي تحديث يتطلب إجراءً مستقلًا.'
+                                  : 'Linked to an existing employee. Compare only; updates require a separate workflow.'}
+                              </Alert>
+                            ) : (
+                              <Button fullWidth variant="contained" startIcon={<EditIcon />} onClick={() => openReview(review)}>
+                                {isRtl ? 'معالجة وتفعيل' : 'Correct & Activate'}
+                              </Button>
+                            )}
                             <Button variant="outlined" color="inherit" startIcon={<CancelIcon />} onClick={() => void discardReview(review)}>
                               {isRtl ? 'تجاهل' : 'Discard'}
                             </Button>
