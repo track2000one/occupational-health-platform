@@ -1380,7 +1380,7 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
                               {isExistingMatch
                                 ? (isRtl ? 'هذا الموظف مسجل بالفعل، ولن يُضاف مرتين' : 'This employee already exists; no duplicate will be created')
                                 : (isRtl ? 'راجع التعارض مع الموظف المسجل' : 'Investigate conflict with existing employee')}
-                              : {review.conflict_employee_summary.name}
+                              {' — '}{review.conflict_employee_summary.name}
                               {' '}({review.conflict_employee_summary.employee_number ||
                                 review.conflict_employee_summary.national_id_masked})
                             </Alert>
