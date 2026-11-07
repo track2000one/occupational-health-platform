@@ -47,6 +47,7 @@ import { authFetch, getAccessToken } from '../context/AuthContext';
 import { CalendarDateField } from '../components/CalendarDateField';
 import { getNationalityOptions, normalizeNationalitySearch } from '../data/employeeFormOptions';
 import { restoreReviewCenterId, restoreReviewNationality } from '../utils/employeeReviewValidation';
+import { StagingCenterReconciliationDialog } from './StagingCenterReconciliationDialog';
 
 // Prevent Staging imports from silently falling back to the Production API.
 const API_BASE_URL = (import.meta.env.VITE_API_URL ||
@@ -311,6 +312,7 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
   const [bulkPreview, setBulkPreview] = useState<BulkReviewPreview | null>(null);
   const [bulkAcknowledged, setBulkAcknowledged] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [centerMatchingOpen, setCenterMatchingOpen] = useState(false);
   const [bulkProgress, setBulkProgress] = useState({ processed: 0, created: 0, skipped: 0 });
   const [basicActivationConfirmOpen, setBasicActivationConfirmOpen] = useState(false);
   const [reviewCenterSource, setReviewCenterSource] = useState('');
@@ -1145,6 +1147,13 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
                   onClick={() => void previewBulkActivation('all')}>
                   {isRtl ? 'تفعيل جميع البطاقات المؤهلة' : 'Activate all eligible'}
                 </Button>
+                {typeof window !== 'undefined' &&
+                  (window.location.hostname.includes('staging') ||
+                   ['localhost', '127.0.0.1'].includes(window.location.hostname)) &&
+                  <Button variant="outlined" color="warning" startIcon={<EditIcon />}
+                    disabled={bulkBusy} onClick={() => setCenterMatchingOpen(true)}>
+                    {isRtl ? 'مطابقة المراكز المعلقة' : 'Match unmatched centers'}
+                  </Button>}
               </Stack>
             </Stack>
             <Typography color="text.secondary" fontSize={13} sx={{ mt: 1 }}>
@@ -1225,6 +1234,10 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
           )}
         </Box>
       )}
+
+      <StagingCenterReconciliationDialog open={centerMatchingOpen}
+        isRtl={isRtl} onClose={() => setCenterMatchingOpen(false)}
+        onMapped={() => loadReviews()} />
 
       <Dialog open={Boolean(bulkPreview)}
         onClose={() => !bulkBusy && setBulkPreview(null)}
