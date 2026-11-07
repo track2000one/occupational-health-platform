@@ -241,6 +241,11 @@ const IMPORT_ISSUE_LABELS_AR: Record<string, string> = {
   'Employee number is duplicated inside the file': 'الرقم الوظيفي مكرر داخل الملف',
   'National ID already exists in PostgreSQL': 'رقم الهوية الوطنية موجود مسبقًا في قاعدة البيانات',
   'Email already exists in PostgreSQL': 'البريد الإلكتروني موجود مسبقًا في قاعدة البيانات',
+  'Employee already exists with this national ID': 'الموظف موجود مسبقًا برقم الهوية نفسه، ولن يتم إنشاء سجل مكرر',
+  'Same national ID has a different employee name': 'رقم الهوية موجود ولكن اسم الموظف مختلف؛ يجب التحقق قبل التحديث',
+  'Same national ID has a different employee number': 'رقم الهوية موجود ولكن الرقم الوظيفي مختلف؛ يحتاج مراجعة',
+  'Email belongs to a different employee': 'البريد الإلكتروني مسجل لموظف آخر؛ تعارض فعلي',
+  'Employee number belongs to a different employee': 'الرقم الوظيفي مسجل لموظف آخر؛ تعارض فعلي',
   'Employee number already exists in PostgreSQL': 'الرقم الوظيفي موجود مسبقًا في قاعدة البيانات',
   'The row requires review before activation': 'يجب مراجعة الصف قبل تفعيل بطاقة الموظف',
   'Missing employee name or national ID': 'اسم الموظف أو رقم الهوية الوطنية مفقود',
@@ -996,6 +1001,37 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
             <Grid size={{ xs: 12, sm: 6, md: 3 }}>{summaryCard(isRtl ? 'أخطاء' : 'Errors', result.summary.errors_count || 0, '#dc2626')}</Grid>
           </Grid>
 
+          {employeeMode && typeof result.summary.new_ready === 'number' && (
+            <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 3,
+              bgcolor: '#f7fbff', borderColor: '#c6dae9' }}>
+              <Typography fontWeight={900} color="#153f64" sx={{ mb: 1.2 }}>
+                {isRtl ? 'تصنيف الموظفين قبل الاعتماد' : 'Pre-import employee classification'}
+              </Typography>
+              <Stack direction="row" gap={1} flexWrap="wrap">
+                <Chip color="success" label={isRtl
+                  ? `جديد وجاهز: ${result.summary.new_ready}`
+                  : `New and eligible: ${result.summary.new_ready}`} />
+                <Chip color="info" label={isRtl
+                  ? `موجود مسبقًا: ${result.summary.already_existing || 0}`
+                  : `Already existing: ${result.summary.already_existing || 0}`} />
+                <Chip color="error" label={isRtl
+                  ? `تعارض فعلي: ${result.summary.true_conflicts || 0}`
+                  : `True conflict: ${result.summary.true_conflicts || 0}`} />
+                <Chip color="warning" label={isRtl
+                  ? `تحتاج معالجة: ${result.summary.needs_correction || 0}`
+                  : `Needs correction: ${result.summary.needs_correction || 0}`} />
+                <Chip color="warning" variant="outlined" label={isRtl
+                  ? `نواقص اختيارية: ${result.summary.optional_incomplete || 0}`
+                  : `Optional gaps: ${result.summary.optional_incomplete || 0}`} />
+              </Stack>
+              <Typography color="text.secondary" fontSize={13} sx={{ mt: 1.2 }}>
+                {isRtl
+                  ? 'يمكن أن يكون الموظف موجودًا مسبقًا ولديه نواقص اختيارية في الوقت نفسه. لا تُضاف نسخ مكررة ولا تُستبدل بيانات الموظفين الحاليين تلقائيًا.'
+                  : 'Existing staff may also have optional gaps. No duplicate staff or automatic updates to existing records.'}
+              </Typography>
+            </Paper>
+          )}
+
           <Alert icon={<CheckCircleIcon />} severity={result.mode === 'commit' ? (importedTotal > 0 ? 'success' : 'warning') : 'info'} sx={{ mb: 2 }}>
             {result.mode === 'commit'
               ? (isRtl
@@ -1291,11 +1327,20 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
             <Grid container spacing={2}>
               {reviews.map(review => {
                 const payload = review.employee_payload || {};
+                const importClassification = payload['_import_classification'];
+                const isExistingMatch = importClassification === 'existing';
+                const isActualConflict = importClassification === 'conflict' || (
+                  !isExistingMatch && review.status === 'conflict'
+                );
+                const reviewMissing = Array.isArray(payload['_optional_missing_fields'])
+                  ? payload['_optional_missing_fields'].filter((value): value is string => typeof value === 'string')
+                  : [];
                 return (
                   <Grid key={review.id} size={{ xs: 12, md: 6, xl: 4 }}>
                     <Card sx={{ height: '100%', borderRadius: 4, border: '1px solid',
                       borderColor: selectedReviewIds.includes(review.id)
-                        ? 'primary.main' : review.status === 'conflict' ? 'error.light' : 'warning.light',
+                        ? 'primary.main' : isExistingMatch ? 'info.light'
+                          : isActualConflict ? 'error.light' : 'warning.light',
                       boxShadow: selectedReviewIds.includes(review.id) ? '0 0 0 2px #c8e4fa' : undefined }}>
                       <CardContent>
                         <Stack spacing={1.5}>
@@ -1311,11 +1356,17 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
                             </Typography>} />
                           <Stack direction={isRtl ? 'row-reverse' : 'row'} justifyContent="space-between" alignItems="center">
                             <Typography variant="h6" fontWeight={950}>{payloadText(payload, 'name') || (isRtl ? 'اسم غير مكتمل' : 'Incomplete name')}</Typography>
-                            <Chip
-                              size="small"
-                              color={review.status === 'conflict' ? 'error' : 'warning'}
-                              label={review.status === 'conflict' ? (isRtl ? 'تعارض' : 'Conflict') : (isRtl ? 'معلق' : 'Pending')}
-                            />
+                            <Stack direction="row" gap={0.5} flexWrap="wrap">
+                              <Chip size="small"
+                                color={isExistingMatch ? 'info' : isActualConflict ? 'error' : 'warning'}
+                                label={isExistingMatch ? (isRtl ? 'موجود مسبقًا' : 'Existing')
+                                  : isActualConflict ? (isRtl ? 'تعارض فعلي' : 'Conflict')
+                                  : (isRtl ? 'يحتاج معالجة' : 'Needs correction')} />
+                              {!!reviewMissing.length && <Chip size="small"
+                                color="warning" variant="outlined"
+                                label={isRtl ? `بيانات ناقصة: ${reviewMissing.length}`
+                                  : `Optional gaps: ${reviewMissing.length}`} />}
+                            </Stack>
                           </Stack>
                           <Typography variant="body2" color="text.secondary">
                             {isRtl ? 'صف Excel' : 'Excel row'}: {review.source_row} — {review.source_file}
@@ -1325,10 +1376,19 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
                             <Chip size="small" variant="outlined" label={`${isRtl ? 'المركز' : 'Center'}: ${payloadText(payload, 'health_center_name') || '-'}`} />
                           </Stack>
                           {review.conflict_employee_summary && (
-                            <Alert severity="error">
-                              {isRtl ? 'يتعارض مع الموظف الموجود' : 'Conflicts with existing employee'}: {review.conflict_employee_summary.name} ({review.conflict_employee_summary.employee_number || review.conflict_employee_summary.national_id_masked})
+                            <Alert severity={isExistingMatch ? 'info' : 'error'}>
+                              {isExistingMatch
+                                ? (isRtl ? 'هذا الموظف مسجل بالفعل، ولن يُضاف مرتين' : 'This employee already exists; no duplicate will be created')
+                                : (isRtl ? 'راجع التعارض مع الموظف المسجل' : 'Investigate conflict with existing employee')}
+                              : {review.conflict_employee_summary.name}
+                              {' '}({review.conflict_employee_summary.employee_number ||
+                                review.conflict_employee_summary.national_id_masked})
                             </Alert>
                           )}
+                          {!!reviewMissing.length && <Alert severity="warning">
+                            {isRtl ? 'بيانات اختيارية غير متوفرة:' : 'Missing optional data:'}
+                            {' '}{reviewMissing.map(field => IMPORT_FIELD_LABELS_AR[field] || field).join('، ')}
+                          </Alert>
                           <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2, bgcolor: 'warning.50' }}>
                             <Typography fontWeight={900} variant="body2" sx={{ mb: 0.5 }}>{isRtl ? 'الملاحظات المطلوب معالجتها' : 'Issues to resolve'}</Typography>
                             <Box component="ul" sx={{ m: 0, ps: 2.5 }}>
