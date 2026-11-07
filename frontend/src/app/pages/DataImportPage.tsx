@@ -48,6 +48,7 @@ import { CalendarDateField } from '../components/CalendarDateField';
 import { getNationalityOptions, normalizeNationalitySearch } from '../data/employeeFormOptions';
 import { restoreReviewCenterId, restoreReviewNationality } from '../utils/employeeReviewValidation';
 import { StagingCenterReconciliationDialog } from './StagingCenterReconciliationDialog';
+import { EmployeeImportPreviewTable, type EmployeePreviewRow } from './EmployeeImportPreviewTable';
 
 // Prevent Staging imports from silently falling back to the Production API.
 const API_BASE_URL = (import.meta.env.VITE_API_URL ||
@@ -90,7 +91,9 @@ type ImportResult = {
   sheet_results?: SheetImportResult[];
   duplicates: { row: number; national_id?: string; name?: string; reason: string }[];
   errors: { row: number; reason: string }[];
-  preview_rows: Record<string, string | number | null>[];
+  preview_rows: EmployeePreviewRow[];
+  preview_rows_total?: number;
+  preview_rows_truncated?: boolean;
   privacy_note: string;
 };
 
@@ -1010,6 +1013,17 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
             </Stack>
           </Paper>
 
+          {employeeMode && Array.isArray(result.preview_rows) && result.preview_rows.length > 0 && (
+            <EmployeeImportPreviewTable
+              rows={result.preview_rows}
+              totalRows={result.preview_rows_total ?? result.summary.total_rows}
+              truncated={result.preview_rows_truncated}
+              isRtl={isRtl}
+              mode={result.mode}
+              formatIssue={issue => localizeImportIssue(issue, isRtl)}
+            />
+          )}
+
           {employeeMode && employeeImportMode === 'flexible' && result.mapping_options && (
             <Paper sx={{ p: 2.5, borderRadius: 3, mb: 2, border: '1px solid', borderColor: mappingDirty ? 'warning.main' : 'primary.light' }}>
               <Stack direction={{ xs: 'column', md: isRtl ? 'row-reverse' : 'row' }} justifyContent="space-between" spacing={1.5} sx={{ mb: 2 }}>
@@ -1118,7 +1132,7 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
             </TableContainer>
           )}
 
-          <TableContainer component={Paper} sx={{ borderRadius: 3, mb: 2 }}>
+          {!employeeMode && <TableContainer component={Paper} sx={{ borderRadius: 3, mb: 2 }}>
             <Table size="small">
               <TableHead>
                 <TableRow>
@@ -1141,7 +1155,7 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
                 ))}
               </TableBody>
             </Table>
-          </TableContainer>
+          </TableContainer>}
 
           {(result.duplicates.length > 0 || result.errors.length > 0) && (
             <Grid container spacing={2}>
