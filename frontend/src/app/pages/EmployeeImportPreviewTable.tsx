@@ -76,9 +76,11 @@ function statusOf(row: EmployeePreviewRow) {
     ? row.status : 'valid';
 }
 
-function labelForStatus(status: ReturnType<typeof statusOf>, isRtl: boolean) {
+function labelForStatus(status: ReturnType<typeof statusOf>, isRtl: boolean, missingOptional = false) {
   const translation = {
-    valid: isRtl ? 'صالحة' : 'Valid',
+    valid: missingOptional
+      ? (isRtl ? 'بيانات ناقصة — قابل للإضافة' : 'Optional gaps — eligible')
+      : (isRtl ? 'مكتمل وجاهز للإضافة' : 'Complete and eligible'),
     error: isRtl ? 'تحتاج معالجة' : 'Needs correction',
     conflict: isRtl ? 'تعارض فعلي' : 'Real conflict',
     existing: isRtl ? 'موجود مسبقًا' : 'Existing employee',
@@ -105,6 +107,7 @@ export function EmployeeImportPreviewTable({
 
   const counts = useMemo(() => ({
     valid: rows.filter(row => statusOf(row) === 'valid').length,
+    complete: rows.filter(row => statusOf(row) === 'valid' && !row.missing_optional_fields?.length).length,
     error: rows.filter(row => statusOf(row) === 'error').length,
     conflict: rows.filter(row => statusOf(row) === 'conflict').length,
     existing: rows.filter(row => statusOf(row) === 'existing').length,
@@ -116,6 +119,8 @@ export function EmployeeImportPreviewTable({
     return rows.filter(row => {
       if (filter === 'incomplete') {
         if (!row.missing_optional_fields?.length) return false;
+      } else if (filter === 'complete') {
+        if (statusOf(row) !== 'valid' || row.missing_optional_fields?.length) return false;
       } else if (filter !== 'all' && statusOf(row) !== filter) return false;
       if (!q) return true;
       return [
@@ -144,7 +149,9 @@ export function EmployeeImportPreviewTable({
         </Box>
         <Stack direction="row" gap={0.7} flexWrap="wrap">
           <Chip size="small" label={isRtl ? `الجميع: ${rows.length}` : `All: ${rows.length}`} />
-          <Chip size="small" color="success" label={isRtl ? `جديد صالح: ${counts.valid}` : `New valid: ${counts.valid}`} />
+          <Chip size="small" color="success" label={isRtl ? `جديد مكتمل: ${counts.complete}` : `New complete: ${counts.complete}`} />
+          <Chip size="small" color="info" variant="outlined"
+            label={isRtl ? `جديد قابل للإضافة: ${counts.valid}` : `New eligible: ${counts.valid}`} />
           <Chip size="small" color="info" label={isRtl ? `موجود مسبقًا: ${counts.existing}` : `Existing: ${counts.existing}`} />
           <Chip size="small" color="warning" label={isRtl ? `تحتاج معالجة: ${counts.error}` : `Needs correction: ${counts.error}`} />
           <Chip size="small" color="error" label={isRtl ? `تعارض فعلي: ${counts.conflict}` : `True conflicts: ${counts.conflict}`} />
@@ -166,7 +173,8 @@ export function EmployeeImportPreviewTable({
           value={filter} onChange={event => { setFilter(event.target.value); setPage(0); }}
           sx={{ minWidth: { sm: 210 } }}>
           <MenuItem value="all">{isRtl ? 'جميع الصفوف' : 'All rows'}</MenuItem>
-          <MenuItem value="valid">{isRtl ? 'الموظفون الجدد الصالحون' : 'New valid employees'}</MenuItem>
+          <MenuItem value="valid">{isRtl ? 'الموظفون الجدد القابلون للإضافة' : 'New eligible employees'}</MenuItem>
+          <MenuItem value="complete">{isRtl ? 'الموظفون الجدد المكتملون' : 'New fully complete employees'}</MenuItem>
           <MenuItem value="existing">{isRtl ? 'الموظفون الموجودون مسبقًا' : 'Existing employees'}</MenuItem>
           <MenuItem value="error">{isRtl ? 'تحتاج معالجة' : 'Needs correction'}</MenuItem>
           <MenuItem value="conflict">{isRtl ? 'التعارضات الفعلية' : 'True conflicts'}</MenuItem>
@@ -214,9 +222,10 @@ export function EmployeeImportPreviewTable({
               <TableCell>{row.row}</TableCell>
               <TableCell>
                 <Stack direction="row" alignItems="center" flexWrap="wrap" gap={0.5}>
-                  <Chip size="small" color={status === 'valid' ? 'success'
+                  <Chip size="small" color={status === 'valid'
+                    ? (row.missing_optional_fields?.length ? 'warning' : 'success')
                     : status === 'existing' ? 'info' : status === 'conflict' ? 'error' : 'warning'}
-                    label={labelForStatus(status, isRtl)} />
+                    label={labelForStatus(status, isRtl, Boolean(row.missing_optional_fields?.length))} />
                   {Boolean(row.missing_optional_fields?.length) &&
                     <Chip size="small" color="warning" variant="outlined"
                       label={isRtl ? `نواقص: ${row.missing_optional_fields?.length}`
