@@ -196,6 +196,27 @@ function getList<T>(payload: unknown): T[] {
   return [];
 }
 
+// Administrative data completeness is separate from medical/clinical status.
+const OPTIONAL_EMPLOYEE_FIELDS: Array<[keyof ApiEmployee, string]> = [
+  ['employee_number', 'الرقم الوظيفي'],
+  ['date_of_birth', 'تاريخ الميلاد'],
+  ['gender', 'الجنس'],
+  ['nationality', 'الجنسية'],
+  ['birth_place', 'مكان الميلاد'],
+  ['marital_status', 'الحالة الاجتماعية'],
+  ['mobile', 'الجوال'],
+  ['email', 'البريد الإلكتروني'],
+  ['national_address', 'العنوان الوطني'],
+  ['job_title', 'المسمى الوظيفي'],
+  ['current_job', 'الوظيفة الحالية'],
+  ['appointment_date', 'تاريخ التعيين'],
+];
+function missingEmployeeOptionalFields(employee: ApiEmployee): string[] {
+  return OPTIONAL_EMPLOYEE_FIELDS.filter(([field]) =>
+    !String(employee[field] ?? '').trim()
+  ).map(([, label]) => label);
+}
+
 function maskNationalId(value: string) {
   const digits = String(value || '').replace(/\D/g, '');
   if (digits.length <= 4) return digits || '-';
@@ -760,7 +781,16 @@ export function EmployeesPage() {
               {filteredEmployees.map(employee => (
                 <TableRow key={employee.id} hover>
                   <TableCell>{employee.employee_number || '-'}</TableCell>
-                  <TableCell><Typography variant="body2" fontWeight="bold">{employee.name}</Typography></TableCell>
+                  <TableCell>
+                    <Typography variant="body2" fontWeight="bold">{employee.name}</Typography>
+                    {missingEmployeeOptionalFields(employee).length > 0 && (
+                      <Chip size="small" color="warning" variant="outlined" sx={{ mt: 0.6 }}
+                        title={missingEmployeeOptionalFields(employee).join('، ')}
+                        label={isRtl
+                          ? `بيانات ناقصة: ${missingEmployeeOptionalFields(employee).length}`
+                          : `Optional gaps: ${missingEmployeeOptionalFields(employee).length}`} />
+                    )}
+                  </TableCell>
                   <TableCell>{maskNationalId(employee.national_id)}</TableCell>
                   <TableCell>{employee.email || '-'}</TableCell>
                   <TableCell>
