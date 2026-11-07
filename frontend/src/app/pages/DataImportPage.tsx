@@ -122,6 +122,17 @@ type BulkCommitResult = {
   skipped_count: number; skipped_reasons: BulkBlockedReason[];
 };
 
+type BulkDiscardPreview = {
+  mode: 'preview'; selection: 'all' | 'selected';
+  selected_count: number; discardable_count: number; blocked_count: number;
+  discardable_ids: number[]; preview_token: string; batch_size: number;
+};
+type BulkDiscardCommit = {
+  mode: 'committed'; processed_count: number;
+  discarded_count: number; skipped_count: number;
+  skipped_reasons: { reason: string; count: number }[];
+};
+
 type HealthCenterOption = { id: number | string; name: string; name_ar?: string; code?: string; is_active?: boolean };
 
 type ReviewForm = {
@@ -310,6 +321,9 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
   const [reviewLoading, setReviewLoading] = useState(false);
   const [selectedReviewIds, setSelectedReviewIds] = useState<number[]>([]);
   const [bulkPreview, setBulkPreview] = useState<BulkReviewPreview | null>(null);
+  const [discardPreview, setDiscardPreview] = useState<BulkDiscardPreview | null>(null);
+  const [discardAcknowledged, setDiscardAcknowledged] = useState(false);
+  const [discardProgress, setDiscardProgress] = useState({ processed: 0, discarded: 0, skipped: 0 });
   const [bulkAcknowledged, setBulkAcknowledged] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [centerMatchingOpen, setCenterMatchingOpen] = useState(false);
@@ -449,6 +463,92 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
         { duration: 13000 },
       );
       setBulkPreview(null);
+    } finally {
+      await loadReviews();
+      setBulkBusy(false);
+    }
+  };
+
+  const previewBulkDiscard = async (selection: 'selected' | 'all') => {
+    if (bulkBusy || !API_BASE_URL) return;
+    if (selection === 'selected' && !selectedReviewIds.length) {
+      toast.error(isRtl ? 'حدد بطاقة واحدة على الأقل.' : 'Select at least one pending card.');
+      return;
+    }
+    const token = getAccessToken();
+    if (!token) {
+      toast.error(isRtl ? 'انتهت جلسة الدخول؛ أعد تسجيل الدخول.' : 'Sign in again.');
+      return;
+    }
+    setBulkBusy(true);
+    setBulkPreview(null);
+    setDiscardPreview(null);
+    setDiscardAcknowledged(false);
+    setDiscardProgress({ processed: 0, discarded: 0, skipped: 0 });
+    try {
+      const response = await authFetch(`${API_BASE_URL}/employee-import-reviews/bulk-discard/`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'preview', selection,
+          ...(selection === 'selected' ? { review_ids: selectedReviewIds } : {}),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || 'تعذر معاينة تجاهل البطاقات');
+      setDiscardPreview(data as BulkDiscardPreview);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'تعذر معاينة التجاهل الجماعي');
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const confirmBulkDiscard = async () => {
+    if (!discardPreview || !discardAcknowledged || bulkBusy || !discardPreview.discardable_count) return;
+    const token = getAccessToken();
+    if (!token) {
+      toast.error('انتهت جلسة الدخول؛ أعد تسجيل الدخول.');
+      return;
+    }
+    setBulkBusy(true);
+    const ids = discardPreview.discardable_ids;
+    const batchSize = Math.min(discardPreview.batch_size, 100);
+    let processed = 0, discarded = 0, skipped = 0;
+    try {
+      for (let index = 0; index < ids.length; index += batchSize) {
+        const chunk = ids.slice(index, index + batchSize);
+        const response = await authFetch(`${API_BASE_URL}/employee-import-reviews/bulk-discard/`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'commit', confirmed: true, review_ids: chunk,
+            preview_token: discardPreview.preview_token,
+          }),
+        });
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.detail || 'تعذر تجاهل دفعة من البطاقات');
+        const result = body as BulkDiscardCommit;
+        processed += result.processed_count;
+        discarded += result.discarded_count;
+        skipped += result.skipped_count;
+        setDiscardProgress({ processed, discarded, skipped });
+      }
+      toast.success(
+        isRtl
+          ? `تم تجاهل ${discarded} بطاقة من السجلات المعلقة وحفظ بياناتها في المراجعة. تم تخطي ${skipped} بطاقة تغيرت أو عولجت مسبقًا.`
+          : `Archived ${discarded} pending reviews. ${skipped} records were skipped after revalidation.`,
+        { duration: 13000 },
+      );
+      setDiscardPreview(null);
+      setSelectedReviewIds([]);
+    } catch (error) {
+      toast.error(
+        (error instanceof Error ? error.message : 'تعذر استكمال العملية') +
+        ` — تمت معالجة ${processed} من ${ids.length} بطاقة. أعد المعاينة لتحديد الباقي.`,
+        { duration: 13000 },
+      );
+      setDiscardPreview(null);
     } finally {
       await loadReviews();
       setBulkBusy(false);
@@ -1142,6 +1242,15 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
                   onClick={() => void previewBulkActivation('selected')}>
                   {isRtl ? `تفعيل المحدد (${selectedReviewIds.length})` : `Activate selected (${selectedReviewIds.length})`}
                 </Button>
+                <Button variant="outlined" color="error" startIcon={<CancelIcon />}
+                  disabled={bulkBusy || !selectedReviewIds.length}
+                  onClick={() => void previewBulkDiscard('selected')}>
+                  {isRtl ? `تجاهل المحدد (${selectedReviewIds.length})` : `Ignore selected (${selectedReviewIds.length})`}
+                </Button>
+                <Button variant="outlined" color="error"
+                  disabled={bulkBusy} onClick={() => void previewBulkDiscard('all')}>
+                  {isRtl ? 'تجاهل جميع البطاقات المعلقة' : 'Ignore all pending cards'}
+                </Button>
                 <Button variant="contained" color="success" startIcon={<CheckCircleIcon />}
                   disabled={bulkBusy}
                   onClick={() => void previewBulkActivation('all')}>
@@ -1158,8 +1267,8 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
             </Stack>
             <Typography color="text.secondary" fontSize={13} sx={{ mt: 1 }}>
               {isRtl
-                ? 'التفعيل الجماعي لا يبدأ إلا بعد المعاينة والتأكيد. لن تُقبل البطاقات ناقصة الاسم أو الهوية أو المركز، أو التي تحتوي على هوية مكررة.'
-                : 'A preview and explicit confirmation are required. Missing names, identities, centers, and duplicate IDs are excluded.'}
+                ? 'التفعيل أو التجاهل الجماعي لا يبدأ إلا بعد المعاينة والتأكيد. «تحديد الكل» يحدد البطاقات المعروضة، و«تجاهل جميع البطاقات المعلقة» يشمل المعلقة في قاعدة البيانات حتى خارج الصفحة.'
+                : 'Bulk activation or discard requires preview and confirmation. Select all picks visible cards; Ignore all pending includes the full pending database queue.'}
             </Typography>
           </Paper>}
           {!reviews.length ? (
@@ -1184,7 +1293,7 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
                                 checked ? [...new Set([...current, review.id])] : current.filter(pk => pk !== review.id))}
                               inputProps={{ 'aria-label': `تحديد بطاقة الموظف رقم ${review.id}` }} />}
                             label={<Typography fontWeight={800} fontSize={13}>
-                              {isRtl ? 'تحديد للإضافة الجماعية' : 'Select for bulk activation'}
+                              {isRtl ? 'تحديد لإجراء جماعي' : 'Select for bulk action'}
                             </Typography>} />
                           <Stack direction={isRtl ? 'row-reverse' : 'row'} justifyContent="space-between" alignItems="center">
                             <Typography variant="h6" fontWeight={950}>{payloadText(payload, 'name') || (isRtl ? 'اسم غير مكتمل' : 'Incomplete name')}</Typography>
@@ -1238,6 +1347,69 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
       <StagingCenterReconciliationDialog open={centerMatchingOpen}
         isRtl={isRtl} onClose={() => setCenterMatchingOpen(false)}
         onMapped={() => loadReviews()} />
+
+      <Dialog open={Boolean(discardPreview)}
+        onClose={() => !bulkBusy && setDiscardPreview(null)}
+        fullWidth maxWidth="sm" dir={isRtl ? 'rtl' : 'ltr'}>
+        <DialogTitle sx={{ fontWeight: 900, color: 'error.main' }}>
+          {isRtl ? 'معاينة تجاهل بطاقات الموظفين' : 'Preview ignoring employee review cards'}
+        </DialogTitle>
+        <DialogContent dividers>
+          {discardPreview && <Stack gap={2}>
+            <Alert severity="warning">
+              {isRtl
+                ? 'سيجري نقل البطاقات المحددة إلى حالة «متجاهلة»، وإخفاؤها من قائمة البطاقات المعلقة. لن تُحذف بياناتها الأصلية، ولن تتغير سجلات الموظفين الفعالة.'
+                : 'Selected reviews will be archived as ignored and hidden from pending. Original review details remain stored; active employees are unaffected.'}
+            </Alert>
+            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 1 }}>
+              {[
+                [isRtl ? 'المحددة' : 'Selected', discardPreview.selected_count],
+                [isRtl ? 'جاهزة للتجاهل' : 'Discardable', discardPreview.discardable_count],
+                [isRtl ? 'غير قابلة' : 'Excluded', discardPreview.blocked_count],
+              ].map(([label, value]) => <Paper key={String(label)} variant="outlined"
+                sx={{ p: 1.3, textAlign: 'center', borderRadius: 2 }}>
+                <Typography fontWeight={900} fontSize={22}>{value}</Typography>
+                <Typography fontSize={12} color="text.secondary">{label}</Typography>
+              </Paper>)}
+            </Box>
+            <Alert severity="info">
+              {isRtl
+                ? 'التجاهل يزيل البطاقة من قائمة المعالجة اليومية. لاستعادتها لاحقًا يلزم إجراء إداري منفصل؛ إعادة رفع ملف Excel نفسه قد لا تعيد البطاقة المتجاهلة تلقائيًا.'
+                : 'Ignoring hides cards from the review queue. Restoring them later requires a separate administrative action; re-uploading the same file may not reopen ignored cards.'}
+            </Alert>
+            {bulkBusy && <Box>
+              <LinearProgress variant="determinate"
+                value={discardPreview.discardable_count
+                  ? discardProgress.processed / discardPreview.discardable_count * 100 : 0} />
+              <Typography fontSize={13} color="text.secondary" sx={{ mt: 1 }}>
+                {isRtl
+                  ? `تمت معالجة ${discardProgress.processed} من ${discardPreview.discardable_count} — تم تجاهل ${discardProgress.discarded}، وتخطي ${discardProgress.skipped}`
+                  : `Processed ${discardProgress.processed} / ${discardPreview.discardable_count} — ignored ${discardProgress.discarded}, skipped ${discardProgress.skipped}`}
+              </Typography>
+            </Box>}
+            <FormControlLabel
+              control={<Checkbox checked={discardAcknowledged} disabled={bulkBusy}
+                onChange={(_, value) => setDiscardAcknowledged(value)} />}
+              label={<Typography variant="body2" fontWeight={800}>
+                {isRtl
+                  ? `أقر بأنني راجعت العدد وأوافق على تجاهل ${discardPreview.discardable_count} بطاقة مع حفظ أصل بياناتها.`
+                  : `I reviewed the count and confirm ignoring ${discardPreview.discardable_count} review cards, preserving original data.`}
+              </Typography>}
+            />
+          </Stack>}
+        </DialogContent>
+        <DialogActions sx={{ p: 2, gap: 1 }}>
+          <Button disabled={bulkBusy} onClick={() => setDiscardPreview(null)}>
+            {isRtl ? 'إلغاء' : 'Cancel'}
+          </Button>
+          <Button variant="contained" color="error"
+            disabled={bulkBusy || !discardAcknowledged || !discardPreview?.discardable_count}
+            onClick={() => void confirmBulkDiscard()}>
+            {isRtl ? `تأكيد تجاهل ${discardPreview?.discardable_count || 0} بطاقة`
+              : `Confirm ignoring ${discardPreview?.discardable_count || 0} cards`}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={Boolean(bulkPreview)}
         onClose={() => !bulkBusy && setBulkPreview(null)}
