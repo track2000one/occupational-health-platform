@@ -215,13 +215,13 @@ class EmployeeImportClassificationTests(TestCase):
             self.row(identity='9998000004', name='QA New C', center='QA Example Center', birth='not-a-date'),
         )
         counts = {item['reason']: item['count']
-                  for item in result['summary']['blocking_reasons']}
+                  for item in result['blocking_reasons']}
         self.assertEqual(result['summary']['total_rows'], 3)
         self.assertEqual(result['summary']['errors_count'], 3)
         self.assertEqual(counts['Health center does not match an active center in the platform.'], 2)
         self.assertEqual(counts['Invalid date of birth. Use a real Excel date or YYYY-MM-DD.'], 1)
-        self.assertNotIn('QA New A', str(result['summary']['blocking_reasons']))
-        self.assertNotIn('9998000002', str(result['summary']['blocking_reasons']))
+        self.assertNotIn('QA New A', str(result['blocking_reasons']))
+        self.assertNotIn('9998000002', str(result['blocking_reasons']))
         self.assertEqual(Employee.objects.count(), 1)
         self.assertEqual(EmployeeImportReview.objects.count(), 0)
 
