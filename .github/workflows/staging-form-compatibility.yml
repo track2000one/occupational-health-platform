@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - feature/staging-employee-form-compat-20261101
+  pull_request:
+    branches:
+      - feature/staging-employee-form-compat-20261101
 
 permissions:
   contents: read

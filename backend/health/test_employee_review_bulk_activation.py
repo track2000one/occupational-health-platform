@@ -227,3 +227,34 @@ class StagingEmployeeBulkActivationTests(TestCase):
         response = self.commit(preview, [row.pk])
         self.assertEqual(response.status_code, 409)
         self.assertEqual(Employee.objects.count(), 0)
+
+    @patch.dict('os.environ', STAGING_ENV)
+    def test_review_linked_to_another_employee_is_never_bulk_activated(self):
+        existing = Employee.objects.create(
+            name='Existing synthetic record',
+            national_id='9998999988', email='linked@example.invalid',
+            health_center=self.center,
+        )
+        row = self.review(16, email='linked@example.invalid')
+        row.conflict_employee = existing
+        row.save(update_fields=['conflict_employee', 'updated_at'])
+        preview = self.preview([row.pk])
+        self.assertEqual(preview.status_code, 200, preview.data)
+        self.assertEqual(preview.data['eligible_count'], 0, preview.data)
+        self.assertIn('matched_existing_employee', [
+            item['reason'] for item in preview.data['blocked_reasons']
+        ])
+        self.assertEqual(Employee.objects.count(), 1)
+        row.refresh_from_db()
+        self.assertEqual(row.status, 'pending')
+
+    @patch.dict('os.environ', STAGING_ENV)
+    def test_existing_classification_blocks_bulk_even_without_linked_record(self):
+        row = self.review(17, _import_classification='existing')
+        preview = self.preview([row.pk])
+        self.assertEqual(preview.status_code, 200, preview.data)
+        self.assertEqual(preview.data['eligible_count'], 0, preview.data)
+        self.assertIn('matched_existing_employee', [
+            item['reason'] for item in preview.data['blocked_reasons']
+        ])
+        self.assertEqual(Employee.objects.count(), 0)

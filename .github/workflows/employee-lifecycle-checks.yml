@@ -54,7 +54,9 @@ jobs:
     # Isolated synthetic database; NEVER use Railway credentials or user spreadsheets.
     services:
       postgres:
-        image: postgres:16
+        # Match the GitHub runner's PostgreSQL 18 pg_dump/pg_restore clients.
+        # A PG18 dump contains transaction_timeout, unsupported by PG16.
+        image: postgres:18
         env:
           POSTGRES_DB: occupational_ci
           POSTGRES_USER: ci_only

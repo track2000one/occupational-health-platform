@@ -40,6 +40,7 @@ REASON_LABELS = {
     'missing_center': 'المركز الصحي غير مطابق أو غير نشط',
     'ambiguous_center': 'يوجد أكثر من مركز مطابق للاسم',
     'identity_exists': 'رقم الهوية موجود مسبقًا في سجلات الموظفين',
+    'matched_existing_employee': 'البطاقة مرتبطة بسجل موظف موجود مسبقًا وتتطلب مقارنة لا إضافة',
     'identity_repeated': 'رقم الهوية مكرر ضمن البطاقات المحددة',
     'review_processed': 'البطاقة عولجت مسبقًا',
     'record_changed': 'تغيرت بيانات البطاقة بعد المعاينة',
@@ -121,6 +122,10 @@ def decide_preview(reviews, centers):
             reasons[review.pk] = 'review_processed'
             continue
         payload = review.employee_payload or {}
+        if (review.conflict_employee_id is not None
+                or payload.get('_import_classification') == 'existing'):
+            reasons[review.pk] = 'matched_existing_employee'
+            continue
         name = str(payload.get('name') or '').strip()
         identity = normalized_identity(payload.get('national_id'))
         if not name:
@@ -273,6 +278,11 @@ class StagingEmployeeReviewBulkActivationView(APIView):
                         continue
                     if review.status not in ('pending', 'conflict'):
                         reasons['review_processed'] += 1
+                        skipped += 1
+                        continue
+                    if (review.conflict_employee_id is not None
+                            or (review.employee_payload or {}).get('_import_classification') == 'existing'):
+                        reasons['matched_existing_employee'] += 1
                         skipped += 1
                         continue
                     center_id = approved['center_id']

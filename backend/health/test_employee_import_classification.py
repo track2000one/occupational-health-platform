@@ -3,7 +3,9 @@ from io import BytesIO
 from datetime import date
 
 from django.test import TestCase
+from django.contrib.auth import get_user_model
 from openpyxl import Workbook
+from rest_framework.test import APIClient
 
 from .importers import process_excel_import
 from .models import Employee, EmployeeImportReview, HealthCenter
@@ -61,7 +63,8 @@ class EmployeeImportClassificationTests(TestCase):
         self.assertEqual(summary['already_existing'], 1, result)
         self.assertEqual(summary['true_conflicts'], 0, result)
         self.assertEqual(summary['valid_rows'], 0, result)
-        self.assertEqual(summary['duplicate_rows'], 1, result)
+        self.assertEqual(summary['duplicate_rows'], 0, result)
+        self.assertEqual(summary['staged_for_review'], 1, result)
         preview = result['preview_rows'][0]
         self.assertEqual(preview['status'], 'existing')
         self.assertEqual(preview['existing_employee']['id'], self.existing.pk)
@@ -117,6 +120,8 @@ class EmployeeImportClassificationTests(TestCase):
             number='', email='', birth='',
         ))
         self.assertEqual(result['summary']['new_ready'], 1)
+        self.assertEqual(result['summary']['new_complete'], 0)
+        self.assertEqual(result['summary']['new_optional_incomplete'], 1)
         self.assertEqual(result['summary']['valid_rows'], 1)
         self.assertEqual(result['summary']['optional_incomplete'], 1)
         self.assertEqual(result['summary']['errors_count'], 0)
@@ -152,5 +157,52 @@ class EmployeeImportClassificationTests(TestCase):
         self.assertEqual(reviews.count(), 1)
         review = reviews.first()
         self.assertEqual(review.employee_payload['_import_classification'], 'existing')
+        self.assertEqual(review.status, 'pending')
+        self.assertEqual(review.conflict_employee_id, self.existing.pk)
+
+    def test_existing_employee_review_is_idempotent_across_reimports(self):
+        first = self.classify(self.row(), commit=True)
+        second = self.classify(self.row(), commit=True)
+        self.assertEqual(first['summary']['imported_employees'], 0)
+        self.assertEqual(second['summary']['imported_employees'], 0)
+        self.assertEqual(first['summary']['duplicate_rows'], 0)
+        self.assertEqual(Employee.objects.count(), 1)
+        self.assertEqual(EmployeeImportReview.objects.count(), 1)
+        self.assertEqual(EmployeeImportReview.objects.get().status, 'pending')
+
+    def test_existing_employee_activation_cannot_be_bypassed_by_changing_identity(self):
+        self.classify(self.row(), commit=True)
+        review = EmployeeImportReview.objects.get()
+        admin = get_user_model().objects.create_superuser(
+            username='classification_qa_admin',
+            email='classification-admin@example.invalid',
+            password='synthetic-only-password',
+        )
+        client = APIClient()
+        client.force_authenticate(admin)
+        response = client.post(
+            f'/api/employee-import-reviews/{review.pk}/activate/',
+            {
+                'name': 'مختلف بالهوية',
+                'national_id': '9998000099',
+                'health_center': self.center.pk,
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 409, response.data)
+        self.assertEqual(Employee.objects.count(), 1)
+        self.existing.refresh_from_db()
+        self.assertEqual(self.existing.national_id, '9998000001')
+        review.refresh_from_db()
+        self.assertEqual(review.status, 'pending')
+
+    def test_true_conflict_and_invalid_center_are_not_recorded_as_safe_existing(self):
+        result = self.classify(self.row(name='اسم شخص آخر', center='مركز غير معروف'), commit=True)
+        self.assertEqual(result['summary']['true_conflicts'], 1)
+        self.assertEqual(result['summary']['needs_correction'], 0)
+        self.assertEqual(result['summary']['errors_count'], 1)
+        self.assertEqual(result['preview_rows'][0]['status'], 'conflict')
+        self.assertEqual(Employee.objects.count(), 1)
+        review = EmployeeImportReview.objects.get()
         self.assertEqual(review.status, 'conflict')
         self.assertEqual(review.conflict_employee_id, self.existing.pk)
