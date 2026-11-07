@@ -915,12 +915,6 @@ def import_employee_roster_sheet(
         'true_conflicts': classification_counts['conflict'],
         'needs_correction': classification_counts['error'],
         'optional_incomplete': optional_incomplete_count,
-        # Multiple reasons may apply to one row; these are counts of rows
-        # affected by each reason, not extra employee records.
-        'blocking_reasons': [
-            {'reason': reason, 'count': count}
-            for reason, count in blocker_counts.most_common()
-        ],
     }
     review_ids: List[int] = []
     if commit:
@@ -987,6 +981,11 @@ def import_employee_roster_sheet(
         'employee_import_mode': 'flexible' if flexible else 'template',
         'invalid_policy': 'stage_for_review',
         'summary': summary,
+        # Aggregated only in the authenticated response, without row identities.
+        'blocking_reasons': [
+            {'reason': reason, 'count': count}
+            for reason, count in blocker_counts.most_common()
+        ],
         'duplicates': duplicates[:100],
         'errors': errors[:100],
         'preview_rows': preview_rows,
