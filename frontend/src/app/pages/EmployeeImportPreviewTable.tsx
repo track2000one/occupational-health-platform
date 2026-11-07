@@ -8,7 +8,15 @@ import { Search as SearchIcon, Visibility as VisibilityIcon } from '@mui/icons-m
 
 export type EmployeePreviewRow = {
   row: number;
-  status?: 'valid' | 'error' | 'conflict';
+  status?: 'valid' | 'error' | 'conflict' | 'existing';
+  missing_optional_fields?: string[];
+  existing_employee?: {
+    id: number; name: string; employee_number: string; health_center: string;
+  } | null;
+  field_differences?: Array<{
+    field: string; kind: 'different' | 'incoming_only' | 'existing_only';
+    existing: string; incoming: string;
+  }>;
   name?: string;
   national_id?: string;
   employee_number?: string;
@@ -63,7 +71,8 @@ const FIELDS: Array<[keyof EmployeePreviewRow, string, string]> = [
 ];
 
 function statusOf(row: EmployeePreviewRow) {
-  return row.status === 'valid' || row.status === 'error' || row.status === 'conflict'
+  return row.status === 'valid' || row.status === 'error' ||
+    row.status === 'conflict' || row.status === 'existing'
     ? row.status : 'valid';
 }
 
@@ -71,7 +80,8 @@ function labelForStatus(status: ReturnType<typeof statusOf>, isRtl: boolean) {
   const translation = {
     valid: isRtl ? 'صالحة' : 'Valid',
     error: isRtl ? 'تحتاج معالجة' : 'Needs correction',
-    conflict: isRtl ? 'تعارض' : 'Conflict',
+    conflict: isRtl ? 'تعارض فعلي' : 'Real conflict',
+    existing: isRtl ? 'موجود مسبقًا' : 'Existing employee',
   };
   return translation[status];
 }
@@ -97,12 +107,16 @@ export function EmployeeImportPreviewTable({
     valid: rows.filter(row => statusOf(row) === 'valid').length,
     error: rows.filter(row => statusOf(row) === 'error').length,
     conflict: rows.filter(row => statusOf(row) === 'conflict').length,
+    existing: rows.filter(row => statusOf(row) === 'existing').length,
+    incomplete: rows.filter(row => Boolean(row.missing_optional_fields?.length)).length,
   }), [rows]);
 
   const filtered = useMemo(() => {
     const q = norm(search);
     return rows.filter(row => {
-      if (filter !== 'all' && statusOf(row) !== filter) return false;
+      if (filter === 'incomplete') {
+        if (!row.missing_optional_fields?.length) return false;
+      } else if (filter !== 'all' && statusOf(row) !== filter) return false;
       if (!q) return true;
       return [
         row.row, row.name, row.employee_number, row.health_center,
@@ -130,9 +144,12 @@ export function EmployeeImportPreviewTable({
         </Box>
         <Stack direction="row" gap={0.7} flexWrap="wrap">
           <Chip size="small" label={isRtl ? `الجميع: ${rows.length}` : `All: ${rows.length}`} />
-          <Chip size="small" color="success" label={isRtl ? `صالحة: ${counts.valid}` : `Valid: ${counts.valid}`} />
-          <Chip size="small" color="warning" label={isRtl ? `ملاحظات: ${counts.error}` : `Errors: ${counts.error}`} />
-          <Chip size="small" color="error" label={isRtl ? `تعارض: ${counts.conflict}` : `Conflicts: ${counts.conflict}`} />
+          <Chip size="small" color="success" label={isRtl ? `جديد صالح: ${counts.valid}` : `New valid: ${counts.valid}`} />
+          <Chip size="small" color="info" label={isRtl ? `موجود مسبقًا: ${counts.existing}` : `Existing: ${counts.existing}`} />
+          <Chip size="small" color="warning" label={isRtl ? `تحتاج معالجة: ${counts.error}` : `Needs correction: ${counts.error}`} />
+          <Chip size="small" color="error" label={isRtl ? `تعارض فعلي: ${counts.conflict}` : `True conflicts: ${counts.conflict}`} />
+          <Chip size="small" color="warning" variant="outlined"
+            label={isRtl ? `نواقص اختيارية: ${counts.incomplete}` : `Optional gaps: ${counts.incomplete}`} />
         </Stack>
       </Stack>
       {truncated && <Alert severity="warning" sx={{ mt: 1.5 }}>
@@ -149,9 +166,11 @@ export function EmployeeImportPreviewTable({
           value={filter} onChange={event => { setFilter(event.target.value); setPage(0); }}
           sx={{ minWidth: { sm: 210 } }}>
           <MenuItem value="all">{isRtl ? 'جميع الصفوف' : 'All rows'}</MenuItem>
-          <MenuItem value="valid">{isRtl ? 'الصفوف الصالحة' : 'Valid rows'}</MenuItem>
+          <MenuItem value="valid">{isRtl ? 'الموظفون الجدد الصالحون' : 'New valid employees'}</MenuItem>
+          <MenuItem value="existing">{isRtl ? 'الموظفون الموجودون مسبقًا' : 'Existing employees'}</MenuItem>
           <MenuItem value="error">{isRtl ? 'تحتاج معالجة' : 'Needs correction'}</MenuItem>
-          <MenuItem value="conflict">{isRtl ? 'التعارضات' : 'Conflicts'}</MenuItem>
+          <MenuItem value="conflict">{isRtl ? 'التعارضات الفعلية' : 'True conflicts'}</MenuItem>
+          <MenuItem value="incomplete">{isRtl ? 'بيانات اختيارية ناقصة' : 'Optional data missing'}</MenuItem>
         </TextField>
       </Stack>
     </Box>
@@ -188,13 +207,21 @@ export function EmployeeImportPreviewTable({
           {visible.map(row => {
             const status = statusOf(row);
             return <TableRow key={row.row} hover sx={{
-              bgcolor: status === 'error' ? '#fff9f0' : status === 'conflict' ? '#fff1f1' : 'inherit',
+              bgcolor: status === 'conflict' ? '#fff1f1'
+                : status === 'existing' ? '#f1f7ff'
+                : row.missing_optional_fields?.length || status === 'error' ? '#fff9f0' : 'inherit',
             }}>
               <TableCell>{row.row}</TableCell>
               <TableCell>
-                <Chip size="small" color={status === 'valid' ? 'success'
-                  : status === 'conflict' ? 'error' : 'warning'}
-                  label={labelForStatus(status, isRtl)} />
+                <Stack direction="row" alignItems="center" flexWrap="wrap" gap={0.5}>
+                  <Chip size="small" color={status === 'valid' ? 'success'
+                    : status === 'existing' ? 'info' : status === 'conflict' ? 'error' : 'warning'}
+                    label={labelForStatus(status, isRtl)} />
+                  {Boolean(row.missing_optional_fields?.length) &&
+                    <Chip size="small" color="warning" variant="outlined"
+                      label={isRtl ? `نواقص: ${row.missing_optional_fields?.length}`
+                        : `Missing: ${row.missing_optional_fields?.length}`} />}
+                </Stack>
               </TableCell>
               <TableCell sx={{ fontWeight: 750, minWidth: 180 }}>{cellText(row.name)}</TableCell>
               <TableCell sx={{ whiteSpace: 'nowrap' }}>{cellText(row.national_id)}</TableCell>
@@ -246,8 +273,79 @@ export function EmployeeImportPreviewTable({
         {details && <Stack gap={1.5}>
           <Chip sx={{ alignSelf: 'flex-start' }}
             color={statusOf(details) === 'valid' ? 'success'
+              : statusOf(details) === 'existing' ? 'info'
               : statusOf(details) === 'conflict' ? 'error' : 'warning'}
             label={labelForStatus(statusOf(details), isRtl)} />
+          {details.existing_employee && <Alert severity={
+            statusOf(details) === 'conflict' ? 'error' : 'info'
+          }>
+            <Typography fontWeight={900}>
+              {isRtl ? 'هذا الموظف موجود مسبقًا في قاعدة البيانات' : 'Employee already exists'}
+            </Typography>
+            <Typography variant="body2">
+              {details.existing_employee.name} — {details.existing_employee.employee_number ||
+                (isRtl ? 'لا يوجد رقم وظيفي' : 'No employee number')} —
+              {' '}{details.existing_employee.health_center}
+            </Typography>
+            <Typography fontSize={12} sx={{ mt: 0.6 }}>
+              {isRtl
+                ? 'لن يُنشأ موظف مكرر، ولن تُحدّث أي بيانات قائمة تلقائيًا. الفروقات تحتاج إلى اعتماد مستقل.'
+                : 'No duplicate or automatic overwrite will occur. Differences require separate approval.'}
+            </Typography>
+          </Alert>}
+          {Boolean(details.missing_optional_fields?.length) && <Alert severity="warning">
+            <Typography fontWeight={850}>
+              {isRtl
+                ? `يوجد ${details.missing_optional_fields?.length} حقلًا اختياريًا غير مكتمل`
+                : `${details.missing_optional_fields?.length} optional fields are missing`}
+            </Typography>
+            <Stack direction="row" gap={0.7} flexWrap="wrap" sx={{ mt: 1 }}>
+              {details.missing_optional_fields?.map(field => {
+                const defined = FIELDS.find(([key]) => key === field);
+                return <Chip size="small" key={field}
+                  label={defined ? defined[isRtl ? 1 : 2] : field} color="warning"
+                  variant="outlined" />;
+              })}
+            </Stack>
+            <Typography fontSize={12} sx={{ mt: 1 }}>
+              {isRtl ? 'هذه حقول اختيارية ولا تمنع إضافة موظف جديد مستوفٍ للاسم والهوية والمركز.'
+                : 'Missing optional information does not block a new employee with valid required fields.'}
+            </Typography>
+          </Alert>}
+          {Boolean(details.field_differences?.length) && <Box>
+            <Typography fontWeight={850} sx={{ mb: 1 }}>
+              {isRtl ? 'مقارنة بيانات Excel مع بيانات الموظف المسجلة' : 'Compare Excel and stored employee fields'}
+            </Typography>
+            <Alert severity="info" sx={{ mb: 1 }}>
+              {isRtl ? 'هذه مقارنة للقراءة فقط، ولا تحفظ أي تعديلات. تغيّر المركز يستلزم إجراءات نقل معتمدة.'
+                : 'Read-only comparison. Center transfers need approved transfer workflow.'}
+            </Alert>
+            <TableContainer component={Paper} variant="outlined">
+              <Table size="small">
+                <TableHead><TableRow>
+                  <TableCell>{isRtl ? 'الحقل' : 'Field'}</TableCell>
+                  <TableCell>{isRtl ? 'المسجل حاليًا' : 'Saved value'}</TableCell>
+                  <TableCell>{isRtl ? 'في ملف Excel' : 'Excel value'}</TableCell>
+                  <TableCell>{isRtl ? 'التغيير' : 'Difference'}</TableCell>
+                </TableRow></TableHead>
+                <TableBody>
+                  {details.field_differences?.map((diff, i) => {
+                    const known = FIELDS.find(([key]) => key === diff.field);
+                    return <TableRow key={`${diff.field}-${i}`}>
+                      <TableCell>{known ? known[isRtl ? 1 : 2] : diff.field}</TableCell>
+                      <TableCell>{diff.existing || '—'}</TableCell>
+                      <TableCell>{diff.incoming || '—'}</TableCell>
+                      <TableCell>{diff.kind === 'different'
+                        ? (isRtl ? 'مختلف' : 'Different')
+                        : diff.kind === 'incoming_only'
+                          ? (isRtl ? 'جديد في Excel' : 'In Excel only')
+                          : (isRtl ? 'مسجل فقط' : 'Stored only')}</TableCell>
+                    </TableRow>;
+                  })}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Box>}
           <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1 }}>
             {FIELDS.map(([field, ar, en]) => <Paper key={String(field)} variant="outlined"
               sx={{ p: 1.4, borderRadius: 2 }}>
