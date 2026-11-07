@@ -328,6 +328,11 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [reviews, setReviews] = useState<ImportReview[]>([]);
+  const [reviewPage, setReviewPage] = useState(1);
+  const [reviewTotal, setReviewTotal] = useState(0);
+  const [reviewHasNext, setReviewHasNext] = useState(false);
+  const [reviewListLoading, setReviewListLoading] = useState(false);
+  const [reviewListError, setReviewListError] = useState('');
   const [healthCenters, setHealthCenters] = useState<HealthCenterOption[]>([]);
   const [activeReview, setActiveReview] = useState<ImportReview | null>(null);
   const [reviewForm, setReviewForm] = useState<ReviewForm>(EMPTY_REVIEW_FORM);
@@ -354,41 +359,58 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
   const [centerCorrections, setCenterCorrections] = useState<Record<string, string>>({});
   const [uploadError, setUploadError] = useState('');
 
-  const loadReviews = async () => {
+  const loadReviews = async (page: number = reviewPage) => {
     if (!employeeMode || !API_BASE_URL) return;
     const token = getAccessToken();
     if (!token) return;
+    setReviewListLoading(true);
+    setReviewListError('');
     try {
-      async function collectPaged<T>(endpoint: string): Promise<T[]> {
-        const results: T[] = [];
-        for (let page = 1; page <= 60; page++) {
-          const separator = endpoint.includes('?') ? '&' : '?';
-          const response = await authFetch(`${API_BASE_URL}${endpoint}${separator}page=${page}`, {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          if (!response.ok) throw new Error('Failed to retrieve import review or center page.');
-          const body = await response.json();
-          results.push(...(Array.isArray(body) ? body : (body.results || [])));
-          if (Array.isArray(body) || !body.next) break;
-        }
-        return results;
-      }
-      const [allReviews, allCenters] = await Promise.all([
-        collectPaged<ImportReview>('/employee-import-reviews/?status=pending,conflict'),
-        collectPaged<HealthCenterOption>('/health-centers/'),
-      ]);
-      setReviews(allReviews);
+      // One server-paginated page at a time; do not download and render all
+      // 1,500+ pending employee cards on every page visit.
+      const requestPage = async <T,>(endpoint: string, pageNumber: number) => {
+        const separator = endpoint.includes('?') ? '&' : '?';
+        const response = await authFetch(`${API_BASE_URL}${endpoint}${separator}page=${pageNumber}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!response.ok) throw new Error('Failed to retrieve the requested page.');
+        const body = await response.json();
+        return {
+          results: (Array.isArray(body) ? body : (body.results || [])) as T[],
+          count: typeof body.count === 'number' ? body.count as number : 0,
+          next: !Array.isArray(body) && Boolean(body.next),
+        };
+      };
+      const reviewPageData = await requestPage<ImportReview>(
+        '/employee-import-reviews/?status=pending,conflict', page,
+      );
+      setReviews(reviewPageData.results);
+      setReviewTotal(reviewPageData.count || reviewPageData.results.length);
+      setReviewHasNext(reviewPageData.next);
       setSelectedReviewIds(previous => previous.filter(id =>
-        allReviews.some(review => review.id === id)));
-      setHealthCenters(allCenters);
-    } catch {
-      // The main import flow remains usable if review cards cannot be refreshed.
+        reviewPageData.results.some(review => review.id === id)));
+
+      // Center reference data is small. Retrieve it once, separately from the
+      // pending-card page, and keep it for individual correction dialogs.
+      if (!healthCenters.length) {
+        const centers: HealthCenterOption[] = [];
+        for (let centerPage = 1; centerPage <= 60; centerPage++) {
+          const pageData = await requestPage<HealthCenterOption>('/health-centers/', centerPage);
+          centers.push(...pageData.results);
+          if (!pageData.next) break;
+        }
+        setHealthCenters(centers);
+      }
+    } catch (error) {
+      setReviewListError(error instanceof Error ? error.message : 'تعذر تحميل البطاقات المعلقة');
+    } finally {
+      setReviewListLoading(false);
     }
   };
 
   useEffect(() => {
-    void loadReviews();
-  }, [employeeMode]);
+    void loadReviews(reviewPage);
+  }, [employeeMode, reviewPage]);
 
   const previewBulkActivation = async (selection: 'all' | 'selected') => {
     if (bulkBusy || !API_BASE_URL) return;
@@ -1270,8 +1292,10 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
               </Typography>
             </Box>
             <Stack direction="row" flexWrap="wrap" gap={1} alignItems="center">
-              <Chip color={reviews.length ? 'warning' : 'success'}
-                label={`${isRtl ? 'المعلقة المعروضة' : 'Shown pending'}: ${reviews.length}`} />
+              <Chip color={reviewTotal ? 'warning' : 'success'}
+                label={`${isRtl ? 'إجمالي المعلقة' : 'Total pending'}: ${reviewTotal}`} />
+              <Chip variant="outlined"
+                label={`${isRtl ? 'المعروضة في الصفحة' : 'Shown on page'}: ${reviews.length}`} />
               {IS_STAGING_IMPORT_UI && <Chip color={selectedReviewIds.length ? 'primary' : 'default'}
                 label={`${isRtl ? 'المحدد' : 'Selected'}: ${selectedReviewIds.length}`} />}
             </Stack>
@@ -1334,8 +1358,36 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
               ? 'المراجعة الفردية متاحة. إجراءات الاعتماد والتجاهل الجماعي تجريبية حتى إتمام ضوابط الإطلاق على Production.'
               : 'Individual review is available. Bulk approval/discard remains disabled until Production release controls are completed.'}
           </Alert>}
-          {!reviews.length ? (
-            <Alert severity="success">{isRtl ? 'لا توجد حاليًا بطاقات موظفين معلقة للمراجعة.' : 'There are no pending employee review cards.'}</Alert>
+          {reviewListError && <Alert severity="error" sx={{ mb: 2 }}>
+            {isRtl ? 'تعذر تحديث قائمة البطاقات. يمكنك إعادة المحاولة دون تغيير البيانات.' : 'Could not refresh pending cards. Retry without changing data.'}
+            {' '}{reviewListError}
+            <Button size="small" onClick={() => void loadReviews(reviewPage)}>
+              {isRtl ? 'إعادة المحاولة' : 'Retry'}
+            </Button>
+          </Alert>}
+          {reviewListLoading && <LinearProgress sx={{ mb: 2 }} />}
+          {reviewTotal > 0 && <Stack direction="row" justifyContent="space-between"
+            alignItems="center" flexWrap="wrap" gap={1.5} sx={{ mb: 2 }}>
+            <Typography variant="body2" color="text.secondary">
+              {isRtl
+                ? `الصفحة ${reviewPage} من ${Math.max(1, Math.ceil(reviewTotal / 25))} — عرض ${reviews.length} بطاقة من إجمالي ${reviewTotal}`
+                : `Page ${reviewPage} of ${Math.max(1, Math.ceil(reviewTotal / 25))} — ${reviews.length} of ${reviewTotal} reviews`}
+            </Typography>
+            <Stack direction="row" spacing={1}>
+              <Button variant="outlined" size="small"
+                disabled={reviewListLoading || reviewPage <= 1}
+                onClick={() => { setSelectedReviewIds([]); setReviewPage(page => Math.max(1, page - 1)); }}>
+                {isRtl ? 'السابق' : 'Previous'}
+              </Button>
+              <Button variant="outlined" size="small"
+                disabled={reviewListLoading || !reviewHasNext}
+                onClick={() => { setSelectedReviewIds([]); setReviewPage(page => page + 1); }}>
+                {isRtl ? 'التالي' : 'Next'}
+              </Button>
+            </Stack>
+          </Stack>}
+          {!reviews.length && !reviewListLoading && !reviewListError ? (
+            <Alert severity="success">{isRtl ? 'لا توجد حاليًا بطاقات موظفين معلقة في هذه الصفحة.' : 'No pending employee review cards on this page.'}</Alert>
           ) : (
             <Grid container spacing={2}>
               {reviews.map(review => {
