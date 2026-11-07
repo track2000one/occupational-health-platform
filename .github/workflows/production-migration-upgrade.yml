@@ -1,0 +1,74 @@
+name: Production migration upgrade dry-run (synthetic data only)
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'backend/**'
+      - '.github/workflows/production-migration-upgrade.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  production-upgrade:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_DB: ohp_upgrade_ci
+          POSTGRES_USER: ci_only
+          POSTGRES_PASSWORD: synthetic_ci_only_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci_only -d ohp_upgrade_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://ci_only:synthetic_ci_only_password@127.0.0.1:5432/ohp_upgrade_ci
+      DEBUG: 'True'
+      SECRET_KEY: 'synthetic-only-production-upgrade-ci-secret'
+      PGSSLMODE: disable
+    steps:
+      - name: Check out deployed Production baseline
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: production-baseline
+      - name: Check out proposed release
+        uses: actions/checkout@v4
+        with:
+          path: proposed-release
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: proposed-release/backend/requirements.txt
+      - name: Install proposed release dependencies
+        run: python -m pip install -r proposed-release/backend/requirements.txt
+      - name: Apply existing Production schema
+        working-directory: production-baseline/backend
+        run: python manage.py migrate --noinput
+      - name: Create an unmistakably synthetic existing employee
+        working-directory: production-baseline/backend
+        run: |
+          python manage.py shell -c "from health.models import HealthCenter,Employee; c=HealthCenter.objects.create(name='CI Upgrade Center',code='CI-UPGRADE-CENTER'); Employee.objects.create(name='CI Existing Employee',national_id='9999888811',employee_number='CI-UPGRADE-01',email='upgrade@example.invalid',health_center=c,job_title='Original job',job_title_en='Original English job')"
+      - name: Apply proposed migrations over Production baseline
+        working-directory: proposed-release/backend
+        run: |
+          python manage.py check
+          python manage.py migrate --noinput
+          python manage.py makemigrations --check --dry-run
+      - name: Verify existing data, new schema and clinical defaults were preserved
+        working-directory: proposed-release/backend
+        run: |
+          python manage.py shell -c "from health.models import Employee,HealthCenter; e=Employee.objects.get(national_id='9999888811'); assert e.employee_number=='CI-UPGRADE-01'; assert e.name=='CI Existing Employee'; assert e.job_title=='Original job'; assert e.job_title_en=='Original English job'; assert e.health_center.code=='CI-UPGRADE-CENTER'; assert e.employment_status=='active'; assert Employee.objects.count()==1; print('Production baseline to release schema upgrade: PASS; employee preserved')"
+      - name: Run synthetic import regression tests against upgraded PostgreSQL
+        working-directory: proposed-release/backend
+        run: |
+          python manage.py test health.test_employee_import_classification health.test_employee_import_full_preview health.test_employee_review_bulk_activation health.test_employee_review_bulk_discard --verbosity 1

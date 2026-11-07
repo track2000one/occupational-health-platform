@@ -4,6 +4,9 @@ import { Link } from 'react-router';
 import { toast } from 'sonner';
 import {
   Alert,
+  Autocomplete,
+  Checkbox,
+  FormControlLabel,
   Box,
   Button,
   Card,
@@ -42,15 +45,15 @@ import {
 } from '@mui/icons-material';
 import { authFetch, getAccessToken } from '../context/AuthContext';
 import { CalendarDateField } from '../components/CalendarDateField';
+import { getNationalityOptions, normalizeNationalitySearch } from '../data/employeeFormOptions';
+import { restoreReviewCenterId, restoreReviewNationality } from '../utils/employeeReviewValidation';
+import { StagingCenterReconciliationDialog } from './StagingCenterReconciliationDialog';
+import { EmployeeImportPreviewTable, type EmployeePreviewRow } from './EmployeeImportPreviewTable';
 
-const PRODUCTION_API_BASE_URL = 'https://occupational-health-platform-production.up.railway.app/api';
-const LOCAL_API_BASE_URL = 'http://localhost:8000/api';
-const API_BASE_URL = (
-  import.meta.env.VITE_API_URL ||
+// Prevent Staging imports from silently falling back to the Production API.
+const API_BASE_URL = (import.meta.env.VITE_API_URL ||
   (typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
-    ? LOCAL_API_BASE_URL
-    : PRODUCTION_API_BASE_URL)
-).replace(/\/$/, '');
+    ? 'http://localhost:8000/api' : '')).replace(/\/$/, '');
 
 type ImportSummary = Record<string, number> & {
   total_rows: number;
@@ -88,7 +91,9 @@ type ImportResult = {
   sheet_results?: SheetImportResult[];
   duplicates: { row: number; national_id?: string; name?: string; reason: string }[];
   errors: { row: number; reason: string }[];
-  preview_rows: Record<string, string | number | null>[];
+  preview_rows: EmployeePreviewRow[];
+  preview_rows_total?: number;
+  preview_rows_truncated?: boolean;
   privacy_note: string;
 };
 
@@ -108,7 +113,30 @@ type ImportReview = {
   } | null;
 };
 
-type HealthCenterOption = { id: number | string; name: string };
+type BulkBlockedReason = { reason: string; label: string; count: number };
+type BulkReviewPreview = {
+  mode: 'preview'; selection: 'all' | 'selected';
+  selected_count: number; eligible_count: number; blocked_count: number;
+  eligible_ids: number[]; blocked_reasons: BulkBlockedReason[];
+  preview_token: string; batch_size: number;
+};
+type BulkCommitResult = {
+  mode: 'committed'; processed_count: number; created_count: number;
+  skipped_count: number; skipped_reasons: BulkBlockedReason[];
+};
+
+type BulkDiscardPreview = {
+  mode: 'preview'; selection: 'all' | 'selected';
+  selected_count: number; discardable_count: number; blocked_count: number;
+  discardable_ids: number[]; preview_token: string; batch_size: number;
+};
+type BulkDiscardCommit = {
+  mode: 'committed'; processed_count: number;
+  discarded_count: number; skipped_count: number;
+  skipped_reasons: { reason: string; count: number }[];
+};
+
+type HealthCenterOption = { id: number | string; name: string; name_ar?: string; code?: string; is_active?: boolean };
 
 type ReviewForm = {
   name: string;
@@ -123,24 +151,30 @@ type ReviewForm = {
   marital_status: string;
   health_center: string;
   job_title: string;
-  job_title_en: string;
   appointment_date: string;
+  nationality: string;
+  current_job: string;
+  job_title_en: string;
+  children_count: string;
   periodic_exam_status: string;
   vaccination_status: string;
   risk_level: string;
 };
 
+const REVIEW_NATIONALITIES = getNationalityOptions();
+
 const EMPTY_REVIEW_FORM: ReviewForm = {
   name: '', email: '', national_id: '', employee_number: '', national_address: '',
-  mobile: '', date_of_birth: '', birth_place: '', gender: 'male', marital_status: '',
-  health_center: '', job_title: '', job_title_en: '', appointment_date: '', periodic_exam_status: 'incomplete',
-  vaccination_status: 'due', risk_level: 'low',
+  mobile: '', date_of_birth: '', birth_place: '', gender: '', marital_status: '',
+  health_center: '', job_title: '', appointment_date: '', nationality: '', current_job: '',
+  job_title_en: '', children_count: '', periodic_exam_status: 'unknown',
+  vaccination_status: 'unknown', risk_level: 'unknown',
 };
 
 const IMPORT_FIELD_LABELS_AR: Record<string, string> = {
   name: 'اسم الموظف',
   email: 'البريد الإلكتروني',
-  national_id: 'رقم الهوية الوطنية',
+  national_id: 'رقم الهوية / الإقامة',
   employee_number: 'الرقم الوظيفي',
   national_address: 'العنوان الوطني',
   mobile: 'رقم الجوال',
@@ -149,8 +183,12 @@ const IMPORT_FIELD_LABELS_AR: Record<string, string> = {
   gender: 'الجنس',
   marital_status: 'الحالة الاجتماعية',
   health_center: 'المركز الصحي',
-  job_title: 'المسمى الوظيفي (عربي)',
-  job_title_en: 'المسمى الوظيفي (إنجليزي)',
+  organization_unit_code: 'رمز الوحدة التنظيمية المعتمدة',
+  nationality: 'الجنسية',
+  current_job: 'الوظيفة الحالية',
+  job_title_en: 'المسمى الوظيفي بالإنجليزية',
+  children_count: 'عدد الأطفال',
+  job_title: 'المسمى الوظيفي',
   appointment_date: 'تاريخ التعيين',
   periodic_exam_status: 'حالة الفحص الدوري',
   vaccination_status: 'حالة التطعيم',
@@ -169,8 +207,12 @@ const IMPORT_FIELD_LABELS_EN: Record<string, string> = {
   gender: 'Gender',
   marital_status: 'Marital status',
   health_center: 'Health center',
-  job_title: 'Job title (Arabic)',
-  job_title_en: 'Job title (English)',
+  organization_unit_code: 'Approved organization unit code',
+  nationality: 'Nationality',
+  current_job: 'Current job',
+  job_title_en: 'English job title',
+  children_count: 'Children count',
+  job_title: 'Job title',
   appointment_date: 'Appointment date',
   periodic_exam_status: 'Periodic exam status',
   vaccination_status: 'Vaccination status',
@@ -178,11 +220,7 @@ const IMPORT_FIELD_LABELS_EN: Record<string, string> = {
 };
 
 const EMPLOYEE_IMPORT_FIELDS = Object.keys(IMPORT_FIELD_LABELS_AR);
-const EMPLOYEE_REQUIRED_FIELDS = new Set([
-  'name', 'email', 'national_id', 'employee_number', 'national_address', 'mobile',
-  'date_of_birth', 'birth_place', 'gender', 'marital_status', 'health_center',
-  'job_title', 'appointment_date',
-]);
+const EMPLOYEE_REQUIRED_FIELDS = new Set(['name', 'national_id', 'health_center']);
 
 const IMPORT_ISSUE_LABELS_AR: Record<string, string> = {
   'Invalid email address': 'صيغة البريد الإلكتروني غير صحيحة',
@@ -203,6 +241,11 @@ const IMPORT_ISSUE_LABELS_AR: Record<string, string> = {
   'Employee number is duplicated inside the file': 'الرقم الوظيفي مكرر داخل الملف',
   'National ID already exists in PostgreSQL': 'رقم الهوية الوطنية موجود مسبقًا في قاعدة البيانات',
   'Email already exists in PostgreSQL': 'البريد الإلكتروني موجود مسبقًا في قاعدة البيانات',
+  'Employee already exists with this national ID': 'الموظف موجود مسبقًا برقم الهوية نفسه، ولن يتم إنشاء سجل مكرر',
+  'Same national ID has a different employee name': 'رقم الهوية موجود ولكن اسم الموظف مختلف؛ يجب التحقق قبل التحديث',
+  'Same national ID has a different employee number': 'رقم الهوية موجود ولكن الرقم الوظيفي مختلف؛ يحتاج مراجعة',
+  'Email belongs to a different employee': 'البريد الإلكتروني مسجل لموظف آخر؛ تعارض فعلي',
+  'Employee number belongs to a different employee': 'الرقم الوظيفي مسجل لموظف آخر؛ تعارض فعلي',
   'Employee number already exists in PostgreSQL': 'الرقم الوظيفي موجود مسبقًا في قاعدة البيانات',
   'The row requires review before activation': 'يجب مراجعة الصف قبل تفعيل بطاقة الموظف',
   'Missing employee name or national ID': 'اسم الموظف أو رقم الهوية الوطنية مفقود',
@@ -284,32 +327,55 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
   const [activeReview, setActiveReview] = useState<ImportReview | null>(null);
   const [reviewForm, setReviewForm] = useState<ReviewForm>(EMPTY_REVIEW_FORM);
   const [reviewLoading, setReviewLoading] = useState(false);
-  const [employeeImportMode, setEmployeeImportMode] = useState<'template' | 'flexible'>('template');
+  const [selectedReviewIds, setSelectedReviewIds] = useState<number[]>([]);
+  const [bulkPreview, setBulkPreview] = useState<BulkReviewPreview | null>(null);
+  const [discardPreview, setDiscardPreview] = useState<BulkDiscardPreview | null>(null);
+  const [discardAcknowledged, setDiscardAcknowledged] = useState(false);
+  const [discardProgress, setDiscardProgress] = useState({ processed: 0, discarded: 0, skipped: 0 });
+  const [bulkAcknowledged, setBulkAcknowledged] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [centerMatchingOpen, setCenterMatchingOpen] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState({ processed: 0, created: 0, skipped: 0 });
+  const [basicActivationConfirmOpen, setBasicActivationConfirmOpen] = useState(false);
+  const [reviewCenterSource, setReviewCenterSource] = useState('');
+  const [reviewNationalitySource, setReviewNationalitySource] = useState('');
+  const [reviewValidationError, setReviewValidationError] = useState('');
+  const [employeeImportMode, setEmployeeImportMode] = useState<'template' | 'flexible'>('flexible');
   const [employeeSheetName, setEmployeeSheetName] = useState('');
   const [availableEmployeeSheets, setAvailableEmployeeSheets] = useState<string[]>([]);
   const [fieldMapping, setFieldMapping] = useState<Record<string, number | null>>({});
   const [mappingDirty, setMappingDirty] = useState(false);
+  const [mappingConfirmed, setMappingConfirmed] = useState(false);
   const [centerCorrections, setCenterCorrections] = useState<Record<string, string>>({});
   const [uploadError, setUploadError] = useState('');
 
   const loadReviews = async () => {
-    if (!employeeMode) return;
+    if (!employeeMode || !API_BASE_URL) return;
     const token = getAccessToken();
     if (!token) return;
     try {
-      const [reviewsResponse, centersResponse] = await Promise.all([
-        authFetch(`${API_BASE_URL}/employee-import-reviews/?status=pending,conflict`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }),
-        authFetch(`${API_BASE_URL}/health-centers/`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }),
+      async function collectPaged<T>(endpoint: string): Promise<T[]> {
+        const results: T[] = [];
+        for (let page = 1; page <= 60; page++) {
+          const separator = endpoint.includes('?') ? '&' : '?';
+          const response = await authFetch(`${API_BASE_URL}${endpoint}${separator}page=${page}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (!response.ok) throw new Error('Failed to retrieve import review or center page.');
+          const body = await response.json();
+          results.push(...(Array.isArray(body) ? body : (body.results || [])));
+          if (Array.isArray(body) || !body.next) break;
+        }
+        return results;
+      }
+      const [allReviews, allCenters] = await Promise.all([
+        collectPaged<ImportReview>('/employee-import-reviews/?status=pending,conflict'),
+        collectPaged<HealthCenterOption>('/health-centers/'),
       ]);
-      if (!reviewsResponse.ok || !centersResponse.ok) return;
-      const reviewBody = await reviewsResponse.json();
-      const centerBody = await centersResponse.json();
-      setReviews(Array.isArray(reviewBody) ? reviewBody : (reviewBody.results || []));
-      setHealthCenters(Array.isArray(centerBody) ? centerBody : (centerBody.results || []));
+      setReviews(allReviews);
+      setSelectedReviewIds(previous => previous.filter(id =>
+        allReviews.some(review => review.id === id)));
+      setHealthCenters(allCenters);
     } catch {
       // The main import flow remains usable if review cards cannot be refreshed.
     }
@@ -319,6 +385,184 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
     void loadReviews();
   }, [employeeMode]);
 
+  const previewBulkActivation = async (selection: 'all' | 'selected') => {
+    if (bulkBusy || !API_BASE_URL) return;
+    if (selection === 'selected' && !selectedReviewIds.length) {
+      toast.error(isRtl ? 'حدد بطاقة واحدة على الأقل.' : 'Select at least one card.');
+      return;
+    }
+    const token = getAccessToken();
+    if (!token) {
+      toast.error(isRtl ? 'انتهت جلسة الدخول؛ سجّل الدخول من جديد.' : 'Please sign in again.');
+      return;
+    }
+    setBulkBusy(true);
+    setBulkPreview(null);
+    setBulkAcknowledged(false);
+    setBulkProgress({ processed: 0, created: 0, skipped: 0 });
+    try {
+      const response = await authFetch(`${API_BASE_URL}/employee-import-reviews/bulk-activate/`, {
+        method: 'POST', headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          action: 'preview', selection,
+          ...(selection === 'selected' ? { review_ids: selectedReviewIds } : {}),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || 'تعذر معاينة تفعيل الموظفين');
+      setBulkPreview(data as BulkReviewPreview);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'تعذر معاينة التفعيل الجماعي');
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const confirmBulkActivation = async () => {
+    if (!bulkPreview || !bulkAcknowledged || bulkBusy || !bulkPreview.eligible_count) return;
+    const token = getAccessToken();
+    if (!token) {
+      toast.error('انتهت جلسة الدخول؛ سجّل الدخول من جديد.');
+      return;
+    }
+    setBulkBusy(true);
+    const ids = bulkPreview.eligible_ids;
+    const batchSize = Math.min(bulkPreview.batch_size, 100);
+    let processed = 0, created = 0, skipped = 0;
+    const failed: string[] = [];
+    try {
+      for (let index = 0; index < ids.length; index += batchSize) {
+        const chunk = ids.slice(index, index + batchSize);
+        const response = await authFetch(`${API_BASE_URL}/employee-import-reviews/bulk-activate/`, {
+          method: 'POST', headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            action: 'commit', confirmed: true, review_ids: chunk,
+            preview_token: bulkPreview.preview_token,
+          }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || 'تعذر تنفيذ دفعة من التفعيل');
+        const summary = data as BulkCommitResult;
+        processed += summary.processed_count;
+        created += summary.created_count;
+        skipped += summary.skipped_count;
+        failed.push(...summary.skipped_reasons.map(item => `${item.label}: ${item.count}`));
+        setBulkProgress({ processed, created, skipped });
+      }
+      toast.success(
+        isRtl
+          ? `اكتمل التفعيل الجماعي: أضيف ${created} موظفًا، وتخطى النظام ${skipped} من المؤهلين بعد إعادة التحقق.`
+          : `Bulk activation complete: ${created} added, ${skipped} skipped at final validation.`,
+        { duration: 10000 },
+      );
+      if (failed.length) toast.warning(failed.slice(0, 5).join('؛ '), { duration: 12000 });
+      setBulkPreview(null);
+      setSelectedReviewIds([]);
+    } catch (error) {
+      toast.error(
+        (error instanceof Error ? error.message : 'تعذر إكمال التفعيل') +
+        ` — تمت معالجة ${processed} من ${ids.length} سجلًا. أعد المعاينة قبل المتابعة.`,
+        { duration: 13000 },
+      );
+      setBulkPreview(null);
+    } finally {
+      await loadReviews();
+      setBulkBusy(false);
+    }
+  };
+
+  const previewBulkDiscard = async (selection: 'selected' | 'all') => {
+    if (bulkBusy || !API_BASE_URL) return;
+    if (selection === 'selected' && !selectedReviewIds.length) {
+      toast.error(isRtl ? 'حدد بطاقة واحدة على الأقل.' : 'Select at least one pending card.');
+      return;
+    }
+    const token = getAccessToken();
+    if (!token) {
+      toast.error(isRtl ? 'انتهت جلسة الدخول؛ أعد تسجيل الدخول.' : 'Sign in again.');
+      return;
+    }
+    setBulkBusy(true);
+    setBulkPreview(null);
+    setDiscardPreview(null);
+    setDiscardAcknowledged(false);
+    setDiscardProgress({ processed: 0, discarded: 0, skipped: 0 });
+    try {
+      const response = await authFetch(`${API_BASE_URL}/employee-import-reviews/bulk-discard/`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'preview', selection,
+          ...(selection === 'selected' ? { review_ids: selectedReviewIds } : {}),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || 'تعذر معاينة تجاهل البطاقات');
+      setDiscardPreview(data as BulkDiscardPreview);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'تعذر معاينة التجاهل الجماعي');
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const confirmBulkDiscard = async () => {
+    if (!discardPreview || !discardAcknowledged || bulkBusy || !discardPreview.discardable_count) return;
+    const token = getAccessToken();
+    if (!token) {
+      toast.error('انتهت جلسة الدخول؛ أعد تسجيل الدخول.');
+      return;
+    }
+    setBulkBusy(true);
+    const ids = discardPreview.discardable_ids;
+    const batchSize = Math.min(discardPreview.batch_size, 100);
+    let processed = 0, discarded = 0, skipped = 0;
+    try {
+      for (let index = 0; index < ids.length; index += batchSize) {
+        const chunk = ids.slice(index, index + batchSize);
+        const response = await authFetch(`${API_BASE_URL}/employee-import-reviews/bulk-discard/`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'commit', confirmed: true, review_ids: chunk,
+            preview_token: discardPreview.preview_token,
+          }),
+        });
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.detail || 'تعذر تجاهل دفعة من البطاقات');
+        const result = body as BulkDiscardCommit;
+        processed += result.processed_count;
+        discarded += result.discarded_count;
+        skipped += result.skipped_count;
+        setDiscardProgress({ processed, discarded, skipped });
+      }
+      toast.success(
+        isRtl
+          ? `تم تجاهل ${discarded} بطاقة من السجلات المعلقة وحفظ بياناتها في المراجعة. تم تخطي ${skipped} بطاقة تغيرت أو عولجت مسبقًا.`
+          : `Archived ${discarded} pending reviews. ${skipped} records were skipped after revalidation.`,
+        { duration: 13000 },
+      );
+      setDiscardPreview(null);
+      setSelectedReviewIds([]);
+    } catch (error) {
+      toast.error(
+        (error instanceof Error ? error.message : 'تعذر استكمال العملية') +
+        ` — تمت معالجة ${processed} من ${ids.length} بطاقة. أعد المعاينة لتحديد الباقي.`,
+        { duration: 13000 },
+      );
+      setDiscardPreview(null);
+    } finally {
+      await loadReviews();
+      setBulkBusy(false);
+    }
+  };
+
   const payloadText = (payload: Record<string, unknown>, key: string) => {
     const value = payload[key];
     return value === null || value === undefined ? '' : String(value);
@@ -326,8 +570,13 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
 
   const openReview = (review: ImportReview) => {
     const payload = review.employee_payload || {};
-    const allowedGender = ['male', 'female'].includes(payloadText(payload, 'gender')) ? payloadText(payload, 'gender') : 'male';
+    const allowedGender = ['male', 'female'].includes(payloadText(payload, 'gender')) ? payloadText(payload, 'gender') : '';
     const allowedMarital = ['single', 'married', 'divorced', 'widowed'].includes(payloadText(payload, 'marital_status')) ? payloadText(payload, 'marital_status') : '';
+    const originalCenter = payloadText(payload, 'health_center_name') || payloadText(payload, 'health_center');
+    const originalNationality = payloadText(payload, 'nationality');
+    setReviewCenterSource(originalCenter);
+    setReviewNationalitySource(originalNationality);
+    setReviewValidationError('');
     setReviewForm({
       name: payloadText(payload, 'name'),
       email: payloadText(payload, 'email'),
@@ -339,13 +588,16 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
       birth_place: payloadText(payload, 'birth_place'),
       gender: allowedGender,
       marital_status: allowedMarital,
-      health_center: payloadText(payload, 'health_center'),
+      health_center: restoreReviewCenterId(payload, healthCenters),
       job_title: payloadText(payload, 'job_title'),
-      job_title_en: payloadText(payload, 'job_title_en'),
       appointment_date: /^\d{4}-\d{2}-\d{2}$/.test(payloadText(payload, 'appointment_date')) ? payloadText(payload, 'appointment_date') : '',
-      periodic_exam_status: ['completed', 'incomplete', 'overdue'].includes(payloadText(payload, 'periodic_exam_status')) ? payloadText(payload, 'periodic_exam_status') : 'incomplete',
-      vaccination_status: ['completed', 'due', 'refused'].includes(payloadText(payload, 'vaccination_status')) ? payloadText(payload, 'vaccination_status') : 'due',
-      risk_level: ['low', 'medium', 'high'].includes(payloadText(payload, 'risk_level')) ? payloadText(payload, 'risk_level') : 'low',
+      nationality: restoreReviewNationality(payload.nationality, REVIEW_NATIONALITIES),
+      current_job: payloadText(payload, 'current_job'),
+      job_title_en: payloadText(payload, 'job_title_en'),
+      children_count: payloadText(payload, 'children_count'),
+      periodic_exam_status: ['completed', 'incomplete', 'overdue'].includes(payloadText(payload, 'periodic_exam_status')) ? payloadText(payload, 'periodic_exam_status') : 'unknown',
+      vaccination_status: ['completed', 'due', 'refused'].includes(payloadText(payload, 'vaccination_status')) ? payloadText(payload, 'vaccination_status') : 'unknown',
+      risk_level: ['low', 'medium', 'high'].includes(payloadText(payload, 'risk_level')) ? payloadText(payload, 'risk_level') : 'unknown',
     });
     setActiveReview(review);
   };
@@ -354,24 +606,60 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
     setReviewForm(current => ({ ...current, [field]: value }));
   };
 
-  const activateReview = async () => {
+  const activateReview = async (basicOnly = false) => {
     if (!activeReview) return;
+    setReviewValidationError('');
+    const matchedCenter = healthCenters.find(center =>
+      center.is_active !== false && String(center.id) === reviewForm.health_center);
+    if (!matchedCenter || !Number.isSafeInteger(Number(matchedCenter.id)) ||
+        Number(matchedCenter.id) <= 0) {
+      setReviewValidationError('يرجى اختيار مركز صحي مسجل ونشط من القائمة قبل تفعيل البطاقة.');
+      return;
+    }
+    if (!reviewForm.name.trim() || !reviewForm.national_id.trim()) {
+      setReviewValidationError('اسم الموظف ورقم الهوية أو الإقامة حقول إلزامية.');
+      return;
+    }
+    if (!basicOnly && reviewForm.nationality &&
+        !REVIEW_NATIONALITIES.some(country => country.code === reviewForm.nationality)) {
+      setReviewValidationError('اختر الجنسية من قائمة الدول أو اتركها غير محددة.');
+      return;
+    }
     const token = getAccessToken();
     if (!token) return;
     setReviewLoading(true);
-    const loadingToast = toast.loading(isRtl ? 'جاري التحقق وتفعيل الموظف...' : 'Validating and activating employee...');
+    const loadingToast = toast.loading(basicOnly
+      ? (isRtl ? 'جارٍ إضافة الموظف بالبيانات المتاحة...' : 'Saving available employee data...')
+      : (isRtl ? 'جاري التحقق وتفعيل الموظف...' : 'Validating and activating employee...'));
     try {
       const response = await authFetch(`${API_BASE_URL}/employee-import-reviews/${activeReview.id}/activate/`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...reviewForm, health_center: Number(reviewForm.health_center) }),
+        body: JSON.stringify({ ...reviewForm,
+          date_of_birth: reviewForm.date_of_birth || null,
+          appointment_date: reviewForm.appointment_date || null,
+          children_count: reviewForm.children_count ? Number(reviewForm.children_count) : null,
+          nationality: reviewForm.nationality,
+          health_center: Number(matchedCenter.id),
+          basic_only: basicOnly,
+          confirm_basic_only: basicOnly,
+        }),
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) {
         const detail = body.detail || Object.entries(body).map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join('، ') : value}`).join(' | ');
+        setReviewValidationError(String(detail || 'تعذر تفعيل البطاقة. راجع البيانات المدخلة.'));
         throw new Error(detail || 'Activation failed');
       }
-      toast.success(isRtl ? 'تم تصحيح الموظف وتفعيل بطاقته' : 'Employee corrected and activated', { id: loadingToast });
+      const omitted = Array.isArray(body.skipped_optional_fields)
+        ? (body.skipped_optional_fields as string[]) : [];
+      toast.success(basicOnly
+        ? (isRtl
+          ? `أُضيف الموظف بالبيانات المتاحة. ${omitted.length ? `${omitted.length} حقل اختياري يحتاج مراجعة.` : 'لم تُستبعد حقول غير صالحة.'}`
+          : 'Employee added using verified available fields.')
+        : (isRtl ? 'تم تصحيح الموظف وتفعيل بطاقته' : 'Employee corrected and activated'),
+      { id: loadingToast, duration: basicOnly ? 8000 : 4500 });
+      setBasicActivationConfirmOpen(false);
       setActiveReview(null);
       await loadReviews();
     } catch (error) {
@@ -405,6 +693,7 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
     setAvailableEmployeeSheets([]);
     setFieldMapping({});
     setMappingDirty(false);
+    setMappingConfirmed(false);
     setCenterCorrections({});
     setUploadError('');
     if (selected && employeeMode) void upload(false, selected);
@@ -419,6 +708,7 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
     setAvailableEmployeeSheets([]);
     setFieldMapping({});
     setMappingDirty(false);
+    setMappingConfirmed(false);
   };
 
   const changeEmployeeSheet = (value: string) => {
@@ -428,12 +718,36 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
     setResult(null);
     setFieldMapping({});
     setMappingDirty(false);
+    setMappingConfirmed(false);
   };
 
   const changeFieldMapping = (field: string, value: string) => {
     if (loading) return;
     setFieldMapping(current => ({ ...current, [field]: value === '' ? null : Number(value) }));
     setMappingDirty(true);
+    setMappingConfirmed(false);
+  };
+
+  const downloadRosterTemplate = async () => {
+    try {
+      const token = getAccessToken();
+      if (!token || !API_BASE_URL) throw new Error('تحقق من تسجيل الدخول وإعداد الاتصال بالمنصة.');
+      const response = await authFetch(`${API_BASE_URL}/employee-roster-template/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error('تعذّر تنزيل القالب المحدث؛ تحقق من صلاحية المسؤول.');
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = 'قالب_الموظفين_الصحة_المهنية_المحدث.xlsx';
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => window.URL.revokeObjectURL(url), 30000);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'تعذّر تنزيل القالب');
+    }
   };
 
   const upload = async (commitOverride?: boolean, selectedFile?: File) => {
@@ -444,13 +758,21 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
       return;
     }
     const token = getAccessToken();
-    if (!token) {
-      toast.error(isRtl ? 'انتهت الجلسة. سجّل الدخول مرة أخرى.' : 'Session expired. Login again.');
+    if (!token || !API_BASE_URL) {
+      toast.error(isRtl ? 'إعداد اتصال Staging أو جلسة الدخول غير مكتمل.' : 'API connection or session is not configured.');
       return;
     }
 
     const shouldCommit = commitOverride ?? commitMode;
-    if (employeeMode && shouldCommit && (result?.mode !== 'preview' || mappingDirty)) return;
+    if (employeeMode && shouldCommit &&
+        (result?.mode !== 'preview' || mappingDirty ||
+         Boolean(result.missing_required_fields?.length) ||
+         (employeeImportMode === 'flexible' && !mappingConfirmed))) {
+      toast.error(isRtl
+        ? 'أكمل مطابقة الحقول الإلزامية وراجع الأعمدة ثم أكد مطابقتها قبل الاستيراد.'
+        : 'Review and confirm the required column mappings before importing.');
+      return;
+    }
     setUploadError('');
     setResult(null);
     setLoading(true);
@@ -480,6 +802,7 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
       const nextResult = body as ImportResult;
       setResult(nextResult);
       setMappingDirty(false);
+      if (!shouldCommit) setMappingConfirmed(false);
       if (employeeMode && nextResult.employee_import_mode === 'flexible') {
         const nextMapping = Object.fromEntries(
           EMPLOYEE_IMPORT_FIELDS.map(field => {
@@ -547,20 +870,24 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
                     </Typography>
                     <Stack direction={isRtl ? 'row-reverse' : 'row'} spacing={1}>
                       <Button fullWidth variant={employeeImportMode === 'template' ? 'contained' : 'outlined'} onClick={() => changeEmployeeImportMode('template')}>
-                        {isRtl ? 'القالب الرسمي' : 'Official template'}
+                        {isRtl ? 'القالب الرسمي الجديد' : 'New official template'}
                       </Button>
                       <Button fullWidth variant={employeeImportMode === 'flexible' ? 'contained' : 'outlined'} onClick={() => changeEmployeeImportMode('flexible')}>
-                        {isRtl ? 'ملف مرن' : 'Flexible file'}
+                        {isRtl ? 'ملف Excel موجود (مطابقة الأعمدة)' : 'Existing Excel file (map columns)'}
                       </Button>
                     </Stack>
                   </Paper>
                 )}
-                {employeeMode && employeeImportMode === 'template' && (
-                  <Button component="a" href="/templates/employee-import-template.xlsx" download variant="outlined" size="large" startIcon={<DownloadIcon />} sx={{ borderRadius: 3, py: 1.4 }}>
-                    {isRtl ? 'تنزيل قالب بيانات الموظفين' : 'Download Employee Template'}
+                {employeeMode && (
+                  <Button onClick={() => void downloadRosterTemplate()} variant="outlined" size="large" startIcon={<DownloadIcon />} sx={{ borderRadius: 3, py: 1.4 }}>
+                    {isRtl ? 'تنزيل قالب الموظفين المحدث (المراكز الحالية)' : 'Download Current Employee Template'}
                   </Button>
                 )}
-                {employeeMode && <Alert severity="info">{isRtl ? '١. اختر الملف ليُفحص تلقائيًا · ٢. راجع النتائج · ٣. اضغط إضافة الموظفين الآن' : '1. Select a file for automatic preview · 2. Review results · 3. Add employees'}</Alert>}
+                {employeeMode && <Alert severity="info">
+                  {isRtl
+                    ? 'للملفات السابقة مثل قاعدة بيانات 002.xlsx: استخدم «ملف Excel موجود»، ثم راجع مطابقة الأعمدة قبل الاستيراد. لا يلزم نسخ البيانات يدويًا إلى القالب الجديد.'
+                    : 'For an existing workbook, select Existing Excel file and review detected column mappings before importing. No manual re-entry is required.'}
+                </Alert>}
                 <Button component="label" disabled={loading} variant="contained" size="large" startIcon={<CloudUploadIcon />} sx={{ borderRadius: 3, py: 1.6 }}>
                   {file ? file.name : (isRtl ? 'اختيار ملف Excel' : 'Select Excel File')}
                   <input hidden disabled={loading} type="file" accept={employeeMode ? '.xlsx' : '.xlsx,.xlsm,.xltx,.xltm'} onChange={onFileChange} />
@@ -605,7 +932,9 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
                 {employeeMode && result?.mode === 'preview' && (
                   <Button
                     onClick={() => void upload(true)}
-                    disabled={loading || !file || mappingDirty || (result.summary.total_rows || 0) === 0}
+                    disabled={loading || !file || mappingDirty || (result.summary.total_rows || 0) === 0 ||
+                      Boolean(result.missing_required_fields?.length) ||
+                      (employeeImportMode === 'flexible' && !mappingConfirmed)}
                     variant="contained"
                     color="success"
                     size="large"
@@ -668,9 +997,43 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
           <Grid container spacing={2} sx={{ mb: 3 }}>
             <Grid size={{ xs: 12, sm: 6, md: 3 }}>{summaryCard(isRtl ? 'إجمالي الصفوف' : 'Total rows', result.summary.total_rows || 0, '#1e40af')}</Grid>
             <Grid size={{ xs: 12, sm: 6, md: 3 }}>{summaryCard(isRtl ? 'صفوف صالحة' : 'Valid rows', result.summary.valid_rows || 0, '#16a34a')}</Grid>
-            <Grid size={{ xs: 12, sm: 6, md: 3 }}>{summaryCard(isRtl ? 'مكررة' : 'Duplicates', result.summary.duplicate_rows || 0, '#f59e0b')}</Grid>
+            <Grid size={{ xs: 12, sm: 6, md: 3 }}>{summaryCard(isRtl ? 'ازدواجيات فعلية' : 'Duplicate collisions', result.summary.duplicate_rows || 0, '#f59e0b')}</Grid>
             <Grid size={{ xs: 12, sm: 6, md: 3 }}>{summaryCard(isRtl ? 'أخطاء' : 'Errors', result.summary.errors_count || 0, '#dc2626')}</Grid>
           </Grid>
+
+          {employeeMode && typeof result.summary.new_ready === 'number' && (
+            <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 3,
+              bgcolor: '#f7fbff', borderColor: '#c6dae9' }}>
+              <Typography fontWeight={900} color="#153f64" sx={{ mb: 1.2 }}>
+                {isRtl ? 'تصنيف الموظفين قبل الاعتماد' : 'Pre-import employee classification'}
+              </Typography>
+              <Stack direction="row" gap={1} flexWrap="wrap">
+                <Chip color="success" label={isRtl
+                  ? `جديد مكتمل: ${result.summary.new_complete ?? result.summary.new_ready}`
+                  : `New complete: ${result.summary.new_complete ?? result.summary.new_ready}`} />
+                <Chip color="info" variant="outlined" label={isRtl
+                  ? `جديد قابل للإضافة: ${result.summary.new_ready}`
+                  : `New eligible: ${result.summary.new_ready}`} />
+                <Chip color="info" label={isRtl
+                  ? `موجود مسبقًا: ${result.summary.already_existing || 0}`
+                  : `Already existing: ${result.summary.already_existing || 0}`} />
+                <Chip color="error" label={isRtl
+                  ? `تعارض فعلي: ${result.summary.true_conflicts || 0}`
+                  : `True conflict: ${result.summary.true_conflicts || 0}`} />
+                <Chip color="warning" label={isRtl
+                  ? `تحتاج معالجة: ${result.summary.needs_correction || 0}`
+                  : `Needs correction: ${result.summary.needs_correction || 0}`} />
+                <Chip color="warning" variant="outlined" label={isRtl
+                  ? `نواقص اختيارية: ${result.summary.optional_incomplete || 0}`
+                  : `Optional gaps: ${result.summary.optional_incomplete || 0}`} />
+              </Stack>
+              <Typography color="text.secondary" fontSize={13} sx={{ mt: 1.2 }}>
+                {isRtl
+                  ? 'يمكن أن يكون الموظف موجودًا مسبقًا ولديه نواقص اختيارية في الوقت نفسه. لا تُضاف نسخ مكررة ولا تُستبدل بيانات الموظفين الحاليين تلقائيًا.'
+                  : 'Existing staff may also have optional gaps. No duplicate staff or automatic updates to existing records.'}
+              </Typography>
+            </Paper>
+          )}
 
           <Alert icon={<CheckCircleIcon />} severity={result.mode === 'commit' ? (importedTotal > 0 ? 'success' : 'warning') : 'info'} sx={{ mb: 2 }}>
             {result.mode === 'commit'
@@ -689,6 +1052,17 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
             </Stack>
           </Paper>
 
+          {employeeMode && Array.isArray(result.preview_rows) && result.preview_rows.length > 0 && (
+            <EmployeeImportPreviewTable
+              rows={result.preview_rows}
+              totalRows={result.preview_rows_total ?? result.summary.total_rows}
+              truncated={result.preview_rows_truncated}
+              isRtl={isRtl}
+              mode={result.mode}
+              formatIssue={issue => localizeImportIssue(issue, isRtl)}
+            />
+          )}
+
           {employeeMode && employeeImportMode === 'flexible' && result.mapping_options && (
             <Paper sx={{ p: 2.5, borderRadius: 3, mb: 2, border: '1px solid', borderColor: mappingDirty ? 'warning.main' : 'primary.light' }}>
               <Stack direction={{ xs: 'column', md: isRtl ? 'row-reverse' : 'row' }} justifyContent="space-between" spacing={1.5} sx={{ mb: 2 }}>
@@ -706,6 +1080,11 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
                 />
               </Stack>
 
+              <Alert severity="info" sx={{ mb: 2 }}>
+                {isRtl
+                  ? 'تحقق من تعيين اسم الموظف، رقم الهوية أو الإقامة، المركز الصحي، والرقم الوظيفي والبريد والجوال والتاريخ عند توفرها. الأعمدة التي لا تتعرف عليها المنصة لن تُحفظ تلقائيًا.'
+                  : 'Verify the employee name, ID, center and optional job number, email, mobile and dates. Unmapped columns are not saved automatically.'}
+              </Alert>
               <Grid container spacing={1.5}>
                 {EMPLOYEE_IMPORT_FIELDS.map(field => {
                   const currentIndex = fieldMapping[field];
@@ -753,6 +1132,15 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
                   {isRtl ? 'إعادة فحص الملف بهذه المطابقة' : 'Revalidate File with This Mapping'}
                 </Button>
               )}
+              <FormControlLabel
+                sx={{ mt: 2, '& .MuiFormControlLabel-label': { fontWeight: 750, fontSize: 14 } }}
+                control={<Checkbox checked={mappingConfirmed} disabled={loading || mappingDirty ||
+                  Boolean(result.missing_required_fields?.length)}
+                  onChange={(_, checked) => setMappingConfirmed(checked)} />}
+                label={isRtl
+                  ? 'راجعت مطابقة الأعمدة، وتأكدت من ربط الاسم والهوية والمركز والبريد والرقم الوظيفي والجوال وسائر الحقول المتوفرة بشكل صحيح.'
+                  : 'I verified the column mappings including name, ID, center and all available employment/contact fields.'}
+              />
             </Paper>
           )}
 
@@ -783,7 +1171,7 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
             </TableContainer>
           )}
 
-          <TableContainer component={Paper} sx={{ borderRadius: 3, mb: 2 }}>
+          {!employeeMode && <TableContainer component={Paper} sx={{ borderRadius: 3, mb: 2 }}>
             <Table size="small">
               <TableHead>
                 <TableRow>
@@ -806,7 +1194,7 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
                 ))}
               </TableBody>
             </Table>
-          </TableContainer>
+          </TableContainer>}
 
           {(result.duplicates.length > 0 || result.errors.length > 0) && (
             <Grid container spacing={2}>
@@ -867,31 +1255,125 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
           <Stack direction={isRtl ? 'row-reverse' : 'row'} justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
             <Box sx={{ textAlign: isRtl ? 'right' : 'left' }}>
               <Typography variant="h5" fontWeight={950}>{isRtl ? 'بطاقات الموظفين المعلقة' : 'Pending Employee Cards'}</Typography>
+              <Alert severity="warning" sx={{ mt: 1.4, mb: 1.5 }}>
+                {isRtl
+                  ? 'مهم: البطاقات المعلقة من عمليات استيراد سابقة تعرض نتيجة الفحص وقت إنشائها ولا تتحدث تلقائيًا عند تعديل ملف Excel. ارفع الملف مجددًا في وضع «ملف Excel موجود» وراجع المعاينة، ولا تفعّل البطاقات القديمة ذات الحقول الفارغة.'
+                  : 'Older pending cards keep the results of their original import. Re-upload the corrected workbook with column mapping, and do not activate legacy cards with empty fields.'}
+              </Alert>
               <Typography variant="body2" color="text.secondary">
                 {isRtl ? 'لا تظهر في سجلات الموظفين الفعالة حتى تتم معالجة جميع الملاحظات.' : 'These records stay inactive until all issues are corrected.'}
               </Typography>
             </Box>
-            <Chip color={reviews.length ? 'warning' : 'success'} label={`${isRtl ? 'المعلقة' : 'Pending'}: ${reviews.length}`} />
+            <Stack direction="row" flexWrap="wrap" gap={1} alignItems="center">
+              <Chip color={reviews.length ? 'warning' : 'success'}
+                label={`${isRtl ? 'المعلقة المعروضة' : 'Shown pending'}: ${reviews.length}`} />
+              <Chip color={selectedReviewIds.length ? 'primary' : 'default'}
+                label={`${isRtl ? 'المحدد' : 'Selected'}: ${selectedReviewIds.length}`} />
+            </Stack>
           </Stack>
 
+          {reviews.length > 0 && <Paper variant="outlined" sx={{
+            p: 2, mb: 2.5, borderRadius: 3, borderColor: '#b9d3e2', bgcolor: '#f1f8fc',
+          }}>
+            <Stack direction={{ xs: 'column', lg: 'row' }} justifyContent="space-between" alignItems={{ lg: 'center' }} gap={1.5}>
+              <Stack direction="row" gap={1} flexWrap="wrap" alignItems="center">
+                <Button variant="outlined" size="small" disabled={bulkBusy}
+                  onClick={() => setSelectedReviewIds(reviews.map(review => review.id))}>
+                  {isRtl ? 'تحديد الكل' : 'Select all shown'}
+                </Button>
+                <Button variant="outlined" size="small" disabled={bulkBusy || !selectedReviewIds.length}
+                  onClick={() => setSelectedReviewIds([])}>
+                  {isRtl ? 'إلغاء التحديد' : 'Clear selection'}
+                </Button>
+                <Typography color="text.secondary" fontSize={13}>
+                  {isRtl ? `المحدد: ${selectedReviewIds.length}` : `Selected: ${selectedReviewIds.length}`}
+                </Typography>
+              </Stack>
+              <Stack direction={{ xs: 'column', sm: 'row' }} gap={1}>
+                <Button variant="outlined" color="primary" startIcon={<CheckCircleIcon />}
+                  disabled={bulkBusy || !selectedReviewIds.length}
+                  onClick={() => void previewBulkActivation('selected')}>
+                  {isRtl ? `تفعيل المحدد (${selectedReviewIds.length})` : `Activate selected (${selectedReviewIds.length})`}
+                </Button>
+                <Button variant="outlined" color="error" startIcon={<CancelIcon />}
+                  disabled={bulkBusy || !selectedReviewIds.length}
+                  onClick={() => void previewBulkDiscard('selected')}>
+                  {isRtl ? `تجاهل المحدد (${selectedReviewIds.length})` : `Ignore selected (${selectedReviewIds.length})`}
+                </Button>
+                <Button variant="outlined" color="error"
+                  disabled={bulkBusy} onClick={() => void previewBulkDiscard('all')}>
+                  {isRtl ? 'تجاهل جميع البطاقات المعلقة' : 'Ignore all pending cards'}
+                </Button>
+                <Button variant="contained" color="success" startIcon={<CheckCircleIcon />}
+                  disabled={bulkBusy}
+                  onClick={() => void previewBulkActivation('all')}>
+                  {isRtl ? 'تفعيل جميع البطاقات المؤهلة' : 'Activate all eligible'}
+                </Button>
+                {typeof window !== 'undefined' &&
+                  (window.location.hostname.includes('staging') ||
+                   ['localhost', '127.0.0.1'].includes(window.location.hostname)) &&
+                  <Button variant="outlined" color="warning" startIcon={<EditIcon />}
+                    disabled={bulkBusy} onClick={() => setCenterMatchingOpen(true)}>
+                    {isRtl ? 'مطابقة المراكز المعلقة' : 'Match unmatched centers'}
+                  </Button>}
+              </Stack>
+            </Stack>
+            <Typography color="text.secondary" fontSize={13} sx={{ mt: 1 }}>
+              {isRtl
+                ? 'التفعيل أو التجاهل الجماعي لا يبدأ إلا بعد المعاينة والتأكيد. «تحديد الكل» يحدد البطاقات المعروضة، و«تجاهل جميع البطاقات المعلقة» يشمل المعلقة في قاعدة البيانات حتى خارج الصفحة.'
+                : 'Bulk activation or discard requires preview and confirmation. Select all picks visible cards; Ignore all pending includes the full pending database queue.'}
+            </Typography>
+          </Paper>}
           {!reviews.length ? (
             <Alert severity="success">{isRtl ? 'لا توجد حاليًا بطاقات موظفين معلقة للمراجعة.' : 'There are no pending employee review cards.'}</Alert>
           ) : (
             <Grid container spacing={2}>
               {reviews.map(review => {
                 const payload = review.employee_payload || {};
+                const importClassification = payload['_import_classification'];
+                const isExistingMatch = importClassification === 'existing';
+                const isLinkedToExisting = Boolean(review.conflict_employee_summary) || isExistingMatch;
+                const reviewDifferences = Array.isArray(payload['_field_differences'])
+                  ? (payload['_field_differences'] as Array<{field: string; existing: string; incoming: string}>)
+                  : [];
+                const isActualConflict = importClassification === 'conflict' || (
+                  !isExistingMatch && review.status === 'conflict'
+                );
+                const reviewMissing = Array.isArray(payload['_optional_missing_fields'])
+                  ? payload['_optional_missing_fields'].filter((value): value is string => typeof value === 'string')
+                  : [];
                 return (
                   <Grid key={review.id} size={{ xs: 12, md: 6, xl: 4 }}>
-                    <Card sx={{ height: '100%', borderRadius: 4, border: '1px solid', borderColor: review.status === 'conflict' ? 'error.light' : 'warning.light' }}>
+                    <Card sx={{ height: '100%', borderRadius: 4, border: '1px solid',
+                      borderColor: selectedReviewIds.includes(review.id)
+                        ? 'primary.main' : isExistingMatch ? 'info.light'
+                          : isActualConflict ? 'error.light' : 'warning.light',
+                      boxShadow: selectedReviewIds.includes(review.id) ? '0 0 0 2px #c8e4fa' : undefined }}>
                       <CardContent>
                         <Stack spacing={1.5}>
+                          <FormControlLabel
+                            control={<Checkbox size="small"
+                              checked={selectedReviewIds.includes(review.id)}
+                              disabled={bulkBusy}
+                              onChange={(_, checked) => setSelectedReviewIds(current =>
+                                checked ? [...new Set([...current, review.id])] : current.filter(pk => pk !== review.id))}
+                              inputProps={{ 'aria-label': `تحديد بطاقة الموظف رقم ${review.id}` }} />}
+                            label={<Typography fontWeight={800} fontSize={13}>
+                              {isRtl ? 'تحديد لإجراء جماعي' : 'Select for bulk action'}
+                            </Typography>} />
                           <Stack direction={isRtl ? 'row-reverse' : 'row'} justifyContent="space-between" alignItems="center">
                             <Typography variant="h6" fontWeight={950}>{payloadText(payload, 'name') || (isRtl ? 'اسم غير مكتمل' : 'Incomplete name')}</Typography>
-                            <Chip
-                              size="small"
-                              color={review.status === 'conflict' ? 'error' : 'warning'}
-                              label={review.status === 'conflict' ? (isRtl ? 'تعارض' : 'Conflict') : (isRtl ? 'معلق' : 'Pending')}
-                            />
+                            <Stack direction="row" gap={0.5} flexWrap="wrap">
+                              <Chip size="small"
+                                color={isExistingMatch ? 'info' : isActualConflict ? 'error' : 'warning'}
+                                label={isExistingMatch ? (isRtl ? 'موجود مسبقًا' : 'Existing')
+                                  : isActualConflict ? (isRtl ? 'تعارض فعلي' : 'Conflict')
+                                  : (isRtl ? 'يحتاج معالجة' : 'Needs correction')} />
+                              {!!reviewMissing.length && <Chip size="small"
+                                color="warning" variant="outlined"
+                                label={isRtl ? `بيانات ناقصة: ${reviewMissing.length}`
+                                  : `Optional gaps: ${reviewMissing.length}`} />}
+                            </Stack>
                           </Stack>
                           <Typography variant="body2" color="text.secondary">
                             {isRtl ? 'صف Excel' : 'Excel row'}: {review.source_row} — {review.source_file}
@@ -901,10 +1383,33 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
                             <Chip size="small" variant="outlined" label={`${isRtl ? 'المركز' : 'Center'}: ${payloadText(payload, 'health_center_name') || '-'}`} />
                           </Stack>
                           {review.conflict_employee_summary && (
-                            <Alert severity="error">
-                              {isRtl ? 'يتعارض مع الموظف الموجود' : 'Conflicts with existing employee'}: {review.conflict_employee_summary.name} ({review.conflict_employee_summary.employee_number || review.conflict_employee_summary.national_id_masked})
+                            <Alert severity={isExistingMatch ? 'info' : 'error'}>
+                              {isExistingMatch
+                                ? (isRtl ? 'هذا الموظف مسجل بالفعل، ولن يُضاف مرتين' : 'This employee already exists; no duplicate will be created')
+                                : (isRtl ? 'راجع التعارض مع الموظف المسجل' : 'Investigate conflict with existing employee')}
+                              {' — '}{review.conflict_employee_summary.name}
+                              {' '}({review.conflict_employee_summary.employee_number ||
+                                review.conflict_employee_summary.national_id_masked})
                             </Alert>
                           )}
+                          {!!reviewMissing.length && <Alert severity="warning">
+                            {isRtl ? 'بيانات اختيارية غير متوفرة:' : 'Missing optional data:'}
+                            {' '}{reviewMissing.map(field => IMPORT_FIELD_LABELS_AR[field] || field).join('، ')}
+                          </Alert>}
+                          {isLinkedToExisting && <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2, bgcolor: '#f1f7ff' }}>
+                            <Typography fontWeight={900} fontSize={13} sx={{ mb: 0.5 }}>
+                              {isRtl ? 'مقارنة السجل الحالي بملف Excel' : 'Existing record vs Excel'}
+                            </Typography>
+                            {reviewDifferences.length ? reviewDifferences.map((difference, index) => (
+                              <Typography key={index} fontSize={12.5} sx={{ py: 0.3 }}>
+                                <strong>{IMPORT_FIELD_LABELS_AR[difference.field] || difference.field}</strong>
+                                {' — '}{isRtl ? 'المسجل:' : 'Stored:'} {String(difference.existing ?? '—')}
+                                {' | '}{isRtl ? 'الوارد:' : 'Excel:'} {String(difference.incoming ?? '—')}
+                              </Typography>
+                            )) : <Typography variant="body2">
+                              {isRtl ? 'لم تُرصد اختلافات في البيانات المقارنة.' : 'No compared field differences found.'}
+                            </Typography>}
+                          </Paper>}
                           <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2, bgcolor: 'warning.50' }}>
                             <Typography fontWeight={900} variant="body2" sx={{ mb: 0.5 }}>{isRtl ? 'الملاحظات المطلوب معالجتها' : 'Issues to resolve'}</Typography>
                             <Box component="ul" sx={{ m: 0, ps: 2.5 }}>
@@ -916,9 +1421,17 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
                             </Box>
                           </Paper>
                           <Stack direction={isRtl ? 'row-reverse' : 'row'} spacing={1}>
-                            <Button fullWidth variant="contained" startIcon={<EditIcon />} onClick={() => openReview(review)}>
-                              {isRtl ? 'معالجة وتفعيل' : 'Correct & Activate'}
-                            </Button>
+                            {isLinkedToExisting ? (
+                              <Alert severity="info" sx={{ flex: 1 }}>
+                                {isRtl
+                                  ? 'سجل مرتبط بموظف موجود. للمقارنة فقط؛ أي تحديث يتطلب إجراءً مستقلًا.'
+                                  : 'Linked to an existing employee. Compare only; updates require a separate workflow.'}
+                              </Alert>
+                            ) : (
+                              <Button fullWidth variant="contained" startIcon={<EditIcon />} onClick={() => openReview(review)}>
+                                {isRtl ? 'معالجة وتفعيل' : 'Correct & Activate'}
+                              </Button>
+                            )}
                             <Button variant="outlined" color="inherit" startIcon={<CancelIcon />} onClick={() => void discardReview(review)}>
                               {isRtl ? 'تجاهل' : 'Discard'}
                             </Button>
@@ -934,44 +1447,274 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
         </Box>
       )}
 
+      <StagingCenterReconciliationDialog open={centerMatchingOpen}
+        isRtl={isRtl} onClose={() => setCenterMatchingOpen(false)}
+        onMapped={() => loadReviews()} />
+
+      <Dialog open={Boolean(discardPreview)}
+        onClose={() => !bulkBusy && setDiscardPreview(null)}
+        fullWidth maxWidth="sm" dir={isRtl ? 'rtl' : 'ltr'}>
+        <DialogTitle sx={{ fontWeight: 900, color: 'error.main' }}>
+          {isRtl ? 'معاينة تجاهل بطاقات الموظفين' : 'Preview ignoring employee review cards'}
+        </DialogTitle>
+        <DialogContent dividers>
+          {discardPreview && <Stack gap={2}>
+            <Alert severity="warning">
+              {isRtl
+                ? 'سيجري نقل البطاقات المحددة إلى حالة «متجاهلة»، وإخفاؤها من قائمة البطاقات المعلقة. لن تُحذف بياناتها الأصلية، ولن تتغير سجلات الموظفين الفعالة.'
+                : 'Selected reviews will be archived as ignored and hidden from pending. Original review details remain stored; active employees are unaffected.'}
+            </Alert>
+            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 1 }}>
+              {[
+                [isRtl ? 'المحددة' : 'Selected', discardPreview.selected_count],
+                [isRtl ? 'جاهزة للتجاهل' : 'Discardable', discardPreview.discardable_count],
+                [isRtl ? 'غير قابلة' : 'Excluded', discardPreview.blocked_count],
+              ].map(([label, value]) => <Paper key={String(label)} variant="outlined"
+                sx={{ p: 1.3, textAlign: 'center', borderRadius: 2 }}>
+                <Typography fontWeight={900} fontSize={22}>{value}</Typography>
+                <Typography fontSize={12} color="text.secondary">{label}</Typography>
+              </Paper>)}
+            </Box>
+            <Alert severity="info">
+              {isRtl
+                ? 'التجاهل يزيل البطاقة من قائمة المعالجة اليومية. لاستعادتها لاحقًا يلزم إجراء إداري منفصل؛ إعادة رفع ملف Excel نفسه قد لا تعيد البطاقة المتجاهلة تلقائيًا.'
+                : 'Ignoring hides cards from the review queue. Restoring them later requires a separate administrative action; re-uploading the same file may not reopen ignored cards.'}
+            </Alert>
+            {bulkBusy && <Box>
+              <LinearProgress variant="determinate"
+                value={discardPreview.discardable_count
+                  ? discardProgress.processed / discardPreview.discardable_count * 100 : 0} />
+              <Typography fontSize={13} color="text.secondary" sx={{ mt: 1 }}>
+                {isRtl
+                  ? `تمت معالجة ${discardProgress.processed} من ${discardPreview.discardable_count} — تم تجاهل ${discardProgress.discarded}، وتخطي ${discardProgress.skipped}`
+                  : `Processed ${discardProgress.processed} / ${discardPreview.discardable_count} — ignored ${discardProgress.discarded}, skipped ${discardProgress.skipped}`}
+              </Typography>
+            </Box>}
+            <FormControlLabel
+              control={<Checkbox checked={discardAcknowledged} disabled={bulkBusy}
+                onChange={(_, value) => setDiscardAcknowledged(value)} />}
+              label={<Typography variant="body2" fontWeight={800}>
+                {isRtl
+                  ? `أقر بأنني راجعت العدد وأوافق على تجاهل ${discardPreview.discardable_count} بطاقة مع حفظ أصل بياناتها.`
+                  : `I reviewed the count and confirm ignoring ${discardPreview.discardable_count} review cards, preserving original data.`}
+              </Typography>}
+            />
+          </Stack>}
+        </DialogContent>
+        <DialogActions sx={{ p: 2, gap: 1 }}>
+          <Button disabled={bulkBusy} onClick={() => setDiscardPreview(null)}>
+            {isRtl ? 'إلغاء' : 'Cancel'}
+          </Button>
+          <Button variant="contained" color="error"
+            disabled={bulkBusy || !discardAcknowledged || !discardPreview?.discardable_count}
+            onClick={() => void confirmBulkDiscard()}>
+            {isRtl ? `تأكيد تجاهل ${discardPreview?.discardable_count || 0} بطاقة`
+              : `Confirm ignoring ${discardPreview?.discardable_count || 0} cards`}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={Boolean(bulkPreview)}
+        onClose={() => !bulkBusy && setBulkPreview(null)}
+        fullWidth maxWidth="sm" dir={isRtl ? 'rtl' : 'ltr'}>
+        <DialogTitle sx={{ fontWeight: 900, color: '#153f64' }}>
+          {isRtl ? 'معاينة التفعيل الجماعي للموظفين' : 'Bulk employee activation preview'}
+        </DialogTitle>
+        <DialogContent dividers>
+          {bulkPreview && <Stack gap={2}>
+            <Alert severity="info">
+              {isRtl
+                ? 'توضح المعاينة العدد المؤهل فقط؛ لا يمكن إنشاء موظف دون اسم وهوية صحيحة ومركز صحي مطابق، ولا يمكن تجاوز منع التكرار.'
+                : 'Only eligible employees may be created. Valid name, ID, exact center and uniqueness are mandatory.'}
+            </Alert>
+            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 1 }}>
+              {[
+                [isRtl ? 'المحددة' : 'Selected', bulkPreview.selected_count],
+                [isRtl ? 'مؤهلة' : 'Eligible', bulkPreview.eligible_count],
+                [isRtl ? 'مستبعدة' : 'Excluded', bulkPreview.blocked_count],
+              ].map(([label, value]) =>
+                <Paper key={String(label)} variant="outlined" sx={{ p: 1.3, textAlign: 'center', borderRadius: 2 }}>
+                  <Typography fontSize={23} fontWeight={900}>{value}</Typography>
+                  <Typography fontSize={12} color="text.secondary">{label}</Typography>
+                </Paper>)}
+            </Box>
+            {bulkPreview.blocked_reasons.length > 0 && <Paper variant="outlined" sx={{
+              bgcolor: '#fff9ed', borderColor: '#edcf97', p: 2, borderRadius: 2,
+            }}>
+              <Typography fontWeight={900} sx={{ mb: 1 }}>
+                {isRtl ? 'أسباب الاستبعاد' : 'Reasons for exclusion'}
+              </Typography>
+              {bulkPreview.blocked_reasons.map(reason =>
+                <Typography key={reason.reason} variant="body2" sx={{ py: 0.3 }}>
+                  {reason.label}: {reason.count}
+                </Typography>)}
+            </Paper>}
+            {bulkBusy && <Box>
+              <LinearProgress variant="determinate"
+                value={bulkPreview.eligible_count
+                  ? bulkProgress.processed / bulkPreview.eligible_count * 100 : 0} />
+              <Typography color="text.secondary" fontSize={13} sx={{ mt: 0.8 }}>
+                تمت معالجة {bulkProgress.processed} من {bulkPreview.eligible_count} —
+                أُضيف {bulkProgress.created}، وتخطى {bulkProgress.skipped}.
+              </Typography>
+            </Box>}
+            <FormControlLabel
+              control={<Checkbox checked={bulkAcknowledged} disabled={bulkBusy || !bulkPreview.eligible_count}
+                onChange={(_, checked) => setBulkAcknowledged(checked)} />}
+              label={<Typography variant="body2" fontWeight={750}>
+                {isRtl
+                  ? 'راجعت الأعداد وأؤكد إضافة الموظفين المؤهلين بالبيانات المتاحة، مع إبقاء غير المؤهلين معلّقين.'
+                  : 'I reviewed the totals and confirm adding only eligible employees using available validated data.'}
+              </Typography>} />
+            <Alert severity="warning" sx={{ fontSize: 13 }}>
+              {isRtl
+                ? 'ستُنشأ سجلات جديدة في قاعدة Staging بعد التأكيد. لن يُنشأ أي موظف مكرر، ولن تُنقل بيانات صحية غير موثقة.'
+                : 'New Staging records are created only after confirmation. No duplicates or unverified clinical data will be added.'}
+            </Alert>
+          </Stack>}
+        </DialogContent>
+        <DialogActions sx={{ p: 2, gap: 1 }}>
+          <Button disabled={bulkBusy} onClick={() => setBulkPreview(null)}>
+            {isRtl ? 'إلغاء' : 'Cancel'}
+          </Button>
+          <Button variant="contained" color="success" disabled={bulkBusy || !bulkAcknowledged ||
+            !bulkPreview?.eligible_count}
+            onClick={() => void confirmBulkActivation()}>
+            {isRtl ? `تأكيد إضافة ${bulkPreview?.eligible_count || 0} موظف`
+              : `Confirm ${bulkPreview?.eligible_count || 0} employees`}
+          </Button>
+        </DialogActions>
+      </Dialog>
       <Dialog open={Boolean(activeReview)} onClose={() => !reviewLoading && setActiveReview(null)} fullWidth maxWidth="md" dir={isRtl ? 'rtl' : 'ltr'}>
         <DialogTitle fontWeight={950}>{isRtl ? 'معالجة ملاحظات الموظف وتفعيل البطاقة' : 'Correct Employee & Activate Card'}</DialogTitle>
         <DialogContent dividers>
           {activeReview && (
-            <Alert severity={activeReview.status === 'conflict' ? 'error' : 'warning'} sx={{ mb: 2 }}>
-              <Box component="ul" sx={{ m: 0, ps: 2.5 }}>
-                {activeReview.issues.flatMap(issue => localizeImportReason(issue, isRtl)).map((issue, index) => (
-                  <Typography component="li" key={index} variant="body2">
-                    {localizeImportIssue(issue, isRtl)}
-                  </Typography>
-                ))}
-              </Box>
-            </Alert>
+            <Stack gap={1.3} sx={{ mb: 2 }}>
+              <Alert severity="info" sx={{ fontSize: 13.5 }}>
+                هذه ملاحظات محفوظة عند فحص الملف سابقًا، وليست نتائج فحص الحقول الحالية.
+                تاريخ الميلاد والتعيين، والجنسية، والوحدة التنظيمية حقول اختيارية عند إنشاء الموظف.
+                يلزم التأكد من اسم الموظف ورقم الهوية أو الإقامة والمركز الصحي فقط.
+              </Alert>
+              {!!activeReview.issues.length && <Alert severity={activeReview.status === 'conflict' ? 'error' : 'warning'}>
+                <Typography variant="body2" fontWeight={800} sx={{ mb: 0.8 }}>ملاحظات الاستيراد السابقة:</Typography>
+                <Box component="ul" sx={{ m: 0, ps: 2.5 }}>
+                  {activeReview.issues.flatMap(issue => localizeImportReason(issue, isRtl)).map((issue, index) => (
+                    <Typography component="li" key={index} variant="body2">
+                      {localizeImportIssue(issue, isRtl)}
+                    </Typography>
+                  ))}
+                </Box>
+              </Alert>}
+              {reviewValidationError && <Alert severity="error" role="alert">{reviewValidationError}</Alert>}
+            </Stack>
           )}
           <Grid container spacing={2}>
             <Grid size={{ xs: 12, md: 6 }}><TextField required fullWidth label={isRtl ? 'اسم الموظف' : 'Employee name'} value={reviewForm.name} onChange={e => updateReviewField('name', e.target.value)} /></Grid>
-            <Grid size={{ xs: 12, md: 6 }}><TextField required fullWidth label={isRtl ? 'البريد الإلكتروني' : 'Email'} value={reviewForm.email} onChange={e => updateReviewField('email', e.target.value)} /></Grid>
-            <Grid size={{ xs: 12, md: 6 }}><TextField required fullWidth label={isRtl ? 'رقم الهوية الوطنية' : 'National ID'} value={reviewForm.national_id} onChange={e => updateReviewField('national_id', e.target.value)} /></Grid>
-            <Grid size={{ xs: 12, md: 6 }}><TextField required fullWidth label={isRtl ? 'الرقم الوظيفي' : 'Employee number'} value={reviewForm.employee_number} onChange={e => updateReviewField('employee_number', e.target.value)} /></Grid>
-            <Grid size={{ xs: 12, md: 6 }}><TextField required fullWidth label={isRtl ? 'رقم الجوال' : 'Mobile'} value={reviewForm.mobile} onChange={e => updateReviewField('mobile', e.target.value)} /></Grid>
-            <Grid size={{ xs: 12, md: 6 }}><TextField required fullWidth label={isRtl ? 'العنوان الوطني' : 'National address'} value={reviewForm.national_address} onChange={e => updateReviewField('national_address', e.target.value)} /></Grid>
-            <Grid size={{ xs: 12, md: 6 }}><CalendarDateField required label={isRtl ? 'تاريخ الميلاد' : 'Date of birth'} value={reviewForm.date_of_birth} onChange={value => updateReviewField('date_of_birth', value)} /></Grid>
-            <Grid size={{ xs: 12, md: 6 }}><TextField required fullWidth label={isRtl ? 'مكان الميلاد' : 'Birth place'} value={reviewForm.birth_place} onChange={e => updateReviewField('birth_place', e.target.value)} /></Grid>
-            <Grid size={{ xs: 12, md: 6 }}><TextField select required fullWidth label={isRtl ? 'الجنس' : 'Gender'} value={reviewForm.gender} onChange={e => updateReviewField('gender', e.target.value)}><MenuItem value="male">{isRtl ? 'ذكر' : 'Male'}</MenuItem><MenuItem value="female">{isRtl ? 'أنثى' : 'Female'}</MenuItem></TextField></Grid>
-            <Grid size={{ xs: 12, md: 6 }}><TextField select required fullWidth label={isRtl ? 'الحالة الاجتماعية' : 'Marital status'} value={reviewForm.marital_status} onChange={e => updateReviewField('marital_status', e.target.value)}><MenuItem value="single">{isRtl ? 'أعزب' : 'Single'}</MenuItem><MenuItem value="married">{isRtl ? 'متزوج' : 'Married'}</MenuItem><MenuItem value="divorced">{isRtl ? 'مطلق' : 'Divorced'}</MenuItem><MenuItem value="widowed">{isRtl ? 'أرمل' : 'Widowed'}</MenuItem></TextField></Grid>
-            <Grid size={{ xs: 12, md: 6 }}><TextField select required fullWidth label={isRtl ? 'المركز الصحي' : 'Health center'} value={reviewForm.health_center} onChange={e => updateReviewField('health_center', e.target.value)}>{healthCenters.map(center => <MenuItem key={center.id} value={String(center.id)}>{center.name}</MenuItem>)}</TextField></Grid>
-            <Grid size={{ xs: 12, md: 6 }}><TextField required fullWidth label={isRtl ? 'المسمى الوظيفي (عربي)' : 'Job title (Arabic)'} value={reviewForm.job_title} onChange={e => updateReviewField('job_title', e.target.value)} /></Grid>
-            <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label={isRtl ? 'المسمى الوظيفي (إنجليزي)' : 'Job title (English)'} value={reviewForm.job_title_en} onChange={e => updateReviewField('job_title_en', e.target.value)} /></Grid>
-            <Grid size={{ xs: 12, md: 6 }}><CalendarDateField required label={isRtl ? 'تاريخ التعيين' : 'Appointment date'} value={reviewForm.appointment_date} onChange={value => updateReviewField('appointment_date', value)} /></Grid>
-            <Grid size={{ xs: 12, md: 6 }}><TextField select fullWidth label={isRtl ? 'حالة الفحص الدوري' : 'Exam status'} value={reviewForm.periodic_exam_status} onChange={e => updateReviewField('periodic_exam_status', e.target.value)}><MenuItem value="completed">{isRtl ? 'مكتمل' : 'Completed'}</MenuItem><MenuItem value="incomplete">{isRtl ? 'غير مكتمل' : 'Incomplete'}</MenuItem><MenuItem value="overdue">{isRtl ? 'متأخر' : 'Overdue'}</MenuItem></TextField></Grid>
-            <Grid size={{ xs: 12, md: 6 }}><TextField select fullWidth label={isRtl ? 'حالة التطعيم' : 'Vaccination status'} value={reviewForm.vaccination_status} onChange={e => updateReviewField('vaccination_status', e.target.value)}><MenuItem value="completed">{isRtl ? 'مكتمل' : 'Completed'}</MenuItem><MenuItem value="due">{isRtl ? 'مستحق' : 'Due'}</MenuItem><MenuItem value="refused">{isRtl ? 'مرفوض' : 'Refused'}</MenuItem></TextField></Grid>
-            <Grid size={{ xs: 12, md: 6 }}><TextField select fullWidth label={isRtl ? 'مستوى الخطورة' : 'Risk level'} value={reviewForm.risk_level} onChange={e => updateReviewField('risk_level', e.target.value)}><MenuItem value="low">{isRtl ? 'منخفض' : 'Low'}</MenuItem><MenuItem value="medium">{isRtl ? 'متوسط' : 'Medium'}</MenuItem><MenuItem value="high">{isRtl ? 'مرتفع' : 'High'}</MenuItem></TextField></Grid>
+            <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label={isRtl ? 'البريد الإلكتروني (اختياري)' : 'Email (optional)'} value={reviewForm.email} onChange={e => updateReviewField('email', e.target.value)} /></Grid>
+            <Grid size={{ xs: 12, md: 6 }}><TextField required fullWidth label={isRtl ? 'رقم الهوية / الإقامة' : 'National ID / Iqama'} value={reviewForm.national_id} onChange={e => updateReviewField('national_id', e.target.value)} /></Grid>
+            <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label={isRtl ? 'الرقم الوظيفي (اختياري)' : 'Employee number (optional)'} value={reviewForm.employee_number} onChange={e => updateReviewField('employee_number', e.target.value)} /></Grid>
+            <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label={isRtl ? 'رقم الجوال' : 'Mobile'} value={reviewForm.mobile} onChange={e => updateReviewField('mobile', e.target.value)} /></Grid>
+            <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label={isRtl ? 'العنوان الوطني' : 'National address'} value={reviewForm.national_address} onChange={e => updateReviewField('national_address', e.target.value)} /></Grid>
+            <Grid size={{ xs: 12, md: 6 }}><CalendarDateField label={isRtl ? 'تاريخ الميلاد' : 'Date of birth'} value={reviewForm.date_of_birth} onChange={value => updateReviewField('date_of_birth', value)} /></Grid>
+            <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label={isRtl ? 'مكان الميلاد' : 'Birth place'} value={reviewForm.birth_place} onChange={e => updateReviewField('birth_place', e.target.value)} /></Grid>
+            <Grid size={{ xs: 12, md: 6 }}><TextField select fullWidth label={isRtl ? 'الجنس' : 'Gender'} value={reviewForm.gender} onChange={e => updateReviewField('gender', e.target.value)}><MenuItem value="">غير محدد</MenuItem><MenuItem value="male">{isRtl ? 'ذكر' : 'Male'}</MenuItem><MenuItem value="female">{isRtl ? 'أنثى' : 'Female'}</MenuItem></TextField></Grid>
+            <Grid size={{ xs: 12, md: 6 }}><TextField select fullWidth label={isRtl ? 'الحالة الاجتماعية' : 'Marital status'} value={reviewForm.marital_status} onChange={e => updateReviewField('marital_status', e.target.value)}><MenuItem value="">غير محدد</MenuItem><MenuItem value="single">{isRtl ? 'أعزب' : 'Single'}</MenuItem><MenuItem value="married">{isRtl ? 'متزوج' : 'Married'}</MenuItem><MenuItem value="divorced">{isRtl ? 'مطلق' : 'Divorced'}</MenuItem><MenuItem value="widowed">{isRtl ? 'أرمل' : 'Widowed'}</MenuItem></TextField></Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Autocomplete
+                options={healthCenters.filter(center => center.is_active !== false)
+                  .sort((a,b) => Number(Boolean(b.code?.startsWith('OHP-REF-'))) -
+                    Number(Boolean(a.code?.startsWith('OHP-REF-'))))}
+                value={healthCenters.find(center => String(center.id) === reviewForm.health_center) || null}
+                onChange={(_, center) => {
+                  updateReviewField('health_center', center ? String(center.id) : '');
+                  setReviewValidationError('');
+                }}
+                getOptionLabel={center => center.name_ar || center.name}
+                isOptionEqualToValue={(option, value) => String(option.id) === String(value.id)}
+                renderOption={(props, center) => <li {...props} key={center.id}>
+                  {center.name_ar || center.name} {center.code ? `(${center.code})` : ''}
+                </li>}
+                renderInput={params => <TextField {...params} required
+                  label={isRtl ? 'المركز الصحي – ابحث بالاسم' : 'Health center – search by name'}
+                  error={Boolean(reviewValidationError && !reviewForm.health_center)}
+                  helperText={reviewForm.health_center
+                    ? 'المركز المختار مسجل في قاعدة البيانات.'
+                    : `يجب اختيار مركز من القائمة. ${reviewCenterSource ? 'الاسم في الملف: ' + reviewCenterSource : ''}`}
+                />}
+                noOptionsText="لا يوجد مركز مطابق؛ راجع إدارة المراكز الصحية"
+                fullWidth
+              />
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label={isRtl ? 'المسمى الوظيفي' : 'Job title'} value={reviewForm.job_title} onChange={e => updateReviewField('job_title', e.target.value)} /></Grid>
+            <Grid size={{ xs: 12, md: 6 }}><CalendarDateField label={isRtl ? 'تاريخ التعيين' : 'Appointment date'} value={reviewForm.appointment_date} onChange={value => updateReviewField('appointment_date', value)} /></Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Autocomplete
+                options={REVIEW_NATIONALITIES}
+                value={REVIEW_NATIONALITIES.find(item => item.code === reviewForm.nationality) || null}
+                onChange={(_, selected) => updateReviewField('nationality', selected?.code || '')}
+                getOptionLabel={item => item.countryAr}
+                isOptionEqualToValue={(option,value) => option.code === value.code}
+                filterOptions={(items, state) => {
+                  const search = normalizeNationalitySearch(state.inputValue);
+                  return search ? items.filter(item => item.searchText.includes(search)) : items;
+                }}
+                renderInput={params => <TextField {...params} label="الجنسية (اختياري)"
+                  helperText={reviewNationalitySource && !reviewForm.nationality
+                    ? `لم يُتعرف على الجنسية الواردة: ${reviewNationalitySource}. اختر الدولة أو اترك الحقل فارغًا.`
+                    : 'اختر اسم الدولة؛ سيحفظ النظام رمزها الصحيح.'} />}
+                noOptionsText="لا توجد دولة مطابقة"
+                fullWidth
+              />
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label="الوظيفة الحالية" value={reviewForm.current_job} onChange={e => updateReviewField('current_job', e.target.value)} /></Grid>
+            <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label="المسمى الوظيفي بالإنجليزية" value={reviewForm.job_title_en} onChange={e => updateReviewField('job_title_en', e.target.value)} /></Grid>
+            <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth type="number" label="عدد الأطفال" value={reviewForm.children_count} onChange={e => updateReviewField('children_count', e.target.value)} inputProps={{ min: 0, max: 100, step: 1 }} /></Grid>
+            <Grid size={{ xs: 12, md: 6 }}><TextField select fullWidth label={isRtl ? 'حالة الفحص الدوري' : 'Exam status'} value={reviewForm.periodic_exam_status} onChange={e => updateReviewField('periodic_exam_status', e.target.value)}><MenuItem value="unknown">غير محدد</MenuItem><MenuItem value="completed">{isRtl ? 'مكتمل' : 'Completed'}</MenuItem><MenuItem value="incomplete">{isRtl ? 'غير مكتمل' : 'Incomplete'}</MenuItem><MenuItem value="overdue">{isRtl ? 'متأخر' : 'Overdue'}</MenuItem></TextField></Grid>
+            <Grid size={{ xs: 12, md: 6 }}><TextField select fullWidth label={isRtl ? 'حالة التطعيم' : 'Vaccination status'} value={reviewForm.vaccination_status} onChange={e => updateReviewField('vaccination_status', e.target.value)}><MenuItem value="unknown">غير محدد</MenuItem><MenuItem value="completed">{isRtl ? 'مكتمل' : 'Completed'}</MenuItem><MenuItem value="due">{isRtl ? 'مستحق' : 'Due'}</MenuItem><MenuItem value="refused">{isRtl ? 'مرفوض' : 'Refused'}</MenuItem></TextField></Grid>
+            <Grid size={{ xs: 12, md: 6 }}><TextField select fullWidth label={isRtl ? 'مستوى الخطورة' : 'Risk level'} value={reviewForm.risk_level} onChange={e => updateReviewField('risk_level', e.target.value)}><MenuItem value="unknown">غير محدد</MenuItem><MenuItem value="low">{isRtl ? 'منخفض' : 'Low'}</MenuItem><MenuItem value="medium">{isRtl ? 'متوسط' : 'Medium'}</MenuItem><MenuItem value="high">{isRtl ? 'مرتفع' : 'High'}</MenuItem></TextField></Grid>
           </Grid>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setActiveReview(null)} disabled={reviewLoading}>{isRtl ? 'إلغاء' : 'Cancel'}</Button>
-          <Button variant="contained" color="success" onClick={() => void activateReview()} disabled={reviewLoading} startIcon={<CheckCircleIcon />}>
-            {reviewLoading ? (isRtl ? 'جاري التحقق...' : 'Validating...') : (isRtl ? 'حفظ التصحيح وتفعيل البطاقة' : 'Save & Activate Card')}
+          <Button variant="outlined" color="warning"
+            onClick={() => setBasicActivationConfirmOpen(true)}
+            disabled={reviewLoading || !reviewForm.health_center || !reviewForm.name.trim() || !reviewForm.national_id.trim()}>
+            {isRtl ? 'إضافة الموظف بالبيانات المتاحة' : 'Add using available data'}
+          </Button>
+          <Button variant="contained" color="success" onClick={() => void activateReview()}
+            disabled={reviewLoading || !reviewForm.health_center || !reviewForm.name.trim() || !reviewForm.national_id.trim()}
+            startIcon={<CheckCircleIcon />}>
+            {reviewLoading ? (isRtl ? 'جاري التحقق...' : 'Validating...') : (isRtl ? 'حفظ جميع البيانات وتفعيل البطاقة' : 'Save All Valid Details & Activate')}
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog open={basicActivationConfirmOpen && Boolean(activeReview)}
+        onClose={() => !reviewLoading && setBasicActivationConfirmOpen(false)}
+        maxWidth="sm" fullWidth dir={isRtl ? 'rtl' : 'ltr'}>
+        <DialogTitle fontWeight={900}>
+          {isRtl ? 'تأكيد إضافة الموظف بالبيانات المتاحة' : 'Confirm available-data activation'}
+        </DialogTitle>
+        <DialogContent dividers>
+          <Stack gap={1.5}>
+            <Alert severity="warning">
+              {isRtl
+                ? 'سيُضاف الموظف بالاسم ورقم الهوية أو الإقامة والمركز الصحي، مع حفظ كل حقل اختياري صالح. ستُستبعد فقط القيم غير الصحيحة، وتبقى تفاصيلها في سجل المراجعة الأصلي لاستكمالها لاحقًا.'
+                : 'The employee will be added with name, ID and a confirmed center, plus any valid optional fields. Invalid optional values are skipped and retained in the original review for later correction.'}
+            </Alert>
+            <Typography fontSize={14} color="text.secondary">
+              {isRtl
+                ? 'لن تُقبل هوية مكررة أو مركز غير محدد. ولن يُعتمد ربط تنظيمي غير موثق أو تُنشأ بيانات صحية افتراضية.'
+                : 'Duplicate identities, missing centers, unapproved organizational assignments and fabricated medical information are never allowed.'}
+            </Typography>
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 2, py: 2, gap: 1 }}>
+          <Button disabled={reviewLoading} onClick={() => setBasicActivationConfirmOpen(false)}>
+            {isRtl ? 'إلغاء' : 'Cancel'}
+          </Button>
+          <Button variant="contained" color="warning" disabled={reviewLoading}
+            onClick={() => void activateReview(true)}>
+            {isRtl ? 'تأكيد إضافة الموظف' : 'Confirm employee activation'}
           </Button>
         </DialogActions>
       </Dialog>

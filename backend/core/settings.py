@@ -29,7 +29,8 @@ CORS_ALLOWED_ORIGINS = [
     for origin in os.getenv('CORS_ALLOWED_ORIGINS', _default_cors_origins).split(',')
     if origin.strip()
 ]
-CORS_ALLOWED_ORIGIN_REGEXES = [r'^https://.*\.up\.railway\.app$']
+# No wildcard trust for unrelated Railway apps. Explicit allowlists only.
+CORS_ALLOWED_ORIGIN_REGEXES = [item.strip() for item in os.getenv('CORS_ALLOWED_ORIGIN_REGEXES', '').split(',') if item.strip()]
 
 INSTALLED_APPS = [
     'django.contrib.admin',

@@ -2,15 +2,17 @@ import json
 from datetime import date, timedelta
 
 from django.contrib.auth import get_user_model
-from django.db import transaction
+from django.db import IntegrityError, transaction
+from django.db.models import Q
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from .importers import process_excel_import
-from .models import AuditLog, ClinicVisit, CommitteeReferral, DataImportBatch, Employee, EmployeeHealthCard, EmployeeImportReview, HealthCenter, InjuryCase, LabTest, OccupationalHealthAssessment, Vaccination
+from .models import AuditLog, ClinicVisit, CommitteeReferral, DataImportBatch, Employee, EmployeeEmploymentChange, EmployeeHealthCard, EmployeeImportReview, HealthCenter, InjuryCase, LabTest, OccupationalHealthAssessment, Vaccination
 from .serializers import AuditLogSerializer, ClinicVisitSerializer, CommitteeReferralSerializer, DataImportBatchSerializer, EmployeeHealthCardSerializer, EmployeeImportReviewSerializer, EmployeeSerializer, HealthCenterSerializer, InjuryCaseSerializer, LabTestSerializer, OccupationalHealthAssessmentSerializer, PlatformUserSerializer, VaccinationSerializer
 
 
@@ -338,6 +340,23 @@ class ExcelImportViewSet(viewsets.ReadOnlyModelViewSet):
             )
             result=normalize_import_result(result)
             summary=result['summary']
+            # The expanded employee preview is for the current authenticated
+            # response only. Never store row-level personal information in
+            # DataImportBatch.summary, even in preview (non-commit) mode.
+            batch_summary = result
+            if employee_import_mode in ('template', 'flexible'):
+                batch_summary = {
+                    'mode': result.get('mode'),
+                    'file_name': uploaded.name,
+                    'sheet_name': result.get('sheet_name'),
+                    'summary': dict(summary),
+                    'detected_headers': result.get('detected_headers', []),
+                    'mapped_fields': result.get('mapped_fields', {}),
+                    'missing_required_fields': result.get('missing_required_fields', []),
+                    'preview_rows_total': result.get('preview_rows_total', 0),
+                    'preview_rows_truncated': result.get('preview_rows_truncated', False),
+                    'privacy_note': 'Detailed employee preview is response-only.',
+                }
             batch=DataImportBatch.objects.create(
                 file_name=uploaded.name,
                 sheet_name=result.get('sheet_name',''),
@@ -349,7 +368,7 @@ class ExcelImportViewSet(viewsets.ReadOnlyModelViewSet):
                 imported_records=imported_total_from_summary(summary),
                 skipped_rows=summary.get('skipped_rows',0),
                 errors_count=summary.get('errors_count',0),
-                summary=result,
+                summary=batch_summary,
                 created_by=request.user,
             )
             review_ids = result.get('review_ids') or []
@@ -357,7 +376,10 @@ class ExcelImportViewSet(viewsets.ReadOnlyModelViewSet):
                 EmployeeImportReview.objects.filter(id__in=review_ids, batch__isnull=True).update(batch=batch)
             AuditLog.objects.create(user=str(request.user), action='excel_import_commit' if commit else 'excel_import_preview', model_name='DataImportBatch', record_id=str(batch.id))
             result['batch_id']=batch.id
-            return Response(result)
+            response = Response(result)
+            if employee_import_mode in ('template', 'flexible'):
+                response['Cache-Control'] = 'no-store, private'
+            return response
         except Exception as exc:
             batch=DataImportBatch.objects.create(
                 file_name=uploaded.name,
@@ -392,35 +414,141 @@ class EmployeeImportReviewViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=True, methods=['post'])
     def activate(self, request, pk=None):
+        """Create one real employee from a pending import review.
+
+        basic_only is an explicit escape hatch for invalid OPTIONAL columns,
+        never for a missing identity, ambiguous center, or duplicate employee.
+        The skipped original values remain in the review's immutable source.
+        """
         review = self.get_object()
-        if review.status not in ('pending', 'conflict'):
-            return Response(
-                {'detail': 'Only pending or conflicting reviews can be activated.'},
-                status=status.HTTP_400_BAD_REQUEST,
+        basic_only = request.data.get('basic_only', False)
+        if type(basic_only) is not bool:
+            return Response({'basic_only': 'يجب تحديد وضع الحفظ بشكل صحيح.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if basic_only and request.data.get('confirm_basic_only') is not True:
+            return Response({
+                'confirm_basic_only': 'يجب تأكيد إدراج البيانات الأساسية فقط، دون نقل الحقول الاختيارية.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # The center is the mandatory, verified master foreign key. Sending
+        # PK=0, an inactive center, or a text label cannot create an employee.
+        raw_center_id = request.data.get('health_center')
+        try:
+            center_id = int(raw_center_id)
+        except (TypeError, ValueError):
+            center_id = 0
+        if center_id <= 0 or not HealthCenter.objects.filter(pk=center_id, is_active=True).exists():
+            return Response({
+                'health_center': 'يرجى اختيار مركز صحي مسجل ونشط من القائمة قبل تفعيل البطاقة.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        skipped_optional = []
+        if basic_only:
+            # Start with the mandatory identity/center, then save every optional
+            # employment/contact field that validates independently. Bad values
+            # stay in the original review for later correction. We never infer
+            # clinical assessments or assign an unapproved organizational unit.
+            submitted = {
+                key: request.data.get(key)
+                for key in ('name', 'national_id', 'health_center')
+            }
+            optional_fields = (
+                'employee_number', 'email', 'mobile', 'national_address',
+                'birth_place', 'gender', 'marital_status', 'job_title',
+                'job_title_en', 'current_job', 'nationality', 'children_count',
+                'date_of_birth', 'appointment_date',
             )
-        employee_serializer = EmployeeSerializer(data=request.data, context={'request': request})
-        employee_serializer.is_valid(raise_exception=True)
-        with transaction.atomic():
-            employee = employee_serializer.save()
-            review.employee_payload = dict(employee_serializer.data)
-            review.status = 'activated'
-            review.activated_employee = employee
-            review.resolved_by = request.user
-            review.resolved_at = timezone.now()
-            review.issues = []
-            review.save(update_fields=[
-                'employee_payload', 'status', 'activated_employee', 'resolved_by',
-                'resolved_at', 'issues', 'updated_at',
-            ])
-            AuditLog.objects.create(
-                user=str(request.user),
-                action='activate_employee_import_review',
-                model_name='EmployeeImportReview',
-                record_id=str(review.id),
-            )
+            for field in optional_fields:
+                value = request.data.get(field)
+                if value in (None, ''):
+                    continue
+                candidate = dict(submitted)
+                candidate[field] = value
+                candidate_serializer = EmployeeSerializer(
+                    data=candidate, context={'request': request},
+                )
+                if candidate_serializer.is_valid():
+                    submitted = candidate
+                else:
+                    skipped_optional.append(field)
+        else:
+            submitted = request.data
+
+        try:
+            with transaction.atomic():
+                locked_review = EmployeeImportReview.objects.select_for_update().get(
+                    pk=review.pk,
+                )
+                if locked_review.status not in ('pending', 'conflict'):
+                    return Response({
+                        'detail': 'تمت معالجة هذه البطاقة سابقًا؛ لا يمكن إضافتها مرتين.'
+                    }, status=status.HTTP_409_CONFLICT)
+
+                # Review edits must never detach an import that has already
+                # been matched to an existing employee (by ID, email or number).
+                # Comparisons are read-only; changes require a separate,
+                # authorized employee update/transfer workflow.
+                if (locked_review.conflict_employee_id is not None
+                        or (locked_review.employee_payload or {}).get('_import_classification') == 'existing'):
+                    return Response({
+                        'detail': 'هذه البطاقة مرتبطة بموظف مسجل مسبقًا. '
+                                  'راجع الفروقات ولا تنشئ سجلًا جديدًا؛ '
+                                  'تصحيح السجل القائم يتطلب إجراءً مستقلًا.'
+                    }, status=status.HTTP_409_CONFLICT)
+
+                employee_serializer = EmployeeSerializer(
+                    data=submitted, context={'request': request},
+                )
+                employee_serializer.is_valid(raise_exception=True)
+                employee = employee_serializer.save()
+
+                original_review_payload = locked_review.employee_payload
+                locked_review.employee_payload = dict(employee_serializer.data)
+                if basic_only:
+                    # Preserve previously parsed optional values in the original
+                    # review, even if the uploaded Excel is no longer available.
+                    locked_review.employee_payload['_original_import_payload'] = original_review_payload
+                    locked_review.warnings = list(locked_review.warnings or []) + [
+                        'تم إدراج الموظف بالحد الأدنى من البيانات مع الحقول الاختيارية الصالحة؛ '
+                        'بقية بيانات المصدر محفوظة بالمراجعة الأصلية للاستكمال.'
+                    ]
+                    if skipped_optional:
+                        locked_review.warnings.append(
+                            'حقول لم تُنقل لعدم اجتياز التحقق: ' + ', '.join(skipped_optional)
+                        )
+                locked_review.status = 'activated'
+                locked_review.activated_employee = employee
+                locked_review.resolved_by = request.user
+                locked_review.resolved_at = timezone.now()
+                locked_review.issues = []
+                updated = [
+                    'employee_payload', 'status', 'activated_employee',
+                    'resolved_by', 'resolved_at', 'issues', 'updated_at',
+                ]
+                if basic_only:
+                    updated.append('warnings')
+                locked_review.save(update_fields=updated)
+                AuditLog.objects.create(
+                    user=str(request.user),
+                    action=('activate_employee_import_review_basic' if basic_only
+                            else 'activate_employee_import_review'),
+                    model_name='EmployeeImportReview',
+                    record_id=str(locked_review.id),
+                )
+        except IntegrityError:
+            return Response({
+                'detail': 'تعذر إضافة الموظف بسبب تعارض فريد (الهوية أو البيانات). '
+                          'راجع السجل الموجود ولا تنشئ موظفًا مكررًا.'
+            }, status=status.HTTP_409_CONFLICT)
+
         return Response({
-            'review': EmployeeImportReviewSerializer(review).data,
+            'mode': 'basic_only' if basic_only else 'full',
+            'review': EmployeeImportReviewSerializer(locked_review).data,
             'employee': EmployeeSerializer(employee, context={'request': request}).data,
+            'skipped_optional_fields': skipped_optional,
+            'notice': ('أُضيف الموظف بالبيانات الأساسية والحقول الاختيارية الصالحة. '
+                       'القيم غير الصالحة محفوظة في سجل المراجعة للاستكمال لاحقًا.'
+                       if basic_only else ''),
         })
 
     @action(detail=True, methods=['post'])
@@ -487,6 +615,216 @@ class EmployeeViewSet(viewsets.ModelViewSet):
     serializer_class=EmployeeSerializer
     permission_classes=[permissions.IsAuthenticated,IsAdminOrManagerForWrite]
     search_fields=['name','email','employee_number','national_id','mobile','job_title','birth_place','national_address']
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        requested_status = str(self.request.query_params.get('employment_status') or '').strip()
+        if requested_status in Employee.EmploymentStatus.values:
+            queryset = queryset.filter(employment_status=requested_status)
+        center_id = str(self.request.query_params.get('health_center_id') or '').strip()
+        if center_id.isdigit():
+            queryset = queryset.filter(health_center_id=int(center_id))
+        query = str(self.request.query_params.get('search') or '').strip()
+        if query:
+            queryset = queryset.filter(
+                Q(name__icontains=query) | Q(employee_number__icontains=query) |
+                Q(national_id__icontains=query) | Q(job_title__icontains=query) |
+                Q(email__icontains=query) | Q(mobile__icontains=query)
+            )
+        # Source roster status is separate from approved employment status.
+        # Leave leave/study/temporary conditions distinct from retirement.
+        source_category = str(self.request.query_params.get('source_category') or '').strip()
+        if source_category == 'active':
+            queryset = queryset.filter(roster_source_status='تعيين نشط')
+        elif source_category == 'other':
+            queryset = queryset.exclude(
+                roster_source_status__in=['', 'تعيين نشط']
+            )
+        sort_key = str(self.request.query_params.get('sort') or 'newest').strip()
+        safe_orders = {
+            'newest': ('-created_at', '-pk'),
+            'oldest': ('created_at', 'pk'),
+            'name': ('name', 'pk'),
+            'employee_number': ('employee_number', 'pk'),
+        }
+        return queryset.order_by(*safe_orders.get(sort_key, safe_orders['newest']))
+
+    def destroy(self, request, *args, **kwargs):
+        """Employee archives and linked medical history must never be cascade-deleted."""
+        return Response(
+            {'detail': 'Employee deletion is disabled. Use approved employment-status transitions.'},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
+
+
+
+    @action(detail=True, methods=['post'], url_path='transfer-center')
+    def transfer_center(self, request, pk=None):
+        """Move an active employee internally; they remain active, with the previous center preserved."""
+        if not request.user.is_staff and not request.user.is_superuser:
+            return Response({'detail': 'Center transfer approval requires a staff administrator.'},
+                            status=status.HTTP_403_FORBIDDEN)
+        reference = str(request.data.get('evidence_reference') or '').strip()
+        if len(reference) < 3:
+            return Response({'evidence_reference': 'A formal transfer decision reference is required.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        try:
+            effective_date = parse_date(str(request.data.get('effective_date') or ''))
+        except ValueError:
+            effective_date = None
+        if not effective_date or effective_date > date.today():
+            return Response({'effective_date': 'Provide a valid effective date on or before today.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        try:
+            center_id = int(request.data.get('new_health_center_id'))
+        except (TypeError, ValueError):
+            return Response({'new_health_center_id': 'A destination center is required.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        center = HealthCenter.objects.filter(pk=center_id, is_active=True).first()
+        if not center:
+            return Response({'new_health_center_id': 'Select an existing active center.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        with transaction.atomic():
+            employee = Employee.objects.select_for_update().get(pk=self.get_object().pk)
+            if employee.employment_status != Employee.EmploymentStatus.ACTIVE:
+                return Response({'status': 'Only active employees may transfer internally.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            if employee.health_center_id == center.pk:
+                return Response({'new_health_center_id': 'Employee already belongs to this center.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            latest = employee.employment_changes.order_by('-effective_date').first()
+            if latest and effective_date < latest.effective_date:
+                return Response({'effective_date': 'Date precedes the last approved change.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            previous_center = employee.health_center
+            employee.health_center = center
+            employee.save(update_fields=['health_center', 'updated_at'])
+            change = EmployeeEmploymentChange.objects.create(
+                employee=employee, previous_status=Employee.EmploymentStatus.ACTIVE,
+                new_status=Employee.EmploymentStatus.ACTIVE,
+                effective_date=effective_date, evidence_reference=reference,
+                notes=str(request.data.get('notes') or '').strip(),
+                previous_health_center=previous_center,
+                new_health_center=center, approved_by=request.user,
+            )
+            AuditLog.objects.create(
+                user=str(request.user), action='approve_employee_center_transfer',
+                model_name='Employee', record_id=str(employee.pk),
+            )
+        return Response({'employee_id': employee.pk,
+                         'employment_status': employee.employment_status,
+                         'health_center_id': center.pk,
+                         'employment_change_id': change.pk})
+
+    @action(detail=True, methods=['get', 'post'], url_path='employment-status')
+    def employment_status(self, request, pk=None):
+        """Require an explicit approved source; never infer retirement from missing imports."""
+        if not request.user.is_staff and not request.user.is_superuser:
+            return Response({'detail': 'Employment status approval requires a staff administrator.'},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        employee = self.get_object()
+        if request.method == 'GET':
+            history = employee.employment_changes.select_related(
+                'previous_health_center', 'new_health_center', 'approved_by'
+            ).all()
+            return Response({
+                'employee_id': employee.pk,
+                'employment_status': employee.employment_status,
+                'history': [{
+                    'id': item.pk,
+                    'from_status': item.previous_status,
+                    'to_status': item.new_status,
+                    'effective_date': item.effective_date.isoformat(),
+                    'evidence_reference': item.evidence_reference,
+                    'previous_health_center': (
+                        item.previous_health_center.name if item.previous_health_center else None
+                    ),
+                    'new_health_center': (
+                        item.new_health_center.name if item.new_health_center else None
+                    ),
+                    'approved_by': item.approved_by_id,
+                    'created_at': item.created_at.isoformat(),
+                } for item in history],
+            })
+
+        target = str(request.data.get('status') or '').strip()
+        if target not in Employee.EmploymentStatus.values:
+            return Response({'status': 'Invalid employment status.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        reference = str(request.data.get('evidence_reference') or '').strip()
+        if len(reference) < 3:
+            return Response({'evidence_reference': 'A formal decision or document reference is required.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        raw_date = str(request.data.get('effective_date') or '')
+        try:
+            effective_date = parse_date(raw_date)
+        except ValueError:
+            effective_date = None
+        if not effective_date or effective_date > date.today():
+            return Response({'effective_date': 'Provide an effective date on or before today (YYYY-MM-DD).'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        requested_center_id = request.data.get('new_health_center_id')
+        requested_center = None
+        if requested_center_id:
+            try:
+                center_pk = int(requested_center_id)
+            except (TypeError, ValueError):
+                return Response({'new_health_center_id': 'Select an existing active center.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            requested_center = HealthCenter.objects.filter(
+                pk=center_pk, is_active=True
+            ).first()
+            if not requested_center:
+                return Response({'new_health_center_id': 'Select an existing active center.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+        if target in (
+            Employee.EmploymentStatus.RETIRED, Employee.EmploymentStatus.SEPARATED,
+            Employee.EmploymentStatus.TRANSFERRED, Employee.EmploymentStatus.UNDER_REVIEW,
+        ) and requested_center:
+            return Response({'new_health_center_id': 'This status change does not reassign a center. Use transfer-center for internal moves.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        with transaction.atomic():
+            employee = Employee.objects.select_for_update().get(pk=employee.pk)
+            if employee.employment_status == target:
+                return Response({'status': 'This employee already has the requested status.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            latest = employee.employment_changes.order_by('-effective_date').first()
+            if latest and effective_date < latest.effective_date:
+                return Response({'effective_date': 'Date precedes the last approved status change.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+
+            prior_status = employee.employment_status
+            prior_center = employee.health_center
+            if requested_center:
+                employee.health_center = requested_center
+            employee.employment_status = target
+            employee.save(update_fields=['employment_status', 'health_center', 'updated_at'])
+            record = EmployeeEmploymentChange.objects.create(
+                employee=employee,
+                previous_status=prior_status,
+                new_status=target,
+                effective_date=effective_date,
+                evidence_reference=reference,
+                notes=str(request.data.get('notes') or '').strip(),
+                previous_health_center=prior_center,
+                new_health_center=requested_center or employee.health_center,
+                approved_by=request.user,
+            )
+            AuditLog.objects.create(
+                user=str(request.user),
+                action='approve_employee_employment_status',
+                model_name='Employee',
+                record_id=str(employee.pk),
+            )
+        return Response({
+            'employee_id': employee.pk,
+            'employment_status': employee.employment_status,
+            'employment_change_id': record.pk,
+        })
 
     def _health_card_role(self, request):
         if request.user.is_superuser:

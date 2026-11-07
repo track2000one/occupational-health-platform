@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react';
 import logoImg from '@/imports/ChatGPT_Image_21______2026__10_06_18__.png';
 import { Outlet, useLocation, useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
+import { rememberAppLanguage } from '../../i18n/languagePreference';
 import { useAuth } from '../../context/AuthContext';
 import { useAppTheme } from '../../context/ThemeContext';
 import { ThemeSwitcher } from '../ThemeSwitcher';
@@ -49,6 +50,7 @@ import {
   CloudUpload as CloudUploadIcon,
   BadgeOutlined as HealthCardIcon,
   Business as BusinessIcon,
+  WorkHistoryOutlined as WorkHistoryIcon,
 } from '@mui/icons-material';
 import { Badge } from '@mui/material';
 import { mockNotifications } from '../../data/mockData';
@@ -95,7 +97,12 @@ export function DashboardLayout() {
     { key: 'notifications',      label: isRtl ? 'الإشعارات' : 'Notifications',                 icon: <NotificationsIcon />, path: '/notifications', group: 'followup', permission: PERMISSIONS.VIEW_DASHBOARD },
     { key: 'admin',              label: isRtl ? 'لوحة المسؤول' : 'Admin Console',              icon: <AdminPanelSettingsIcon />, path: '/admin',  group: 'admin', permission: PERMISSIONS.MANAGE_USERS },
     { key: 'adminUsers',         label: isRtl ? 'إدارة المستخدمين' : 'Users Management',       icon: <PeopleIcon />,        path: '/admin/users', group: 'admin', permission: PERMISSIONS.MANAGE_USERS },
+    { key: 'workforceImportPlans', label: isRtl ? 'خطط استيراد الموظفين' : 'Workforce Import Plans', icon: <CloudUploadIcon />, path: '/admin/workforce-import-plans', group: 'admin', permission: PERMISSIONS.MANAGE_USERS },
+    { key: 'workforceRosterPreview', label: isRtl ? 'معاينة استيراد الموظفين' : 'Workforce Roster Preview', icon: <CloudUploadIcon />, path: '/admin/workforce-roster-preview', group: 'admin', permission: PERMISSIONS.MANAGE_USERS },
+    { key: 'workforceTemporary', label: isRtl ? 'بيانات الموظفين الأصلية — مؤقت' : 'Original roster — temporary', icon: <CloudUploadIcon />, path: '/admin/temporary-workforce', group: 'admin', permission: PERMISSIONS.MANAGE_USERS },
+    { key: 'employeeLifecycle', label: isRtl ? 'الحالات الوظيفية والمتقاعدون' : 'Employment Status & Retirees', icon: <WorkHistoryIcon />, path: '/admin/employee-lifecycle', group: 'admin', permission: PERMISSIONS.MANAGE_USERS },
     { key: 'healthCenters',      label: isRtl ? 'إدارة المراكز الصحية' : 'Health Centers',      icon: <BusinessIcon />,      path: '/admin/health-centers', group: 'admin', permission: PERMISSIONS.MANAGE_USERS },
+    { key: 'organizationStructure', label: isRtl ? 'الهيكل التنظيمي والجهات التابعة' : 'Organization Structure', icon: <BusinessIcon />, path: '/admin/organization-structure', group: 'admin', permission: PERMISSIONS.MANAGE_USERS },
     { key: 'auditLog',           label: isRtl ? 'سجل العمليات' : 'Audit Log',                  icon: <SecurityIcon />,      path: '/audit-log',   group: 'admin', permission: PERMISSIONS.VIEW_AUDIT_LOGS },
     { key: 'settings',           label: isRtl ? 'إعدادات المظهر والقراءة' : 'Appearance Settings', icon: <SettingsIcon />,   path: '/settings',    group: 'admin', permission: PERMISSIONS.MANAGE_SETTINGS },
     { key: 'roles',              label: isRtl ? 'الأدوار والصلاحيات' : 'Roles & Perms',        icon: <ShieldIcon />,        path: '/roles',       group: 'admin', permission: PERMISSIONS.MANAGE_USERS },
@@ -133,8 +140,8 @@ export function DashboardLayout() {
 
   const toggleLanguage = () => {
     const newLang = i18n.language === 'en' ? 'ar' : 'en';
-    i18n.changeLanguage(newLang);
-    document.dir = newLang === 'ar' ? 'rtl' : 'ltr';
+    rememberAppLanguage(newLang);
+    void i18n.changeLanguage(newLang);
     handleMenuClose();
   };
 
@@ -532,6 +539,16 @@ export function DashboardLayout() {
         }}
       >
         <Toolbar sx={{ minHeight: { xs: 60, sm: 64, md: 68 } }} />
+        {import.meta.env.VITE_STAGING_MODE === 'true' && (
+          <Box role="status" sx={{
+            m: 1.5, px: 2, py: 1, borderRadius: 2, bgcolor: '#FFF4CE',
+            border: '1px solid #D9A441', color: '#603B00',
+            fontWeight: 800, fontSize: '0.92rem', textAlign: 'center'
+          }}>
+            {isRtl ? 'بيئة اختبار مستقلة — يمنع إدخال بيانات حقيقية أو رفع ملفات طبية' :
+              'ISOLATED STAGING — Synthetic data only. Do not upload employee or medical files.'}
+          </Box>
+        )}
         <Outlet />
       </Box>
       <ThemeSwitcher />
