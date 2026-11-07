@@ -54,6 +54,11 @@ import { EmployeeImportPreviewTable, type EmployeePreviewRow } from './EmployeeI
 const API_BASE_URL = (import.meta.env.VITE_API_URL ||
   (typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
     ? 'http://localhost:8000/api' : '')).replace(/\/$/, '');
+// These batch actions remain server-side restricted to the isolated Staging
+// project. Do not advertise buttons on Production that are intentionally 403.
+const IS_STAGING_IMPORT_UI = typeof window !== 'undefined' &&
+  (window.location.hostname.includes('staging') ||
+   ['localhost', '127.0.0.1'].includes(window.location.hostname));
 
 type ImportSummary = Record<string, number> & {
   total_rows: number;
@@ -1267,12 +1272,12 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
             <Stack direction="row" flexWrap="wrap" gap={1} alignItems="center">
               <Chip color={reviews.length ? 'warning' : 'success'}
                 label={`${isRtl ? 'المعلقة المعروضة' : 'Shown pending'}: ${reviews.length}`} />
-              <Chip color={selectedReviewIds.length ? 'primary' : 'default'}
-                label={`${isRtl ? 'المحدد' : 'Selected'}: ${selectedReviewIds.length}`} />
+              {IS_STAGING_IMPORT_UI && <Chip color={selectedReviewIds.length ? 'primary' : 'default'}
+                label={`${isRtl ? 'المحدد' : 'Selected'}: ${selectedReviewIds.length}`} />}
             </Stack>
           </Stack>
 
-          {reviews.length > 0 && <Paper variant="outlined" sx={{
+          {reviews.length > 0 && IS_STAGING_IMPORT_UI && <Paper variant="outlined" sx={{
             p: 2, mb: 2.5, borderRadius: 3, borderColor: '#b9d3e2', bgcolor: '#f1f8fc',
           }}>
             <Stack direction={{ xs: 'column', lg: 'row' }} justifyContent="space-between" alignItems={{ lg: 'center' }} gap={1.5}>
@@ -1324,6 +1329,11 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
                 : 'Bulk activation or discard requires preview and confirmation. Select all picks visible cards; Ignore all pending includes the full pending database queue.'}
             </Typography>
           </Paper>}
+          {!IS_STAGING_IMPORT_UI && reviews.length > 0 && <Alert severity="info" sx={{ mb: 2 }}>
+            {isRtl
+              ? 'المراجعة الفردية متاحة. إجراءات الاعتماد والتجاهل الجماعي تجريبية حتى إتمام ضوابط الإطلاق على Production.'
+              : 'Individual review is available. Bulk approval/discard remains disabled until Production release controls are completed.'}
+          </Alert>}
           {!reviews.length ? (
             <Alert severity="success">{isRtl ? 'لا توجد حاليًا بطاقات موظفين معلقة للمراجعة.' : 'There are no pending employee review cards.'}</Alert>
           ) : (
@@ -1351,7 +1361,7 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
                       boxShadow: selectedReviewIds.includes(review.id) ? '0 0 0 2px #c8e4fa' : undefined }}>
                       <CardContent>
                         <Stack spacing={1.5}>
-                          <FormControlLabel
+                          {IS_STAGING_IMPORT_UI && <FormControlLabel
                             control={<Checkbox size="small"
                               checked={selectedReviewIds.includes(review.id)}
                               disabled={bulkBusy}
@@ -1360,7 +1370,7 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
                               inputProps={{ 'aria-label': `تحديد بطاقة الموظف رقم ${review.id}` }} />}
                             label={<Typography fontWeight={800} fontSize={13}>
                               {isRtl ? 'تحديد لإجراء جماعي' : 'Select for bulk action'}
-                            </Typography>} />
+                            </Typography>} />}
                           <Stack direction={isRtl ? 'row-reverse' : 'row'} justifyContent="space-between" alignItems="center">
                             <Typography variant="h6" fontWeight={950}>{payloadText(payload, 'name') || (isRtl ? 'اسم غير مكتمل' : 'Incomplete name')}</Typography>
                             <Stack direction="row" gap={0.5} flexWrap="wrap">
