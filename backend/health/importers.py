@@ -577,6 +577,7 @@ def import_employee_roster_sheet(
     review_candidates: List[Dict[str, Any]] = []
     classification_counts = Counter()
     optional_incomplete_count = 0
+    new_incomplete_count = 0
     total_rows = 0
     today = date.today()
 
@@ -738,6 +739,8 @@ def import_employee_roster_sheet(
             'existing' if matched_employee else 'valid'
         )
         classification_counts[classification] += 1
+        if classification == 'valid' and missing_optional:
+            new_incomplete_count += 1
 
         review_payload = {
             'name': raw['name'],
@@ -878,14 +881,8 @@ def import_employee_roster_sheet(
         'new_ready': classification_counts['valid'],
         # New employees with optional gaps remain eligible for import, but
         # must not be counted as fully complete (green) in the UI.
-        'new_complete': classification_counts['valid'] - sum(
-            1 for row in preview_rows
-            if row['status'] == 'valid' and row['missing_optional_fields']
-        ),
-        'new_optional_incomplete': sum(
-            1 for row in preview_rows
-            if row['status'] == 'valid' and row['missing_optional_fields']
-        ),
+        'new_complete': classification_counts['valid'] - new_incomplete_count,
+        'new_optional_incomplete': new_incomplete_count,
         'already_existing': classification_counts['existing'],
         'true_conflicts': classification_counts['conflict'],
         'needs_correction': classification_counts['error'],
