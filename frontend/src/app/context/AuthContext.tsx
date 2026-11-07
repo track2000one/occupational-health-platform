@@ -54,8 +54,12 @@ const SESSION_EXPIRED_EVENT = 'ohp:session-expired';
 let refreshInFlight: Promise<string> | null = null;
 
 
-const SAFE_REQUEST_TIMEOUT_MS = 4000;
-const WRITE_REQUEST_TIMEOUT_MS = 8000;
+// Normal paginated reads may include authentication renewal and proxy latency.
+// Excel uploads need a larger budget: aborting a commit early can invite
+// an accidental second submission while the server is still processing it.
+const SAFE_REQUEST_TIMEOUT_MS = 15000;
+const WRITE_REQUEST_TIMEOUT_MS = 30000;
+const EXCEL_IMPORT_TIMEOUT_MS = 120000;
 const RETRYABLE_STATUS_CODES = new Set([502, 503, 504]);
 
 function wait(ms: number) {
@@ -87,7 +91,10 @@ async function resilientFetch(input: RequestInfo | URL, options: RequestInit = {
   const method = String(options.method || 'GET').toUpperCase();
   const safeToRetry = method === 'GET' || method === 'HEAD' || method === 'OPTIONS';
   const attempts = safeToRetry ? 2 : 1;
-  const timeoutMs = safeToRetry ? SAFE_REQUEST_TIMEOUT_MS : WRITE_REQUEST_TIMEOUT_MS;
+  const requestUrl = String(input);
+  const timeoutMs = requestUrl.includes('/excel-import/upload/')
+    ? EXCEL_IMPORT_TIMEOUT_MS
+    : safeToRetry ? SAFE_REQUEST_TIMEOUT_MS : WRITE_REQUEST_TIMEOUT_MS;
   let lastError: unknown;
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
