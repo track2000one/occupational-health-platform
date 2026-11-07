@@ -71,4 +71,4 @@ jobs:
       - name: Run synthetic import regression tests against upgraded PostgreSQL
         working-directory: proposed-release/backend
         run: |
-          python manage.py test health.test_employee_import_classification health.test_employee_import_full_preview health.test_employee_review_bulk_activation health.test_employee_review_bulk_discard --verbosity 1
+          python manage.py test health.tests health.test_employee_import_classification health.test_employee_import_full_preview health.test_employee_review_bulk_activation health.test_employee_review_bulk_discard --verbosity 1
