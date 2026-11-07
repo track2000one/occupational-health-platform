@@ -1,4 +1,14 @@
 from django.urls import path
+from .organization_structure import OrganizationDirectoryView, OrganizationImportView, OrganizationUnitReviewView
+from .organization_bulk_approval import OrganizationBulkApprovalView
+from .employee_roster_template import EmployeeRosterTemplateView
+from .employee_review_bulk_activation import StagingEmployeeReviewBulkActivationView
+from .employee_review_bulk_discard import StagingEmployeeReviewBulkDiscardView
+from .staging_review_center_reconciliation import StagingReviewCenterReconciliationView
+from .staging_employee_reset import StagingEmployeeCardResetView
+from .workforce_preview import WorkforceRosterPreviewView, WorkforceCenterMappingView
+from .temporary_workforce import TemporaryWorkforceView
+from .workforce_import import WorkforceImportPlanView, WorkforceImportApproveView, WorkforceImportCommitView
 from rest_framework.routers import DefaultRouter
 from .views import AuditLogViewSet, ClinicVisitViewSet, CommitteeReferralViewSet, EmployeeImportReviewViewSet, EmployeeViewSet, ExcelImportViewSet, HealthCardVerificationView, HealthCenterViewSet, InjuryCaseViewSet, LabTestViewSet, OccupationalHealthAssessmentViewSet, UserViewSet, VaccinationViewSet
 
@@ -17,5 +27,20 @@ router.register('injury-cases', InjuryCaseViewSet)
 router.register('audit-logs', AuditLogViewSet)
 
 urlpatterns = [
+    path('employee-roster-template/', EmployeeRosterTemplateView.as_view(), name='employee-roster-template'),
+    path('employee-import-reviews/bulk-activate/', StagingEmployeeReviewBulkActivationView.as_view(), name='employee-import-review-bulk-activate'),
+    path('employee-import-reviews/bulk-discard/', StagingEmployeeReviewBulkDiscardView.as_view(), name='employee-import-review-bulk-discard'),
+    path('employee-import-reviews/center-reconciliation/', StagingReviewCenterReconciliationView.as_view(), name='employee-review-center-reconciliation'),
+    path('staging-employee-card-reset/', StagingEmployeeCardResetView.as_view(), name='staging-employee-card-reset'),
+    path('organization-units/', OrganizationDirectoryView.as_view(), name='organization-units'),
+    path('organization-units/import/', OrganizationImportView.as_view(), name='organization-units-import'),
+    path('organization-units/bulk-approval/', OrganizationBulkApprovalView.as_view(), name='organization-units-bulk-approval'),
+    path('organization-units/<int:pk>/review/', OrganizationUnitReviewView.as_view(), name='organization-units-review'),
+    path('workforce-roster/temporary/', TemporaryWorkforceView.as_view(), name='workforce-temporary'),
+    path('workforce-roster/import-plan/', WorkforceImportPlanView.as_view(), name='workforce-import-plan'),
+    path('workforce-roster/import-plan/<int:pk>/approve/', WorkforceImportApproveView.as_view(), name='workforce-import-approve'),
+    path('workforce-roster/import-plan/<int:pk>/commit/', WorkforceImportCommitView.as_view(), name='workforce-import-commit'),
+    path('workforce-roster/mapping/', WorkforceCenterMappingView.as_view(), name='workforce-roster-mapping'),
+    path('workforce-roster/preview/', WorkforceRosterPreviewView.as_view(), name='workforce-roster-preview'),
     path('health-card-verification/<str:token>/', HealthCardVerificationView.as_view(), name='health-card-verification'),
 ] + router.urls

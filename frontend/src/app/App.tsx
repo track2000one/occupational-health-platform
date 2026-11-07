@@ -55,6 +55,11 @@ import { DataImportPage } from './pages/DataImportPage';
 import { AppearanceSettingsPage } from './pages/AppearanceSettingsPage';
 import { PeriodicStatisticsPage } from './pages/PeriodicStatisticsPage';
 import { HealthCentersPage } from './pages/HealthCentersPage';
+import { OrganizationStructurePage } from './pages/OrganizationStructurePage';
+import { EmployeeLifecyclePage } from './pages/EmployeeLifecyclePage';
+import { WorkforceRosterPreviewPage } from './pages/WorkforceRosterPreviewPage';
+import { WorkforceTemporaryPage } from './pages/WorkforceTemporaryPage';
+import { WorkforceImportPlansPage } from './pages/WorkforceImportPlansPage';
 import { HealthCardVerificationPage } from './pages/HealthCardVerificationPage';
 import { Toaster } from 'sonner';
 
@@ -138,9 +143,34 @@ function AppRoutes() {
             <AdminUsersPage />
           </PermissionRoute>
         } />
+        <Route path="admin/workforce-import-plans" element={
+          <PermissionRoute permission="manage:users">
+            <WorkforceImportPlansPage />
+          </PermissionRoute>
+        } />
+        <Route path="admin/temporary-workforce" element={
+          <PermissionRoute permission="manage:users">
+            <WorkforceTemporaryPage />
+          </PermissionRoute>
+        } />
+        <Route path="admin/workforce-roster-preview" element={
+          <PermissionRoute permission="manage:users">
+            <WorkforceRosterPreviewPage />
+          </PermissionRoute>
+        } />
+        <Route path="admin/employee-lifecycle" element={
+          <PermissionRoute permission="manage:users">
+            <EmployeeLifecyclePage />
+          </PermissionRoute>
+        } />
         <Route path="admin/health-centers" element={
           <PermissionRoute permission="manage:users">
             <HealthCentersPage />
+          </PermissionRoute>
+        } />
+        <Route path="admin/organization-structure" element={
+          <PermissionRoute permission="manage:users">
+            <OrganizationStructurePage />
           </PermissionRoute>
         } />
         <Route path="roles" element={
