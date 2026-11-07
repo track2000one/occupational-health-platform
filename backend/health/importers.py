@@ -703,7 +703,6 @@ def import_employee_roster_sheet(
         # person does require manual investigation.
         true_conflict = bool(duplicate_reasons)
         if matched_employee:
-            duplicate_reasons.append('Employee already exists with this national ID.')
             if (raw['name'] and normalize_person_name(raw['name'])
                     != normalize_person_name(matched_employee.name)):
                 duplicate_reasons.append('Same national ID has a different employee name.')
@@ -725,6 +724,14 @@ def import_employee_roster_sheet(
             duplicate_reasons.append('Employee number belongs to a different employee.')
             true_conflict = True
 
+        # A matching identity is an existing employee, not a collision.
+        # Keep the informational notice separate from real duplicate reasons.
+        # Only identity/name/unique-field inconsistencies are hard conflicts.
+        existing_notice = (
+            ['Employee already exists with this national ID.']
+            if matched_employee else []
+        )
+        review_issues = duplicate_reasons + existing_notice
         classification = (
             'conflict' if true_conflict else
             'error' if row_errors else
@@ -757,6 +764,7 @@ def import_employee_roster_sheet(
             'risk_level': risk_level or raw['risk_level'],
             '_import_classification': classification,
             '_optional_missing_fields': missing_optional,
+            '_field_differences': field_differences,
         }
         conflict_employee_id = (
             existing_id_map.get(raw['national_id'])
@@ -767,7 +775,7 @@ def import_employee_roster_sheet(
         if row_errors:
             if len(preview_rows) < MAX_EMPLOYEE_PREVIEW_ROWS:
                 preview_rows.append(employee_roster_preview_row(
-                    row_number, raw, classification, row_errors + duplicate_reasons,
+                    row_number, raw, classification, row_errors + review_issues,
                     date_of_birth, appointment_date, center_matched=bool(center),
                     missing_optional=missing_optional, existing_employee=matched_employee,
                     field_differences=field_differences,
@@ -775,10 +783,10 @@ def import_employee_roster_sheet(
             errors.append({'row': row_number, 'reason': ' '.join(row_errors)})
             review_candidates.append({
                 'row': row_number,
-                'status': 'pending',
+                'status': 'conflict' if true_conflict else 'pending',
                 'raw_payload': raw_input,
                 'employee_payload': review_payload,
-                'issues': row_errors + duplicate_reasons,
+                'issues': row_errors + review_issues,
                 'conflict_employee_id': conflict_employee_id,
             })
             if raw['national_id']:
@@ -788,26 +796,27 @@ def import_employee_roster_sheet(
             if raw['employee_number']:
                 seen_numbers.add(raw['employee_number'])
             continue
-        if duplicate_reasons:
+        if duplicate_reasons or matched_employee:
             if len(preview_rows) < MAX_EMPLOYEE_PREVIEW_ROWS:
                 preview_rows.append(employee_roster_preview_row(
-                    row_number, raw, classification, duplicate_reasons,
+                    row_number, raw, classification, review_issues,
                     date_of_birth, appointment_date, center_matched=bool(center),
                     missing_optional=missing_optional, existing_employee=matched_employee,
                     field_differences=field_differences,
                 ))
-            duplicates.append({
-                'row': row_number,
-                'national_id': mask_value(raw['national_id']),
-                'name': raw['name'],
-                'reason': ' '.join(duplicate_reasons) + ' The row requires review before activation.',
-            })
+            if duplicate_reasons:
+                duplicates.append({
+                    'row': row_number,
+                    'national_id': mask_value(raw['national_id']),
+                    'name': raw['name'],
+                    'reason': ' '.join(duplicate_reasons) + ' The row requires review before activation.',
+                })
             review_candidates.append({
                 'row': row_number,
-                'status': 'conflict',
+                'status': 'conflict' if true_conflict else 'pending',
                 'raw_payload': raw_input,
                 'employee_payload': review_payload,
-                'issues': duplicate_reasons,
+                'issues': review_issues,
                 'conflict_employee_id': conflict_employee_id,
             })
             if raw['national_id']:
@@ -867,6 +876,16 @@ def import_employee_roster_sheet(
         'conflict_reviews': len([item for item in review_candidates if item['status'] == 'conflict']),
         'staged_for_review': len(review_candidates),
         'new_ready': classification_counts['valid'],
+        # New employees with optional gaps remain eligible for import, but
+        # must not be counted as fully complete (green) in the UI.
+        'new_complete': classification_counts['valid'] - sum(
+            1 for row in preview_rows
+            if row['status'] == 'valid' and row['missing_optional_fields']
+        ),
+        'new_optional_incomplete': sum(
+            1 for row in preview_rows
+            if row['status'] == 'valid' and row['missing_optional_fields']
+        ),
         'already_existing': classification_counts['existing'],
         'true_conflicts': classification_counts['conflict'],
         'needs_correction': classification_counts['error'],
