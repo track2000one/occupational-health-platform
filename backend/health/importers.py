@@ -284,6 +284,49 @@ def masked_preview(payload: Dict[str, Any]) -> Dict[str, Any]:
     return safe
 
 
+# A bounded, masked overview for all imported employee rows, valid or invalid.
+# It is returned to the signed-in administrator but NEVER persisted in a
+# DataImportBatch record. Do not add full IDs, contact details, or medical data.
+MAX_EMPLOYEE_PREVIEW_ROWS = 5000
+
+
+def employee_roster_preview_row(
+    row_number: int,
+    raw: Dict[str, str],
+    status: str,
+    issues: List[str],
+    date_of_birth=None,
+    appointment_date=None,
+    center_matched: bool = False,
+) -> Dict[str, Any]:
+    return {
+        'row': row_number,
+        'status': status,
+        'name': raw.get('name', ''),
+        'national_id': mask_value(raw.get('national_id', '')),
+        'employee_number': raw.get('employee_number', ''),
+        'health_center': raw.get('health_center', ''),
+        'health_center_matched': center_matched,
+        'date_of_birth': (date_of_birth.isoformat() if date_of_birth
+                          else raw.get('date_of_birth', '')),
+        'appointment_date': (appointment_date.isoformat() if appointment_date
+                             else raw.get('appointment_date', '')),
+        'job_title': raw.get('job_title', ''),
+        'current_job': raw.get('current_job', ''),
+        'gender': raw.get('gender', ''),
+        'marital_status': raw.get('marital_status', ''),
+        'nationality': raw.get('nationality', ''),
+        'birth_place': raw.get('birth_place', ''),
+        'job_title_en': raw.get('job_title_en', ''),
+        'children_count': raw.get('children_count', ''),
+        'organization_unit_code': raw.get('organization_unit_code', ''),
+        'email': mask_value(raw.get('email', '')),
+        'mobile': mask_value(raw.get('mobile', '')),
+        'national_address': mask_value(raw.get('national_address', '')),
+        'issues': list(issues),
+    }
+
+
 def update_or_create_by_filter(model, filter_kwargs: Dict[str, Any], defaults: Dict[str, Any]):
     instance = model.objects.filter(**filter_kwargs).first()
     if instance:
@@ -656,6 +699,11 @@ def import_employee_roster_sheet(
         )
 
         if row_errors:
+            if len(preview_rows) < MAX_EMPLOYEE_PREVIEW_ROWS:
+                preview_rows.append(employee_roster_preview_row(
+                    row_number, raw, 'error', row_errors,
+                    date_of_birth, appointment_date, center_matched=bool(center),
+                ))
             errors.append({'row': row_number, 'reason': ' '.join(row_errors)})
             review_candidates.append({
                 'row': row_number,
@@ -673,6 +721,11 @@ def import_employee_roster_sheet(
                 seen_numbers.add(raw['employee_number'])
             continue
         if duplicate_reasons:
+            if len(preview_rows) < MAX_EMPLOYEE_PREVIEW_ROWS:
+                preview_rows.append(employee_roster_preview_row(
+                    row_number, raw, 'conflict', duplicate_reasons,
+                    date_of_birth, appointment_date, center_matched=bool(center),
+                ))
             duplicates.append({
                 'row': row_number,
                 'national_id': mask_value(raw['national_id']),
@@ -726,8 +779,11 @@ def import_employee_roster_sheet(
             seen_emails.add(raw['email'])
         if raw['employee_number']:
             seen_numbers.add(raw['employee_number'])
-        if len(preview_rows) < 20:
-            preview_rows.append({'row': row_number, **masked_preview(payload)})
+        if len(preview_rows) < MAX_EMPLOYEE_PREVIEW_ROWS:
+            preview_rows.append(employee_roster_preview_row(
+                row_number, raw, 'valid', [],
+                date_of_birth, appointment_date, center_matched=bool(center),
+            ))
 
     summary = {
         'total_rows': total_rows,
@@ -808,6 +864,8 @@ def import_employee_roster_sheet(
         'duplicates': duplicates[:100],
         'errors': errors[:100],
         'preview_rows': preview_rows,
+        'preview_rows_total': total_rows,
+        'preview_rows_truncated': total_rows > len(preview_rows),
         'review_ids': review_ids,
     }
 
