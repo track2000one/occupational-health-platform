@@ -206,3 +206,43 @@ class EmployeeImportClassificationTests(TestCase):
         review = EmployeeImportReview.objects.get()
         self.assertEqual(review.status, 'conflict')
         self.assertEqual(review.conflict_employee_id, self.existing.pk)
+
+
+    def test_blocker_summary_counts_every_row_with_only_static_reasons(self):
+        result = self.classify(
+            self.row(identity='9998000002', name='QA New A', center='Unknown Center'),
+            self.row(identity='9998000003', name='QA New B', center='Unknown Center'),
+            self.row(identity='9998000004', name='QA New C', center='QA Example Center', birth='not-a-date'),
+        )
+        counts = {item['reason']: item['count']
+                  for item in result['blocking_reasons']}
+        self.assertEqual(result['summary']['total_rows'], 3)
+        self.assertEqual(result['summary']['errors_count'], 3)
+        self.assertEqual(counts['Health center does not match an active center in the platform.'], 2)
+        self.assertEqual(counts['Invalid date of birth. Use a real Excel date or YYYY-MM-DD.'], 1)
+        self.assertNotIn('QA New A', str(result['blocking_reasons']))
+        self.assertNotIn('9998000002', str(result['blocking_reasons']))
+        self.assertEqual(Employee.objects.count(), 1)
+        self.assertEqual(EmployeeImportReview.objects.count(), 0)
+
+    def test_centers_match_exact_english_title_without_fuzzy_guessing(self):
+        english = HealthCenter.objects.create(
+            name='Official Arabic/Master Name', name_ar='مركز اختباري معتمد',
+            name_en='QA Bilingual Center', code='QA-BILINGUAL', is_active=True,
+        )
+        valid = self.classify(self.row(
+            identity='9998000005', name='QA New Valid', center='QA Bilingual Center',
+            number='QA-5555', email='new-valid@example.invalid',
+        ))
+        self.assertEqual(valid['summary']['new_ready'], 1)
+        self.assertEqual(valid['summary']['errors_count'], 0)
+        self.assertEqual(valid['preview_rows'][0]['status'], 'valid')
+        self.assertTrue(valid['preview_rows'][0]['health_center_matched'])
+        unknown = self.classify(self.row(
+            identity='9998000006', name='QA Unknown Center',
+            center='QA Bilingual Center North', number='QA-6666',
+        ))
+        self.assertEqual(unknown['summary']['new_ready'], 0)
+        self.assertEqual(unknown['summary']['errors_count'], 1)
+        self.assertFalse(unknown['preview_rows'][0]['health_center_matched'])
+        self.assertIsNotNone(english.pk)

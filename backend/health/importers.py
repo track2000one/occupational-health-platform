@@ -558,7 +558,7 @@ def import_employee_roster_sheet(
     centers_by_name = {}
     ambiguous_center_names = set()
     for option in HealthCenter.objects.filter(is_active=True):
-        for label in (option.name, option.name_ar):
+        for label in (option.name, option.name_ar, option.name_en):
             alias = normalize_header(label)
             if not alias:
                 continue
@@ -598,6 +598,9 @@ def import_employee_roster_sheet(
     preview_rows: List[Dict[str, Any]] = []
     review_candidates: List[Dict[str, Any]] = []
     classification_counts = Counter()
+    # Only static, non-identifying validation codes are counted. Never put
+    # employees, document values or unmasked identities into these metrics.
+    blocker_counts = Counter()
     optional_incomplete_count = 0
     new_incomplete_count = 0
     total_rows = 0
@@ -800,6 +803,7 @@ def import_employee_roster_sheet(
         )
 
         if row_errors:
+            blocker_counts.update(set(row_errors))
             if len(preview_rows) < MAX_EMPLOYEE_PREVIEW_ROWS:
                 preview_rows.append(employee_roster_preview_row(
                     row_number, raw, classification, row_errors + review_issues,
@@ -977,6 +981,11 @@ def import_employee_roster_sheet(
         'employee_import_mode': 'flexible' if flexible else 'template',
         'invalid_policy': 'stage_for_review',
         'summary': summary,
+        # Aggregated only in the authenticated response, without row identities.
+        'blocking_reasons': [
+            {'reason': reason, 'count': count}
+            for reason, count in blocker_counts.most_common()
+        ],
         'duplicates': duplicates[:100],
         'errors': errors[:100],
         'preview_rows': preview_rows,

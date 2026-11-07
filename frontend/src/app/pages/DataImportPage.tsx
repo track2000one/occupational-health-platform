@@ -93,6 +93,7 @@ type ImportResult = {
   header_row?: number;
   employee_import_mode?: 'template' | 'flexible';
   summary: ImportSummary;
+  blocking_reasons?: Array<{ reason: string; count: number }>;
   sheet_results?: SheetImportResult[];
   duplicates: { row: number; national_id?: string; name?: string; reason: string }[];
   errors: { row: number; reason: string }[];
@@ -241,6 +242,14 @@ const IMPORT_ISSUE_LABELS_AR: Record<string, string> = {
   'Use male/female or ذكر/أنثى': 'استخدم ذكر أو أنثى',
   'Invalid marital status': 'الحالة الاجتماعية غير صحيحة',
   'Health center does not match an active center in the platform': 'اسم المركز الصحي لا يطابق مركزًا فعّالًا في المنصة',
+  'More than one active center has this name. Select a center manually': 'اسم المركز مكرر بين عدة مراكز فعالة؛ اختر المركز الصحيح يدويًا',
+  'Invalid nationality. Choose a country from the template or use a two-letter ISO code': 'الجنسية غير مطابقة لقائمة الدول المعتمدة',
+  'Children count must be a whole number between 0 and 100': 'عدد الأطفال يجب أن يكون عددًا صحيحًا من 0 إلى 100',
+  'Job title or current job exceeds the allowed length': 'المسمى الوظيفي أو الوظيفة الحالية أطول من الحد المسموح',
+  'Organization unit reference is not approved or does not exist': 'رمز الوحدة التنظيمية غير معتمد أو غير موجود',
+  'Organizational sector cannot be assigned directly to an employee': 'لا يجوز ربط الموظف بالقطاع مباشرة؛ يلزم تحديد المركز أو الوحدة',
+  'Organizational unit does not have an approved center mapping': 'الوحدة التنظيمية غير مرتبطة بمركز صحي معتمد',
+  'Organizational unit belongs to a different health center': 'الوحدة التنظيمية مرتبطة بمركز صحي مختلف',
   'National ID is duplicated inside the file': 'رقم الهوية الوطنية مكرر داخل الملف',
   'Email is duplicated inside the file': 'البريد الإلكتروني مكرر داخل الملف',
   'Employee number is duplicated inside the file': 'الرقم الوظيفي مكرر داخل الملف',
@@ -843,7 +852,15 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
         setMappingDirty(false);
       }
       if (employeeMode && shouldCommit) await loadReviews();
-      toast.success(shouldCommit ? (isRtl ? 'اكتملت المعالجة؛ راجع أعداد المضاف والمعلق أدناه.' : 'Processing complete. Check added and pending counts below.') : (isRtl ? 'انتهى الفحص. لم تُضف الأسماء بعد؛ راجع النتائج ثم اضغط إضافة الموظفين.' : 'Preview ready. Review results, then add employees.'), { id: loadingToast });
+      const committedNone = employeeMode && shouldCommit && (nextResult.summary.imported_employees || 0) === 0;
+      if (committedNone) {
+        toast.warning(isRtl
+          ? 'لم يُضف أي موظف؛ جميع السجلات غير مؤهلة أو تحتاج مراجعة. اطلع على أسباب المنع أدناه قبل إعادة الاستيراد.'
+          : 'No employees were added. Review the blocking reasons before trying again.',
+        { id: loadingToast, duration: 11000 });
+      } else {
+        toast.success(shouldCommit ? (isRtl ? 'اكتملت المعالجة؛ راجع أعداد المضاف والمعلق أدناه.' : 'Processing complete. Check added and pending counts below.') : (isRtl ? 'انتهى الفحص. لم تُضف الأسماء بعد؛ راجع النتائج ثم اضغط إضافة الموظفين.' : 'Preview ready. Review results, then add employees.'), { id: loadingToast });
+      }
     } catch (error) {
       setUploadError(friendlyFetchError(error, isRtl));
       toast.error(friendlyFetchError(error, isRtl), { id: loadingToast, duration: 9000 });
@@ -853,6 +870,19 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
   };
 
   const importedTotal = result ? getImportedTotal(result.summary) : 0;
+  // Group only exact, unmatched source labels. Each mapping is explicitly
+  // chosen by the administrator and applied to those source rows only.
+  const unmatchedCenterGroups = result?.mode === 'preview' && employeeMode
+    ? Object.entries(result.preview_rows.reduce<Record<string, number[]>>((groups, row) => {
+        const source = String(row.health_center || '').trim();
+        if (source && row.health_center_matched === false && row.issues?.some(issue =>
+          /health center|health_center|active center|more than one active center/i.test(issue))) {
+          (groups[source] ||= []).push(row.row);
+        }
+        return groups;
+      }, {})).map(([name, rows]) => ({ name, rows }))
+      .sort((a, b) => b.rows.length - a.rows.length)
+    : [];
 
   return (
     <Box sx={{ direction: isRtl ? 'rtl' : 'ltr' }}>
@@ -1059,6 +1089,80 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
                   ? 'يمكن أن يكون الموظف موجودًا مسبقًا ولديه نواقص اختيارية في الوقت نفسه. لا تُضاف نسخ مكررة ولا تُستبدل بيانات الموظفين الحاليين تلقائيًا.'
                   : 'Existing staff may also have optional gaps. No duplicate staff or automatic updates to existing records.'}
               </Typography>
+            </Paper>
+          )}
+
+          {employeeMode && (result.blocking_reasons?.length || 0) > 0 && (
+            <Paper variant="outlined" sx={{ p: 2.5, mb: 2.5, borderRadius: 3, borderColor: 'warning.main' }}>
+              <Typography variant="h6" fontWeight={900} sx={{ mb: 0.75 }}>
+                {isRtl ? 'الأسباب الفعلية التي منعت إضافة الموظفين' : 'Actual reasons blocking employee creation'}
+              </Typography>
+              <Alert severity="warning" sx={{ mb: 1.5 }}>
+                {isRtl
+                  ? 'هذه الأعداد تمثل الصفوف المتأثرة بكل سبب، وقد تظهر أسباب متعددة للموظف نفسه. لا يُنشئ النظام بطاقة فعالة حتى تصحح الحقول المطلوبة.'
+                  : 'Counts indicate rows affected by each validation reason; one row can have several issues. No active card is created until required validation passes.'}
+              </Alert>
+              <Stack gap={1}>
+                {(result.blocking_reasons || []).slice(0, 20).map((item, i) => (
+                  <Stack key={i} direction="row" alignItems="center" justifyContent="space-between" gap={2}
+                    sx={{ borderBottom: '1px solid', borderColor: 'divider', py: 0.7 }}>
+                    <Typography variant="body2">{localizeImportIssue(item.reason, isRtl)}</Typography>
+                    <Chip color="warning" label={item.count} sx={{ fontWeight: 900, minWidth: 58 }} />
+                  </Stack>
+                ))}
+              </Stack>
+            </Paper>
+          )}
+
+          {employeeMode && result.mode === 'preview' && unmatchedCenterGroups.length > 0 && (
+            <Paper variant="outlined" sx={{ p: 2.5, mb: 2.5, borderRadius: 3, borderColor: 'primary.light' }}>
+              <Typography variant="h6" fontWeight={900} sx={{ mb: 0.75 }}>
+                {isRtl ? 'مطابقة أسماء المراكز غير المعروفة (حسب الاسم الوارد في Excel)' : 'Match unmatched Excel health center labels'}
+              </Typography>
+              <Alert severity="info" sx={{ mb: 2 }}>
+                {isRtl
+                  ? 'اختر المركز المعتمد بنفسك لكل اسم مصدر. سيطبّق الاختيار فقط على الصفوف التي تحمل الاسم نفسه؛ لا توجد مطابقة تلقائية أو تعديل لسجلات الموظفين الحالية. بعد المطابقة اضغط «إعادة فحص الملف».'
+                  : 'Choose a real approved center for each exact source label. No automatic guessing or change to existing employees. Revalidate before import.'}
+              </Alert>
+              <Grid container spacing={1.5}>
+                {unmatchedCenterGroups.map(group => {
+                  const chosen = String(centerCorrections[String(group.rows[0])] || '');
+                  const value = group.rows.every(row => centerCorrections[String(row)] === chosen) ? chosen : '';
+                  return (
+                    <Grid key={group.name} size={{ xs: 12, md: 6 }}>
+                      <TextField select fullWidth disabled={loading}
+                        label={`${group.name} (${group.rows.length} ${isRtl ? 'صف' : 'rows'})`}
+                        value={value}
+                        onChange={event => {
+                          const centerId = event.target.value;
+                          setCenterCorrections(current => {
+                            const next = { ...current };
+                            for (const row of group.rows) {
+                              if (centerId) next[String(row)] = centerId;
+                              else delete next[String(row)];
+                            }
+                            return next;
+                          });
+                          setMappingDirty(true);
+                          setMappingConfirmed(false);
+                        }}
+                        helperText={isRtl ? 'اختيار يدوي صريح؛ لا تستخدم مركزًا مشابهًا دون التأكد' : 'Manual exact-source mapping; verify the right center'}
+                      >
+                        <MenuItem value="">{isRtl ? 'لم تتم المطابقة' : 'Not mapped'}</MenuItem>
+                        {healthCenters.filter(center => center.is_active !== false).map(center => (
+                          <MenuItem key={center.id} value={String(center.id)}>
+                            {center.name_ar || center.name}
+                          </MenuItem>
+                        ))}
+                      </TextField>
+                    </Grid>
+                  );
+                })}
+              </Grid>
+              <Button sx={{ mt: 2 }} variant="contained" color="primary" disabled={loading || !file}
+                onClick={() => void upload(false)}>
+                {isRtl ? 'إعادة فحص الملف بعد تصحيح المراكز' : 'Revalidate after matching centers'}
+              </Button>
             </Paper>
           )}
 
