@@ -1388,7 +1388,7 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
                           {!!reviewMissing.length && <Alert severity="warning">
                             {isRtl ? 'بيانات اختيارية غير متوفرة:' : 'Missing optional data:'}
                             {' '}{reviewMissing.map(field => IMPORT_FIELD_LABELS_AR[field] || field).join('، ')}
-                          </Alert>
+                          </Alert>}
                           <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2, bgcolor: 'warning.50' }}>
                             <Typography fontWeight={900} variant="body2" sx={{ mb: 0.5 }}>{isRtl ? 'الملاحظات المطلوب معالجتها' : 'Issues to resolve'}</Typography>
                             <Box component="ul" sx={{ m: 0, ps: 2.5 }}>
