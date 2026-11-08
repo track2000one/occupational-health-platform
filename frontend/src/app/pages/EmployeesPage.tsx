@@ -35,6 +35,7 @@ import {
   Edit as EditIcon,
   People as PeopleIcon,
   Refresh as RefreshIcon,
+  Assessment as EmployeeReportIcon,
   Search as SearchIcon,
   UploadFile as UploadFileIcon,
   Visibility as VisibilityIcon,
@@ -671,6 +672,21 @@ export function EmployeesPage() {
           <Button variant="outlined" startIcon={<RefreshIcon />} onClick={() => void loadData()} disabled={loading}>
             {isRtl ? 'تحديث' : 'Refresh'}
           </Button>
+          {can(PERMISSIONS.EXPORT_REPORTS) && (
+            <Button variant="contained" color="primary" startIcon={<EmployeeReportIcon />}
+              onClick={() => {
+                const filters = new URLSearchParams();
+                if (searchTerm.trim()) filters.set('search', searchTerm.trim());
+                if (centerFilter !== 'all') filters.set('health_center_id', centerFilter);
+                if (statusFilter !== 'all') filters.set('employment_status', statusFilter);
+                if (sourceFilter !== 'all') filters.set('source_category', sourceFilter);
+                if (sortMode) filters.set('sort', sortMode);
+                if (showArchived) filters.set('archived', 'true');
+                navigate('/employees/report?' + filters.toString());
+              }}>
+              {isRtl ? 'تقرير الموظفين' : 'Employee Report'}
+            </Button>
+          )}
           {can(PERMISSIONS.MANAGE_USERS) && (
             <Button variant="outlined" startIcon={<WorkHistoryIcon />} onClick={() => navigate('/admin/employee-lifecycle')}>
               {isRtl ? 'الحالات الوظيفية والمتقاعدون' : 'Employment Lifecycle'}

@@ -636,7 +636,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         # registry. Never expose them through the normal active employee list.
         if self.action == 'restore':
             queryset = queryset.filter(is_archived=True)
-        elif (self.action == 'list' and
+        elif (self.action in ('list', 'report') and
               str(self.request.query_params.get('archived') or '').lower() == 'true' and
               self._can_archive_employee(self.request.user)):
             queryset = queryset.filter(is_archived=True)
@@ -670,8 +670,119 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             'oldest': ('created_at', 'pk'),
             'name': ('name', 'pk'),
             'employee_number': ('employee_number', 'pk'),
+            'center': ('health_center__name', 'name', 'pk'),
+            'job_title': ('job_title', 'name', 'pk'),
+            'age_asc': ('age', 'name', 'pk'),
+            'age_desc': ('-age', 'name', 'pk'),
         }
         return queryset.order_by(*safe_orders.get(sort_key, safe_orders['newest']))
+
+    @action(detail=False, methods=['get'], url_path='report')
+    def report(self, request):
+        """Read-only employee directory report across ALL matching pages.
+
+        Reports are deliberately separate from the 25-record list pagination.
+        The response includes only approved administrative fields and a masked
+        identity, not clinical data or full national identification numbers.
+        """
+        user = request.user
+        try:
+            role = user.health_profile.role
+        except Exception:
+            role = ''
+        allowed = user.is_superuser or role in (
+            'systemAdmin', 'ohManager', 'reportsOfficer', 'executive',
+        )
+        if not allowed:
+            return Response(
+                {'detail': 'Employee report access requires an approved reporting role.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if str(request.query_params.get('archived') or '').lower() == 'true' and (
+            not self._can_archive_employee(user)
+        ):
+            return Response(
+                {'detail': 'Only a system administrator can report on archived employees.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        queryset = self.get_queryset()
+        gender = str(request.query_params.get('gender') or '').strip()
+        if gender:
+            if gender not in ('male', 'female'):
+                return Response({'gender': 'Invalid gender filter.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            queryset = queryset.filter(gender=gender)
+        job_title = str(request.query_params.get('job_title') or '').strip()
+        if len(job_title) > 120:
+            return Response({'job_title': 'Job title filter is too long.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if job_title:
+            queryset = queryset.filter(job_title__icontains=job_title)
+        for param, lookup in (
+            ('created_from', 'created_at__date__gte'),
+            ('created_to', 'created_at__date__lte'),
+        ):
+            raw = str(request.query_params.get(param) or '').strip()
+            if not raw:
+                continue
+            parsed = parse_date(raw)
+            if not parsed:
+                return Response({param: 'Date must be YYYY-MM-DD.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            queryset = queryset.filter(**{lookup: parsed})
+
+        total = queryset.count()
+        # Refuse incomplete exports rather than quietly printing only the
+        # first N employees. The user may narrow the filters and retry.
+        if total > 5000:
+            return Response(
+                {'detail': 'More than 5,000 employees matched. Narrow the filters before generating the report.',
+                 'count': total},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        records = []
+        for employee in queryset.select_related('health_center').iterator(chunk_size=200):
+            nid = ''.join(char for char in str(employee.national_id or '') if char.isdigit())
+            masked_nid = (
+                f'{nid[:2]}••••{nid[-4:]}' if len(nid) >= 6 else '—'
+            )
+            records.append({
+                'id': employee.pk,
+                'name': employee.name,
+                'employee_number': employee.employee_number or '',
+                'national_id_masked': masked_nid,
+                'health_center_id': employee.health_center_id,
+                'health_center': (
+                    employee.health_center.name_ar or employee.health_center.name
+                ),
+                'job_title': employee.job_title or '',
+                'current_job': employee.current_job or '',
+                'gender': employee.gender or '',
+                'employment_status': employee.employment_status,
+                'roster_source_status': employee.roster_source_status or '',
+                'age': employee.age or None,
+                'years_of_experience': (
+                    str(employee.years_of_experience)
+                    if employee.years_of_experience is not None else ''
+                ),
+                'mobile': employee.mobile or '',
+                'email': employee.email or '',
+                'created_at': employee.created_at.date().isoformat(),
+                'archived': bool(employee.is_archived),
+            })
+        AuditLog.objects.create(
+            user=str(user), action='view_employee_registry_report',
+            model_name='Employee', record_id=str(total),
+        )
+        return Response({
+            'count': total,
+            'results': records,
+            'generated_at': timezone.now().isoformat(),
+            'generated_by': user.get_username(),
+            'scope': ('archived' if str(request.query_params.get('archived') or '').lower() == 'true'
+                      else 'active'),
+        })
 
     def destroy(self, request, *args, **kwargs):
         """Never physically cascade-delete a record with health history."""
