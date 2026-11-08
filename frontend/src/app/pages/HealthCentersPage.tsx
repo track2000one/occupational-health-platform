@@ -330,6 +330,11 @@ export function HealthCentersPage() {
         <Button variant="outlined" startIcon={<RefreshIcon />} onClick={() => void load()}>
           {isRtl ? 'تحديث' : 'Refresh'}
         </Button>
+        {canImport && <Button variant="contained" color="primary"
+          startIcon={<FoundationIcon />}
+          onClick={() => navigate('/admin/center-directory-match')}>
+          مطابقة دليل Excel
+        </Button>}
         {canImport && <Button variant="outlined" color="primary" startIcon={<FoundationIcon />}
           onClick={() => navigate('/admin/center-foundation')}>
           {isRtl ? 'تأسيس المرجع ومراجعة المراكز' : 'Center Reference & Review'}
