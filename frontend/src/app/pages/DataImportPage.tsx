@@ -1054,6 +1054,62 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
             <Grid size={{ xs: 12, sm: 6, md: 3 }}>{summaryCard(isRtl ? 'أخطاء' : 'Errors', result.summary.errors_count || 0, '#dc2626')}</Grid>
           </Grid>
 
+          {employeeMode && (
+            <Alert severity="info" sx={{ mb: 2 }}>
+              {isRtl
+                ? 'تعرض النتائج التالية موظفي ورقة Excel المختارة، وليس ورقة المراكز. أسماء المراكز هي قيم عمود «المركز الصحي» المرتبطة بالموظفين. راجع اسم الموظف والمركز قبل تصحيحه.'
+                : 'The following records come from the selected Excel employee sheet. Center names are values in each employee row, not another worksheet. Verify employee names and centers before correcting them.'}
+            </Alert>
+          )}
+
+          {employeeMode && unresolvedCenters > 0 && (
+            <Paper variant="outlined" sx={{ p: 2.5, mb: 2.5, borderRadius: 3, borderColor: 'primary.light' }}>
+              <Stack direction={{ xs: 'column', sm: 'row' }} alignItems={{ xs: 'stretch', sm: 'center' }}
+                justifyContent="space-between" gap={2}>
+                <Box>
+                  <Typography variant="h6" fontWeight={900}>
+                    {isRtl ? 'تصحيح مراكز الموظفين' : 'Correct employee centers'}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {isRtl
+                      ? `${unresolvedCenters} صفًا يحتاج تحديد المركز. صحّحها مباشرة من داخل المنصة دون تنزيل أي ملفات.`
+                      : `${unresolvedCenters} rows need an approved center. Fix them here; no files to download.`}
+                  </Typography>
+                </Box>
+                <Button variant="contained" size="large" disabled={loading || !file}
+                  onClick={() => setCenterQuickFixOpen(true)}>
+                  {isRtl ? 'تصحيح المراكز الآن' : 'Correct centers now'}
+                </Button>
+              </Stack>
+              <EmployeeCenterQuickFixDialog
+                open={centerQuickFixOpen}
+                isRtl={isRtl}
+                loading={loading}
+                previewComplete={!result.preview_rows_truncated}
+                rows={result.preview_rows}
+                centers={healthCenters}
+                corrections={centerCorrections}
+                onClose={() => setCenterQuickFixOpen(false)}
+                onRevalidate={updated => {
+                  setCenterCorrections(updated);
+                  setCenterQuickFixOpen(false);
+                  void upload(false, undefined, updated);
+                }}
+              />
+            </Paper>
+          )}
+
+          {employeeMode && Array.isArray(result.preview_rows) && result.preview_rows.length > 0 && (
+            <EmployeeImportPreviewTable
+              rows={result.preview_rows}
+              totalRows={result.preview_rows_total ?? result.summary.total_rows}
+              truncated={result.preview_rows_truncated}
+              isRtl={isRtl}
+              mode={result.mode}
+              formatIssue={issue => localizeImportIssue(issue, isRtl)}
+            />
+          )}
+
           {employeeMode && typeof result.summary.new_ready === 'number' && (
             <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 3,
               bgcolor: '#f7fbff', borderColor: '#c6dae9' }}>
@@ -1110,43 +1166,6 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
             </Paper>
           )}
 
-          {employeeMode && unresolvedCenters > 0 && (
-            <Paper variant="outlined" sx={{ p: 2.5, mb: 2.5, borderRadius: 3, borderColor: 'primary.light' }}>
-              <Stack direction={{ xs: 'column', sm: 'row' }} alignItems={{ xs: 'stretch', sm: 'center' }}
-                justifyContent="space-between" gap={2}>
-                <Box>
-                  <Typography variant="h6" fontWeight={900}>
-                    {isRtl ? 'تصحيح مراكز الموظفين' : 'Correct employee centers'}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    {isRtl
-                      ? `${unresolvedCenters} صفًا يحتاج تحديد المركز. صحّحها مباشرة من داخل المنصة دون تنزيل أي ملفات.`
-                      : `${unresolvedCenters} rows need an approved center. Fix them here; no files to download.`}
-                  </Typography>
-                </Box>
-                <Button variant="contained" size="large" disabled={loading || !file}
-                  onClick={() => setCenterQuickFixOpen(true)}>
-                  {isRtl ? 'تصحيح المراكز الآن' : 'Correct centers now'}
-                </Button>
-              </Stack>
-              <EmployeeCenterQuickFixDialog
-                open={centerQuickFixOpen}
-                isRtl={isRtl}
-                loading={loading}
-                previewComplete={!result.preview_rows_truncated}
-                rows={result.preview_rows}
-                centers={healthCenters}
-                corrections={centerCorrections}
-                onClose={() => setCenterQuickFixOpen(false)}
-                onRevalidate={updated => {
-                  setCenterCorrections(updated);
-                  setCenterQuickFixOpen(false);
-                  void upload(false, undefined, updated);
-                }}
-              />
-            </Paper>
-          )}
-
           <Alert icon={<CheckCircleIcon />} severity={result.mode === 'commit' ? (importedTotal > 0 ? 'success' : 'warning') : 'info'} sx={{ mb: 2 }}>
             {result.mode === 'commit'
               ? (isRtl
@@ -1163,17 +1182,6 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
               {!!result.importable_sheets?.length && <Chip label={`${isRtl ? 'الشيتات المدعومة' : 'Importable'}: ${result.importable_sheets.length}`} />}
             </Stack>
           </Paper>
-
-          {employeeMode && Array.isArray(result.preview_rows) && result.preview_rows.length > 0 && (
-            <EmployeeImportPreviewTable
-              rows={result.preview_rows}
-              totalRows={result.preview_rows_total ?? result.summary.total_rows}
-              truncated={result.preview_rows_truncated}
-              isRtl={isRtl}
-              mode={result.mode}
-              formatIssue={issue => localizeImportIssue(issue, isRtl)}
-            />
-          )}
 
           {employeeMode && employeeImportMode === 'flexible' && result.mapping_options && (
             <Paper sx={{ p: 2.5, borderRadius: 3, mb: 2, border: '1px solid', borderColor: mappingDirty ? 'warning.main' : 'primary.light' }}>
