@@ -55,6 +55,7 @@ type ReportPayload = {
   results: FlexibleEmployeeReportRow[];
   generated_at: string;
   generated_by: string;
+  identity_mode: 'masked' | 'full';
   scope: 'active' | 'archived';
 };
 
@@ -120,6 +121,7 @@ export function EmployeeRegistryReportPage() {
   );
   const [title, setTitle] = useState('تقرير بيانات الموظفين');
   const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('landscape');
+  const [identityVisibility, setIdentityVisibility] = useState<'masked' | 'full'>('masked');
   const [centers, setCenters] = useState<CenterItem[]>([]);
   const [centersError, setCentersError] = useState('');
   const [report, setReport] = useState<ReportPayload | null>(null);
@@ -128,12 +130,37 @@ export function EmployeeRegistryReportPage() {
   const [previewPage, setPreviewPage] = useState(0);
   const [previewPerPage, setPreviewPerPage] = useState(25);
   const canViewArchived = can(PERMISSIONS.MANAGE_USERS);
+  const canShowFullIdentity = can(PERMISSIONS.VIEW_SENSITIVE_DATA) &&
+    can(PERMISSIONS.EXPORT_REPORTS);
 
   const updateFilter = <K extends keyof ReportFilters>(key: K, value: ReportFilters[K]) => {
     setFilters(previous => ({ ...previous, [key]: value }));
   };
-  const currentQuery = toQuery(filters);
-  const needsRefresh = !report || currentQuery !== loadedQuery;
+  const currentQuery = toQuery(filters) +
+    (identityVisibility === 'full' ? '&include_full_national_id=true' : '');
+  const needsRefresh = !report || currentQuery !== loadedQuery ||
+    report.identity_mode !== identityVisibility;
+
+  function changeIdentityVisibility(next: 'masked' | 'full') {
+    if (next === identityVisibility || loading) return;
+    if (next === 'full') {
+      if (!canShowFullIdentity) {
+        toast.error('حسابك غير مخول لإظهار أرقام الهوية كاملة في التقارير.');
+        return;
+      }
+      const approved = window.confirm(
+        'تنبيه سرية البيانات: سيعرض هذا التقرير أرقام الهوية كاملة. ' +
+        'يجب استخدامه لأغراض رسمية مصرح بها وحفظه ومشاركته بطريقة آمنة. ' +
+        'هل تؤكد الحاجة إلى عرض الأرقام كاملة؟',
+      );
+      if (!approved) return;
+    }
+    // Clear previously fetched full identities when switching to masked mode.
+    setReport(null);
+    setLoadedQuery('');
+    setPreviewPage(0);
+    setIdentityVisibility(next);
+  }
   const visibleColumns = useMemo(
     () => FLEXIBLE_EMPLOYEE_COLUMNS.filter(item => columns.includes(item.key)),
     [columns],
@@ -162,7 +189,12 @@ export function EmployeeRegistryReportPage() {
   }, []);
 
   const generate = useCallback(async () => {
-    const qs = toQuery(filters);
+    const qs = toQuery(filters) +
+      (identityVisibility === 'full' ? '&include_full_national_id=true' : '');
+    if (identityVisibility === 'full' && !canShowFullIdentity) {
+      toast.error('لا توجد صلاحية لعرض أرقام الهوية كاملة.');
+      return;
+    }
     if (filters.created_from && filters.created_to &&
         filters.created_from > filters.created_to) {
       toast.error('تاريخ البداية يجب ألا يكون بعد تاريخ النهاية.');
@@ -179,6 +211,12 @@ export function EmployeeRegistryReportPage() {
       if (!data || !Array.isArray(data.results) || data.count !== data.results.length) {
         throw new Error('البيانات التي أعادها التقرير غير مكتملة. لم يتم السماح بالطباعة.');
       }
+      if (data.identity_mode !== identityVisibility ||
+          (identityVisibility === 'full' && data.results.some(
+            (row: FlexibleEmployeeReportRow) => !row.national_id_full,
+          ))) {
+        throw new Error('لم يتمكن الخادم من تأكيد صلاحية ونطاق إظهار الهوية. لم يتم السماح بالطباعة.');
+      }
       setReport(data as ReportPayload);
       setLoadedQuery(qs);
       setPreviewPage(0);
@@ -190,7 +228,7 @@ export function EmployeeRegistryReportPage() {
     } finally {
       setLoading(false);
     }
-  }, [filters]);
+  }, [filters, identityVisibility, canShowFullIdentity]);
 
   const selectedCenter = centers.find(center => String(center.id) === filters.health_center_id);
   const filterSummary = [
@@ -223,6 +261,8 @@ export function EmployeeRegistryReportPage() {
         filterSummary,
         orientation,
         archived: report.scope === 'archived',
+        showFullNationalId: identityVisibility === 'full' &&
+          canShowFullIdentity && report.identity_mode === 'full',
       });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'تعذر تجهيز الطباعة.');
@@ -236,7 +276,9 @@ export function EmployeeRegistryReportPage() {
   const includedCenters = new Set(results.map(row => row.health_center).filter(Boolean)).size;
 
   const displayValue = (row: FlexibleEmployeeReportRow, key: keyof FlexibleEmployeeReportRow): string => {
-    const raw = row[key];
+    const raw = key === 'national_id_masked' && identityVisibility === 'full' &&
+      canShowFullIdentity && report?.identity_mode === 'full'
+      ? row.national_id_full : row[key];
     if (key === 'employment_status') return STATUS_LABELS[String(raw)] || '—';
     if (key === 'gender') return raw === 'male' ? 'ذكر' : raw === 'female' ? 'أنثى' : '—';
     return raw == null || raw === '' ? '—' : String(raw);
@@ -362,7 +404,7 @@ export function EmployeeRegistryReportPage() {
         <Typography variant="h6" fontWeight={900}>إعداد الطباعة والتقرير</Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
           اختر الحقول التي تريد ظهورها في الجدول النهائي. لا يتضمن التقرير معلومات طبية،
-          وتظهر الهوية مخفية للحفاظ على الخصوصية.
+          ويكون رقم الهوية مخفيًا تلقائيًا لحماية الخصوصية، مع إمكانية إظهاره للحسابات المخولة فقط.
         </Typography>
         <Grid container spacing={2}>
           <Grid size={{ xs: 12, sm: 8 }}>
@@ -377,6 +419,30 @@ export function EmployeeRegistryReportPage() {
             </TextField>
           </Grid>
         </Grid>
+        <Stack spacing={1.25} sx={{ mt: 2 }}>
+          <TextField select fullWidth size="small" label="طريقة عرض رقم الهوية في التقرير"
+            value={identityVisibility} disabled={loading}
+            onChange={event => changeIdentityVisibility(event.target.value as 'masked' | 'full')}>
+            <MenuItem value="masked">مخفي — 12••••3456 (الافتراضي)</MenuItem>
+            <MenuItem value="full" disabled={!canShowFullIdentity}>
+              ظاهر كاملًا — للأغراض الرسمية والحسابات المخولة فقط
+            </MenuItem>
+          </TextField>
+          {!canShowFullIdentity && <Typography variant="caption" color="text.secondary">
+            يتطلب إظهار رقم الهوية كاملًا صلاحية الاطلاع على البيانات الحساسة وتصدير التقارير.
+          </Typography>}
+          {identityVisibility === 'full' && (
+            <Alert severity="warning">
+              وضع سري: ستظهر أرقام الهوية كاملة في المعاينة والطباعة وPDF بعد تحديث التقرير.
+              استخدم هذا الخيار فقط عند وجود حاجة رسمية، ولا تشارك الملف إلا مع المخولين.
+            </Alert>
+          )}
+          {!columns.includes('national_id_masked') && (
+            <Typography variant="caption" color="text.secondary">
+              لتضمين رقم الهوية في التقرير، فعّل عمود «الهوية» من قائمة الأعمدة أدناه.
+            </Typography>
+          )}
+        </Stack>
         <Divider sx={{ my: 2 }} />
         <Typography fontWeight={800} sx={{ mb: 1 }}>الأعمدة ({columns.length})</Typography>
         <Stack direction="row" gap={1} flexWrap="wrap">
@@ -384,7 +450,9 @@ export function EmployeeRegistryReportPage() {
             <Chip key={item.key} clickable
               variant={selectedKeys.has(item.key) ? 'filled' : 'outlined'}
               color={selectedKeys.has(item.key) ? 'primary' : 'default'}
-              label={item.ar}
+              label={item.key === 'national_id_masked'
+                ? (identityVisibility === 'full' ? 'رقم الهوية (ظاهر)' : 'رقم الهوية (مخفي)')
+                : item.ar}
               onClick={() => setColumns(previous => previous.includes(item.key)
                 ? previous.filter(key => key !== item.key)
                 : [...previous, item.key])} />
@@ -410,6 +478,11 @@ export function EmployeeRegistryReportPage() {
 
       {report && !needsRefresh && (
         <Paper sx={{ p: { xs: 2, md: 2.5 }, borderRadius: 3, border: '1px solid #D5E2EC' }}>
+          {identityVisibility === 'full' && columns.includes('national_id_masked') && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              تقرير سري — يحتوي على أرقام الهوية الوطنية كاملة. يُحظر تداوله خارج الأشخاص المخولين.
+            </Alert>
+          )}
           <Stack direction={{ xs: 'column', sm: 'row' }}
             alignItems={{ xs: 'stretch', sm: 'center' }} justifyContent="space-between"
             spacing={2} sx={{ mb: 2 }}>
@@ -455,7 +528,8 @@ export function EmployeeRegistryReportPage() {
                   <TableCell sx={{ fontWeight: 900 }}>#</TableCell>
                   {visibleColumns.map(item => (
                     <TableCell key={item.key} sx={{ fontWeight: 900, whiteSpace: 'nowrap' }}>
-                      {item.ar}
+                      {item.key === 'national_id_masked' && identityVisibility === 'full'
+                        ? 'رقم الهوية كاملًا' : item.ar}
                     </TableCell>
                   ))}
                 </TableRow>
