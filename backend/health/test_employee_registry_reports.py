@@ -64,6 +64,27 @@ class EmployeeRegistryReportTests(TestCase):
             action='view_employee_registry_report',
         ).exists())
 
+    def test_report_contains_more_than_the_twenty_five_displayed_employees(self):
+        self.client.force_authenticate(self.admin)
+        Employee.objects.bulk_create([
+            Employee(
+                name=f'Synthetic extra {i}',
+                national_id=f'8888{i:06d}',
+                employee_number=f'QA-EXTRA-{i:03d}',
+                health_center=self.center_a,
+                job_title='Doctor', gender='male',
+            )
+            for i in range(28)
+        ])
+        paged = self.client.get('/api/employees/?page=1')
+        self.assertEqual(paged.status_code, 200)
+        self.assertEqual(len(paged.data['results']), 25)
+        full = self.client.get(self.url, {'sort': 'employee_number'})
+        self.assertEqual(full.status_code, 200, full.data)
+        self.assertEqual(full.data['count'], 31)
+        self.assertEqual(len(full.data['results']), 31)
+        self.assertEqual(len(set(row['employee_number'] for row in full.data['results'])), 31)
+
     def test_multiple_filters_and_sort_applied_server_side(self):
         self.client.force_authenticate(self.admin)
         result = self.client.get(self.url, {
@@ -102,11 +123,9 @@ class EmployeeRegistryReportTests(TestCase):
         self.client.force_authenticate(self.admin)
         # Verify 5,000 cap without creating thousands of patient-like records.
         from unittest.mock import patch
-        original_get_queryset = type(self.a).objects.none
         # Compare separate count cap with a mocked queryset chain via a
         # short-circuit to avoid invoking serialization.
         from health.views import EmployeeViewSet
-        original = EmployeeViewSet.get_queryset
 
         class CountOverride:
             def count(self):
