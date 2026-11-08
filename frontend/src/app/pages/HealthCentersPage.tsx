@@ -10,10 +10,13 @@ import {
   Add as AddIcon, Business as BusinessIcon, Edit as EditIcon, Refresh as RefreshIcon,
   UploadFile as UploadFileIcon, FactCheck as FoundationIcon, Apps as CardsViewIcon, TableRows as TableViewIcon,
   Search as SearchIcon, ToggleOff as ToggleOffIcon,
+  DeleteOutline as DeleteIcon, DeleteSweep as ResetIcon, Restore as RestoreIcon,
+  Inventory2 as ArchiveIcon,
 } from '@mui/icons-material';
 import { toast } from 'sonner';
 import { authFetch, getAccessToken, useAuth } from '../context/AuthContext';
 import { HealthCenterExcelImportDialog } from '../components/HealthCenterExcelImportDialog';
+import { HealthCenterArchiveDialog, type CenterArchiveAction } from '../components/HealthCenterArchiveDialog';
 
 // Never silently send Staging staff edits to the Production API.
 const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
@@ -21,7 +24,7 @@ const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 type Center = {
   id: number; name: string; name_ar?: string; name_en?: string; code?: string | null; region: string; city: string; district: string; manager_name?: string;
   building_type: 'unknown' | 'model' | 'rented' | 'owned' | 'other'; building_type_label?: string;
-  is_active: boolean; notes?: string; employee_count?: number; user_count?: number;
+  is_active: boolean; is_archived?: boolean; notes?: string; employee_count?: number; user_count?: number;
 };
 type OrgCenter = {
   id: number; code: string; name: string; kind: 'department' | 'sector' | 'center' | 'unit';
@@ -51,6 +54,11 @@ export function HealthCentersPage() {
   const isRtl = i18n.language === 'ar';
   const { user } = useAuth();
   const canImport = user?.isSuperuser === true || user?.role === 'systemAdmin' || user?.role === 'ohManager';
+  const canArchiveCenters = user?.isSuperuser === true;
+  const [archiveAction, setArchiveAction] = useState<CenterArchiveAction | null>(null);
+  const [archiveTarget, setArchiveTarget] = useState<Center | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
+  const [archivedCenters, setArchivedCenters] = useState<Center[]>([]);
   const [importOpen, setImportOpen] = useState(false);
   const [centers, setCenters] = useState<Center[]>([]);
   const [organizationUnits, setOrganizationUnits] = useState<OrgCenter[]>([]);
@@ -83,6 +91,19 @@ export function HealthCentersPage() {
         }
       }
       setCenters(all);
+      if (canArchiveCenters) {
+        const archived = await request<Center[] | { results: Center[]; next: string | null }>('/health-centers/?archived=true&page=1');
+        const archivedList = list<Center>(archived);
+        if (!Array.isArray(archived) && archived.next) {
+          for (let page = 2; page <= 40; page++) {
+            const next = await request<{ results: Center[]; next: string | null }>(
+              `/health-centers/?archived=true&page=${page}`);
+            archivedList.push(...next.results);
+            if (!next.next) break;
+          }
+        }
+        setArchivedCenters(archivedList);
+      }
       // The organizational directory is a non-destructive proposal: not an approval.
       try {
         const directory = await request<{results: OrgCenter[]}>('/organization-units/');
@@ -114,14 +135,15 @@ export function HealthCentersPage() {
   const isFromSource = (center: Center) =>
     centerOrg.has(center.id) || /^OHP-REF-C\d{3}$/.test(center.code || '');
 
-  const sourceCenters = useMemo(() => centers.filter(isFromSource), [centers, centerOrg]);
-  const qaCenters = useMemo(() => centers.filter(isQA), [centers]);
+  const visibleCenters = showArchived ? archivedCenters : centers;
+  const sourceCenters = useMemo(() => visibleCenters.filter(isFromSource), [visibleCenters, centerOrg]);
+  const qaCenters = useMemo(() => visibleCenters.filter(isQA), [visibleCenters]);
   const sectorNames = useMemo(() => [...new Set(
     organizationUnits.filter(unit => unit.kind === 'sector').map(unit => unit.name),
   )].sort((a, b) => a.localeCompare(b, 'ar')), [organizationUnits]);
-  const regions = useMemo(() => [...new Set(centers.map(c => c.region).filter(Boolean))].sort(), [centers]);
-  const cities = useMemo(() => [...new Set(centers.filter(c => regionFilter === 'all' || c.region === regionFilter).map(c => c.city).filter(Boolean))].sort(), [centers, regionFilter]);
-  const filtered = useMemo(() => centers.filter(center => {
+  const regions = useMemo(() => [...new Set(visibleCenters.map(c => c.region).filter(Boolean))].sort(), [visibleCenters]);
+  const cities = useMemo(() => [...new Set(visibleCenters.filter(c => regionFilter === 'all' || c.region === regionFilter).map(c => c.city).filter(Boolean))].sort(), [visibleCenters, regionFilter]);
+  const filtered = useMemo(() => visibleCenters.filter(center => {
     const q = search.trim().toLowerCase();
     const org = centerOrg.get(center.id);
     const matchesSearch = !q || [
@@ -140,11 +162,19 @@ export function HealthCentersPage() {
   }).sort((a, b) =>
     (centerOrg.get(a.id)?.parent_name || '').localeCompare(centerOrg.get(b.id)?.parent_name || '', 'ar')
     || (a.name_ar || a.name).localeCompare(b.name_ar || b.name, 'ar')
-  ), [centers, centerOrg, sourceFilter, sectorFilter, search, regionFilter, cityFilter, statusFilter]);
+  ), [visibleCenters, centerOrg, sourceFilter, sectorFilter, search, regionFilter, cityFilter, statusFilter]);
 
   const buildingLabel = (type: Center['building_type']) => ({ unknown: isRtl ? 'غير محدد' : 'Unspecified', model: isRtl ? 'نموذجي' : 'Model', rented: isRtl ? 'مستأجر' : 'Rented', owned: isRtl ? 'مملوك' : 'Owned', other: isRtl ? 'أخرى' : 'Other' }[type]);
   const displayName = (center: Center) => (isRtl ? center.name_ar : center.name_en) || center.name || center.name_en || center.name_ar || '—';
   const secondaryName = (center: Center) => { const value = isRtl ? center.name_en : center.name_ar; return value && value !== displayName(center) ? value : ''; };
+  function openCenterArchive(action: CenterArchiveAction, center?: Center) {
+    setArchiveTarget(center || null);
+    setArchiveAction(action);
+  }
+  function toggleArchiveView() {
+    setShowArchived(prev => !prev);
+    resetFilters();
+  }
   function openAdd() { setEditing(null); setForm(EMPTY_FORM); setOpen(true); }
   function openEdit(center: Center) { setEditing(center); setForm({ name_ar: center.name_ar || '', name_en: center.name_en || center.name || '', code: center.code || '', region: center.region || '', city: center.city || '', district: center.district || '', manager_name: center.manager_name || '', building_type: center.building_type || 'unknown', is_active: center.is_active, notes: center.notes || '' }); setOpen(true); }
   function update<K extends keyof CenterForm>(key: K, value: CenterForm[K]) { setForm(current => ({ ...current, [key]: value })); }
@@ -188,6 +218,12 @@ export function HealthCentersPage() {
     {canImport && <HealthCenterExcelImportDialog
       open={importOpen} onClose={() => setImportOpen(false)}
       onImported={() => load()} />}
+    {canArchiveCenters && <HealthCenterArchiveDialog
+      open={archiveAction !== null}
+      action={archiveAction}
+      center={archiveTarget ? { id: archiveTarget.id, name: displayName(archiveTarget) } : null}
+      onClose={() => { setArchiveAction(null); setArchiveTarget(null); }}
+      onComplete={async () => { await load(); resetFilters(); }} />}
     <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', md: 'center' }} spacing={2} sx={{ mb: 3 }}>
       <Stack direction="row" spacing={1.5} alignItems="center"><BusinessIcon sx={{ fontSize: 38, color: 'primary.main' }} /><Box><Typography variant="h4" fontWeight={950}>{isRtl ? 'إدارة المراكز الصحية' : 'Health Centers Management'}</Typography><Typography variant="body2" color="text.secondary">{isRtl ? 'قاعدة البيانات المركزية المعتمدة لأسماء المراكز ومواقعها ونوع المبنى' : 'Central master data for health centers, locations, and building type'}</Typography></Box></Stack>
       <Stack direction="row" spacing={1} flexWrap="wrap">
