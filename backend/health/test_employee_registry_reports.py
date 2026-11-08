@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from .models import Employee, HealthCenter, AuditLog
+from .models import Employee, HealthCenter, AuditLog, UserProfile
 
 
 class EmployeeRegistryReportTests(TestCase):
@@ -63,6 +63,58 @@ class EmployeeRegistryReportTests(TestCase):
         self.assertTrue(AuditLog.objects.filter(
             action='view_employee_registry_report',
         ).exists())
+
+    def test_identity_hidden_is_default_and_never_sent_for_masked_request(self):
+        self.client.force_authenticate(self.admin)
+        for params in ({}, {'include_full_national_id': 'false'}):
+            response = self.client.get(self.url, params)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.data['identity_mode'], 'masked')
+            self.assertIn('no-store', response['Cache-Control'])
+            self.assertEqual(response.data['results'][0]['national_id_masked'], '99••••9001')
+            self.assertTrue(all('national_id_full' not in row for row in response.data['results']))
+
+    def test_explicit_full_identity_export_admin_is_audited(self):
+        self.client.force_authenticate(self.admin)
+        response = self.client.get(self.url, {'include_full_national_id': 'true'})
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['identity_mode'], 'full')
+        self.assertEqual(response.data['results'][0]['national_id_full'], '9998999001')
+        self.assertIn('no-store', response['Cache-Control'])
+        self.assertEqual(response['Pragma'], 'no-cache')
+        self.assertTrue(AuditLog.objects.filter(
+            action='view_employee_report_full_national_id',
+            user=self.admin.username,
+        ).exists())
+
+    def test_reporting_role_cannot_request_full_identity(self):
+        reports_user = get_user_model().objects.create_user(
+            username='qa_reports_only', password='qa-only',
+        )
+        UserProfile.objects.create(user=reports_user, role='reportsOfficer')
+        self.client.force_authenticate(reports_user)
+        masked = self.client.get(self.url)
+        self.assertEqual(masked.status_code, 200, masked.data)
+        self.assertEqual(masked.data['identity_mode'], 'masked')
+        denied = self.client.get(self.url, {'include_full_national_id': 'true'})
+        self.assertEqual(denied.status_code, 403, denied.data)
+        self.assertFalse(AuditLog.objects.filter(
+            user=reports_user.username, action='view_employee_report_full_national_id',
+        ).exists())
+        self.assertEqual(self.client.get(
+            self.url, {'include_full_national_id': 'maybe'},
+        ).status_code, 400)
+
+    def test_occupational_health_manager_can_request_full_identity(self):
+        manager = get_user_model().objects.create_user(
+            username='qa_manager_sensitive', password='qa-only',
+        )
+        UserProfile.objects.create(user=manager, role='ohManager')
+        self.client.force_authenticate(manager)
+        response = self.client.get(self.url, {'include_full_national_id': 'true'})
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['identity_mode'], 'full')
+        self.assertEqual(response.data['results'][0]['national_id_full'], self.a.national_id)
 
     def test_report_contains_more_than_the_twenty_five_displayed_employees(self):
         self.client.force_authenticate(self.admin)
