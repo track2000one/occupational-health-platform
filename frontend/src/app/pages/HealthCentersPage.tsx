@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router';
 import {
   Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle,
   InputAdornment, MenuItem, Paper, Stack, Switch, Table, TableBody, TableCell, TableContainer,
@@ -7,7 +8,7 @@ import {
 } from '@mui/material';
 import {
   Add as AddIcon, Business as BusinessIcon, Edit as EditIcon, Refresh as RefreshIcon,
-  UploadFile as UploadFileIcon, Apps as CardsViewIcon, TableRows as TableViewIcon,
+  UploadFile as UploadFileIcon, FactCheck as FoundationIcon, Apps as CardsViewIcon, TableRows as TableViewIcon,
   Search as SearchIcon, ToggleOff as ToggleOffIcon,
 } from '@mui/icons-material';
 import { toast } from 'sonner';
@@ -45,6 +46,7 @@ async function request<T>(path: string, init: RequestInit = {}) {
 }
 
 export function HealthCentersPage() {
+  const navigate = useNavigate();
   const { i18n } = useTranslation();
   const isRtl = i18n.language === 'ar';
   const { user } = useAuth();
@@ -192,6 +194,10 @@ export function HealthCentersPage() {
         <Button variant="outlined" startIcon={<RefreshIcon />} onClick={() => void load()}>
           {isRtl ? 'تحديث' : 'Refresh'}
         </Button>
+        {canImport && <Button variant="outlined" color="primary" startIcon={<FoundationIcon />}
+          onClick={() => navigate('/admin/center-foundation')}>
+          {isRtl ? 'تأسيس المرجع ومراجعة المراكز' : 'Center Reference & Review'}
+        </Button>}
         {canImport && <Button variant="outlined" startIcon={<UploadFileIcon />}
           onClick={() => setImportOpen(true)}>
           {isRtl ? 'استيراد المراكز من Excel' : 'Import centers from Excel'}

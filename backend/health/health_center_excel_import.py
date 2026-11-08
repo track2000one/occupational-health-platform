@@ -80,6 +80,9 @@ def read_workbook(upload, requested_sheet=''):
         book = load_workbook(BytesIO(raw), read_only=True, data_only=True)
     except (OSError, zipfile.BadZipFile, ValueError, KeyError) as exc:
         raise ValueError('ملف Excel غير صالح أو يتجاوز حدود الأمان.') from exc
+    if 'مرجع_المراكز' in book.sheetnames or 'مراجعة_المراكز' in book.sheetnames:
+        book.close()
+        raise ValueError('ملف المرجع والمراجعة يحتاج شاشة «تأسيس المرجع ومراجعة المراكز»؛ لا يجوز تحويل مسوداته إلى مراكز نشطة مباشرة.')
     try:
         candidates = []
         for sheet_name in book.sheetnames:
