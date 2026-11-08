@@ -682,8 +682,9 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         """Read-only employee directory report across ALL matching pages.
 
         Reports are deliberately separate from the 25-record list pagination.
-        The response includes only approved administrative fields and a masked
-        identity, not clinical data or full national identification numbers.
+        The default response contains only a masked national ID. Full identity
+        requires explicit opt-in AND the privileged sensitive-data reporting role.
+        Clinical data is excluded in both modes.
         """
         user = request.user
         try:
@@ -696,6 +697,25 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         if not allowed:
             return Response(
                 {'detail': 'Employee report access requires an approved reporting role.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        identity_mode = str(
+            request.query_params.get('include_full_national_id') or ''
+        ).strip().lower()
+        if identity_mode not in ('', 'false', '0', 'true', '1'):
+            return Response(
+                {'include_full_national_id': 'Use true or false.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        full_identity = identity_mode in ('true', '1')
+        # Keep this aligned with VIEW_SENSITIVE_DATA ∩ EXPORT_REPORTS:
+        # systemAdmin and ohManager are the only roles with both privileges.
+        can_export_full_identity = (
+            user.is_superuser or role in ('systemAdmin', 'ohManager')
+        )
+        if full_identity and not can_export_full_identity:
+            return Response(
+                {'detail': 'Full national ID requires sensitive-data reporting permission.'},
                 status=status.HTTP_403_FORBIDDEN,
             )
         if str(request.query_params.get('archived') or '').lower() == 'true' and (
@@ -747,7 +767,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             masked_nid = (
                 f'{nid[:2]}••••{nid[-4:]}' if len(nid) >= 6 else '—'
             )
-            records.append({
+            record = {
                 'id': employee.pk,
                 'name': employee.name,
                 'employee_number': employee.employee_number or '',
@@ -770,19 +790,29 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 'email': employee.email or '',
                 'created_at': employee.created_at.date().isoformat(),
                 'archived': bool(employee.is_archived),
-            })
+            }
+            if full_identity:
+                record['national_id_full'] = str(employee.national_id or '')
+            records.append(record)
         AuditLog.objects.create(
-            user=str(user), action='view_employee_registry_report',
+            user=str(user),
+            action=('view_employee_report_full_national_id' if full_identity
+                    else 'view_employee_registry_report'),
             model_name='Employee', record_id=str(total),
         )
-        return Response({
+        response = Response({
             'count': total,
             'results': records,
+            'identity_mode': 'full' if full_identity else 'masked',
             'generated_at': timezone.now().isoformat(),
             'generated_by': user.get_username(),
             'scope': ('archived' if str(request.query_params.get('archived') or '').lower() == 'true'
                       else 'active'),
         })
+        # Browsers and intermediate proxies must not cache full identity reports.
+        response['Cache-Control'] = 'private, no-store, max-age=0'
+        response['Pragma'] = 'no-cache'
+        return response
 
     def destroy(self, request, *args, **kwargs):
         """Never physically cascade-delete a record with health history."""

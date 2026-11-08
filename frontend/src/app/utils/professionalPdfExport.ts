@@ -408,6 +408,8 @@ export type FlexibleEmployeeReportRow = {
   name: string;
   employee_number: string;
   national_id_masked: string;
+  /** Returned only for users explicitly authorized to print full identifiers. */
+  national_id_full?: string;
   health_center: string;
   job_title: string;
   current_job: string;
@@ -457,9 +459,16 @@ export function exportFlexibleEmployeeReport(
   options: {
     title: string; generatedBy: string; filterSummary: string;
     orientation: 'portrait' | 'landscape'; archived: boolean;
+    showFullNationalId: boolean;
   },
 ) {
   if (!columns.length) throw new Error('اختر عمودًا واحدًا على الأقل.');
+  const showFullIdentity = options.showFullNationalId &&
+    columns.includes('national_id_masked');
+  if (showFullIdentity && records.some(row =>
+    !row.national_id_full || !/^\d{6,20}$/.test(row.national_id_full))) {
+    throw new Error('لا يمكن طباعة الهوية كاملة: بعض السجلات لا تحتوي على رقم هوية كامل ومصرح به.');
+  }
   const allowed = FLEXIBLE_EMPLOYEE_COLUMNS.filter(column => columns.includes(column.key));
   if (!allowed.length) throw new Error('لا توجد أعمدة صالحة للطباعة.');
   const total = records.length;
@@ -469,8 +478,11 @@ export function exportFlexibleEmployeeReport(
   openPrintableReport({
     title: 'Employee Registry Report',
     titleAr: options.title || 'تقرير بيانات الموظفين',
-    subtitle: 'Filtered administrative records – PDF / Print',
-    subtitleAr: 'تقرير إداري بحسب التصفية والفرز المحددين',
+    subtitle: showFullIdentity
+      ? 'RESTRICTED — FULL NATIONAL IDENTIFIERS' : 'Filtered administrative records – PDF / Print',
+    subtitleAr: showFullIdentity
+      ? 'سري — يتضمن أرقام الهوية الوطنية كاملة، للاستخدام الرسمي المخوّل فقط'
+      : 'تقرير إداري بحسب التصفية والفرز المحددين',
     orientation: options.orientation,
     tableRtl: true,
     fileName: `OHP_Employee_Report_${date.toISOString().slice(0, 10)}.pdf`,
@@ -479,6 +491,7 @@ export function exportFlexibleEmployeeReport(
       { label: 'Report date', labelAr: 'تاريخ التقرير', value: formatDateAr(date) },
       { label: 'Filters', labelAr: 'نطاق التصفية', value: options.filterSummary.slice(0, 280) || 'جميع الموظفين' },
       { label: 'Record scope', labelAr: 'نطاق السجلات', value: options.archived ? 'الموظفون المحذوفون' : 'الموظفون المسجلون' },
+      { label: 'Identity visibility', labelAr: 'إظهار الهوية', value: showFullIdentity ? 'ظاهرة كاملة — سري' : 'مخفية' },
     ],
     kpis: [
       { label: 'Matching records', labelAr: 'السجلات المطابقة', value: String(total), color: COLORS.primary },
@@ -491,14 +504,17 @@ export function exportFlexibleEmployeeReport(
     columns: [
       { key: 'row_number', label: 'No.', labelAr: 'م', align: 'center' },
       ...allowed.map(col => ({
-        key: col.key, label: col.en, labelAr: col.ar,
+        key: col.key,
+        label: col.key === 'national_id_masked' && showFullIdentity ? 'National ID' : col.en,
+        labelAr: col.key === 'national_id_masked' && showFullIdentity ? 'رقم الهوية كاملًا' : col.ar,
         align: ['name', 'job_title', 'current_job', 'health_center'].includes(col.key) ? 'right' : 'center' as const,
       })),
     ],
     rows: records.map((row, index) => ({
       row_number: index + 1,
       ...Object.fromEntries(allowed.map(col => {
-        let value: unknown = row[col.key];
+        let value: unknown = col.key === 'national_id_masked' && showFullIdentity
+          ? row.national_id_full : row[col.key];
         if (col.key === 'employment_status') value = REPORT_EMPLOYMENT_AR[String(value)] || value;
         if (col.key === 'gender') value = REPORT_GENDER_AR[String(value)] || value;
         return [col.key, value == null || value === '' ? '—' : String(value)];
