@@ -875,7 +875,7 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
   };
 
   const importedTotal = result ? getImportedTotal(result.summary) : 0;
-  const unresolvedCenters = employeeMode && result?.mode === 'preview'
+  const unresolvedCenters = employeeMode && result
     ? result.preview_rows.filter(row => row.health_center_matched === false &&
       row.issues?.some(issue => /health center|health_center|active center/i.test(issue))).length
     : 0;
@@ -1110,7 +1110,7 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
             </Paper>
           )}
 
-          {employeeMode && result.mode === 'preview' && unresolvedCenters > 0 && (
+          {employeeMode && unresolvedCenters > 0 && (
             <Paper variant="outlined" sx={{ p: 2.5, mb: 2.5, borderRadius: 3, borderColor: 'primary.light' }}>
               <Stack direction={{ xs: 'column', sm: 'row' }} alignItems={{ xs: 'stretch', sm: 'center' }}
                 justifyContent="space-between" gap={2}>
