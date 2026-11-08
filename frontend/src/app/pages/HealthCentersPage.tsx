@@ -369,8 +369,8 @@ export function HealthCentersPage() {
                     {center.code || '—'}
                   </Typography>
                 </Box>
-                <Chip size="small" color={center.is_active ? 'success' : 'default'}
-                  label={center.is_active ? 'نشط' : 'غير نشط'} />
+                <Chip size="small" color={center.is_archived ? 'warning' : center.is_active ? 'success' : 'default'}
+                  label={center.is_archived ? 'مؤرشف' : center.is_active ? 'نشط' : 'غير نشط'} />
               </Stack>
               <Stack direction="row" gap={0.75} flexWrap="wrap">
                 <Chip size="small" variant="outlined" color={isReference ? 'info' : 'default'}
@@ -398,11 +398,19 @@ export function HealthCentersPage() {
               </Box>
               <Stack direction="row" gap={1} justifyContent="flex-end"
                 sx={{ pt: 1.5, borderTop: '1px solid #E5EDF4' }}>
-                <Button size="small" variant="outlined" startIcon={<EditIcon />}
-                  onClick={() => openEdit(center)}>تعديل</Button>
-                <Button size="small" variant="outlined" color={center.is_active ? 'warning' : 'success'}
-                  startIcon={<ToggleOffIcon />} onClick={() => void toggleCenter(center)}>
-                  {center.is_active ? 'تعطيل' : 'تفعيل'}
+                {!center.is_archived && <>
+                  <Button size="small" variant="outlined" startIcon={<EditIcon />}
+                    onClick={() => openEdit(center)}>تعديل</Button>
+                  <Button size="small" variant="outlined" color={center.is_active ? 'warning' : 'success'}
+                    startIcon={<ToggleOffIcon />} onClick={() => void toggleCenter(center)}>
+                    {center.is_active ? 'تعطيل' : 'تفعيل'}
+                  </Button>
+                </>}
+                {canArchiveCenters && <Button size="small"
+                  variant="contained" color={center.is_archived ? 'success' : 'error'}
+                  startIcon={center.is_archived ? <RestoreIcon /> : <DeleteIcon />}
+                  onClick={() => openCenterArchive(center.is_archived ? 'restore' : 'delete', center)}>
+                  {center.is_archived ? 'استعادة' : 'حذف'}
                 </Button>
               </Stack>
             </Paper>;
@@ -445,8 +453,9 @@ export function HealthCentersPage() {
                 <TableCell><Chip size="small" label={buildingLabel(center.building_type)} /></TableCell>
                 <TableCell>
                   <Stack spacing={0.6} alignItems="flex-start">
-                    <Chip size="small" color={center.is_active ? 'success' : 'default'}
-                      label={center.is_active ? 'نشط' : 'غير نشط'} />
+                    <Chip size="small"
+                      color={center.is_archived ? 'warning' : center.is_active ? 'success' : 'default'}
+                      label={center.is_archived ? 'مؤرشف' : center.is_active ? 'نشط' : 'غير نشط'} />
                     {org && <Chip size="small" variant="outlined"
                       color={org.is_approved ? 'success' : 'warning'}
                       label={org.is_approved ? 'ارتباط تنظيمي معتمد' : 'ارتباط قيد الاعتماد'} />}
@@ -457,10 +466,19 @@ export function HealthCentersPage() {
                 </TableCell>
                 <TableCell align="center">
                   <Stack direction="row" gap={0.75} justifyContent="center" flexWrap="wrap">
-                    <Button variant="outlined" size="small" startIcon={<EditIcon />} onClick={() => openEdit(center)}>تعديل</Button>
-                    <Button variant="outlined" size="small" color={center.is_active ? 'warning' : 'success'}
-                      startIcon={<ToggleOffIcon />} onClick={() => void toggleCenter(center)}>
-                      {center.is_active ? 'تعطيل' : 'تفعيل'}
+                    {!center.is_archived && <>
+                      <Button variant="outlined" size="small" startIcon={<EditIcon />}
+                        onClick={() => openEdit(center)}>تعديل</Button>
+                      <Button variant="outlined" size="small" color={center.is_active ? 'warning' : 'success'}
+                        startIcon={<ToggleOffIcon />} onClick={() => void toggleCenter(center)}>
+                        {center.is_active ? 'تعطيل' : 'تفعيل'}
+                      </Button>
+                    </>}
+                    {canArchiveCenters && <Button size="small"
+                      variant="contained" color={center.is_archived ? 'success' : 'error'}
+                      startIcon={center.is_archived ? <RestoreIcon/> : <DeleteIcon/>}
+                      onClick={() => openCenterArchive(center.is_archived ? 'restore' : 'delete', center)}>
+                      {center.is_archived ? 'استعادة' : 'حذف'}
                     </Button>
                   </Stack>
                 </TableCell>
