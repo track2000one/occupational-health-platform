@@ -41,7 +41,7 @@ REVIEW_HEADERS = [
 
 
 def normalize(value):
-    text = unicodedata.normalize('NFKC', str(value or '')).replace('\u0640', '')
+    text = unicodedata.normalize('NFKC', str('' if value is None else value)).replace('\u0640', '')
     return re.sub(r'\s+', ' ', text).strip()
 
 
