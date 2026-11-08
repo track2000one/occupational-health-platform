@@ -814,8 +814,16 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
       if (!/\.(tsv|txt)$/i.test(selected.name)) {
         throw new Error('الملف المطلوب بصيغة TSV أو TXT فقط. لا تستخدم CSV لتجنب تغيير أرقام الصفوف.');
       }
+      const binary = new Uint8Array(await selected.arrayBuffer());
+      // Excel for Windows may save "Unicode Text" as UTF-16LE .txt;
+      // browser File.text() assumes UTF-8 and would corrupt Arabic labels.
+      const correctionText = binary[0] === 0xff && binary[1] === 0xfe
+        ? new TextDecoder('utf-16le').decode(binary.subarray(2))
+        : binary[0] === 0xfe && binary[1] === 0xff
+          ? new TextDecoder('utf-16be').decode(binary.subarray(2))
+          : new TextDecoder('utf-8').decode(binary);
       const parsed = parseCenterCorrectionTemplate(
-        await selected.text(), result.preview_rows, healthCenters, result.batch_id || '',
+        correctionText, result.preview_rows, healthCenters, result.batch_id || '',
       );
       if (!parsed.corrected) {
         toast.warning('لم يتم تحديد مركز لأي صف في ملف التصحيح.');
