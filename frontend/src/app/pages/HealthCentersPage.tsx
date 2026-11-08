@@ -10,10 +10,13 @@ import {
   Add as AddIcon, Business as BusinessIcon, Edit as EditIcon, Refresh as RefreshIcon,
   UploadFile as UploadFileIcon, FactCheck as FoundationIcon, Apps as CardsViewIcon, TableRows as TableViewIcon,
   Search as SearchIcon, ToggleOff as ToggleOffIcon,
+  DeleteSweepOutlined as DeleteIcon, DeleteSweepOutlined as ResetIcon,
+  Refresh as RestoreIcon, WorkHistoryOutlined as ArchiveIcon,
 } from '@mui/icons-material';
 import { toast } from 'sonner';
 import { authFetch, getAccessToken, useAuth } from '../context/AuthContext';
 import { HealthCenterExcelImportDialog } from '../components/HealthCenterExcelImportDialog';
+import { HealthCenterArchiveDialog, type CenterArchiveAction } from '../components/HealthCenterArchiveDialog';
 
 // Never silently send Staging staff edits to the Production API.
 const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
@@ -21,7 +24,7 @@ const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 type Center = {
   id: number; name: string; name_ar?: string; name_en?: string; code?: string | null; region: string; city: string; district: string; manager_name?: string;
   building_type: 'unknown' | 'model' | 'rented' | 'owned' | 'other'; building_type_label?: string;
-  is_active: boolean; notes?: string; employee_count?: number; user_count?: number;
+  is_active: boolean; is_archived?: boolean; notes?: string; employee_count?: number; user_count?: number;
 };
 type OrgCenter = {
   id: number; code: string; name: string; kind: 'department' | 'sector' | 'center' | 'unit';
@@ -51,6 +54,11 @@ export function HealthCentersPage() {
   const isRtl = i18n.language === 'ar';
   const { user } = useAuth();
   const canImport = user?.isSuperuser === true || user?.role === 'systemAdmin' || user?.role === 'ohManager';
+  const canArchiveCenters = user?.isSuperuser === true;
+  const [archiveAction, setArchiveAction] = useState<CenterArchiveAction | null>(null);
+  const [archiveTarget, setArchiveTarget] = useState<Center | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
+  const [archivedCenters, setArchivedCenters] = useState<Center[]>([]);
   const [importOpen, setImportOpen] = useState(false);
   const [centers, setCenters] = useState<Center[]>([]);
   const [organizationUnits, setOrganizationUnits] = useState<OrgCenter[]>([]);
@@ -83,6 +91,19 @@ export function HealthCentersPage() {
         }
       }
       setCenters(all);
+      if (canArchiveCenters) {
+        const archived = await request<Center[] | { results: Center[]; next: string | null }>('/health-centers/?archived=true&page=1');
+        const archivedList = list<Center>(archived);
+        if (!Array.isArray(archived) && archived.next) {
+          for (let page = 2; page <= 40; page++) {
+            const next = await request<{ results: Center[]; next: string | null }>(
+              `/health-centers/?archived=true&page=${page}`);
+            archivedList.push(...next.results);
+            if (!next.next) break;
+          }
+        }
+        setArchivedCenters(archivedList);
+      }
       // The organizational directory is a non-destructive proposal: not an approval.
       try {
         const directory = await request<{results: OrgCenter[]}>('/organization-units/');
@@ -114,14 +135,15 @@ export function HealthCentersPage() {
   const isFromSource = (center: Center) =>
     centerOrg.has(center.id) || /^OHP-REF-C\d{3}$/.test(center.code || '');
 
-  const sourceCenters = useMemo(() => centers.filter(isFromSource), [centers, centerOrg]);
-  const qaCenters = useMemo(() => centers.filter(isQA), [centers]);
+  const visibleCenters = showArchived ? archivedCenters : centers;
+  const sourceCenters = useMemo(() => visibleCenters.filter(isFromSource), [visibleCenters, centerOrg]);
+  const qaCenters = useMemo(() => visibleCenters.filter(isQA), [visibleCenters]);
   const sectorNames = useMemo(() => [...new Set(
     organizationUnits.filter(unit => unit.kind === 'sector').map(unit => unit.name),
   )].sort((a, b) => a.localeCompare(b, 'ar')), [organizationUnits]);
-  const regions = useMemo(() => [...new Set(centers.map(c => c.region).filter(Boolean))].sort(), [centers]);
-  const cities = useMemo(() => [...new Set(centers.filter(c => regionFilter === 'all' || c.region === regionFilter).map(c => c.city).filter(Boolean))].sort(), [centers, regionFilter]);
-  const filtered = useMemo(() => centers.filter(center => {
+  const regions = useMemo(() => [...new Set(visibleCenters.map(c => c.region).filter(Boolean))].sort(), [visibleCenters]);
+  const cities = useMemo(() => [...new Set(visibleCenters.filter(c => regionFilter === 'all' || c.region === regionFilter).map(c => c.city).filter(Boolean))].sort(), [visibleCenters, regionFilter]);
+  const filtered = useMemo(() => visibleCenters.filter(center => {
     const q = search.trim().toLowerCase();
     const org = centerOrg.get(center.id);
     const matchesSearch = !q || [
@@ -140,11 +162,19 @@ export function HealthCentersPage() {
   }).sort((a, b) =>
     (centerOrg.get(a.id)?.parent_name || '').localeCompare(centerOrg.get(b.id)?.parent_name || '', 'ar')
     || (a.name_ar || a.name).localeCompare(b.name_ar || b.name, 'ar')
-  ), [centers, centerOrg, sourceFilter, sectorFilter, search, regionFilter, cityFilter, statusFilter]);
+  ), [visibleCenters, centerOrg, sourceFilter, sectorFilter, search, regionFilter, cityFilter, statusFilter]);
 
   const buildingLabel = (type: Center['building_type']) => ({ unknown: isRtl ? 'غير محدد' : 'Unspecified', model: isRtl ? 'نموذجي' : 'Model', rented: isRtl ? 'مستأجر' : 'Rented', owned: isRtl ? 'مملوك' : 'Owned', other: isRtl ? 'أخرى' : 'Other' }[type]);
   const displayName = (center: Center) => (isRtl ? center.name_ar : center.name_en) || center.name || center.name_en || center.name_ar || '—';
   const secondaryName = (center: Center) => { const value = isRtl ? center.name_en : center.name_ar; return value && value !== displayName(center) ? value : ''; };
+  function openCenterArchive(action: CenterArchiveAction, center?: Center) {
+    setArchiveTarget(center || null);
+    setArchiveAction(action);
+  }
+  function toggleArchiveView() {
+    setShowArchived(prev => !prev);
+    resetFilters();
+  }
   function openAdd() { setEditing(null); setForm(EMPTY_FORM); setOpen(true); }
   function openEdit(center: Center) { setEditing(center); setForm({ name_ar: center.name_ar || '', name_en: center.name_en || center.name || '', code: center.code || '', region: center.region || '', city: center.city || '', district: center.district || '', manager_name: center.manager_name || '', building_type: center.building_type || 'unknown', is_active: center.is_active, notes: center.notes || '' }); setOpen(true); }
   function update<K extends keyof CenterForm>(key: K, value: CenterForm[K]) { setForm(current => ({ ...current, [key]: value })); }
@@ -188,6 +218,12 @@ export function HealthCentersPage() {
     {canImport && <HealthCenterExcelImportDialog
       open={importOpen} onClose={() => setImportOpen(false)}
       onImported={() => load()} />}
+    {canArchiveCenters && <HealthCenterArchiveDialog
+      open={archiveAction !== null}
+      action={archiveAction}
+      center={archiveTarget ? { id: archiveTarget.id, name: displayName(archiveTarget) } : null}
+      onClose={() => { setArchiveAction(null); setArchiveTarget(null); }}
+      onComplete={async () => { await load(); resetFilters(); }} />}
     <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', md: 'center' }} spacing={2} sx={{ mb: 3 }}>
       <Stack direction="row" spacing={1.5} alignItems="center"><BusinessIcon sx={{ fontSize: 38, color: 'primary.main' }} /><Box><Typography variant="h4" fontWeight={950}>{isRtl ? 'إدارة المراكز الصحية' : 'Health Centers Management'}</Typography><Typography variant="body2" color="text.secondary">{isRtl ? 'قاعدة البيانات المركزية المعتمدة لأسماء المراكز ومواقعها ونوع المبنى' : 'Central master data for health centers, locations, and building type'}</Typography></Box></Stack>
       <Stack direction="row" spacing={1} flexWrap="wrap">
@@ -202,6 +238,23 @@ export function HealthCentersPage() {
           onClick={() => setImportOpen(true)}>
           {isRtl ? 'استيراد المراكز من Excel' : 'Import centers from Excel'}
         </Button>}
+        {canArchiveCenters && <>
+          <Button variant={showArchived ? 'contained' : 'outlined'} color="secondary"
+            startIcon={showArchived ? <RestoreIcon /> : <ArchiveIcon />}
+            onClick={toggleArchiveView}>
+            {showArchived ? 'العودة للمراكز المسجلة' : `المراكز المحذوفة (${archivedCenters.length})`}
+          </Button>
+          <Button variant="outlined" color="error" startIcon={<ResetIcon />}
+            disabled={loading || centers.length === 0}
+            onClick={() => openCenterArchive('reset')}>
+            تصفير
+          </Button>
+          {archivedCenters.length > 0 && <Button variant="outlined" color="success"
+            startIcon={<RestoreIcon />}
+            onClick={() => openCenterArchive('restore_batch')}>
+            استعادة آخر دفعة
+          </Button>}
+        </>}
         <Button variant="contained" startIcon={<AddIcon />} onClick={openAdd}>
           {isRtl ? 'إضافة مركز صحي' : 'Add Health Center'}
         </Button>
@@ -210,7 +263,7 @@ export function HealthCentersPage() {
 
     <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(4,1fr)' }, gap: 2, mb: 2.5 }}>
       {[
-        [isRtl ? 'إجمالي المراكز المسجلة' : 'All registered centers', centers.length],
+        [isRtl ? 'إجمالي المراكز المعروضة' : 'All visible centers', visibleCenters.length],
         [isRtl ? 'المراكز النشطة' : 'Active centers', centers.filter(c => c.is_active).length],
         [isRtl ? 'مراكز ملف الجهات' : 'Reference centers', sourceCenters.length],
         [isRtl ? 'مراكز اختبار QA' : 'QA centers', qaCenters.length],
@@ -218,7 +271,7 @@ export function HealthCentersPage() {
     </Box>
 
     <Alert severity="info" sx={{ mb: 2, fontSize: 14 }}>
-      تعرض الصفحة جميع المراكز المسجلة افتراضيًا، بما فيها غير المرتبطة بملف الجهات.
+      تعرض الصفحة جميع المراكز غير المؤرشفة افتراضيًا، بما فيها غير المرتبطة بملف الجهات.
       يمكنك تصفيتها حسب المصدر والقطاع والحالة. مراكز ملف الجهات مقترحة ولا تعني اعتمادًا تنظيميًا.
       تظل المعلومات غير المتحققة فارغة لحين مراجعتها.
     </Alert>
@@ -228,7 +281,7 @@ export function HealthCentersPage() {
       <TextField select label={isRtl ? 'المدينة' : 'City'} value={cityFilter} onChange={e => setCityFilter(e.target.value)}><MenuItem value="all">{isRtl ? 'كل المدن' : 'All cities'}</MenuItem>{cities.map(item => <MenuItem key={item} value={item}>{item}</MenuItem>)}</TextField>
       <TextField select label={isRtl ? 'مصدر السجل' : 'Data source'} value={sourceFilter}
         onChange={e => { setSourceFilter(e.target.value as typeof sourceFilter); setSectorFilter('all'); }}>
-        <MenuItem value="all">جميع السجلات ({centers.length})</MenuItem>
+        <MenuItem value="all">جميع السجلات ({visibleCenters.length})</MenuItem>
         <MenuItem value="reference">مراكز ملف الجهات ({sourceCenters.length})</MenuItem>
         <MenuItem value="qa">المراكز التجريبية ({qaCenters.length})</MenuItem>
         <MenuItem value="other">سجلات أخرى</MenuItem>
@@ -244,7 +297,7 @@ export function HealthCentersPage() {
       justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }} sx={{ mb: 1.5 }}>
       <Box>
         <Typography fontWeight={900} color="text.secondary">
-          عرض {filtered.length} مركزًا من إجمالي {centers.length} مركز مسجل
+          عرض {filtered.length} مركزًا من إجمالي {visibleCenters.length} مركز {showArchived ? 'مؤرشف' : 'مسجل'}
         </Typography>
         <Typography variant="caption" color="text.secondary">
           مصدر السجل يحدد طريقة العرض فقط ولا يغيّر بيانات المراكز أو الموظفين.
@@ -268,8 +321,10 @@ export function HealthCentersPage() {
       : loadError ? <Alert severity="error" action={
         <Button size="small" onClick={() => void load()}>إعادة المحاولة</Button>
       }>تعذر تحميل دليل المراكز الصحية: {loadError}</Alert>
-      : centers.length === 0 ? <Paper sx={{ p: 4, textAlign: 'center', borderRadius: 3 }}>
-          <Typography fontWeight={900} sx={{ mb: 1 }}>لا توجد مراكز صحية مسجلة في قاعدة البيانات الحالية.</Typography>
+      : visibleCenters.length === 0 ? <Paper sx={{ p: 4, textAlign: 'center', borderRadius: 3 }}>
+          <Typography fontWeight={900} sx={{ mb: 1 }}>
+            {showArchived ? 'لا توجد مراكز في الأرشيف.' : 'لا توجد مراكز صحية غير مؤرشفة في القائمة الحالية.'}
+          </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
             يمكنك إضافة مركز صحي أو استيراد المراكز من Excel بعد التأكد من البيئة المتصلة.
           </Typography>
@@ -284,7 +339,7 @@ export function HealthCentersPage() {
             لا توجد مراكز تطابق التصفية الحالية.
           </Typography>
           <Typography color="text.secondary" sx={{ mb: 2 }}>
-            يوجد {centers.length} مركزًا مسجلًا بالفعل؛ غيّر المرشحات أو أظهر جميع المراكز.
+            يوجد {visibleCenters.length} مركزًا بالفعل؛ غيّر المرشحات أو أظهر جميع المراكز.
           </Typography>
           <Button variant="contained" onClick={resetFilters}>إظهار جميع المراكز</Button>
         </Paper>
@@ -314,8 +369,8 @@ export function HealthCentersPage() {
                     {center.code || '—'}
                   </Typography>
                 </Box>
-                <Chip size="small" color={center.is_active ? 'success' : 'default'}
-                  label={center.is_active ? 'نشط' : 'غير نشط'} />
+                <Chip size="small" color={center.is_archived ? 'warning' : center.is_active ? 'success' : 'default'}
+                  label={center.is_archived ? 'مؤرشف' : center.is_active ? 'نشط' : 'غير نشط'} />
               </Stack>
               <Stack direction="row" gap={0.75} flexWrap="wrap">
                 <Chip size="small" variant="outlined" color={isReference ? 'info' : 'default'}
@@ -343,12 +398,20 @@ export function HealthCentersPage() {
               </Box>
               <Stack direction="row" gap={1} justifyContent="flex-end"
                 sx={{ pt: 1.5, borderTop: '1px solid #E5EDF4' }}>
-                <Button size="small" variant="outlined" startIcon={<EditIcon />}
-                  onClick={() => openEdit(center)}>تعديل</Button>
-                <Button size="small" variant="outlined" color={center.is_active ? 'warning' : 'success'}
-                  startIcon={<ToggleOffIcon />} onClick={() => void toggleCenter(center)}>
-                  {center.is_active ? 'تعطيل' : 'تفعيل'}
-                </Button>
+                {!center.is_archived && <>
+                  <Button size="small" variant="outlined" startIcon={<EditIcon />}
+                    onClick={() => openEdit(center)}>تعديل</Button>
+                  <Button size="small" variant="outlined" color={center.is_active ? 'warning' : 'success'}
+                    startIcon={<ToggleOffIcon />} onClick={() => void toggleCenter(center)}>
+                    {center.is_active ? 'تعطيل' : 'تفعيل'}
+                  </Button>
+                </>}
+                {canArchiveCenters && <Button size="small"
+                  variant="contained" color={center.is_archived ? 'success' : 'error'}
+                  startIcon={center.is_archived ? <RestoreIcon /> : <DeleteIcon />}
+                  onClick={() => openCenterArchive(center.is_archived ? 'restore' : 'delete', center)}>
+                  {center.is_archived ? 'استعادة' : 'حذف'}
+                </Button>}
               </Stack>
             </Paper>;
           })}
@@ -390,8 +453,9 @@ export function HealthCentersPage() {
                 <TableCell><Chip size="small" label={buildingLabel(center.building_type)} /></TableCell>
                 <TableCell>
                   <Stack spacing={0.6} alignItems="flex-start">
-                    <Chip size="small" color={center.is_active ? 'success' : 'default'}
-                      label={center.is_active ? 'نشط' : 'غير نشط'} />
+                    <Chip size="small"
+                      color={center.is_archived ? 'warning' : center.is_active ? 'success' : 'default'}
+                      label={center.is_archived ? 'مؤرشف' : center.is_active ? 'نشط' : 'غير نشط'} />
                     {org && <Chip size="small" variant="outlined"
                       color={org.is_approved ? 'success' : 'warning'}
                       label={org.is_approved ? 'ارتباط تنظيمي معتمد' : 'ارتباط قيد الاعتماد'} />}
@@ -402,11 +466,20 @@ export function HealthCentersPage() {
                 </TableCell>
                 <TableCell align="center">
                   <Stack direction="row" gap={0.75} justifyContent="center" flexWrap="wrap">
-                    <Button variant="outlined" size="small" startIcon={<EditIcon />} onClick={() => openEdit(center)}>تعديل</Button>
-                    <Button variant="outlined" size="small" color={center.is_active ? 'warning' : 'success'}
-                      startIcon={<ToggleOffIcon />} onClick={() => void toggleCenter(center)}>
-                      {center.is_active ? 'تعطيل' : 'تفعيل'}
-                    </Button>
+                    {!center.is_archived && <>
+                      <Button variant="outlined" size="small" startIcon={<EditIcon />}
+                        onClick={() => openEdit(center)}>تعديل</Button>
+                      <Button variant="outlined" size="small" color={center.is_active ? 'warning' : 'success'}
+                        startIcon={<ToggleOffIcon />} onClick={() => void toggleCenter(center)}>
+                        {center.is_active ? 'تعطيل' : 'تفعيل'}
+                      </Button>
+                    </>}
+                    {canArchiveCenters && <Button size="small"
+                      variant="contained" color={center.is_archived ? 'success' : 'error'}
+                      startIcon={center.is_archived ? <RestoreIcon/> : <DeleteIcon/>}
+                      onClick={() => openCenterArchive(center.is_archived ? 'restore' : 'delete', center)}>
+                      {center.is_archived ? 'استعادة' : 'حذف'}
+                    </Button>}
                   </Stack>
                 </TableCell>
               </TableRow>;

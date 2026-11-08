@@ -7,6 +7,7 @@ from .employee_review_bulk_discard import StagingEmployeeReviewBulkDiscardView
 from .staging_review_center_reconciliation import StagingReviewCenterReconciliationView
 from .staging_employee_reset import StagingEmployeeCardResetView
 from .health_center_excel_import import HealthCenterExcelImportView
+from .health_center_archive import HealthCenterArchiveView
 from .center_foundation import (CenterFoundationRegistryView, CenterFoundationImportView, CenterFoundationDecisionView)
 from .employee_registry_reset import EmployeeRegistryResetView
 from .workforce_preview import WorkforceRosterPreviewView, WorkforceCenterMappingView
@@ -36,6 +37,7 @@ urlpatterns = [
     path('employee-import-reviews/center-reconciliation/', StagingReviewCenterReconciliationView.as_view(), name='employee-review-center-reconciliation'),
     path('staging-employee-card-reset/', StagingEmployeeCardResetView.as_view(), name='staging-employee-card-reset'),
     path('health-centers/import-excel/', HealthCenterExcelImportView.as_view(), name='health-center-excel-import'),
+    path('health-centers/archive/', HealthCenterArchiveView.as_view(), name='health-center-archive'),
     path('center-foundation/', CenterFoundationRegistryView.as_view(), name='center-foundation-registry'),
     path('center-foundation/import/', CenterFoundationImportView.as_view(), name='center-foundation-import'),
     path('center-foundation/decision/', CenterFoundationDecisionView.as_view(), name='center-foundation-decision'),
