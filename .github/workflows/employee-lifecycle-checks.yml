@@ -46,6 +46,8 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       # The production Dockerfile uses npm install --legacy-peer-deps; match it here.
       - run: npm install --legacy-peer-deps --ignore-scripts --no-audit --no-fund
+      - name: Test safe offline employee-center correction TSV
+        run: node --test src/app/utils/employeeCenterCorrectionTsv.test.mjs
       - run: npm run build
 
 
