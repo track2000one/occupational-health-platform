@@ -56,6 +56,7 @@ import { DataImportPage } from './pages/DataImportPage';
 import { AppearanceSettingsPage } from './pages/AppearanceSettingsPage';
 import { PeriodicStatisticsPage } from './pages/PeriodicStatisticsPage';
 import { HealthCentersPage } from './pages/HealthCentersPage';
+import { CenterDirectoryMatchingPage } from './pages/CenterDirectoryMatchingPage';
 import { CenterFoundationPage } from './pages/CenterFoundationPage';
 import { OrganizationStructurePage } from './pages/OrganizationStructurePage';
 import { EmployeeLifecyclePage } from './pages/EmployeeLifecyclePage';
@@ -173,6 +174,11 @@ function AppRoutes() {
         <Route path="admin/health-centers" element={
           <PermissionRoute permission="manage:users">
             <HealthCentersPage />
+          </PermissionRoute>
+        } />
+        <Route path="admin/center-directory-match" element={
+          <PermissionRoute permission="manage:healthCenters">
+            <CenterDirectoryMatchingPage />
           </PermissionRoute>
         } />
         <Route path="admin/center-foundation" element={
