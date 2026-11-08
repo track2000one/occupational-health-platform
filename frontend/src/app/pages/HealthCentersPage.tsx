@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 import {
-  Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle,
-  InputAdornment, MenuItem, Paper, Stack, Switch, Table, TableBody, TableCell, TableContainer,
+  Alert, Box, Button, Chip, CircularProgress,
+  InputAdornment, MenuItem, Paper, Stack, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, TextField, Typography,
 } from '@mui/material';
 import {
@@ -18,6 +18,10 @@ import { authFetch, getAccessToken, useAuth } from '../context/AuthContext';
 import { HealthCenterExcelImportDialog } from '../components/HealthCenterExcelImportDialog';
 import { HealthCenterArchiveDialog, type CenterArchiveAction } from '../components/HealthCenterArchiveDialog';
 import { HealthCenterVerificationDialog } from '../components/HealthCenterVerificationDialog';
+import {
+  HealthCenterProfileFormDialog, type HealthCenterFormValues,
+  type CenterUnitDraft,
+} from '../components/HealthCenterProfileFormDialog';
 
 // Never silently send Staging staff edits to the Production API.
 const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
@@ -36,14 +40,8 @@ type OrgCenter = {
   health_center_id: number | null; parent_code: string; parent_name: string;
   is_approved: boolean; review_status: string;
 };
-type CenterForm = {
-  name_ar: string; name_en: string; code: string; alternate_name: string;
-  region: string; city: string; district: string; manager_name: string;
-  proposed_parent_name: string; proposed_sector_name: string;
-  organizational_source_reference: string; supporting_document_reference: string;
-  building_type: Center['building_type']; is_active: boolean; notes: string;
-};
-type CenterUnit = { id: number; name: string; code: string; is_approved: boolean; parent_name: string };
+type CenterForm = HealthCenterFormValues;
+type CenterUnit = CenterUnitDraft;
 const EMPTY_FORM: CenterForm = {
   name_ar: '', name_en: '', code: '', alternate_name: '',
   region: '', city: '', district: '', manager_name: '',
@@ -603,17 +601,16 @@ export function HealthCentersPage() {
         </Table>
       </TableContainer>}
 
-    <Dialog open={open} onClose={() => !saving && setOpen(false)} maxWidth="md" fullWidth><DialogTitle>{editing ? (isRtl ? 'تعديل المركز الصحي' : 'Edit Health Center') : (isRtl ? 'إضافة مركز صحي' : 'Add Health Center')}</DialogTitle><DialogContent dividers><Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2,1fr)' }, gap: 2 }}>
-      <TextField required label={isRtl ? 'اسم المركز الصحي بالعربية' : 'Health Center Name (Arabic)'} value={form.name_ar} onChange={e => update('name_ar', e.target.value)} inputProps={{ dir: 'rtl' }} />
-      <TextField label={isRtl ? 'اسم المركز الصحي بالإنجليزية (اختياري)' : 'Health Center Name (English, optional)'} value={form.name_en} onChange={e => update('name_en', e.target.value)} inputProps={{ dir: 'ltr' }} />
-      <TextField label={isRtl ? 'كود المركز' : 'Center Code'} value={form.code || ''} onChange={e => update('code', e.target.value.toUpperCase())} helperText={isRtl ? 'اختياري، ويجب أن يكون فريدًا' : 'Optional and unique'} />
-      <TextField label={isRtl ? 'المنطقة' : 'Region'} value={form.region} onChange={e => update('region', e.target.value)} />
-      <TextField label={isRtl ? 'المدينة' : 'City'} value={form.city} onChange={e => update('city', e.target.value)} />
-      <TextField label={isRtl ? 'الحي' : 'District'} value={form.district} onChange={e => update('district', e.target.value)} />
-      <TextField label={isRtl ? 'مدير المركز (بعد التحقق من الاسم)' : 'Verified center manager'} value={form.manager_name} onChange={e => update('manager_name', e.target.value)} helperText={isRtl ? 'حقل مرجعي إداري؛ اتركه فارغًا إذا لم تُعتمد بيانات المدير' : 'Administrative reference; leave blank until verified'} />
-      <TextField select label={isRtl ? 'نوع المبنى' : 'Building Type'} value={form.building_type} onChange={e => update('building_type', e.target.value as CenterForm['building_type'])}><MenuItem value="unknown">{isRtl ? 'غير محدد بعد' : 'Unspecified'}</MenuItem><MenuItem value="model">{isRtl ? 'مبنى نموذجي' : 'Model building'}</MenuItem><MenuItem value="rented">{isRtl ? 'مبنى مستأجر' : 'Rented building'}</MenuItem><MenuItem value="owned">{isRtl ? 'مبنى مملوك' : 'Owned building'}</MenuItem><MenuItem value="other">{isRtl ? 'أخرى' : 'Other'}</MenuItem></TextField>
-      <TextField multiline minRows={3} label={isRtl ? 'ملاحظات' : 'Notes'} value={form.notes || ''} onChange={e => update('notes', e.target.value)} sx={{ gridColumn: { md: '1 / -1' } }} />
-      <Stack direction="row" alignItems="center" spacing={1}><Switch checked={form.is_active} onChange={e => update('is_active', e.target.checked)} /><Typography>{isRtl ? 'المركز نشط ومتاح في القوائم المنسدلة' : 'Center is active and available in dropdowns'}</Typography></Stack>
-    </Box></DialogContent><DialogActions><Button onClick={() => setOpen(false)} disabled={saving}>{isRtl ? 'إلغاء' : 'Cancel'}</Button><Button variant="contained" onClick={() => void save()} disabled={saving}>{saving ? (isRtl ? 'جاري الحفظ...' : 'Saving...') : (isRtl ? 'حفظ' : 'Save')}</Button></DialogActions></Dialog>
+    <HealthCenterProfileFormDialog
+      open={open} onClose={() => setOpen(false)} onSave={() => void save()}
+      saving={saving} editing={editing} form={form} onChange={update}
+      sectorSuggestions={sectorSuggestions}
+      centerUnits={centerUnits} unitName={unitName}
+      onUnitNameChange={setUnitName}
+      unitReference={unitReference} onUnitReferenceChange={setUnitReference}
+      unitBusy={unitBusy} unitsLoadError={unitsLoadError}
+      onReloadUnits={() => { if (editing) void loadUnits(editing.id); }}
+      onCreateUnit={() => void createDraftUnit()}
+    />
   </Box>;
 }
