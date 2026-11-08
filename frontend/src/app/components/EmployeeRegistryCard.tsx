@@ -4,8 +4,8 @@ import {
   Edit as EditIcon,
   Visibility as VisibilityIcon,
   WorkHistoryOutlined as WorkHistoryIcon,
-  DeleteOutline as DeleteIcon,
-  RestoreFromTrashOutlined as RestoreIcon,
+  DeleteSweepOutlined as DeleteIcon,
+  WorkHistoryOutlined as RestoreIcon,
 } from '@mui/icons-material';
 
 type EmployeeCardRecord = {
