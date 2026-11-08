@@ -40,8 +40,8 @@ import {
   Visibility as VisibilityIcon,
   BadgeOutlined as HealthCardIcon,
   DeleteSweepOutlined as ResetTestCardsIcon,
-  DeleteOutline as DeleteEmployeeIcon,
-  RestoreFromTrashOutlined as RestoreEmployeeIcon,
+  DeleteSweepOutlined as DeleteEmployeeIcon,
+  Refresh as RestoreEmployeeIcon,
 } from '@mui/icons-material';
 import { toast } from 'sonner';
 import { authFetch, getAccessToken, useAuth } from '../context/AuthContext';
