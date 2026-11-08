@@ -46,6 +46,11 @@ class HealthCenter(models.Model):
     district = models.CharField(max_length=120, blank=True, db_index=True)
     building_type = models.CharField(max_length=20, choices=BuildingType.choices, default=BuildingType.UNKNOWN, db_index=True)
     is_active = models.BooleanField(default=True, db_index=True)
+    is_archived = models.BooleanField(default=False, db_index=True)
+    archived_at = models.DateTimeField(null=True, blank=True)
+    archive_reason = models.TextField(blank=True)
+    archived_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+                                    on_delete=models.SET_NULL, related_name='archived_health_centers')
     notes = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True, null=True)
     updated_at = models.DateTimeField(auto_now=True, null=True)
@@ -56,6 +61,47 @@ class HealthCenter(models.Model):
     def __str__(self):
         return self.name
 
+
+
+class HealthCenterResetBatch(models.Model):
+    """Reversible batch of health center soft-archives; never alters dependent rows."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    center_ids = models.JSONField(default=list)
+    reason = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    archived_at = models.DateTimeField()
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True,
+        related_name='health_center_reset_batches',
+    )
+    restored_at = models.DateTimeField(null=True, blank=True)
+    restored_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='health_center_restored_batches',
+    )
+    restore_reason = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+
+class HealthCenterLifecycleEvent(models.Model):
+    """Append-only log of archive/restore decisions with administrative rationale."""
+    center = models.ForeignKey(HealthCenter, on_delete=models.PROTECT, related_name='lifecycle_events')
+    action = models.CharField(max_length=30)
+    reason = models.TextField()
+    performed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True,
+        related_name='health_center_lifecycle_events',
+    )
+    batch = models.ForeignKey(
+        HealthCenterResetBatch, on_delete=models.PROTECT, null=True, blank=True,
+        related_name='events',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at', '-pk']
 
 
 class CenterFoundationBatch(models.Model):
