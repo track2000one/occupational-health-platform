@@ -183,6 +183,10 @@ def batch_payload(batch):
                                       if x['decision'] == 'pending'),
         'references': refs, 'review_cases': reviews,
         'audit_event_count': batch.audit_events.count(),
+        'audit_events': list(batch.audit_events.select_related('performed_by').order_by('-created_at')[:100].values(
+            'id', 'entity_type', 'entity_id', 'action', 'prior_state', 'new_state',
+            'evidence_reference', 'created_at', 'performed_by__username',
+        )),
     }
 
 
