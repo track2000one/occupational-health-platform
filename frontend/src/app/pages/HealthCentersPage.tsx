@@ -17,6 +17,7 @@ import { toast } from 'sonner';
 import { authFetch, getAccessToken, useAuth } from '../context/AuthContext';
 import { HealthCenterExcelImportDialog } from '../components/HealthCenterExcelImportDialog';
 import { HealthCenterArchiveDialog, type CenterArchiveAction } from '../components/HealthCenterArchiveDialog';
+import { HealthCenterVerificationDialog } from '../components/HealthCenterVerificationDialog';
 
 // Never silently send Staging staff edits to the Production API.
 const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
@@ -25,14 +26,35 @@ type Center = {
   id: number; name: string; name_ar?: string; name_en?: string; code?: string | null; region: string; city: string; district: string; manager_name?: string;
   building_type: 'unknown' | 'model' | 'rented' | 'owned' | 'other'; building_type_label?: string;
   is_active: boolean; is_archived?: boolean; notes?: string; employee_count?: number; user_count?: number;
+  proposed_parent_name?: string; proposed_sector_name?: string;
+  organizational_source_reference?: string; supporting_document_reference?: string;
+  approval_status?: 'pending' | 'approved' | 'revoked'; approval_reference?: string;
+  alias_names?: string[]; center_units_count?: number;
 };
 type OrgCenter = {
   id: number; code: string; name: string; kind: 'department' | 'sector' | 'center' | 'unit';
   health_center_id: number | null; parent_code: string; parent_name: string;
   is_approved: boolean; review_status: string;
 };
-type CenterForm = { name_ar: string; name_en: string; code: string; region: string; city: string; district: string; manager_name: string; building_type: Center['building_type']; is_active: boolean; notes: string };
-const EMPTY_FORM: CenterForm = { name_ar: '', name_en: '', code: '', region: '', city: '', district: '', manager_name: '', building_type: 'unknown', is_active: true, notes: '' };
+type CenterForm = {
+  name_ar: string; name_en: string; code: string; alternate_name: string;
+  region: string; city: string; district: string; manager_name: string;
+  proposed_parent_name: string; proposed_sector_name: string;
+  organizational_source_reference: string; supporting_document_reference: string;
+  building_type: Center['building_type']; is_active: boolean; notes: string;
+};
+type CenterUnit = { id: number; name: string; code: string; is_approved: boolean; parent_name: string };
+const EMPTY_FORM: CenterForm = {
+  name_ar: '', name_en: '', code: '', alternate_name: '',
+  region: '', city: '', district: '', manager_name: '',
+  proposed_parent_name: '', proposed_sector_name: '',
+  organizational_source_reference: '', supporting_document_reference: '',
+  building_type: 'unknown', is_active: true, notes: '',
+};
+const REFERENCE_SECTORS = [
+  'القطاع الشرقي الاستشاري 1', 'القطاع الشرقي الاستشاري 2',
+  'القطاع الغربي الاستشاري 1', 'القطاع الغربي الاستشاري 2',
+];
 
 function list<T>(payload: any): T[] { return Array.isArray(payload) ? payload : Array.isArray(payload?.results) ? payload.results : []; }
 async function request<T>(path: string, init: RequestInit = {}) {
@@ -76,6 +98,16 @@ export function HealthCentersPage() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Center | null>(null);
   const [form, setForm] = useState<CenterForm>(EMPTY_FORM);
+  const [verifyTarget, setVerifyTarget] = useState<Center | null>(null);
+  const [centerUnits, setCenterUnits] = useState<CenterUnit[]>([]);
+  const [unitName, setUnitName] = useState('');
+  const [unitReference, setUnitReference] = useState('');
+  const [unitBusy, setUnitBusy] = useState(false);
+  const [unitsLoadError, setUnitsLoadError] = useState('');
+  const sectorSuggestions = useMemo(() => [...new Set([
+    ...REFERENCE_SECTORS, ...organizationUnits.filter(u => u.kind === 'sector').map(u => u.name),
+    ...centers.map(c => c.proposed_sector_name || '').filter(Boolean),
+  ])].sort((a,b)=>a.localeCompare(b,'ar')), [organizationUnits, centers]);
 
   async function load() {
     setLoading(true);
@@ -138,9 +170,10 @@ export function HealthCentersPage() {
   const visibleCenters = showArchived ? archivedCenters : centers;
   const sourceCenters = useMemo(() => visibleCenters.filter(isFromSource), [visibleCenters, centerOrg]);
   const qaCenters = useMemo(() => visibleCenters.filter(isQA), [visibleCenters]);
-  const sectorNames = useMemo(() => [...new Set(
-    organizationUnits.filter(unit => unit.kind === 'sector').map(unit => unit.name),
-  )].sort((a, b) => a.localeCompare(b, 'ar')), [organizationUnits]);
+  const sectorNames = useMemo(() => [...new Set([
+    ...organizationUnits.filter(unit => unit.kind === 'sector').map(unit => unit.name),
+    ...visibleCenters.map(center => center.proposed_sector_name || '').filter(Boolean),
+  ])].sort((a, b) => a.localeCompare(b, 'ar')), [organizationUnits, visibleCenters]);
   const regions = useMemo(() => [...new Set(visibleCenters.map(c => c.region).filter(Boolean))].sort(), [visibleCenters]);
   const cities = useMemo(() => [...new Set(visibleCenters.filter(c => regionFilter === 'all' || c.region === regionFilter).map(c => c.city).filter(Boolean))].sort(), [visibleCenters, regionFilter]);
   const filtered = useMemo(() => visibleCenters.filter(center => {
@@ -149,13 +182,14 @@ export function HealthCentersPage() {
     const matchesSearch = !q || [
       center.name_ar, center.name_en, center.name, center.code, center.region,
       center.city, center.district, center.manager_name, org?.parent_name,
+      center.proposed_sector_name, center.proposed_parent_name, ...(center.alias_names || []),
     ].filter(Boolean).join(' ').toLowerCase().includes(q);
     const matchesSource = sourceFilter === 'all'
       || (sourceFilter === 'reference' && isFromSource(center))
       || (sourceFilter === 'qa' && isQA(center))
       || (sourceFilter === 'other' && !isFromSource(center) && !isQA(center));
     return matchesSearch && matchesSource
-      && (sectorFilter === 'all' || org?.parent_name === sectorFilter)
+      && (sectorFilter === 'all' || (org?.parent_name || center.proposed_sector_name) === sectorFilter)
       && (regionFilter === 'all' || center.region === regionFilter)
       && (cityFilter === 'all' || center.city === cityFilter)
       && (statusFilter === 'all' || (statusFilter === 'active' ? center.is_active : !center.is_active));
@@ -175,8 +209,57 @@ export function HealthCentersPage() {
     setShowArchived(prev => !prev);
     resetFilters();
   }
-  function openAdd() { setEditing(null); setForm(EMPTY_FORM); setOpen(true); }
-  function openEdit(center: Center) { setEditing(center); setForm({ name_ar: center.name_ar || '', name_en: center.name_en || center.name || '', code: center.code || '', region: center.region || '', city: center.city || '', district: center.district || '', manager_name: center.manager_name || '', building_type: center.building_type || 'unknown', is_active: center.is_active, notes: center.notes || '' }); setOpen(true); }
+  function openAdd() {
+    setEditing(null); setForm({ ...EMPTY_FORM });
+    setCenterUnits([]); setUnitName(''); setUnitReference('');
+    setUnitsLoadError(''); setOpen(true);
+  }
+  async function loadUnits(centerId: number) {
+    setUnitsLoadError('');
+    try {
+      const result = await request<{ results: CenterUnit[] }>(`/health-centers/${centerId}/units/`);
+      setCenterUnits(result.results);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'تعذر تحميل وحدات المركز.';
+      setUnitsLoadError(message);
+    }
+  }
+  function openEdit(center: Center) {
+    setEditing(center);
+    setForm({
+      name_ar: center.name_ar || center.name || '', name_en: center.name_en || '',
+      code: center.code || '', alternate_name: '',
+      region: center.region || '', city: center.city || '',
+      district: center.district || '', manager_name: center.manager_name || '',
+      proposed_parent_name: center.proposed_parent_name || '',
+      proposed_sector_name: center.proposed_sector_name || '',
+      organizational_source_reference: center.organizational_source_reference || '',
+      supporting_document_reference: center.supporting_document_reference || '',
+      building_type: center.building_type || 'unknown',
+      is_active: center.is_active, notes: center.notes || '',
+    });
+    setCenterUnits([]); setUnitName(''); setUnitReference('');
+    setOpen(true); void loadUnits(center.id);
+  }
+  async function createDraftUnit() {
+    if (!editing || !unitName.trim() || unitBusy) return;
+    setUnitBusy(true);
+    try {
+      await request(`/health-centers/${editing.id}/units/`, {
+        method: 'POST',
+        body: JSON.stringify({
+          name: unitName.trim(), source_reference: unitReference.trim(),
+        }),
+      });
+      setUnitName(''); setUnitReference('');
+      await loadUnits(editing.id);
+      setCenters(old => old.map(c => c.id === editing.id
+        ? { ...c, center_units_count: (c.center_units_count || 0) + 1 } : c));
+      toast.success('أضيفت الوحدة كسجل تنظيمي مستقل بانتظار الاعتماد.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'تعذرت إضافة الوحدة.');
+    } finally { setUnitBusy(false); }
+  }
   function update<K extends keyof CenterForm>(key: K, value: CenterForm[K]) { setForm(current => ({ ...current, [key]: value })); }
   function resetFilters() {
     setSourceFilter('all');
@@ -193,7 +276,19 @@ export function HealthCentersPage() {
     // Preserve 'unknown' instead of inventing administrative facts.
     setSaving(true);
     try {
-      const payload = { ...form, name: form.name_en.trim() || form.name_ar.trim(), name_ar: form.name_ar.trim(), name_en: form.name_en.trim(), code: form.code?.trim() || null, region: form.region.trim(), city: form.city.trim(), district: form.district.trim(), manager_name: form.manager_name.trim(), notes: form.notes?.trim() || '' };
+      const payload = {
+        ...form, name: form.name_en.trim() || form.name_ar.trim(),
+        name_ar: form.name_ar.trim(), name_en: form.name_en.trim(),
+        code: form.code.trim() || null,
+        alternate_name: form.alternate_name.trim(),
+        region: form.region.trim(), city: form.city.trim(),
+        district: form.district.trim(), manager_name: form.manager_name.trim(),
+        proposed_parent_name: form.proposed_parent_name.trim(),
+        proposed_sector_name: form.proposed_sector_name.trim(),
+        organizational_source_reference: form.organizational_source_reference.trim(),
+        supporting_document_reference: form.supporting_document_reference.trim(),
+        notes: form.notes.trim(),
+      };
       const saved = editing
         ? await request<Center>(`/health-centers/${editing.id}/`, { method: 'PATCH', body: JSON.stringify(payload) })
         : await request<Center>('/health-centers/', { method: 'POST', body: JSON.stringify(payload) });
