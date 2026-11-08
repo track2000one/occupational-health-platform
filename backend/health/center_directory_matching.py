@@ -235,7 +235,26 @@ def normalize_selections(raw):
     return choices
 
 
-def build_plan(source, active, aliases, org_units, selections, include_units):
+def normalize_evidence(raw):
+    if raw in (None, ''):
+        return {}
+    try:
+        decoded = json.loads(raw) if isinstance(raw, str) else raw
+    except (ValueError, TypeError):
+        raise ValueError('مراجع المطابقة اليدوية ليست بصيغة صحيحة.')
+    if not isinstance(decoded, dict) or len(decoded) > 100:
+        raise ValueError('مراجع المطابقة اليدوية غير صحيحة.')
+    values = {}
+    for ref, value in decoded.items():
+        if not re.fullmatch(r'HC-\d{3}', str(ref)):
+            raise ValueError('معرف المركز غير صالح في المراجع اليدوية.')
+        evidence = safe_cell(value, 250)
+        if evidence:
+            values[ref] = evidence
+    return values
+
+
+def build_plan(source, active, aliases, org_units, selections, include_units, evidence):
     center_by_id = {c.pk: c for c in active}
     possible = []
     seen_destinations = defaultdict(list)
@@ -249,16 +268,18 @@ def build_plan(source, active, aliases, org_units, selections, include_units):
             raise ValueError('اختير مركز غير موجود أو مؤرشف في قاعدة البيانات.')
         if chosen:
             seen_destinations[chosen].append(src['ref'])
+        evidence_value = evidence.get(src['ref'], '')
+        is_auto = bool(chosen and chosen in exact_ids)
         item = {
             **src, 'match_status': status_name,
+            'evidence_reference': evidence_value,
             'candidate_ids': suggested, 'chosen_center_id': chosen,
             'chosen_center_name': (
                 center_by_id[chosen].name_ar or center_by_id[chosen].name
                 if chosen else ''
             ),
             'selection_method': (
-                'automatic' if chosen and chosen in exact_ids and
-                src['ref'] not in selections else 'manual'
+                'automatic' if is_auto else 'manual'
             ) if chosen else 'unmatched',
         }
         possible.append(item)
@@ -279,6 +300,8 @@ def build_plan(source, active, aliases, org_units, selections, include_units):
                 mismatches.append('القطاع المقترح الموجود مختلف')
             if dest.proposed_parent_name and key(dest.proposed_parent_name) != key(item['parent']):
                 mismatches.append('الجهة الأم المقترحة مختلفة')
+            if item['selection_method'] == 'manual' and len(evidence_value) < 8:
+                mismatches.append('الربط اليدوي يحتاج مرجعًا موثقًا (8 أحرف على الأقل)')
             item['readiness'] = 'blocked' if mismatches else 'ready'
             item['reason'] = '، '.join(mismatches) if mismatches else 'جاهز لحفظ معلومات التبعية المقترحة.'
     by_ref = {item['ref']: item for item in possible}
@@ -347,10 +370,11 @@ class CenterDirectoryMatchingView(APIView):
         try:
             source = parse_directory(request.FILES.get('file'))
             selections = normalize_selections(request.data.get('selections'))
+            evidence = normalize_evidence(request.data.get('manual_evidence'))
             include_units = clean(request.data.get('include_units')).lower() == 'true'
             active, aliases, org_units, stamp = current_directory()
             matched, units, summary = build_plan(
-                source, active, aliases, org_units, selections, include_units,
+                source, active, aliases, org_units, selections, include_units, evidence,
             )
         except ValueError as exc:
             return Response({'detail': str(exc)}, status=400)
@@ -358,9 +382,11 @@ class CenterDirectoryMatchingView(APIView):
         selections_resolved = {
             x['ref']: x['chosen_center_id'] for x in matched
         }
+        # Idempotent across database versions: same source and reviewed choices
+        # cannot be applied twice after the first draft update.
         fingerprint = sha256(json.dumps({
-            'source': source['digest'], 'snapshot': stamp,
-            'selections': selections_resolved, 'include_units': include_units,
+            'source': source['digest'], 'selections': selections_resolved,
+            'include_units': include_units, 'manual_evidence': evidence,
         }, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
         phrase = (
             f"حفظ {summary['ready_centers']} مطابقة و"
@@ -370,7 +396,8 @@ class CenterDirectoryMatchingView(APIView):
             token = signing.dumps({
                 'user': request.user.pk, 'source': source['digest'],
                 'stamp': stamp, 'choices': selections_resolved,
-                'include_units': include_units, 'fingerprint': fingerprint,
+                'include_units': include_units,
+                'manual_evidence': evidence, 'fingerprint': fingerprint,
             }, salt=TOKEN_SALT)
             return Response({
                 'mode': 'preview', 'filename': source['filename'],
@@ -411,6 +438,7 @@ class CenterDirectoryMatchingView(APIView):
             signed.get('stamp') != stamp,
             signed.get('choices') != selections_resolved,
             signed.get('include_units') != include_units,
+            signed.get('manual_evidence') != evidence,
             signed.get('fingerprint') != fingerprint,
         ]):
             return Response({'detail': 'المصدر أو اختيارات الربط أو حالة قاعدة البيانات تغيّرت؛ أعد المعاينة.'},
@@ -426,7 +454,7 @@ class CenterDirectoryMatchingView(APIView):
             # Revalidate under locks, not merely by trusting client selections.
             mapped, unit_plan, fresh = build_plan(
                 source, locked_active, locked_aliases, locked_units,
-                selections, include_units,
+                selections, include_units, evidence,
             )
             if fresh != summary or any(x['readiness'] == 'blocked' for x in mapped):
                 return Response({'detail': 'تغيرت نتيجة المطابقة؛ أعد المعاينة.'}, status=409)
@@ -438,6 +466,7 @@ class CenterDirectoryMatchingView(APIView):
                         'ref': x['ref'], 'source_name': x['name'],
                         'center_id': x['chosen_center_id'],
                         'selection_method': x['selection_method'],
+                        'evidence_reference': x['evidence_reference'],
                         'readiness': x['readiness'],
                         'source_rows': x['source_rows'],
                     } for x in mapped
@@ -478,9 +507,11 @@ class CenterDirectoryMatchingView(APIView):
                     center=center, action='directory_draft_match',
                     prior_state=prior, new_state={
                         **after, 'source_center_ref': item['ref'],
-                        'matching_batch': batch.pk, 'selection_method': item['selection_method'],
+                        'matching_batch': batch.pk,
+                        'selection_method': item['selection_method'],
+                        'matching_evidence': item['evidence_reference'],
                     },
-                    evidence_reference=f"{CENTER_TAB}: {item['sheet_row']}",
+                    evidence_reference=item['evidence_reference'] or f"{CENTER_TAB}: {item['sheet_row']}",
                     performed_by=request.user,
                 )
             created_units = 0
