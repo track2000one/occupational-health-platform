@@ -1,4 +1,5 @@
 import json
+import uuid
 from datetime import date, timedelta
 
 from django.contrib.auth import get_user_model
@@ -12,7 +13,7 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from .importers import process_excel_import
-from .models import AuditLog, ClinicVisit, CommitteeReferral, DataImportBatch, Employee, EmployeeArchiveEvent, EmployeeEmploymentChange, EmployeeHealthCard, EmployeeImportReview, HealthCenter, InjuryCase, LabTest, OccupationalHealthAssessment, Vaccination
+from .models import AuditLog, ClinicVisit, CommitteeReferral, DataImportBatch, Employee, EmployeeArchiveEvent, EmployeeEmploymentChange, EmployeeHealthCard, EmployeeImportReview, HealthCenter, HealthCenterProfileAuditEvent, OrganizationUnit, InjuryCase, LabTest, OccupationalHealthAssessment, Vaccination
 from .serializers import AuditLogSerializer, ClinicVisitSerializer, CommitteeReferralSerializer, DataImportBatchSerializer, EmployeeHealthCardSerializer, EmployeeImportReviewSerializer, EmployeeSerializer, HealthCenterSerializer, InjuryCaseSerializer, LabTestSerializer, OccupationalHealthAssessmentSerializer, PlatformUserSerializer, VaccinationSerializer
 
 
@@ -599,13 +600,164 @@ class HealthCenterViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(building_type=building_type)
         return queryset
 
+    PROFILE_FIELDS = (
+        'name', 'name_ar', 'name_en', 'code', 'region', 'city',
+        'district', 'manager_name', 'building_type', 'notes', 'is_active',
+        'proposed_parent_name', 'proposed_sector_name',
+        'organizational_source_reference', 'supporting_document_reference',
+    )
+
+    @staticmethod
+    def profile_snapshot(center):
+        return {field: getattr(center, field) for field in HealthCenterViewSet.PROFILE_FIELDS}
+
+    @transaction.atomic
     def perform_create(self, serializer):
         center = serializer.save()
-        AuditLog.objects.create(user=str(self.request.user), action='create_health_center', model_name='HealthCenter', record_id=str(center.id))
+        HealthCenterProfileAuditEvent.objects.create(
+            center=center, action='create_profile',
+            prior_state={}, new_state=self.profile_snapshot(center),
+            performed_by=self.request.user,
+            evidence_reference=center.supporting_document_reference,
+        )
+        AuditLog.objects.create(
+            user=str(self.request.user), action='create_health_center',
+            model_name='HealthCenter', record_id=str(center.id),
+        )
 
+    @transaction.atomic
     def perform_update(self, serializer):
+        before = self.profile_snapshot(serializer.instance)
         center = serializer.save()
-        AuditLog.objects.create(user=str(self.request.user), action='update_health_center', model_name='HealthCenter', record_id=str(center.id))
+        after = self.profile_snapshot(center)
+        if before != after:
+            HealthCenterProfileAuditEvent.objects.create(
+                center=center, action='update_profile', prior_state=before,
+                new_state=after, performed_by=self.request.user,
+                evidence_reference=center.supporting_document_reference,
+            )
+        AuditLog.objects.create(
+            user=str(self.request.user), action='update_health_center',
+            model_name='HealthCenter', record_id=str(center.id),
+        )
+
+    @action(detail=True, methods=['get', 'post'], url_path='units')
+    def units(self, request, pk=None):
+        """Distinct center-specific organization unit drafts. No implicit approval."""
+        center = self.get_object()
+        units = OrganizationUnit.objects.filter(
+            Q(health_center=center) | Q(parent__health_center=center),
+            kind=OrganizationUnit.Kind.UNIT,
+            is_active=True,
+        ).distinct().order_by('name', 'pk')
+        if request.method == 'GET':
+            return Response({
+                'center_id': center.pk,
+                'results': [{
+                    'id': item.pk, 'name': item.name, 'code': item.code,
+                    'parent_name': item.parent.name if item.parent_id else '',
+                    'is_approved': item.is_approved, 'review_status':
+                        'approved' if item.is_approved else 'pending',
+                    'source_sheet': item.source_sheet,
+                } for item in units.select_related('parent')[:250]],
+            })
+        if not CanManageHealthCenters().has_permission(request, self):
+            return Response({'detail': 'Not allowed to add a unit.'},
+                            status=status.HTTP_403_FORBIDDEN)
+        name = ' '.join(str(request.data.get('name') or '').strip().split())
+        source_reference = str(request.data.get('source_reference') or '').strip()
+        if not 3 <= len(name) <= 180:
+            return Response({'name': 'Name must be between 3 and 180 characters.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if len(source_reference) > 250:
+            return Response({'source_reference': 'Reference too long.'}, status=400)
+        if any(item.name.strip().casefold() == name.casefold() for item in units):
+            return Response({'detail': 'This unit already belongs to the center.'}, status=409)
+        with transaction.atomic():
+            parent = OrganizationUnit.objects.filter(
+                kind=OrganizationUnit.Kind.CENTER,
+                health_center=center, is_active=True,
+            ).order_by('-is_approved', 'pk').first()
+            item = OrganizationUnit.objects.create(
+                code='HC-U-' + uuid.uuid4().hex[:20].upper(),
+                name=name, kind=OrganizationUnit.Kind.UNIT, parent=parent,
+                health_center=center, source_path=f'{center.name_ar or center.name} / {name}',
+                source_sheet='إضافة يدوية للمراجعة',
+                source_rows=source_reference, is_approved=False, is_active=True,
+            )
+            HealthCenterProfileAuditEvent.objects.create(
+                center=center, action='create_draft_unit', performed_by=request.user,
+                prior_state={}, new_state={
+                    'unit_id': item.pk, 'name': item.name, 'code': item.code,
+                    'is_approved': False,
+                }, evidence_reference=source_reference,
+            )
+            AuditLog.objects.create(
+                user=str(request.user), action='create_health_center_draft_unit',
+                model_name='OrganizationUnit', record_id=str(item.pk),
+            )
+        return Response({
+            'id': item.pk, 'name': item.name, 'code': item.code,
+            'is_approved': False, 'review_status': 'pending',
+            'notice': 'Unit saved as a separate draft; no employee or organization approvals were changed.',
+        }, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'], url_path='verify-reference')
+    def verify_reference(self, request, pk=None):
+        """Center identity verification, independent of sector and staff assignments."""
+        if not request.user.is_superuser:
+            return Response({'detail': 'Only system superuser can verify a center.'},
+                            status=status.HTTP_403_FORBIDDEN)
+        center = self.get_object()
+        decision = str(request.data.get('decision') or '').strip()
+        evidence = str(request.data.get('approval_reference') or '').strip()
+        reason = str(request.data.get('reason') or '').strip()
+        if decision not in {'approve', 'revoke'} or request.data.get('confirmed') is not True:
+            return Response({'detail': 'Documented decision and explicit confirmation required.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if len(reason) < 15 or len(reason) > 500 or len(evidence) < 4 or len(evidence) > 250:
+            return Response({'detail': 'Reason (15–500) and evidence reference (4–250) required.'}, status=400)
+        with transaction.atomic():
+            center = HealthCenter.objects.select_for_update().get(pk=center.pk)
+            before = {
+                'approval_status': center.approval_status,
+                'approval_reference': center.approval_reference,
+                'approved_at': center.approved_at.isoformat() if center.approved_at else None,
+            }
+            if decision == 'approve':
+                center.approval_status = HealthCenter.ApprovalStatus.APPROVED
+                center.approval_reference = evidence
+                center.approved_by = request.user
+                center.approved_at = timezone.now()
+            else:
+                center.approval_status = HealthCenter.ApprovalStatus.REVOKED
+                center.approval_reference = ''
+                center.approved_by = None
+                center.approved_at = None
+            center.save(update_fields=[
+                'approval_status', 'approval_reference', 'approved_by',
+                'approved_at', 'updated_at',
+            ])
+            HealthCenterProfileAuditEvent.objects.create(
+                center=center, action='verify_center_reference_' + decision,
+                prior_state=before,
+                new_state={
+                    'approval_status': center.approval_status,
+                    'approval_reference': center.approval_reference,
+                    'approved_at': center.approved_at.isoformat() if center.approved_at else None,
+                    'reason': reason,
+                },
+                evidence_reference=evidence, performed_by=request.user,
+            )
+            AuditLog.objects.create(
+                user=str(request.user), action='verify_center_reference_' + decision,
+                model_name='HealthCenter', record_id=str(center.pk),
+            )
+        return Response({
+            'id': center.pk, 'approval_status': center.approval_status,
+            'approval_reference': center.approval_reference,
+            'notice': 'Only center identity approval changed; sector and employees unchanged.',
+        })
 
     def destroy(self, request, *args, **kwargs):
         # Legacy DELETE must not bypass explicit preview, reason, reference

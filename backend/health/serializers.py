@@ -2,8 +2,10 @@ from datetime import date
 import unicodedata
 
 from django.contrib.auth import get_user_model
+from django.db import transaction
+from django.db.models import Q
 from rest_framework import serializers
-from .models import AuditLog, ClinicVisit, CommitteeReferral, DataImportBatch, Employee, EmployeeHealthCard, EmployeeHealthProfile, EmployeeImportReview, HealthCenter, InjuryCase, LabTest, OccupationalHealthAssessment, UserProfile, Vaccination
+from .models import AuditLog, ClinicVisit, CommitteeReferral, DataImportBatch, Employee, EmployeeHealthCard, EmployeeHealthProfile, EmployeeImportReview, HealthCenter, HealthCenterAlias, OrganizationUnit, InjuryCase, LabTest, OccupationalHealthAssessment, UserProfile, Vaccination
 
 
 ROLE_PERMISSIONS = {
@@ -228,18 +230,38 @@ class PlatformUserSerializer(serializers.ModelSerializer):
         return instance
 
 
+def normalized_center_alias(value):
+    return ' '.join(str(value or '').strip().split()).casefold()
+
+
 class HealthCenterSerializer(serializers.ModelSerializer):
     employee_count = serializers.IntegerField(source='employees.count', read_only=True)
     user_count = serializers.IntegerField(source='platform_users.count', read_only=True)
     building_type_label = serializers.CharField(source='get_building_type_display', read_only=True)
+    alias_names = serializers.SerializerMethodField()
+    # An extra name to register. Existing historic aliases are append-only.
+    alternate_name = serializers.CharField(
+        max_length=150, required=False, allow_blank=True, write_only=True,
+    )
+    center_units_count = serializers.SerializerMethodField()
 
     class Meta:
         model = HealthCenter
         fields = '__all__'
         read_only_fields = (
-        'created_at', 'updated_at', 'is_archived', 'archived_at',
-        'archived_by', 'archive_reason',
-    )
+            'created_at', 'updated_at', 'is_archived', 'archived_at',
+            'archived_by', 'archive_reason', 'approval_status',
+            'approval_reference', 'approved_by', 'approved_at',
+        )
+
+    def get_alias_names(self, obj):
+        return list(obj.aliases.order_by('created_at', 'pk').values_list('name', flat=True))
+
+    def get_center_units_count(self, obj):
+        return OrganizationUnit.objects.filter(
+            Q(health_center=obj) | Q(parent__health_center=obj),
+            kind=OrganizationUnit.Kind.UNIT, is_active=True,
+        ).distinct().count()
 
     def validate_name(self, value):
         value = str(value or '').strip()
@@ -286,10 +308,74 @@ class HealthCenterSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, attrs):
-        for field in ('name_ar', 'name_en', 'region', 'city', 'district', 'manager_name', 'notes'):
+        for field in (
+            'name', 'name_ar', 'name_en', 'region', 'city', 'district',
+            'manager_name', 'notes', 'proposed_parent_name',
+            'proposed_sector_name', 'organizational_source_reference',
+            'supporting_document_reference', 'alternate_name',
+        ):
             if field in attrs and attrs[field] is not None:
                 attrs[field] = str(attrs[field]).strip()
+
+        center_id = self.instance.pk if self.instance else None
+        # Historic labels must never be reused by a different official center.
+        for field in ('name', 'name_ar', 'name_en'):
+            candidate = attrs.get(field)
+            if candidate and HealthCenterAlias.objects.filter(
+                normalized_name=normalized_center_alias(candidate),
+            ).exclude(center_id=center_id).exists():
+                raise serializers.ValidationError({
+                    field: 'Name already belongs to the alias history of another center.',
+                })
+
+        alias = attrs.get('alternate_name', '')
+        if alias:
+            old_alias = normalized_center_alias(alias)
+            if HealthCenter.objects.filter(
+                Q(name__iexact=alias) | Q(name_ar__iexact=alias) |
+                Q(name_en__iexact=alias),
+            ).exclude(pk=center_id).exists() or HealthCenterAlias.objects.filter(
+                normalized_name=old_alias,
+            ).exclude(center_id=center_id).exists():
+                raise serializers.ValidationError({
+                    'alternate_name': 'This previous name belongs to another center.',
+                })
         return attrs
+
+    def _register_alias(self, center, label, source):
+        name = str(label or '').strip()
+        if not name or normalized_center_alias(name) in {
+            normalized_center_alias(center.name),
+            normalized_center_alias(center.name_ar),
+            normalized_center_alias(center.name_en),
+        }:
+            return
+        user = getattr(self.context.get('request'), 'user', None)
+        HealthCenterAlias.objects.get_or_create(
+            normalized_name=normalized_center_alias(name),
+            defaults={
+                'center': center, 'name': name,
+                'source': source,
+                'added_by': user if user and user.is_authenticated else None,
+            },
+        )
+
+    @transaction.atomic
+    def create(self, validated_data):
+        alias = validated_data.pop('alternate_name', '')
+        center = super().create(validated_data)
+        self._register_alias(center, alias, 'manual')
+        return center
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        alias = validated_data.pop('alternate_name', '')
+        old_name = instance.name_ar or instance.name
+        center = super().update(instance, validated_data)
+        if normalized_center_alias(old_name) != normalized_center_alias(center.name_ar or center.name):
+            self._register_alias(center, old_name, 'previous_name')
+        self._register_alias(center, alias, 'manual')
+        return center
 
 
 class EmployeeSerializer(serializers.ModelSerializer):

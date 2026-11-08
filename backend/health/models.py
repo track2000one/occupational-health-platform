@@ -51,6 +51,27 @@ class HealthCenter(models.Model):
     archive_reason = models.TextField(blank=True)
     archived_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
                                     on_delete=models.SET_NULL, related_name='archived_health_centers')
+    # Draft organizational labels, NEVER official sector assignments.
+    proposed_parent_name = models.CharField(max_length=180, blank=True)
+    proposed_sector_name = models.CharField(max_length=180, blank=True)
+    organizational_source_reference = models.CharField(max_length=250, blank=True)
+    supporting_document_reference = models.CharField(max_length=250, blank=True)
+
+    class ApprovalStatus(models.TextChoices):
+        PENDING = 'pending', 'Awaiting documentation'
+        APPROVED = 'approved', 'Verified official center reference'
+        REVOKED = 'revoked', 'Official verification withdrawn'
+
+    approval_status = models.CharField(
+        max_length=12, choices=ApprovalStatus.choices,
+        default=ApprovalStatus.PENDING, db_index=True,
+    )
+    approval_reference = models.CharField(max_length=250, blank=True)
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='verified_health_center_profiles',
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
     notes = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True, null=True)
     updated_at = models.DateTimeField(auto_now=True, null=True)
@@ -60,6 +81,43 @@ class HealthCenter(models.Model):
 
     def __str__(self):
         return self.name
+
+
+
+
+class HealthCenterAlias(models.Model):
+    """Former / alternative labels, kept for matching historical employee Excel files."""
+    center = models.ForeignKey(HealthCenter, on_delete=models.PROTECT,
+                               related_name='aliases')
+    name = models.CharField(max_length=150)
+    normalized_name = models.CharField(max_length=180, unique=True)
+    source = models.CharField(max_length=24, default='manual')
+    added_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL,
+        related_name='added_health_center_aliases',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['created_at', 'pk']
+
+
+class HealthCenterProfileAuditEvent(models.Model):
+    """Append-only evidence for each health center identity and organization edit."""
+    center = models.ForeignKey(HealthCenter, on_delete=models.PROTECT,
+                               related_name='profile_audit_events')
+    action = models.CharField(max_length=40)
+    prior_state = models.JSONField(default=dict)
+    new_state = models.JSONField(default=dict)
+    evidence_reference = models.CharField(max_length=250, blank=True)
+    performed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL,
+        related_name='health_center_profile_events',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at', '-pk']
 
 
 
