@@ -175,6 +175,11 @@ export function EmployeeCenterQuickFixDialog({
                     label={isRtl ? 'اسم المركز الوارد في الملف' : 'Source center name'} />}
                   noOptionsText={isRtl ? 'لا توجد مسميات غير مطابقة' : 'No unmatched names'}
                 />
+                {group && /^[0-9٠-٩\s-]+$/.test(group.name) && <Alert severity="warning">
+                  {isRtl
+                    ? 'القيمة الواردة في خانة المركز أرقام فقط؛ راجع مطابقة عمود «المركز الصحي» مع Excel أولًا، فقد تكون البيانات مأخوذة من عمود مختلف.'
+                    : 'The source center is numeric. Verify the Excel center-column mapping before assigning staff; it may be a different field.'}
+                </Alert>}
                 {group && <Typography variant="body2" color="text.secondary">
                   {isRtl ? `التعيين سيشمل ${group.rowNumbers.length} صفًا بهذا المسمى فقط.`
                     : `This assignment covers ${group.rowNumbers.length} rows with exactly this source name.`}
