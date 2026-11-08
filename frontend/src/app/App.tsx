@@ -34,6 +34,7 @@ import { LoginPage } from './pages/LoginPage';
 import { DashboardLayout } from './components/layout/DashboardLayout';
 import { DashboardPage } from './pages/DashboardPage';
 import { EmployeesPage } from './pages/EmployeesPage';
+import { EmployeeRegistryReportPage } from './pages/EmployeeRegistryReportPage';
 import { EmployeeHealthCardPage } from './pages/EmployeeHealthCardPage';
 import { LabTestsPage } from './pages/LabTestsPage';
 import { VaccinationsPage } from './pages/VaccinationsPage';
@@ -102,6 +103,11 @@ function AppRoutes() {
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="employees" element={<EmployeesPage />} />
+        <Route path="employees/report" element={
+          <PermissionRoute permission="export:reports">
+            <EmployeeRegistryReportPage />
+          </PermissionRoute>
+        } />
         <Route path="employees/import" element={
           <PermissionRoute permission="manage:users">
             <DataImportPage employeeMode />
