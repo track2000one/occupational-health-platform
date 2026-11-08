@@ -10,8 +10,8 @@ import {
   Add as AddIcon, Business as BusinessIcon, Edit as EditIcon, Refresh as RefreshIcon,
   UploadFile as UploadFileIcon, FactCheck as FoundationIcon, Apps as CardsViewIcon, TableRows as TableViewIcon,
   Search as SearchIcon, ToggleOff as ToggleOffIcon,
-  DeleteOutline as DeleteIcon, DeleteSweep as ResetIcon, Restore as RestoreIcon,
-  Inventory2 as ArchiveIcon,
+  DeleteSweepOutlined as DeleteIcon, DeleteSweepOutlined as ResetIcon,
+  Refresh as RestoreIcon, WorkHistoryOutlined as ArchiveIcon,
 } from '@mui/icons-material';
 import { toast } from 'sonner';
 import { authFetch, getAccessToken, useAuth } from '../context/AuthContext';
