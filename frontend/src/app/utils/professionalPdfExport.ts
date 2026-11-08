@@ -466,7 +466,7 @@ export function exportFlexibleEmployeeReport(
   const showFullIdentity = options.showFullNationalId &&
     columns.includes('national_id_masked');
   if (showFullIdentity && records.some(row =>
-    !row.national_id_full || !/^\\d{6,20}$/.test(row.national_id_full))) {
+    !row.national_id_full || !/^\d{6,20}$/.test(row.national_id_full))) {
     throw new Error('لا يمكن طباعة الهوية كاملة: بعض السجلات لا تحتوي على رقم هوية كامل ومصرح به.');
   }
   const allowed = FLEXIBLE_EMPLOYEE_COLUMNS.filter(column => columns.includes(column.key));
