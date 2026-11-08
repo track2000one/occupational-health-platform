@@ -18,7 +18,7 @@ export type CenterDirectoryItem = {
   is_active?: boolean;
 };
 
-export const CORRECTION_HEADER = 'excel_row\tsource_center\tapproved_center_id';
+export const CORRECTION_HEADER = 'preview_batch_id\texcel_row\tsource_center\tapproved_center_id';
 export const DIRECTORY_HEADER = 'approved_center_id\tapproved_center_name\tcenter_code';
 
 export function requiresCenterCorrection(row: CenterCorrectionRow): boolean {
@@ -32,7 +32,7 @@ function safeCell(value: unknown): string {
   return /^[=+@-]/.test(clean) ? `'${clean}` : clean;
 }
 
-export function buildCorrectionTemplate(rows: CenterCorrectionRow[]): string {
+export function buildCorrectionTemplate(rows: CenterCorrectionRow[], batchId: number | string): string {
   const unique = new Set<number>();
   const entries = rows.filter(requiresCenterCorrection)
     .sort((left, right) => left.row - right.row)
@@ -41,7 +41,7 @@ export function buildCorrectionTemplate(rows: CenterCorrectionRow[]): string {
       unique.add(row.row);
       return true;
     })
-    .map(row => [row.row, safeCell(row.health_center), ''].join('\t'));
+    .map(row => [batchId, row.row, safeCell(row.health_center), ''].join('\t'));
   return '\uFEFF' + [CORRECTION_HEADER, ...entries].join('\r\n') + '\r\n';
 }
 
@@ -56,6 +56,7 @@ export function parseCenterCorrectionTemplate(
   rawText: string,
   rows: CenterCorrectionRow[],
   centers: CenterDirectoryItem[],
+  batchId: number | string,
 ): { corrections: Record<string, string>; corrected: number; blank: number } {
   if (rawText.length > 1024 * 1024) {
     throw new Error('ملف التصحيح أكبر من الحد المسموح (1 MB).');
@@ -75,10 +76,13 @@ export function parseCenterCorrectionTemplate(
   }
   for (const [index, line] of lines.entries()) {
     const columns = line.replace(/\r$/, '').split('\t');
-    if (columns.length !== 3) {
+    if (columns.length !== 4) {
       throw new Error(`تنسيق الصف ${index + 2} غير صحيح؛ احفظ الملف بصيغة TSV (نص مفصول بعلامات جدولة).`);
     }
-    const [numberText, sourceText, selectedIdText] = columns.map(value => value.trim());
+    const [sourceBatchId, numberText, sourceText, selectedIdText] = columns.map(value => value.trim());
+    if (sourceBatchId !== String(batchId)) {
+      throw new Error('ملف التصحيح يعود إلى معاينة مختلفة. أعد تنزيل القالب من المعاينة الحالية.');
+    }
     if (!/^\d+$/.test(numberText)) {
       throw new Error(`رقم صف Excel غير صحيح في السطر ${index + 2}.`);
     }
