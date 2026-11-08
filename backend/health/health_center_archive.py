@@ -197,6 +197,7 @@ class HealthCenterArchiveView(APIView):
                 planned = 'reset'
             return Response({
                 'mode': action, 'count': state['count'],
+                'center_id': center_id if single else None,
                 'eligible_count': state['eligible_count'],
                 'blocked_count': state['blocked_count'],
                 'blocked': state['blocked'][:100],
