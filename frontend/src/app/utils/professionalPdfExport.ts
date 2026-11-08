@@ -488,16 +488,22 @@ export function exportFlexibleEmployeeReport(
     ],
     sectionTitle: 'Filtered Employee Directory',
     sectionTitleAr: 'بيان الموظفين وفق معايير التقرير',
-    columns: allowed.map(col => ({
-      key: col.key, label: col.en, labelAr: col.ar,
-      align: ['name', 'job_title', 'current_job', 'health_center'].includes(col.key) ? 'right' : 'center',
+    columns: [
+      { key: 'row_number', label: 'No.', labelAr: 'م', align: 'center' },
+      ...allowed.map(col => ({
+        key: col.key, label: col.en, labelAr: col.ar,
+        align: ['name', 'job_title', 'current_job', 'health_center'].includes(col.key) ? 'right' : 'center' as const,
+      })),
+    ],
+    rows: records.map((row, index) => ({
+      row_number: index + 1,
+      ...Object.fromEntries(allowed.map(col => {
+        let value: unknown = row[col.key];
+        if (col.key === 'employment_status') value = REPORT_EMPLOYMENT_AR[String(value)] || value;
+        if (col.key === 'gender') value = REPORT_GENDER_AR[String(value)] || value;
+        return [col.key, value == null || value === '' ? '—' : String(value)];
+      })),
     })),
-    rows: records.map(row => Object.fromEntries(allowed.map(col => {
-      let value: unknown = row[col.key];
-      if (col.key === 'employment_status') value = REPORT_EMPLOYMENT_AR[String(value)] || value;
-      if (col.key === 'gender') value = REPORT_GENDER_AR[String(value)] || value;
-      return [col.key, value == null || value === '' ? '—' : String(value)];
-    }))),
   });
 }
 
