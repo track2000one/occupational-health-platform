@@ -49,6 +49,10 @@ import { getNationalityOptions, normalizeNationalitySearch } from '../data/emplo
 import { restoreReviewCenterId, restoreReviewNationality } from '../utils/employeeReviewValidation';
 import { StagingCenterReconciliationDialog } from './StagingCenterReconciliationDialog';
 import { EmployeeImportPreviewTable, type EmployeePreviewRow } from './EmployeeImportPreviewTable';
+import {
+  buildCenterDirectory, buildCorrectionTemplate, parseCenterCorrectionTemplate,
+  requiresCenterCorrection,
+} from '../utils/employeeCenterCorrectionTsv';
 
 // Prevent Staging imports from silently falling back to the Production API.
 const API_BASE_URL = (import.meta.env.VITE_API_URL ||
@@ -764,6 +768,81 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
     setMappingConfirmed(false);
   };
 
+  const downloadLocalTsv = (content: string, filename: string) => {
+    const url = window.URL.createObjectURL(new Blob([content], {
+      type: 'text/tab-separated-values;charset=utf-8',
+    }));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => window.URL.revokeObjectURL(url), 30000);
+  };
+
+  const downloadCenterCorrectionTemplate = () => {
+    if (!result || result.mode !== 'preview' || result.preview_rows_truncated) {
+      toast.warning('أعد معاينة الملف كاملًا قبل تنزيل قالب تصحيح المراكز.');
+      return;
+    }
+    const affected = result.preview_rows.filter(requiresCenterCorrection);
+    if (!affected.length) return;
+    if (!result.batch_id) {
+      toast.error('هذه المعاينة لا تحتوي على رقم دفعة للتحقق من ملف التصحيح. أعد الفحص.');
+      return;
+    }
+    downloadLocalTsv(buildCorrectionTemplate(affected, result.batch_id), 'OHP_center_corrections.tsv');
+  };
+
+  const downloadApprovedCenterDirectory = () => {
+    if (!healthCenters.some(center => center.is_active !== false)) {
+      toast.warning('تعذر تحميل دليل المراكز المعتمدة؛ أعد فتح الصفحة أو تحقق من الاتصال.');
+      return;
+    }
+    downloadLocalTsv(buildCenterDirectory(healthCenters), 'OHP_approved_centers.tsv');
+  };
+
+  const importCenterCorrectionTemplate = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.target;
+    const selected = input.files?.[0];
+    if (!selected || !result || result.mode !== 'preview') return;
+    try {
+      if (loading || result.preview_rows_truncated) {
+        throw new Error('لا يمكن تطبيق التصحيحات دون معاينة كاملة للصفوف.');
+      }
+      if (!/\.(tsv|txt)$/i.test(selected.name)) {
+        throw new Error('الملف المطلوب بصيغة TSV أو TXT فقط. لا تستخدم CSV لتجنب تغيير أرقام الصفوف.');
+      }
+      const binary = new Uint8Array(await selected.arrayBuffer());
+      // Excel for Windows may save "Unicode Text" as UTF-16LE .txt;
+      // browser File.text() assumes UTF-8 and would corrupt Arabic labels.
+      const correctionText = binary[0] === 0xff && binary[1] === 0xfe
+        ? new TextDecoder('utf-16le').decode(binary.subarray(2))
+        : binary[0] === 0xfe && binary[1] === 0xff
+          ? new TextDecoder('utf-16be').decode(binary.subarray(2))
+          : new TextDecoder('utf-8').decode(binary);
+      const parsed = parseCenterCorrectionTemplate(
+        correctionText, result.preview_rows, healthCenters, result.batch_id || '',
+      );
+      if (!parsed.corrected) {
+        toast.warning('لم يتم تحديد مركز لأي صف في ملف التصحيح.');
+        return;
+      }
+      if (!window.confirm(
+        `سيُطبّق اختيار المركز على ${parsed.corrected} صف من الملف الحالي لأغراض إعادة الفحص فقط. لن يتم إنشاء موظفين أو تعديل سجلاتهم الآن. هل تؤكد اختيارك؟`
+      )) return;
+      setCenterCorrections(previous => ({ ...previous, ...parsed.corrections }));
+      setMappingDirty(true);
+      setMappingConfirmed(false);
+      toast.success(`تم تحميل ${parsed.corrected} اختيار مركز للمراجعة، وبقي ${parsed.blank} صف دون تصحيح. اضغط «إعادة فحص الملف» قبل الإضافة.`, { duration: 10000 });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'تعذر قراءة ملف تصحيح المراكز.', { duration: 13000 });
+    } finally {
+      input.value = '';
+    }
+  };
+
   const downloadRosterTemplate = async () => {
     try {
       const token = getAccessToken();
@@ -1111,6 +1190,45 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
                   </Stack>
                 ))}
               </Stack>
+            </Paper>
+          )}
+
+          {employeeMode && result.mode === 'preview' &&
+            result.preview_rows.some(requiresCenterCorrection) && (
+            <Paper variant="outlined" sx={{ p: 2.5, mb: 2.5, borderRadius: 3, borderColor: 'warning.main' }}>
+              <Typography variant="h6" fontWeight={900} sx={{ mb: 1 }}>
+                {isRtl ? 'تصحيح المراكز دفعة واحدة باستخدام Excel' : 'Correct center assignments in one worksheet'}
+              </Typography>
+              <Alert severity="warning" sx={{ mb: 1.5 }}>
+                {isRtl
+                  ? 'المراكز الفارغة لا يمكن تعيينها بالتخمين أو بملء بيانات الصف السابق. افتح ملف التصحيح في Excel، واملأ رقم المركز المعتمد لكل صف من مصدر موثوق. لا يحوي القالب أسماء الموظفين أو أرقام هوياتهم؛ رقم الصف مطابق لصف Excel الأصلي.'
+                  : 'Never guess an empty center from neighboring rows. Fill the official center ID per original Excel row after verifying the source. The template contains no employee names or identity numbers.'}
+              </Alert>
+              <Stack direction={{ xs: 'column', sm: 'row' }} gap={1.25} flexWrap="wrap">
+                <Button variant="outlined" startIcon={<DownloadIcon />} disabled={loading || Boolean(result.preview_rows_truncated)}
+                  onClick={downloadCenterCorrectionTemplate}>
+                  {isRtl ? '1. تنزيل ملف الصفوف المحتاجة إلى مركز' : '1. Download rows requiring centers'}
+                </Button>
+                <Button variant="outlined" startIcon={<DownloadIcon />} disabled={loading || healthCenters.length === 0}
+                  onClick={downloadApprovedCenterDirectory}>
+                  {isRtl ? '2. تنزيل دليل المراكز المعتمدة وأرقامها' : '2. Download official center directory'}
+                </Button>
+                <Button component="label" variant="contained" color="primary" disabled={loading || healthCenters.length === 0}>
+                  {isRtl ? '3. رفع ملف تصحيح المراكز TSV' : '3. Upload filled correction TSV'}
+                  <input hidden type="file" accept=".tsv,.txt"
+                    onChange={event => void importCenterCorrectionTemplate(event)} />
+                </Button>
+              </Stack>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>
+                {isRtl
+                  ? `المراكز المختارة حاليًا: ${Object.keys(centerCorrections).length}. احفظ الملف بصيغة «نص Unicode مفصول بعلامات جدولة TSV» دون تعديل رقم الدفعة أو أرقام الصفوف أو أسماء الأعمدة. التعديلات محلية حتى إعادة الفحص، ولا يُرسل ملف التصحيح إلى GitHub.`
+                  : `Selected center assignments: ${Object.keys(centerCorrections).length}. Save as Unicode tab-separated TSV without changing the header or row numbers. Choices are local until revalidation.`}
+              </Typography>
+              {Object.keys(centerCorrections).length > 0 && <Button variant="contained"
+                color="warning" sx={{ mt: 1.5 }} disabled={loading || !file}
+                onClick={() => void upload(false)}>
+                {isRtl ? 'إعادة فحص ملف الموظفين بعد تصحيح المراكز' : 'Revalidate employee workbook after center corrections'}
+              </Button>}
             </Paper>
           )}
 
