@@ -578,6 +578,11 @@ class HealthCenterViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = HealthCenter.objects.all().order_by('region', 'city', 'name')
+        archived = str(self.request.query_params.get('archived') or '').lower() == 'true'
+        if archived and self.request.user.is_superuser:
+            queryset = queryset.filter(is_archived=True)
+        else:
+            queryset = queryset.filter(is_archived=False)
         active = str(self.request.query_params.get('active') or '').lower()
         if active in {'1', 'true', 'yes'}:
             queryset = queryset.filter(is_active=True)
@@ -603,11 +608,11 @@ class HealthCenterViewSet(viewsets.ModelViewSet):
         AuditLog.objects.create(user=str(self.request.user), action='update_health_center', model_name='HealthCenter', record_id=str(center.id))
 
     def destroy(self, request, *args, **kwargs):
-        center = self.get_object()
-        center.is_active = False
-        center.save(update_fields=['is_active', 'updated_at'])
-        AuditLog.objects.create(user=str(request.user), action='deactivate_health_center', model_name='HealthCenter', record_id=str(center.id))
-        return Response({'status': 'deactivated', 'id': center.id, 'name': center.name}, status=status.HTTP_200_OK)
+        # Legacy DELETE must not bypass explicit preview, reason, reference
+        # validation, dual confirmation and reversible archive audit.
+        return Response({
+            'detail': 'Use health-centers/archive/ with preview, reason and confirmation.',
+        }, status=status.HTTP_405_METHOD_NOT_ALLOWED)
 
 
 class EmployeeViewSet(viewsets.ModelViewSet):
