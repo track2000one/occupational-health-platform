@@ -788,7 +788,11 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
     }
     const affected = result.preview_rows.filter(requiresCenterCorrection);
     if (!affected.length) return;
-    downloadLocalTsv(buildCorrectionTemplate(affected), 'OHP_center_corrections.tsv');
+    if (!result.batch_id) {
+      toast.error('هذه المعاينة لا تحتوي على رقم دفعة للتحقق من ملف التصحيح. أعد الفحص.');
+      return;
+    }
+    downloadLocalTsv(buildCorrectionTemplate(affected, result.batch_id), 'OHP_center_corrections.tsv');
   };
 
   const downloadApprovedCenterDirectory = () => {
@@ -807,11 +811,11 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
       if (loading || result.preview_rows_truncated) {
         throw new Error('لا يمكن تطبيق التصحيحات دون معاينة كاملة للصفوف.');
       }
-      if (!/\\.(tsv|txt)$/i.test(selected.name)) {
+      if (!/\.(tsv|txt)$/i.test(selected.name)) {
         throw new Error('الملف المطلوب بصيغة TSV أو TXT فقط. لا تستخدم CSV لتجنب تغيير أرقام الصفوف.');
       }
       const parsed = parseCenterCorrectionTemplate(
-        await selected.text(), result.preview_rows, healthCenters,
+        await selected.text(), result.preview_rows, healthCenters, result.batch_id || '',
       );
       if (!parsed.corrected) {
         toast.warning('لم يتم تحديد مركز لأي صف في ملف التصحيح.');
@@ -1209,7 +1213,7 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
               </Stack>
               <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>
                 {isRtl
-                  ? `المراكز المختارة حاليًا: ${Object.keys(centerCorrections).length}. احفظ الملف بصيغة «نص Unicode مفصول بعلامات جدولة TSV» دون تعديل أرقام الصفوف أو أسماء الأعمدة. التعديلات محلية حتى إعادة الفحص، ولا يُرسل ملف التصحيح إلى GitHub.`
+                  ? `المراكز المختارة حاليًا: ${Object.keys(centerCorrections).length}. احفظ الملف بصيغة «نص Unicode مفصول بعلامات جدولة TSV» دون تعديل رقم الدفعة أو أرقام الصفوف أو أسماء الأعمدة. التعديلات محلية حتى إعادة الفحص، ولا يُرسل ملف التصحيح إلى GitHub.`
                   : `Selected center assignments: ${Object.keys(centerCorrections).length}. Save as Unicode tab-separated TSV without changing the header or row numbers. Choices are local until revalidation.`}
               </Typography>
               {Object.keys(centerCorrections).length > 0 && <Button variant="contained"
