@@ -297,6 +297,11 @@ export function CenterDirectoryMatchingPage() {
               {filtered.map(row => {
                 const choice = choices[row.ref] ?? null;
                 const status = statusDetails[row.match_status];
+                const requiresManualEvidence = !!choice && (
+                  choice !== row.chosen_center_id ||
+                  row.selection_method === 'manual' ||
+                  row.match_status === 'unmatched' || row.match_status === 'ambiguous'
+                );
                 return <TableRow key={row.ref} hover>
                   <TableCell sx={{ minWidth: 190 }}>
                     <Typography fontWeight={900}>{row.name}</Typography>
@@ -328,8 +333,7 @@ export function CenterDirectoryMatchingPage() {
                           {item.name} (ID {item.id})
                         </MenuItem>)}
                     </TextField>
-                    {!!choice && row.match_status !== 'exact' &&
-                      row.match_status !== 'alias' &&
+                    {requiresManualEvidence &&
                       <TextField fullWidth size="small" sx={{ mt: 1 }}
                         label="مرجع المطابقة اليدوية (إلزامي)"
                         value={evidence[row.ref] || ''}
