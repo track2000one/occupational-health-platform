@@ -313,6 +313,13 @@ export function HealthCentersPage() {
     {canImport && <HealthCenterExcelImportDialog
       open={importOpen} onClose={() => setImportOpen(false)}
       onImported={() => load()} />}
+    {canArchiveCenters && <HealthCenterVerificationDialog
+      center={verifyTarget ? {
+        id: verifyTarget.id, name: displayName(verifyTarget),
+        approval_status: verifyTarget.approval_status,
+      } : null}
+      onClose={() => setVerifyTarget(null)}
+      onVerified={async () => { await load(); }} />}
     {canArchiveCenters && <HealthCenterArchiveDialog
       open={archiveAction !== null}
       action={archiveAction}
@@ -473,15 +480,20 @@ export function HealthCentersPage() {
                 {org && <Chip size="small" variant="outlined"
                   color={org.is_approved ? 'success' : 'warning'}
                   label={org.is_approved ? 'ارتباط تنظيمي معتمد' : 'ارتباط قيد المراجعة'} />}
+                <Chip size="small" color={center.approval_status === 'approved' ? 'success' : 'warning'}
+                  variant="outlined"
+                  label={center.approval_status === 'approved' ? 'مرجع المركز موثق' : 'مرجع بانتظار التوثيق'} />
               </Stack>
               <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5, flex: 1 }}>
                 {[
-                  ['القطاع', org?.parent_name || 'غير مرتبط'],
+                  ['القطاع', org?.parent_name || (center.proposed_sector_name
+                    ? center.proposed_sector_name + ' (مقترح)' : 'غير مرتبط')],
                   ['مدير المركز', center.manager_name || 'بانتظار التحقق'],
                   ['الموقع', location || 'غير متوفر'],
                   ['نوع المبنى', buildingLabel(center.building_type)],
                   ['الموظفون', String(center.employee_count || 0)],
                   ['المستخدمون', String(center.user_count || 0)],
+                  ['الوحدات التابعة', String(center.center_units_count || 0)],
                 ].map(([label, value]) => (
                   <Box key={label} sx={{ minWidth: 0 }}>
                     <Typography color="text.secondary" fontSize={11.5}>{label}</Typography>
@@ -501,6 +513,11 @@ export function HealthCentersPage() {
                     {center.is_active ? 'تعطيل' : 'تفعيل'}
                   </Button>
                 </>}
+                {canArchiveCenters && !center.is_archived && <Button size="small"
+                  variant="outlined" color="primary" startIcon={<FoundationIcon />}
+                  onClick={() => setVerifyTarget(center)}>
+                  {center.approval_status === 'approved' ? 'مراجعة الاعتماد' : 'توثيق المرجع'}
+                </Button>}
                 {canArchiveCenters && <Button size="small"
                   variant="contained" color={center.is_archived ? 'success' : 'error'}
                   startIcon={center.is_archived ? <RestoreIcon /> : <DeleteIcon />}
@@ -525,7 +542,9 @@ export function HealthCentersPage() {
           <TableBody>
             {filtered.map(center => {
               const org = centerOrg.get(center.id);
-              const childUnits = org ? organizationUnits.filter(unit => unit.kind === 'unit' && unit.parent_code === org.code).length : 0;
+              const childUnits = center.center_units_count ||
+                 (org ? organizationUnits.filter(unit =>
+                   unit.kind === 'unit' && unit.parent_code === org.code).length : 0);
               const isReference = isFromSource(center);
               return <TableRow key={center.id} hover sx={{ '& .MuiTableCell-root': { verticalAlign: 'middle', py: 1.6 } }}>
                 <TableCell sx={{ minWidth: 185 }}>
