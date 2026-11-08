@@ -9,6 +9,7 @@ from .staging_employee_reset import StagingEmployeeCardResetView
 from .health_center_excel_import import HealthCenterExcelImportView
 from .health_center_archive import HealthCenterArchiveView
 from .center_foundation import (CenterFoundationRegistryView, CenterFoundationImportView, CenterFoundationDecisionView)
+from .center_directory_matching import CenterDirectoryMatchingView, CenterDirectoryMatchingHistoryView
 from .employee_registry_reset import EmployeeRegistryResetView
 from .workforce_preview import WorkforceRosterPreviewView, WorkforceCenterMappingView
 from .temporary_workforce import TemporaryWorkforceView
@@ -41,6 +42,8 @@ urlpatterns = [
     path('center-foundation/', CenterFoundationRegistryView.as_view(), name='center-foundation-registry'),
     path('center-foundation/import/', CenterFoundationImportView.as_view(), name='center-foundation-import'),
     path('center-foundation/decision/', CenterFoundationDecisionView.as_view(), name='center-foundation-decision'),
+    path('center-directory/match/', CenterDirectoryMatchingView.as_view(), name='center-directory-match'),
+    path('center-directory/match-history/', CenterDirectoryMatchingHistoryView.as_view(), name='center-directory-match-history'),
     path('employee-registry-reset/', EmployeeRegistryResetView.as_view(), name='employee-registry-reset'),
     path('organization-units/', OrganizationDirectoryView.as_view(), name='organization-units'),
     path('organization-units/import/', OrganizationImportView.as_view(), name='organization-units-import'),
