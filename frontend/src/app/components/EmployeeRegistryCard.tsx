@@ -4,6 +4,8 @@ import {
   Edit as EditIcon,
   Visibility as VisibilityIcon,
   WorkHistoryOutlined as WorkHistoryIcon,
+  DeleteOutline as DeleteIcon,
+  RestoreFromTrashOutlined as RestoreIcon,
 } from '@mui/icons-material';
 
 type EmployeeCardRecord = {
@@ -17,6 +19,9 @@ type EmployeeCardRecord = {
   age?: number;
   employment_status?: string;
   roster_source_status?: string;
+  is_archived?: boolean;
+  archive_reason?: string;
+  archived_at?: string | null;
 };
 
 type Props = {
@@ -25,6 +30,9 @@ type Props = {
   isRtl: boolean;
   canWrite: boolean;
   canManage: boolean;
+  canArchive: boolean;
+  onArchive: () => void;
+  onRestore: () => void;
   onView: () => void;
   onEdit: () => void;
   onHealthCard: () => void;
@@ -61,8 +69,8 @@ function Info({ label, value }: { label: string; value: string }) {
 }
 
 export function EmployeeRegistryCard({
-  employee, centerName, isRtl, canWrite, canManage,
-  onView, onEdit, onHealthCard, onEmploymentHistory,
+  employee, centerName, isRtl, canWrite, canManage, canArchive,
+  onArchive, onRestore, onView, onEdit, onHealthCard, onEmploymentHistory,
 }: Props) {
   const status = STATUS[employee.employment_status || 'active'] || STATUS.under_review;
   const sourceCondition = employee.roster_source_status &&
@@ -93,8 +101,8 @@ export function EmployeeRegistryCard({
             {employee.employee_number || '—'}
           </Typography>
         </Box>
-        <Chip size="small" color={status.color} variant="outlined"
-          label={isRtl ? status.ar : status.en}
+        <Chip size="small" color={employee.is_archived ? 'error' : status.color} variant="outlined"
+          label={employee.is_archived ? (isRtl ? 'محذوف (قابل للاستعادة)' : 'Archived') : (isRtl ? status.ar : status.en)}
           sx={{ fontWeight: 750, flexShrink: 0, height: 'auto', minHeight: 28,
             '& .MuiChip-label': { whiteSpace: 'normal', textAlign: 'center', py: 0.5 } }} />
       </Stack>
@@ -115,6 +123,16 @@ export function EmployeeRegistryCard({
         <Info label={isRtl ? 'رقم الجوال' : 'Mobile'} value={employee.mobile || '—'} />
         <Info label={isRtl ? 'العمر' : 'Age'} value={employee.age && employee.age > 0 ? String(employee.age) : '—'} />
       </Box>
+      {employee.is_archived && (
+        <Box sx={{ mb: 1.5, px: 1.5, py: 1, borderRadius: 2, background: '#FFF1F1', border: '1px solid #F0B7B7' }}>
+          <Typography sx={{ fontSize: 12.5, fontWeight: 800, color: '#992020' }}>
+            {isRtl ? 'سبب الحذف (محفوظ في سجل الإجراءات):' : 'Deletion reason (retained in audit trail):'}
+          </Typography>
+          <Typography sx={{ fontSize: 13, color: '#7D2020', overflowWrap: 'anywhere' }}>
+            {employee.archive_reason || '—'}
+          </Typography>
+        </Box>
+      )}
       {sourceCondition && (
         <Box sx={{ mb: 1.5, px: 1.5, py: 1, borderRadius: 2, background: '#FFF7E9', border: '1px solid #ECD6A7' }}>
           <Typography sx={{ fontSize: 12.5, fontWeight: 750, color: '#78501C' }}>
@@ -140,7 +158,7 @@ export function EmployeeRegistryCard({
         <Button variant="outlined" startIcon={<HealthCardIcon />} onClick={onHealthCard}>
           {isRtl ? 'البطاقة الصحية' : 'Health card'}
         </Button>
-        {canWrite && (
+        {canWrite && !employee.is_archived && (
           <Button variant="outlined" startIcon={<EditIcon />} onClick={onEdit}>
             {isRtl ? 'تعديل' : 'Edit'}
           </Button>
@@ -148,6 +166,24 @@ export function EmployeeRegistryCard({
         {canManage && (
           <Button variant="outlined" startIcon={<WorkHistoryIcon />} onClick={onEmploymentHistory}>
             {isRtl ? 'السجل الوظيفي' : 'History'}
+          </Button>
+        )}
+        {canArchive && !employee.is_archived && (
+          <Button variant="contained" color="error" startIcon={<DeleteIcon />}
+            onClick={onArchive} sx={{ '&&': {
+              bgcolor: '#C62828', color: '#fff', borderColor: '#C62828',
+              '&:hover': { bgcolor: '#9B1C1C', color: '#fff' },
+            } }}>
+            {isRtl ? 'حذف' : 'Delete'}
+          </Button>
+        )}
+        {canArchive && employee.is_archived && (
+          <Button variant="contained" color="success" startIcon={<RestoreIcon />}
+            onClick={onRestore} sx={{ '&&': {
+              bgcolor: '#217A42', color: '#fff',
+              '&:hover': { bgcolor: '#165C30', color: '#fff' },
+            } }}>
+            {isRtl ? 'استعادة' : 'Restore'}
           </Button>
         )}
       </Stack>
