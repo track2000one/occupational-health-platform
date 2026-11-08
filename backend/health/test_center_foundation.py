@@ -77,6 +77,9 @@ class CenterFoundationTests(TestCase):
             name='CI test only', national_id='9998776611',
             employee_number='CI-FOUNDATION-1', health_center=self.existing,
         )
+        # Reuse identical XLSX bytes between preview and commit:
+        # creating a new ZIP at a different second changes its SHA-256.
+        self.fixture_bytes = file_fixture().read()
         self.upload_url = '/api/center-foundation/import/'
         self.registry_url = '/api/center-foundation/'
         self.decision_url = '/api/center-foundation/decision/'
@@ -84,7 +87,14 @@ class CenterFoundationTests(TestCase):
     def post_file(self, action='preview', extra_name=None, **options):
         return self.client.post(
             self.upload_url,
-            {'file': file_fixture(extra_name=extra_name), 'action': action, **options},
+            {'file': (
+                file_fixture(extra_name=extra_name)
+                if extra_name is not None else
+                SimpleUploadedFile(
+                    'synthetic-reference-with-employee-tab.xlsx', self.fixture_bytes,
+                    content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                )
+            ), 'action': action, **options},
             format='multipart',
         )
 
