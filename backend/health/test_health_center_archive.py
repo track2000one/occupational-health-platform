@@ -44,6 +44,8 @@ class HealthCenterArchiveTests(TestCase):
             'confirm_phrase': preview['confirm_phrase'],
             'reason': self.reason, 'confirmed': True,
         }
+        if action in ('delete', 'restore'):
+            params['center_id'] = preview['center_id']
         params.update(kwargs)
         return self.call(action, **params)
 
