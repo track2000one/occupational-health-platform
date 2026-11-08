@@ -6,6 +6,7 @@ from .employee_review_bulk_activation import StagingEmployeeReviewBulkActivation
 from .employee_review_bulk_discard import StagingEmployeeReviewBulkDiscardView
 from .staging_review_center_reconciliation import StagingReviewCenterReconciliationView
 from .staging_employee_reset import StagingEmployeeCardResetView
+from .health_center_excel_import import HealthCenterExcelImportView
 from .employee_registry_reset import EmployeeRegistryResetView
 from .workforce_preview import WorkforceRosterPreviewView, WorkforceCenterMappingView
 from .temporary_workforce import TemporaryWorkforceView
@@ -33,6 +34,7 @@ urlpatterns = [
     path('employee-import-reviews/bulk-discard/', StagingEmployeeReviewBulkDiscardView.as_view(), name='employee-import-review-bulk-discard'),
     path('employee-import-reviews/center-reconciliation/', StagingReviewCenterReconciliationView.as_view(), name='employee-review-center-reconciliation'),
     path('staging-employee-card-reset/', StagingEmployeeCardResetView.as_view(), name='staging-employee-card-reset'),
+    path('health-centers/import-excel/', HealthCenterExcelImportView.as_view(), name='health-center-excel-import'),
     path('employee-registry-reset/', EmployeeRegistryResetView.as_view(), name='employee-registry-reset'),
     path('organization-units/', OrganizationDirectoryView.as_view(), name='organization-units'),
     path('organization-units/import/', OrganizationImportView.as_view(), name='organization-units-import'),
