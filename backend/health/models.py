@@ -121,6 +121,23 @@ class HealthCenterProfileAuditEvent(models.Model):
 
 
 
+class CenterDirectoryMatchingBatch(models.Model):
+    """Approved draft-only Excel matching execution with immutable provenance."""
+    source_sha256 = models.CharField(max_length=64, db_index=True)
+    fingerprint = models.CharField(max_length=64, unique=True)
+    source_filename = models.CharField(max_length=180)
+    matching_decisions = models.JSONField(default=list)
+    summary = models.JSONField(default=dict)
+    performed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL,
+        related_name='center_directory_matching_batches',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at', '-pk']
+
+
 class HealthCenterResetBatch(models.Model):
     """Reversible batch of health center soft-archives; never alters dependent rows."""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
