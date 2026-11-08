@@ -411,7 +411,7 @@ export function HealthCentersPage() {
                   startIcon={center.is_archived ? <RestoreIcon /> : <DeleteIcon />}
                   onClick={() => openCenterArchive(center.is_archived ? 'restore' : 'delete', center)}>
                   {center.is_archived ? 'استعادة' : 'حذف'}
-                </Button>
+                </Button>}
               </Stack>
             </Paper>;
           })}
@@ -479,7 +479,7 @@ export function HealthCentersPage() {
                       startIcon={center.is_archived ? <RestoreIcon/> : <DeleteIcon/>}
                       onClick={() => openCenterArchive(center.is_archived ? 'restore' : 'delete', center)}>
                       {center.is_archived ? 'استعادة' : 'حذف'}
-                    </Button>
+                    </Button>}
                   </Stack>
                 </TableCell>
               </TableRow>;
