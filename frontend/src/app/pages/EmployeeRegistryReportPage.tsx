@@ -160,6 +160,10 @@ export function EmployeeRegistryReportPage() {
     setLoadedQuery('');
     setPreviewPage(0);
     setIdentityVisibility(next);
+    if (next === 'full') {
+      setColumns(previous => previous.includes('national_id_masked')
+        ? previous : [...previous, 'national_id_masked']);
+    }
   }
   const visibleColumns = useMemo(
     () => FLEXIBLE_EMPLOYEE_COLUMNS.filter(item => columns.includes(item.key)),
@@ -453,14 +457,32 @@ export function EmployeeRegistryReportPage() {
               label={item.key === 'national_id_masked'
                 ? (identityVisibility === 'full' ? 'رقم الهوية (ظاهر)' : 'رقم الهوية (مخفي)')
                 : item.ar}
-              onClick={() => setColumns(previous => previous.includes(item.key)
-                ? previous.filter(key => key !== item.key)
-                : [...previous, item.key])} />
+              onClick={() => {
+                if (loading) return;
+                if (item.key === 'national_id_masked' &&
+                    columns.includes(item.key) && identityVisibility === 'full') {
+                  // No reason to retain sensitive payload once identity is excluded.
+                  setIdentityVisibility('masked');
+                  setReport(null);
+                  setLoadedQuery('');
+                }
+                setColumns(previous => previous.includes(item.key)
+                  ? previous.filter(key => key !== item.key)
+                  : [...previous, item.key]);
+              }} />
           ))}
         </Stack>
         <Stack direction="row" spacing={1} sx={{ mt: 1.5 }}>
-          <Button size="small" onClick={() => setColumns(DEFAULT_COLUMNS)}>الأعمدة الأساسية</Button>
-          <Button size="small" onClick={() => setColumns(FLEXIBLE_EMPLOYEE_COLUMNS.map(item => item.key))}>
+          <Button size="small" disabled={loading} onClick={() => {
+            setColumns(DEFAULT_COLUMNS);
+            if (identityVisibility === 'full') {
+              setIdentityVisibility('masked');
+              setReport(null);
+              setLoadedQuery('');
+            }
+          }}>الأعمدة الأساسية</Button>
+          <Button size="small" disabled={loading}
+            onClick={() => setColumns(FLEXIBLE_EMPLOYEE_COLUMNS.map(item => item.key))}>
             تحديد الكل
           </Button>
         </Stack>
