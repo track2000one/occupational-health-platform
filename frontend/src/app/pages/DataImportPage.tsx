@@ -49,10 +49,7 @@ import { getNationalityOptions, normalizeNationalitySearch } from '../data/emplo
 import { restoreReviewCenterId, restoreReviewNationality } from '../utils/employeeReviewValidation';
 import { StagingCenterReconciliationDialog } from './StagingCenterReconciliationDialog';
 import { EmployeeImportPreviewTable, type EmployeePreviewRow } from './EmployeeImportPreviewTable';
-import {
-  buildCenterDirectory, buildCorrectionTemplate, parseCenterCorrectionTemplate,
-  requiresCenterCorrection,
-} from '../utils/employeeCenterCorrectionTsv';
+import { EmployeeCenterQuickFixDialog } from './EmployeeCenterQuickFixDialog';
 
 // Prevent Staging imports from silently falling back to the Production API.
 const API_BASE_URL = (import.meta.env.VITE_API_URL ||
@@ -370,6 +367,7 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
   const [mappingDirty, setMappingDirty] = useState(false);
   const [mappingConfirmed, setMappingConfirmed] = useState(false);
   const [centerCorrections, setCenterCorrections] = useState<Record<string, string>>({});
+  const [centerQuickFixOpen, setCenterQuickFixOpen] = useState(false);
   const [uploadError, setUploadError] = useState('');
 
   const loadReviews = async (page: number = reviewPage) => {
@@ -768,81 +766,6 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
     setMappingConfirmed(false);
   };
 
-  const downloadLocalTsv = (content: string, filename: string) => {
-    const url = window.URL.createObjectURL(new Blob([content], {
-      type: 'text/tab-separated-values;charset=utf-8',
-    }));
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = filename;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    window.setTimeout(() => window.URL.revokeObjectURL(url), 30000);
-  };
-
-  const downloadCenterCorrectionTemplate = () => {
-    if (!result || result.mode !== 'preview' || result.preview_rows_truncated) {
-      toast.warning('أعد معاينة الملف كاملًا قبل تنزيل قالب تصحيح المراكز.');
-      return;
-    }
-    const affected = result.preview_rows.filter(requiresCenterCorrection);
-    if (!affected.length) return;
-    if (!result.batch_id) {
-      toast.error('هذه المعاينة لا تحتوي على رقم دفعة للتحقق من ملف التصحيح. أعد الفحص.');
-      return;
-    }
-    downloadLocalTsv(buildCorrectionTemplate(affected, result.batch_id), 'OHP_center_corrections.tsv');
-  };
-
-  const downloadApprovedCenterDirectory = () => {
-    if (!healthCenters.some(center => center.is_active !== false)) {
-      toast.warning('تعذر تحميل دليل المراكز المعتمدة؛ أعد فتح الصفحة أو تحقق من الاتصال.');
-      return;
-    }
-    downloadLocalTsv(buildCenterDirectory(healthCenters), 'OHP_approved_centers.tsv');
-  };
-
-  const importCenterCorrectionTemplate = async (event: ChangeEvent<HTMLInputElement>) => {
-    const input = event.target;
-    const selected = input.files?.[0];
-    if (!selected || !result || result.mode !== 'preview') return;
-    try {
-      if (loading || result.preview_rows_truncated) {
-        throw new Error('لا يمكن تطبيق التصحيحات دون معاينة كاملة للصفوف.');
-      }
-      if (!/\.(tsv|txt)$/i.test(selected.name)) {
-        throw new Error('الملف المطلوب بصيغة TSV أو TXT فقط. لا تستخدم CSV لتجنب تغيير أرقام الصفوف.');
-      }
-      const binary = new Uint8Array(await selected.arrayBuffer());
-      // Excel for Windows may save "Unicode Text" as UTF-16LE .txt;
-      // browser File.text() assumes UTF-8 and would corrupt Arabic labels.
-      const correctionText = binary[0] === 0xff && binary[1] === 0xfe
-        ? new TextDecoder('utf-16le').decode(binary.subarray(2))
-        : binary[0] === 0xfe && binary[1] === 0xff
-          ? new TextDecoder('utf-16be').decode(binary.subarray(2))
-          : new TextDecoder('utf-8').decode(binary);
-      const parsed = parseCenterCorrectionTemplate(
-        correctionText, result.preview_rows, healthCenters, result.batch_id || '',
-      );
-      if (!parsed.corrected) {
-        toast.warning('لم يتم تحديد مركز لأي صف في ملف التصحيح.');
-        return;
-      }
-      if (!window.confirm(
-        `سيُطبّق اختيار المركز على ${parsed.corrected} صف من الملف الحالي لأغراض إعادة الفحص فقط. لن يتم إنشاء موظفين أو تعديل سجلاتهم الآن. هل تؤكد اختيارك؟`
-      )) return;
-      setCenterCorrections(previous => ({ ...previous, ...parsed.corrections }));
-      setMappingDirty(true);
-      setMappingConfirmed(false);
-      toast.success(`تم تحميل ${parsed.corrected} اختيار مركز للمراجعة، وبقي ${parsed.blank} صف دون تصحيح. اضغط «إعادة فحص الملف» قبل الإضافة.`, { duration: 10000 });
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'تعذر قراءة ملف تصحيح المراكز.', { duration: 13000 });
-    } finally {
-      input.value = '';
-    }
-  };
-
   const downloadRosterTemplate = async () => {
     try {
       const token = getAccessToken();
@@ -865,7 +788,10 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
     }
   };
 
-  const upload = async (commitOverride?: boolean, selectedFile?: File) => {
+  const upload = async (
+    commitOverride?: boolean, selectedFile?: File,
+    correctionOverrides?: Record<string, string>,
+  ) => {
     if (loading) return;
     const uploadFile = selectedFile || file;
     if (!uploadFile) {
@@ -897,7 +823,7 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
       form.append('file', uploadFile);
       form.append('commit', shouldCommit ? 'true' : 'false');
       if (employeeMode) {
-        form.append('centerCorrections', JSON.stringify(selectedFile ? {} : centerCorrections));
+        form.append('centerCorrections', JSON.stringify(selectedFile ? {} : (correctionOverrides ?? centerCorrections)));
         form.append('employeeImportMode', employeeImportMode);
         if (employeeImportMode === 'template') form.append('sheetName', 'Employees');
         else if (!selectedFile && employeeSheetName) form.append('sheetName', employeeSheetName);
@@ -949,19 +875,10 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
   };
 
   const importedTotal = result ? getImportedTotal(result.summary) : 0;
-  // Group only exact, unmatched source labels. Each mapping is explicitly
-  // chosen by the administrator and applied to those source rows only.
-  const unmatchedCenterGroups = result?.mode === 'preview' && employeeMode
-    ? Object.entries(result.preview_rows.reduce<Record<string, number[]>>((groups, row) => {
-        const source = String(row.health_center || '').trim();
-        if (source && row.health_center_matched === false && row.issues?.some(issue =>
-          /health center|health_center|active center|more than one active center/i.test(issue))) {
-          (groups[source] ||= []).push(row.row);
-        }
-        return groups;
-      }, {})).map(([name, rows]) => ({ name, rows }))
-      .sort((a, b) => b.rows.length - a.rows.length)
-    : [];
+  const unresolvedCenters = employeeMode && result?.mode === 'preview'
+    ? result.preview_rows.filter(row => row.health_center_matched === false &&
+      row.issues?.some(issue => /health center|health_center|active center/i.test(issue))).length
+    : 0;
 
   return (
     <Box sx={{ direction: isRtl ? 'rtl' : 'ltr' }}>
@@ -1193,94 +1110,40 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
             </Paper>
           )}
 
-          {employeeMode && result.mode === 'preview' &&
-            result.preview_rows.some(requiresCenterCorrection) && (
-            <Paper variant="outlined" sx={{ p: 2.5, mb: 2.5, borderRadius: 3, borderColor: 'warning.main' }}>
-              <Typography variant="h6" fontWeight={900} sx={{ mb: 1 }}>
-                {isRtl ? 'تصحيح المراكز دفعة واحدة باستخدام Excel' : 'Correct center assignments in one worksheet'}
-              </Typography>
-              <Alert severity="warning" sx={{ mb: 1.5 }}>
-                {isRtl
-                  ? 'المراكز الفارغة لا يمكن تعيينها بالتخمين أو بملء بيانات الصف السابق. افتح ملف التصحيح في Excel، واملأ رقم المركز المعتمد لكل صف من مصدر موثوق. لا يحوي القالب أسماء الموظفين أو أرقام هوياتهم؛ رقم الصف مطابق لصف Excel الأصلي.'
-                  : 'Never guess an empty center from neighboring rows. Fill the official center ID per original Excel row after verifying the source. The template contains no employee names or identity numbers.'}
-              </Alert>
-              <Stack direction={{ xs: 'column', sm: 'row' }} gap={1.25} flexWrap="wrap">
-                <Button variant="outlined" startIcon={<DownloadIcon />} disabled={loading || Boolean(result.preview_rows_truncated)}
-                  onClick={downloadCenterCorrectionTemplate}>
-                  {isRtl ? '1. تنزيل ملف الصفوف المحتاجة إلى مركز' : '1. Download rows requiring centers'}
-                </Button>
-                <Button variant="outlined" startIcon={<DownloadIcon />} disabled={loading || healthCenters.length === 0}
-                  onClick={downloadApprovedCenterDirectory}>
-                  {isRtl ? '2. تنزيل دليل المراكز المعتمدة وأرقامها' : '2. Download official center directory'}
-                </Button>
-                <Button component="label" variant="contained" color="primary" disabled={loading || healthCenters.length === 0}>
-                  {isRtl ? '3. رفع ملف تصحيح المراكز TSV' : '3. Upload filled correction TSV'}
-                  <input hidden type="file" accept=".tsv,.txt"
-                    onChange={event => void importCenterCorrectionTemplate(event)} />
+          {employeeMode && result.mode === 'preview' && unresolvedCenters > 0 && (
+            <Paper variant="outlined" sx={{ p: 2.5, mb: 2.5, borderRadius: 3, borderColor: 'primary.light' }}>
+              <Stack direction={{ xs: 'column', sm: 'row' }} alignItems={{ xs: 'stretch', sm: 'center' }}
+                justifyContent="space-between" gap={2}>
+                <Box>
+                  <Typography variant="h6" fontWeight={900}>
+                    {isRtl ? 'تصحيح مراكز الموظفين' : 'Correct employee centers'}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {isRtl
+                      ? `${unresolvedCenters} صفًا يحتاج تحديد المركز. صحّحها مباشرة من داخل المنصة دون تنزيل أي ملفات.`
+                      : `${unresolvedCenters} rows need an approved center. Fix them here; no files to download.`}
+                  </Typography>
+                </Box>
+                <Button variant="contained" size="large" disabled={loading || !file}
+                  onClick={() => setCenterQuickFixOpen(true)}>
+                  {isRtl ? 'تصحيح المراكز الآن' : 'Correct centers now'}
                 </Button>
               </Stack>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>
-                {isRtl
-                  ? `المراكز المختارة حاليًا: ${Object.keys(centerCorrections).length}. احفظ الملف بصيغة «نص Unicode مفصول بعلامات جدولة TSV» دون تعديل رقم الدفعة أو أرقام الصفوف أو أسماء الأعمدة. التعديلات محلية حتى إعادة الفحص، ولا يُرسل ملف التصحيح إلى GitHub.`
-                  : `Selected center assignments: ${Object.keys(centerCorrections).length}. Save as Unicode tab-separated TSV without changing the header or row numbers. Choices are local until revalidation.`}
-              </Typography>
-              {Object.keys(centerCorrections).length > 0 && <Button variant="contained"
-                color="warning" sx={{ mt: 1.5 }} disabled={loading || !file}
-                onClick={() => void upload(false)}>
-                {isRtl ? 'إعادة فحص ملف الموظفين بعد تصحيح المراكز' : 'Revalidate employee workbook after center corrections'}
-              </Button>}
-            </Paper>
-          )}
-
-          {employeeMode && result.mode === 'preview' && unmatchedCenterGroups.length > 0 && (
-            <Paper variant="outlined" sx={{ p: 2.5, mb: 2.5, borderRadius: 3, borderColor: 'primary.light' }}>
-              <Typography variant="h6" fontWeight={900} sx={{ mb: 0.75 }}>
-                {isRtl ? 'مطابقة أسماء المراكز غير المعروفة (حسب الاسم الوارد في Excel)' : 'Match unmatched Excel health center labels'}
-              </Typography>
-              <Alert severity="info" sx={{ mb: 2 }}>
-                {isRtl
-                  ? 'اختر المركز المعتمد بنفسك لكل اسم مصدر. سيطبّق الاختيار فقط على الصفوف التي تحمل الاسم نفسه؛ لا توجد مطابقة تلقائية أو تعديل لسجلات الموظفين الحالية. بعد المطابقة اضغط «إعادة فحص الملف».'
-                  : 'Choose a real approved center for each exact source label. No automatic guessing or change to existing employees. Revalidate before import.'}
-              </Alert>
-              <Grid container spacing={1.5}>
-                {unmatchedCenterGroups.map(group => {
-                  const chosen = String(centerCorrections[String(group.rows[0])] || '');
-                  const value = group.rows.every(row => centerCorrections[String(row)] === chosen) ? chosen : '';
-                  return (
-                    <Grid key={group.name} size={{ xs: 12, md: 6 }}>
-                      <TextField select fullWidth disabled={loading}
-                        label={`${group.name} (${group.rows.length} ${isRtl ? 'صف' : 'rows'})`}
-                        value={value}
-                        onChange={event => {
-                          const centerId = event.target.value;
-                          setCenterCorrections(current => {
-                            const next = { ...current };
-                            for (const row of group.rows) {
-                              if (centerId) next[String(row)] = centerId;
-                              else delete next[String(row)];
-                            }
-                            return next;
-                          });
-                          setMappingDirty(true);
-                          setMappingConfirmed(false);
-                        }}
-                        helperText={isRtl ? 'اختيار يدوي صريح؛ لا تستخدم مركزًا مشابهًا دون التأكد' : 'Manual exact-source mapping; verify the right center'}
-                      >
-                        <MenuItem value="">{isRtl ? 'لم تتم المطابقة' : 'Not mapped'}</MenuItem>
-                        {healthCenters.filter(center => center.is_active !== false).map(center => (
-                          <MenuItem key={center.id} value={String(center.id)}>
-                            {center.name_ar || center.name}
-                          </MenuItem>
-                        ))}
-                      </TextField>
-                    </Grid>
-                  );
-                })}
-              </Grid>
-              <Button sx={{ mt: 2 }} variant="contained" color="primary" disabled={loading || !file}
-                onClick={() => void upload(false)}>
-                {isRtl ? 'إعادة فحص الملف بعد تصحيح المراكز' : 'Revalidate after matching centers'}
-              </Button>
+              <EmployeeCenterQuickFixDialog
+                open={centerQuickFixOpen}
+                isRtl={isRtl}
+                loading={loading}
+                previewComplete={!result.preview_rows_truncated}
+                rows={result.preview_rows}
+                centers={healthCenters}
+                corrections={centerCorrections}
+                onClose={() => setCenterQuickFixOpen(false)}
+                onRevalidate={updated => {
+                  setCenterCorrections(updated);
+                  setCenterQuickFixOpen(false);
+                  void upload(false, undefined, updated);
+                }}
+              />
             </Paper>
           )}
 
