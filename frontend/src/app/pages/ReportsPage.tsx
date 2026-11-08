@@ -1,12 +1,13 @@
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { useState } from 'react';
+import { useNavigate } from 'react-router';
+import { useAuth } from '../context/AuthContext';
+import { PERMISSIONS } from '../data/roles';
 import {
   exportPeriodicExaminationPdf,
   exportVaccinationCoveragePdf,
   exportLabCompletionPdf,
-  exportEmployeesPdf,
-  type EmployeeRow
 } from '../utils/professionalPdfExport';
 import {
   Box,
@@ -38,12 +39,13 @@ const COLORS = ['#667eea', '#764ba2', '#f093fb', '#4facfe', '#43e97b', '#fa709a'
 
 export function ReportsPage() {
   const { t, i18n } = useTranslation();
+  const navigate = useNavigate();
+  const { can } = useAuth();
   const isRtl = i18n.language === 'ar';
 
   const [loadingPeriodic, setLoadingPeriodic] = useState(false);
   const [loadingVaccination, setLoadingVaccination] = useState(false);
   const [loadingLab, setLoadingLab] = useState(false);
-  const [loadingEmployees, setLoadingEmployees] = useState(false);
   const [selectedPeriod, setSelectedPeriod] = useState('2026');
 
   async function exportPeriodicExamination() {
@@ -87,53 +89,6 @@ export function ReportsPage() {
       setLoadingLab(false);
     }
   }
-
-  async function exportEmployees() {
-    setLoadingEmployees(true);
-    const loadingToast = toast.loading(isRtl ? 'جاري إنشاء تقرير الموظفين...' : 'Generating Employee Directory...');
-    try {
-      await exportEmployeesPdf(sampleEmployees, isRtl);
-      toast.success(isRtl ? 'تم تصدير تقرير الموظفين بصيغة PDF بنجاح' : 'Employee Directory exported successfully', { id: loadingToast });
-    } catch (error) {
-      console.error('PDF export error:', error);
-      toast.error(isRtl ? 'فشل تصدير التقرير' : 'Failed to export PDF report', { id: loadingToast });
-    } finally {
-      setLoadingEmployees(false);
-    }
-  }
-
-  const sampleEmployees: EmployeeRow[] = [
-    {
-      mohId: 'MOH-001',
-      name: 'Ahmed Abdullah',
-      nationalId: '1234****90',
-      jobTitle: 'Nurse',
-      healthCenter: 'Central Hospital',
-      gender: 'male',
-      maritalStatus: 'married',
-      dateOfStart: '2010-01-15'
-    },
-    {
-      mohId: 'MOH-002',
-      name: 'Fatima Ali',
-      nationalId: '2345****12',
-      jobTitle: 'Laboratory Technician',
-      healthCenter: 'East Medical',
-      gender: 'female',
-      maritalStatus: 'single',
-      dateOfStart: '2015-06-20'
-    },
-    {
-      mohId: 'MOH-003',
-      name: 'Mohammed Hassan',
-      nationalId: '3456****34',
-      jobTitle: 'Doctor',
-      healthCenter: 'West Regional',
-      gender: 'male',
-      maritalStatus: 'married',
-      dateOfStart: '2012-03-10'
-    }
-  ];
 
   const coverageByCenter = [
     { center: 'Central Hospital', target: 120, examined: 102, percentage: 85 },
@@ -295,26 +250,26 @@ export function ReportsPage() {
                   </Box>
                   <Typography variant="body2" sx={{ opacity: 0.95, mb: 1.5, lineHeight: 1.6 }}>
                     {isRtl
-                      ? 'تقرير تفصيلي يحتوي على جميع بيانات الموظفين، الوظائف، المراكز الصحية، والمعلومات الشخصية'
-                      : 'Detailed report containing all employee data, job titles, health centers, and personal information'}
+                      ? 'تقرير فعلي من قاعدة البيانات، مع تصفية وفرز واختيار أعمدة وطباعة أو حفظ PDF'
+                      : 'Live employee directory with filters, sorting, column selection and print/PDF'}
                   </Typography>
                   <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', flexDirection: isRtl ? 'row-reverse' : 'row' }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                       <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: 'rgba(255,255,255,0.8)' }} />
                       <Typography variant="caption" sx={{ opacity: 0.9 }}>
-                        {isRtl ? '295 موظف' : '295 Employees'}
+                        {isRtl ? 'بيانات مباشرة' : 'Live Data'}
                       </Typography>
                     </Box>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                       <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: 'rgba(255,255,255,0.8)' }} />
                       <Typography variant="caption" sx={{ opacity: 0.9 }}>
-                        {isRtl ? '12 مركز صحي' : '12 Health Centers'}
+                        {isRtl ? 'جميع المراكز المعتمدة' : 'Approved Centers'}
                       </Typography>
                     </Box>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                       <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: 'rgba(255,255,255,0.8)' }} />
                       <Typography variant="caption" sx={{ opacity: 0.9 }}>
-                        {isRtl ? 'محدّث اليوم' : 'Updated Today'}
+                        {isRtl ? 'حسب معاييرك' : 'Customizable'}
                       </Typography>
                     </Box>
                   </Box>
@@ -326,9 +281,9 @@ export function ReportsPage() {
                 fullWidth
                 variant="contained"
                 size="large"
-                disabled={loadingEmployees}
-                startIcon={loadingEmployees ? <CircularProgress size={22} sx={{ color: '#667eea' }} /> : <FileDownloadIcon />}
-                onClick={exportEmployees}
+                disabled={!can(PERMISSIONS.EXPORT_REPORTS)}
+                startIcon={<FileDownloadIcon />}
+                onClick={() => navigate('/employees/report')}
                 sx={{
                   py: 2,
                   bgcolor: '#fff',
@@ -347,7 +302,7 @@ export function ReportsPage() {
                   }
                 }}
               >
-                {loadingEmployees ? (isRtl ? 'جاري التصدير...' : 'Exporting...') : (isRtl ? 'تصدير PDF' : 'Export PDF')}
+                {isRtl ? 'إعداد تقرير الموظفين' : 'Build Employee Report'}
               </Button>
             </Grid>
           </Grid>
