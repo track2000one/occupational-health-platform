@@ -40,6 +40,8 @@ import {
   Visibility as VisibilityIcon,
   BadgeOutlined as HealthCardIcon,
   DeleteSweepOutlined as ResetTestCardsIcon,
+  DeleteOutline as DeleteEmployeeIcon,
+  RestoreFromTrashOutlined as RestoreEmployeeIcon,
 } from '@mui/icons-material';
 import { toast } from 'sonner';
 import { authFetch, getAccessToken, useAuth } from '../context/AuthContext';
@@ -134,6 +136,9 @@ type ApiEmployee = {
   risk_level?: RiskLevel;
   employment_status?: 'active' | 'transferred' | 'retired' | 'separated' | 'under_review';
   roster_source_status?: string;
+  is_archived?: boolean;
+  archive_reason?: string;
+  archived_at?: string | null;
   created_at?: string;
   updated_at?: string;
 };
@@ -350,7 +355,14 @@ export function EmployeesPage() {
   const [resetConfirmation, setResetConfirmation] = useState('');
   const [resetAcknowledged, setResetAcknowledged] = useState(false);
   const [resetBusy, setResetBusy] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
+  const [archiveTarget, setArchiveTarget] = useState<ApiEmployee | null>(null);
+  const [archiveAction, setArchiveAction] = useState<'archive' | 'restore'>('archive');
+  const [archiveReason, setArchiveReason] = useState('');
+  const [archiveConfirmed, setArchiveConfirmed] = useState(false);
+  const [archiveBusy, setArchiveBusy] = useState(false);
 
+  const canArchive = can(PERMISSIONS.MANAGE_USERS);
   const canWrite = can(PERMISSIONS.UPDATE_EMPLOYEE) || can(PERMISSIONS.UPDATE_EMPLOYEE_BASIC);
   const ageValue = calculateAgeFromIso(form.date_of_birth);
   const computedAge = ageValue === null ? '' : String(ageValue);
@@ -371,6 +383,7 @@ export function EmployeesPage() {
     setConnectionError('');
     try {
       const query = new URLSearchParams({ page: String(page + 1) });
+      if (showArchived && canArchive) query.set('archived', 'true');
       if (searchTerm.trim()) query.set('search', searchTerm.trim());
       if (centerFilter !== 'all') query.set('health_center_id', centerFilter);
       if (statusFilter !== 'all') query.set('employment_status', statusFilter);
@@ -416,7 +429,7 @@ export function EmployeesPage() {
     const timer = setTimeout(() => { void loadData(); }, searchTerm ? 350 : 0);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, searchTerm, centerFilter, statusFilter, sourceFilter, sortMode]);
+  }, [page, searchTerm, centerFilter, statusFilter, sourceFilter, sortMode, showArchived, canArchive]);
 
   useEffect(() => { void loadCenters(); }, []);
 
@@ -593,6 +606,44 @@ export function EmployeesPage() {
         ' — أعد معاينة البيانات قبل إعادة المحاولة.');
     } finally {
       setResetBusy(false);
+    }
+  }
+
+  function openArchiveDialog(employee: ApiEmployee, action: 'archive' | 'restore') {
+    if (!canArchive) return;
+    setArchiveTarget(employee);
+    setArchiveAction(action);
+    setArchiveReason('');
+    setArchiveConfirmed(false);
+  }
+
+  async function confirmArchiveAction() {
+    if (!archiveTarget || !canArchive || !archiveConfirmed || archiveBusy) return;
+    const reason = archiveReason.trim();
+    if (reason.length < 10 || reason.length > 500) {
+      toast.error(isRtl ? 'يرجى كتابة سبب واضح من 10 إلى 500 حرف.' : 'Provide a 10–500 character reason.');
+      return;
+    }
+    setArchiveBusy(true);
+    try {
+      await apiRequest(`/employees/${archiveTarget.id}/${archiveAction}/`, {
+        method: 'POST',
+        body: JSON.stringify({ reason, confirmed: true }),
+      });
+      setArchiveTarget(null);
+      setArchiveReason('');
+      setArchiveConfirmed(false);
+      if (employees.length === 1 && page > 0) setPage(page - 1);
+      else await loadData();
+      toast.success(
+        archiveAction === 'archive'
+          ? (isRtl ? 'تم حذف الموظف من القائمة وحفظ سبب الحذف دون حذف ملفه الصحي.' : 'Employee archived; reason and health history preserved.')
+          : (isRtl ? 'تمت استعادة الموظف إلى القائمة، مع توثيق السبب.' : 'Employee restored and action recorded.'),
+      );
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : (isRtl ? 'تعذر تنفيذ العملية.' : 'Action failed.'));
+    } finally {
+      setArchiveBusy(false);
     }
   }
 
