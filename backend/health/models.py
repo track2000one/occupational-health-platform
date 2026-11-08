@@ -1,4 +1,5 @@
 from datetime import date
+import uuid
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.conf import settings
@@ -315,6 +316,33 @@ class Employee(models.Model):
     def __str__(self):
         return self.name
 
+
+
+
+class EmployeeRegistryResetBatch(models.Model):
+    """Administrative record for a reversible, bulk employee-registry reset.
+
+    Never deletes Employee rows or associated clinical records. Identity
+    uniqueness and prior audit history are preserved intentionally.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    employee_ids = models.JSONField(default=list)
+    reason = models.TextField()
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, related_name='employee_registry_resets',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    applied_at = models.DateTimeField()
+    restored_at = models.DateTimeField(null=True, blank=True)
+    restored_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='restored_employee_registry_resets',
+    )
+    restoration_reason = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
 
 
 class EmployeeArchiveEvent(models.Model):

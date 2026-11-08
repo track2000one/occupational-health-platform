@@ -78,6 +78,17 @@ type ResetResult = {
 };
 const RESET_CONFIRMATION_TEXT = 'تصفير بطاقات الاختبار';
 
+// Unlike the QA-only Staging reset, Production uses reversible employee
+// archival. No employee identity or medical record is ever physically deleted.
+type RegistryBulkPreview =
+  | { mode: 'preview'; total_active: number; will_archive: number; already_archived: number;
+      restorable_from_last_batch: number; confirm_phrase: string; preview_token: string; notice: string }
+  | { mode: 'restore_preview'; restorable: number; previous_batch_total: number;
+      confirm_phrase: string; preview_token: string };
+type RegistryBulkResult =
+  | { mode: 'archived'; archived_count: number; active_count: number; batch_id: string }
+  | { mode: 'restored'; restored_count: number; batch_id: string };
+
 type Gender = 'male' | 'female';
 type MaritalStatus = '' | 'single' | 'married' | 'divorced' | 'widowed';
 type ExamStatus = 'completed' | 'incomplete' | 'overdue';
@@ -328,7 +339,7 @@ async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T
 
 export function EmployeesPage() {
   const { t, i18n } = useTranslation();
-  const { can } = useAuth();
+  const { can, user } = useAuth();
   const navigate = useNavigate();
   const isRtl = i18n.language === 'ar';
 
@@ -356,6 +367,12 @@ export function EmployeesPage() {
   const [resetConfirmation, setResetConfirmation] = useState('');
   const [resetAcknowledged, setResetAcknowledged] = useState(false);
   const [resetBusy, setResetBusy] = useState(false);
+  const [registryResetDialog, setRegistryResetDialog] = useState(false);
+  const [registryResetBusy, setRegistryResetBusy] = useState(false);
+  const [registryResetPreview, setRegistryResetPreview] = useState<RegistryBulkPreview | null>(null);
+  const [registryResetReason, setRegistryResetReason] = useState('');
+  const [registryResetPhrase, setRegistryResetPhrase] = useState('');
+  const [registryResetConfirmed, setRegistryResetConfirmed] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [archiveTarget, setArchiveTarget] = useState<ApiEmployee | null>(null);
   const [archiveAction, setArchiveAction] = useState<'archive' | 'restore'>('archive');
@@ -364,6 +381,7 @@ export function EmployeesPage() {
   const [archiveBusy, setArchiveBusy] = useState(false);
 
   const canArchive = can(PERMISSIONS.MANAGE_USERS);
+  const canBulkReset = canArchive && user?.isSuperuser === true;
   const canWrite = can(PERMISSIONS.UPDATE_EMPLOYEE) || can(PERMISSIONS.UPDATE_EMPLOYEE_BASIC);
   const ageValue = calculateAgeFromIso(form.date_of_birth);
   const computedAge = ageValue === null ? '' : String(ageValue);
@@ -560,6 +578,73 @@ export function EmployeesPage() {
     }
   }
 
+  async function prepareRegistryReset(action: 'preview' | 'restore_preview' = 'preview') {
+    if (!canBulkReset || registryResetBusy) return;
+    setRegistryResetDialog(true);
+    setRegistryResetBusy(true);
+    setRegistryResetPreview(null);
+    setRegistryResetReason('');
+    setRegistryResetPhrase('');
+    setRegistryResetConfirmed(false);
+    try {
+      const preview = await apiRequest<RegistryBulkPreview>('/employee-registry-reset/', {
+        method: 'POST',
+        body: JSON.stringify({ action }),
+      });
+      setRegistryResetPreview(preview);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'تعذرت معاينة التصفير.');
+    } finally {
+      setRegistryResetBusy(false);
+    }
+  }
+
+  async function confirmRegistryReset() {
+    const preview = registryResetPreview;
+    if (!preview || !canBulkReset || registryResetBusy || !registryResetConfirmed ||
+        registryResetReason.trim().length < 20 ||
+        registryResetReason.trim().length > 500 ||
+        registryResetPhrase !== preview.confirm_phrase) return;
+    const count = preview.mode === 'preview' ? preview.will_archive : preview.restorable;
+    if (!count) return;
+    // Last native confirmation to guard against accidental button presses.
+    if (!window.confirm(
+      preview.mode === 'preview'
+        ? `سيتم إخفاء ${count} سجل من قائمة الموظفين النشطين مع الاحتفاظ بالملفات الصحية والهوية. هل تؤكد تنفيذ التصفير القابل للاستعادة؟`
+        : `ستتم استعادة ${count} موظفًا من آخر دفعة تصفير. هل تؤكد الاستعادة؟`,
+    )) return;
+    setRegistryResetBusy(true);
+    try {
+      const result = await apiRequest<RegistryBulkResult>('/employee-registry-reset/', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: preview.mode === 'preview' ? 'execute' : 'restore',
+          preview_token: preview.preview_token,
+          reason: registryResetReason.trim(),
+          confirm_phrase: registryResetPhrase,
+          confirmed: true,
+        }),
+      });
+      setRegistryResetDialog(false);
+      setRegistryResetPreview(null);
+      setRegistryResetPhrase('');
+      setRegistryResetReason('');
+      setRegistryResetConfirmed(false);
+      setPage(0);
+      setShowArchived(false);
+      await loadData();
+      toast.success(result.mode === 'archived'
+        ? `تم تصفير عرض ${result.archived_count} موظفًا بأرشفتهم دون حذف سجلاتهم أو ملفاتهم الصحية.`
+        : `تمت استعادة ${result.restored_count} موظفًا من دفعة التصفير.`, { duration: 9000 });
+    } catch (error) {
+      setRegistryResetPreview(null);
+      toast.error((error instanceof Error ? error.message : 'تعذّر تنفيذ الإجراء.') +
+        ' أعد المعاينة قبل أي محاولة جديدة.', { duration: 10000 });
+    } finally {
+      setRegistryResetBusy(false);
+    }
+  }
+
   async function prepareTestCardReset(scope: ResetScope = resetScope) {
     setResetBusy(true);
     setResetScope(scope);
@@ -709,6 +794,12 @@ export function EmployeesPage() {
               {showArchived
                 ? (isRtl ? 'العودة إلى الموظفين' : 'Back to Employees')
                 : (isRtl ? 'الموظفون المحذوفون' : 'Archived Employees')}
+            </Button>
+          )}
+          {canBulkReset && !IS_STAGING_UI && (
+            <Button variant="outlined" color="error" startIcon={<ResetTestCardsIcon />}
+              disabled={registryResetBusy} onClick={() => void prepareRegistryReset('preview')}>
+              {isRtl ? 'تصفير' : 'Reset'}
             </Button>
           )}
           {IS_STAGING_UI && can(PERMISSIONS.MANAGE_USERS) && (
@@ -1031,6 +1122,105 @@ export function EmployeesPage() {
                 ? (isRtl ? 'تأكيد الحذف الآمن' : 'Confirm deletion')
                 : (isRtl ? 'تأكيد الاستعادة' : 'Confirm restore')}
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={registryResetDialog}
+        onClose={() => !registryResetBusy && setRegistryResetDialog(false)}
+        maxWidth="sm" fullWidth dir={isRtl ? 'rtl' : 'ltr'}
+        PaperProps={{ sx: { borderRadius: 3 } }}>
+        <DialogTitle sx={{ fontWeight: 900, color: '#B71C1C' }}>
+          {isRtl ? 'تصفير سجل الموظفين (قابل للاستعادة)' : 'Reversible employee registry reset'}
+        </DialogTitle>
+        <DialogContent dividers>
+          <Stack gap={2}>
+            <Alert severity="warning">
+              <strong>تنبيه:</strong> هذا الإجراء لا يحذف الموظفين نهائيًا، بل ينقل سجلاتهم
+              إلى «الموظفون المحذوفون». لا يمس ملفاتهم الصحية أو تاريخهم الوظيفي.
+              وتبقى الهويات والرقم الوظيفي محفوظة، فلا يمكن إعادة استيراد السجلات
+              على أنها موظفون جدد.
+            </Alert>
+            {registryResetBusy && <CircularProgress size={22} />}
+            {registryResetPreview?.mode === 'preview' && (
+              <>
+                <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 1.5 }}>
+                  {[
+                    ['بطاقات نشطة حاليًا', registryResetPreview.total_active],
+                    ['سيجري تصفيرها', registryResetPreview.will_archive],
+                    ['مؤرشفة مسبقًا', registryResetPreview.already_archived],
+                    ['قابلة لاستعادة دفعة سابقة', registryResetPreview.restorable_from_last_batch],
+                  ].map(([label, value]) => (
+                    <Paper key={String(label)} variant="outlined"
+                      sx={{ p: 1.7, textAlign: 'center', borderRadius: 2 }}>
+                      <Typography fontSize={23} fontWeight={900}>{value}</Typography>
+                      <Typography variant="caption">{label}</Typography>
+                    </Paper>
+                  ))}
+                </Box>
+                {registryResetPreview.restorable_from_last_batch > 0 && (
+                  <Button variant="outlined" color="success"
+                    disabled={registryResetBusy}
+                    onClick={() => void prepareRegistryReset('restore_preview')}>
+                    {isRtl ? 'استعادة آخر دفعة تصفير' : 'Restore the last reset batch'}
+                  </Button>
+                )}
+              </>
+            )}
+            {registryResetPreview?.mode === 'restore_preview' && (
+              <Alert severity="info">
+                سيتم استعادة {registryResetPreview.restorable} موظفًا من أصل
+                {registryResetPreview.previous_batch_total} موظفًا في آخر دفعة.
+                لا تشمل العملية أي سجلات مؤرشفة يدويًا خارج تلك الدفعة.
+              </Alert>
+            )}
+            {registryResetPreview && (
+              <>
+                <TextField fullWidth multiline required rows={3}
+                  label={registryResetPreview.mode === 'preview' ? 'سبب التصفير *' : 'سبب الاستعادة *'}
+                  placeholder="اكتب المبرر الإداري المعتمد دون بيانات صحية أو تفاصيل حساسة."
+                  value={registryResetReason} disabled={registryResetBusy}
+                  onChange={event => setRegistryResetReason(event.target.value)}
+                  inputProps={{ maxLength: 500 }}
+                  helperText={`20–500 حرف. (${registryResetReason.trim().length}/500)`} />
+                <TextField fullWidth required disabled={registryResetBusy}
+                  label="اكتب عبارة التأكيد كما تظهر أدناه"
+                  value={registryResetPhrase}
+                  onChange={event => setRegistryResetPhrase(event.target.value)}
+                  helperText={registryResetPreview.confirm_phrase} />
+                <FormControlLabel
+                  control={<Checkbox checked={registryResetConfirmed}
+                    disabled={registryResetBusy}
+                    onChange={(_, checked) => setRegistryResetConfirmed(checked)}/>}
+                  label="أؤكد صحة العدد وسبب الإجراء، وأعلم أنه سيُوثّق في سجل العمليات." />
+              </>
+            )}
+            {!registryResetPreview && !registryResetBusy && (
+              <Button variant="outlined" onClick={() => void prepareRegistryReset('preview')}>
+                إعادة معاينة العدد
+              </Button>
+            )}
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ p: 2, gap: 1 }}>
+          <Button disabled={registryResetBusy} onClick={() => setRegistryResetDialog(false)}>
+            إلغاء
+          </Button>
+          {registryResetPreview && (
+            <Button variant="contained"
+              color={registryResetPreview.mode === 'preview' ? 'error' : 'success'}
+              disabled={registryResetBusy || !registryResetConfirmed ||
+                registryResetReason.trim().length < 20 ||
+                registryResetReason.trim().length > 500 ||
+                registryResetPhrase !== registryResetPreview.confirm_phrase ||
+                (registryResetPreview.mode === 'preview'
+                  ? registryResetPreview.will_archive === 0
+                  : registryResetPreview.restorable === 0)}
+              onClick={() => void confirmRegistryReset()}>
+              {registryResetPreview.mode === 'preview'
+                ? `تأكيد تصفير ${registryResetPreview.will_archive} موظفًا`
+                : `تأكيد استعادة ${registryResetPreview.restorable} موظفًا`}
+            </Button>
+          )}
         </DialogActions>
       </Dialog>
 
