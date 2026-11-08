@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import Q
 from rest_framework import serializers
-from .models import AuditLog, ClinicVisit, CommitteeReferral, DataImportBatch, Employee, EmployeeHealthCard, EmployeeHealthProfile, EmployeeImportReview, HealthCenter, HealthCenterAlias, InjuryCase, LabTest, OccupationalHealthAssessment, UserProfile, Vaccination
+from .models import AuditLog, ClinicVisit, CommitteeReferral, DataImportBatch, Employee, EmployeeHealthCard, EmployeeHealthProfile, EmployeeImportReview, HealthCenter, HealthCenterAlias, OrganizationUnit, InjuryCase, LabTest, OccupationalHealthAssessment, UserProfile, Vaccination
 
 
 ROLE_PERMISSIONS = {
@@ -258,7 +258,10 @@ class HealthCenterSerializer(serializers.ModelSerializer):
         return list(obj.aliases.order_by('created_at', 'pk').values_list('name', flat=True))
 
     def get_center_units_count(self, obj):
-        return obj.organization_units.filter(kind='unit', is_active=True).count()
+        return OrganizationUnit.objects.filter(
+            Q(health_center=obj) | Q(parent__health_center=obj),
+            kind=OrganizationUnit.Kind.UNIT, is_active=True,
+        ).distinct().count()
 
     def validate_name(self, value):
         value = str(value or '').strip()
