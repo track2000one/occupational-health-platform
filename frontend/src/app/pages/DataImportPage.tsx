@@ -1338,13 +1338,6 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
                         <Chip size="small" color="error" label={`${isRtl ? 'صف' : 'Row'} ${item.row}`} />
                         <Typography variant="body2" fontWeight={900}>{isRtl ? 'ملاحظات تمنع تفعيل البطاقة' : 'Issues blocking card activation'}</Typography>
                       </Stack>
-                      {employeeMode && result.mode === 'preview' && /health center|health_center/i.test(item.reason) && <TextField
-                        select fullWidth disabled={loading} sx={{ my: 1 }}
-                        label={isRtl ? 'تصحيح المركز الصحي لهذا الصف' : 'Correct health center for this row'}
-                        value={centerCorrections[String(item.row)] || ''}
-                        helperText={isRtl ? 'اختر المركز ثم أعد الفحص قبل إضافة الموظفين.' : 'Select a center, then revalidate before adding employees.'}
-                        onChange={event => { setCenterCorrections(current => ({ ...current, [String(item.row)]: event.target.value })); setMappingDirty(true); }}
-                      >{healthCenters.map(center => <MenuItem key={center.id} value={String(center.id)}>{center.name}</MenuItem>)}</TextField>}
                       <Box component="ul" sx={{ m: 0, ps: 2.5 }}>
                         {localizeImportReason(item.reason, isRtl).map((issue, issueIndex) => (
                           <Typography component="li" key={issueIndex} variant="body2" sx={{ mb: 0.35 }}>{issue}</Typography>
