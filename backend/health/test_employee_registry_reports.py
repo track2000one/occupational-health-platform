@@ -71,7 +71,7 @@ class EmployeeRegistryReportTests(TestCase):
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.data['identity_mode'], 'masked')
             self.assertIn('no-store', response['Cache-Control'])
-            self.assertEqual(response.data['results'][0]['national_id_masked'], '99••••9001')
+            self.assertEqual(next(row for row in response.data['results'] if row['employee_number'] == 'QA-AAA')['national_id_masked'], '99••••9001')
             self.assertTrue(all('national_id_full' not in row for row in response.data['results']))
 
     def test_explicit_full_identity_export_admin_is_audited(self):
@@ -79,7 +79,7 @@ class EmployeeRegistryReportTests(TestCase):
         response = self.client.get(self.url, {'include_full_national_id': 'true'})
         self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual(response.data['identity_mode'], 'full')
-        self.assertEqual(response.data['results'][0]['national_id_full'], '9998999001')
+        self.assertEqual(next(row for row in response.data['results'] if row['employee_number'] == 'QA-AAA')['national_id_full'], '9998999001')
         self.assertIn('no-store', response['Cache-Control'])
         self.assertEqual(response['Pragma'], 'no-cache')
         self.assertTrue(AuditLog.objects.filter(
@@ -114,7 +114,7 @@ class EmployeeRegistryReportTests(TestCase):
         response = self.client.get(self.url, {'include_full_national_id': 'true'})
         self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual(response.data['identity_mode'], 'full')
-        self.assertEqual(response.data['results'][0]['national_id_full'], self.a.national_id)
+        self.assertEqual(next(row for row in response.data['results'] if row['employee_number'] == 'QA-AAA')['national_id_full'], self.a.national_id)
 
     def test_report_contains_more_than_the_twenty_five_displayed_employees(self):
         self.client.force_authenticate(self.admin)
