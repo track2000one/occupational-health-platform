@@ -53,6 +53,8 @@ def row_values(sheet, width):
     if sheet.max_row and sheet.max_row > 300:
         raise ValueError('ورقة مرجع/مراجعة المراكز تحتوي صفوفًا أكثر من المتوقع (300).')
     for number, line in enumerate(sheet.iter_rows(min_row=1, max_col=width, values_only=True), 1):
+        if number > 300:
+            raise ValueError('ورقة المرجع أو المراجعة تتجاوز حد 300 صف.')
         yield number, [normalize(cell) for cell in line[:width]]
 
 
@@ -136,8 +138,15 @@ def parse_source(upload):
 
         if not refs or not cases or len(refs) > 200 or len(cases) > 200:
             raise ValueError('عدد السجلات في ورقتي المرجع والمراجعة غير متوقع.')
+        # Fingerprint ONLY the two governance tabs. Other sheets may contain
+        # confidential employee records and must not influence version identity.
+        canonical = json.dumps(
+            {'references': refs, 'review_cases': cases},
+            ensure_ascii=False, sort_keys=True, separators=(',', ':'),
+        )
         return {
-            'sha256': sha256(data).hexdigest(), 'filename': upload.name[:180],
+            'sha256': sha256(canonical.encode('utf-8')).hexdigest(),
+            'filename': upload.name[:180],
             'references': refs, 'cases': cases,
             'total_review_rows': sum(case['source_row_count'] for case in cases),
         }
