@@ -7,7 +7,7 @@ import {
 } from '@mui/material';
 import {
   Add as AddIcon, Business as BusinessIcon, Edit as EditIcon, Refresh as RefreshIcon,
-  UploadFile as UploadFileIcon,
+  UploadFile as UploadFileIcon, Apps as CardsViewIcon, TableRows as TableViewIcon,
   Search as SearchIcon, ToggleOff as ToggleOffIcon,
 } from '@mui/icons-material';
 import { toast } from 'sonner';
@@ -52,7 +52,10 @@ export function HealthCentersPage() {
   const [importOpen, setImportOpen] = useState(false);
   const [centers, setCenters] = useState<Center[]>([]);
   const [organizationUnits, setOrganizationUnits] = useState<OrgCenter[]>([]);
-  const [sourceFilter, setSourceFilter] = useState<'reference' | 'all' | 'qa' | 'other'>('reference');
+  // Default to all records: the source-reference subset may contain none.
+  const [sourceFilter, setSourceFilter] = useState<'reference' | 'all' | 'qa' | 'other'>('all');
+  const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
+  const [loadError, setLoadError] = useState('');
   const [sectorFilter, setSectorFilter] = useState('all');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -66,6 +69,7 @@ export function HealthCentersPage() {
 
   async function load() {
     setLoading(true);
+    setLoadError('');
     try {
       const first = await request<Center[] | { results: Center[]; next: string | null }>('/health-centers/?page=1');
       const all = list<Center>(first);
@@ -86,7 +90,9 @@ export function HealthCentersPage() {
         toast.warning('تعذر تحميل روابط الهيكل التنظيمي؛ أسماء المراكز ستظل متاحة.');
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to load health centers');
+      const message = error instanceof Error ? error.message : 'Failed to load health centers';
+      setLoadError(message);
+      toast.error(message);
     } finally { setLoading(false); }
   }
   useEffect(() => { void load(); }, []);
@@ -140,6 +146,14 @@ export function HealthCentersPage() {
   function openAdd() { setEditing(null); setForm(EMPTY_FORM); setOpen(true); }
   function openEdit(center: Center) { setEditing(center); setForm({ name_ar: center.name_ar || '', name_en: center.name_en || center.name || '', code: center.code || '', region: center.region || '', city: center.city || '', district: center.district || '', manager_name: center.manager_name || '', building_type: center.building_type || 'unknown', is_active: center.is_active, notes: center.notes || '' }); setOpen(true); }
   function update<K extends keyof CenterForm>(key: K, value: CenterForm[K]) { setForm(current => ({ ...current, [key]: value })); }
+  function resetFilters() {
+    setSourceFilter('all');
+    setSectorFilter('all');
+    setRegionFilter('all');
+    setCityFilter('all');
+    setStatusFilter('all');
+    setSearch('');
+  }
 
   async function save() {
     if (!form.name_ar.trim()) return toast.error(isRtl ? 'اسم المركز الصحي بالعربية مطلوب' : 'Arabic health center name is required');
@@ -190,17 +204,17 @@ export function HealthCentersPage() {
 
     <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(4,1fr)' }, gap: 2, mb: 2.5 }}>
       {[
+        [isRtl ? 'إجمالي المراكز المسجلة' : 'All registered centers', centers.length],
+        [isRtl ? 'المراكز النشطة' : 'Active centers', centers.filter(c => c.is_active).length],
         [isRtl ? 'مراكز ملف الجهات' : 'Reference centers', sourceCenters.length],
-        [isRtl ? 'مرتبطة بالهيكل المقترح' : 'Linked to organization draft', sourceCenters.filter(c => centerOrg.has(c.id)).length],
-        [isRtl ? 'بانتظار الاعتماد' : 'Pending approval', sourceCenters.filter(c => !centerOrg.get(c.id)?.is_approved).length],
         [isRtl ? 'مراكز اختبار QA' : 'QA centers', qaCenters.length],
       ].map(([label, value]) => <Paper key={String(label)} sx={{ p: 2, textAlign: 'center' }}><Typography variant="h4" fontWeight={950} color="primary.main">{value}</Typography><Typography variant="body2" color="text.secondary">{label}</Typography></Paper>)}
     </Box>
 
     <Alert severity="info" sx={{ mb: 2, fontSize: 14 }}>
-      المراكز المستوردة من ملف الجهات هي سجلات مرجعية قيد المراجعة، وليست اعتمادًا رسميًا.
-      أسماء المديرين والمواقع وأنواع المباني غير الواردة في المصدر تُترك فارغة حتى التحقق.
-      المراكز التجريبية محفوظة ويمكن عرضها من مرشح «مصدر السجل».
+      تعرض الصفحة جميع المراكز المسجلة افتراضيًا، بما فيها غير المرتبطة بملف الجهات.
+      يمكنك تصفيتها حسب المصدر والقطاع والحالة. مراكز ملف الجهات مقترحة ولا تعني اعتمادًا تنظيميًا.
+      تظل المعلومات غير المتحققة فارغة لحين مراجعتها.
     </Alert>
     <Paper sx={{ p: 2, mb: 2.5 }}><Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '2fr 1fr 1fr 1fr 1fr 1fr' }, gap: 1.5 }}>
       <TextField value={search} onChange={e => setSearch(e.target.value)} placeholder={isRtl ? 'بحث بالاسم العربي أو الإنجليزي أو الكود أو الموقع...' : 'Search Arabic/English name, code, or location...'} slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchIcon /></InputAdornment> } }} />
@@ -208,8 +222,8 @@ export function HealthCentersPage() {
       <TextField select label={isRtl ? 'المدينة' : 'City'} value={cityFilter} onChange={e => setCityFilter(e.target.value)}><MenuItem value="all">{isRtl ? 'كل المدن' : 'All cities'}</MenuItem>{cities.map(item => <MenuItem key={item} value={item}>{item}</MenuItem>)}</TextField>
       <TextField select label={isRtl ? 'مصدر السجل' : 'Data source'} value={sourceFilter}
         onChange={e => { setSourceFilter(e.target.value as typeof sourceFilter); setSectorFilter('all'); }}>
-        <MenuItem value="reference">مراكز ملف الجهات ({sourceCenters.length})</MenuItem>
         <MenuItem value="all">جميع السجلات ({centers.length})</MenuItem>
+        <MenuItem value="reference">مراكز ملف الجهات ({sourceCenters.length})</MenuItem>
         <MenuItem value="qa">المراكز التجريبية ({qaCenters.length})</MenuItem>
         <MenuItem value="other">سجلات أخرى</MenuItem>
       </TextField>
