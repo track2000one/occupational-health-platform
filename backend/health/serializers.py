@@ -303,7 +303,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
     class Meta:
         model = Employee
         fields = '__all__'
-        read_only_fields = ('employment_status',)
+        read_only_fields = ('employment_status', 'is_archived', 'archive_reason', 'archived_at', 'archived_by')
         extra_kwargs = {
             'name': {'required': True, 'allow_blank': False},
             'national_id': {'required': True, 'allow_blank': False},

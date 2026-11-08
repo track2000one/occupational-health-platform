@@ -12,7 +12,7 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from .importers import process_excel_import
-from .models import AuditLog, ClinicVisit, CommitteeReferral, DataImportBatch, Employee, EmployeeEmploymentChange, EmployeeHealthCard, EmployeeImportReview, HealthCenter, InjuryCase, LabTest, OccupationalHealthAssessment, Vaccination
+from .models import AuditLog, ClinicVisit, CommitteeReferral, DataImportBatch, Employee, EmployeeArchiveEvent, EmployeeEmploymentChange, EmployeeHealthCard, EmployeeImportReview, HealthCenter, InjuryCase, LabTest, OccupationalHealthAssessment, Vaccination
 from .serializers import AuditLogSerializer, ClinicVisitSerializer, CommitteeReferralSerializer, DataImportBatchSerializer, EmployeeHealthCardSerializer, EmployeeImportReviewSerializer, EmployeeSerializer, HealthCenterSerializer, InjuryCaseSerializer, LabTestSerializer, OccupationalHealthAssessmentSerializer, PlatformUserSerializer, VaccinationSerializer
 
 
@@ -616,8 +616,32 @@ class EmployeeViewSet(viewsets.ModelViewSet):
     permission_classes=[permissions.IsAuthenticated,IsAdminOrManagerForWrite]
     search_fields=['name','email','employee_number','national_id','mobile','job_title','birth_place','national_address']
 
+    @staticmethod
+    def _can_archive_employee(user):
+        if not user or not user.is_authenticated:
+            return False
+        if user.is_superuser:
+            return True
+        if not user.is_staff:
+            return False
+        try:
+            return user.health_profile.role == 'systemAdmin'
+        except Exception:
+            return False
+
     def get_queryset(self):
         queryset = super().get_queryset()
+        # An archived record remains stored for medical and audit history.
+        # Only the system administrator may view archived records in a separate
+        # registry. Never expose them through the normal active employee list.
+        if self.action == 'restore':
+            queryset = queryset.filter(is_archived=True)
+        elif (self.action == 'list' and
+              str(self.request.query_params.get('archived') or '').lower() == 'true' and
+              self._can_archive_employee(self.request.user)):
+            queryset = queryset.filter(is_archived=True)
+        else:
+            queryset = queryset.filter(is_archived=False)
         requested_status = str(self.request.query_params.get('employment_status') or '').strip()
         if requested_status in Employee.EmploymentStatus.values:
             queryset = queryset.filter(employment_status=requested_status)
@@ -650,14 +674,93 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         return queryset.order_by(*safe_orders.get(sort_key, safe_orders['newest']))
 
     def destroy(self, request, *args, **kwargs):
-        """Employee archives and linked medical history must never be cascade-deleted."""
+        """Never physically cascade-delete a record with health history."""
         return Response(
-            {'detail': 'Employee deletion is disabled. Use approved employment-status transitions.'},
+            {'detail': 'Permanent deletion is disabled. Use POST /employees/{id}/archive/ with a documented reason.'},
             status=status.HTTP_405_METHOD_NOT_ALLOWED,
         )
 
+    @action(detail=True, methods=['post'], url_path='archive')
+    def archive(self, request, pk=None):
+        """Remove a worker from the active registry without destroying health history."""
+        if not self._can_archive_employee(request.user):
+            return Response({'detail': 'Only a system administrator may archive an employee.'},
+                            status=status.HTTP_403_FORBIDDEN)
+        reason = str(request.data.get('reason') or '').strip()
+        if not 10 <= len(reason) <= 500:
+            return Response({'reason': 'A specific deletion reason of 10–500 characters is required.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if request.data.get('confirmed') is not True:
+            return Response({'confirmed': 'You must confirm the non-destructive removal.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        employee_id = self.get_object().pk
+        with transaction.atomic():
+            employee = Employee.objects.select_for_update().get(pk=employee_id)
+            if employee.is_archived:
+                return Response({'detail': 'This employee is already archived.'},
+                                status=status.HTTP_409_CONFLICT)
+            employee.is_archived = True
+            employee.archive_reason = reason
+            employee.archived_at = timezone.now()
+            employee.archived_by = request.user
+            employee.save(update_fields=[
+                'is_archived', 'archive_reason', 'archived_at',
+                'archived_by', 'updated_at',
+            ])
+            EmployeeArchiveEvent.objects.create(
+                employee=employee, action=EmployeeArchiveEvent.Action.ARCHIVE,
+                reason=reason, performed_by=request.user,
+            )
+            AuditLog.objects.create(
+                user=str(request.user), action='archive_employee',
+                model_name='Employee', record_id=str(employee.pk),
+            )
+        return Response({
+            'employee_id': employee.pk,
+            'status': 'archived',
+            'detail': 'The employee was removed from the active registry. Medical history was preserved.',
+        })
 
-
+    @action(detail=True, methods=['post'], url_path='restore')
+    def restore(self, request, pk=None):
+        """Restore a previously archived employee, with an audit-trail reason."""
+        if not self._can_archive_employee(request.user):
+            return Response({'detail': 'Only a system administrator may restore an employee.'},
+                            status=status.HTTP_403_FORBIDDEN)
+        reason = str(request.data.get('reason') or '').strip()
+        if not 10 <= len(reason) <= 500:
+            return Response({'reason': 'A restoration reason of 10–500 characters is required.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if request.data.get('confirmed') is not True:
+            return Response({'confirmed': 'You must confirm restoration.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        employee_id = self.get_object().pk
+        with transaction.atomic():
+            employee = Employee.objects.select_for_update().get(pk=employee_id)
+            if not employee.is_archived:
+                return Response({'detail': 'This employee is not archived.'},
+                                status=status.HTTP_409_CONFLICT)
+            employee.is_archived = False
+            employee.archive_reason = ''
+            employee.archived_at = None
+            employee.archived_by = None
+            employee.save(update_fields=[
+                'is_archived', 'archive_reason', 'archived_at',
+                'archived_by', 'updated_at',
+            ])
+            EmployeeArchiveEvent.objects.create(
+                employee=employee, action=EmployeeArchiveEvent.Action.RESTORE,
+                reason=reason, performed_by=request.user,
+            )
+            AuditLog.objects.create(
+                user=str(request.user), action='restore_employee',
+                model_name='Employee', record_id=str(employee.pk),
+            )
+        return Response({
+            'employee_id': employee.pk,
+            'status': 'restored',
+            'detail': 'The employee was restored to the active registry with medical history intact.',
+        })
 
     @action(detail=True, methods=['post'], url_path='transfer-center')
     def transfer_center(self, request, pk=None):

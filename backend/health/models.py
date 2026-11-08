@@ -261,6 +261,16 @@ class Employee(models.Model):
         default=EmploymentStatus.ACTIVE,
         db_index=True,
     )
+    # Soft deletion keeps employee identities and clinical history intact.
+    # Archived employees disappear from the active registry, but are never
+    # removed from PostgreSQL by the ordinary employee deletion workflow.
+    is_archived = models.BooleanField(default=False, db_index=True)
+    archive_reason = models.TextField(blank=True)
+    archived_at = models.DateTimeField(null=True, blank=True)
+    archived_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='archived_employee_records',
+    )
     name = models.CharField(max_length=200)
     email = models.EmailField(max_length=254, unique=True, null=True, blank=True)
     national_id = models.CharField(max_length=30, unique=True)
@@ -305,6 +315,28 @@ class Employee(models.Model):
     def __str__(self):
         return self.name
 
+
+
+class EmployeeArchiveEvent(models.Model):
+    """Append-only audit history for a reversible removal from staff lists."""
+
+    class Action(models.TextChoices):
+        ARCHIVE = 'archive', 'Archive'
+        RESTORE = 'restore', 'Restore'
+
+    employee = models.ForeignKey(
+        Employee, on_delete=models.PROTECT, related_name='archive_events',
+    )
+    action = models.CharField(max_length=12, choices=Action.choices)
+    reason = models.TextField()
+    performed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='employee_archive_events',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at', '-id']
 
 
 class EmployeeEmploymentChange(models.Model):
