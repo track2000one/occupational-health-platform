@@ -173,6 +173,12 @@ class HealthCenterArchiveView(APIView):
 
             archived = action == 'preview_restore'
             state = snapshot(archive=archived, center_id=center_id)
+            if archived:
+                # Inbound links should never block making an archived record
+                # available again; only archive/delete needs that safeguard.
+                state['blocked'] = []
+                state['blocked_count'] = 0
+                state['eligible_count'] = state['count']
             if single and not state['count']:
                 return Response({'detail': 'Center not found in the requested state.'}, status=404)
             if state['count'] > MAX_CENTERS:
