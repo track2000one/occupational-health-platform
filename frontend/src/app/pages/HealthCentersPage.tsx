@@ -234,14 +234,120 @@ export function HealthCentersPage() {
       <TextField select label={isRtl ? 'الحالة' : 'Status'} value={statusFilter} onChange={e => setStatusFilter(e.target.value as typeof statusFilter)}><MenuItem value="all">{isRtl ? 'الكل' : 'All'}</MenuItem><MenuItem value="active">{isRtl ? 'نشط' : 'Active'}</MenuItem><MenuItem value="inactive">{isRtl ? 'غير نشط' : 'Inactive'}</MenuItem></TextField>
     </Box></Paper>
 
-    <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
-      <Typography fontWeight={900} color="text.secondary">
-        عرض {filtered.length} مركزًا · القطاع من ملف المطابقة التنظيمية
-      </Typography>
-      <Chip label={sourceFilter === 'reference' ? 'البيانات الفعلية المقترحة' : 'يشمل سجلات أخرى'} color={sourceFilter === 'reference' ? 'primary' : 'default'} variant="outlined" />
+    <Stack direction={{ xs: 'column', sm: 'row' }} gap={1}
+      justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }} sx={{ mb: 1.5 }}>
+      <Box>
+        <Typography fontWeight={900} color="text.secondary">
+          عرض {filtered.length} مركزًا من إجمالي {centers.length} مركز مسجل
+        </Typography>
+        <Typography variant="caption" color="text.secondary">
+          مصدر السجل يحدد طريقة العرض فقط ولا يغيّر بيانات المراكز أو الموظفين.
+        </Typography>
+      </Box>
+      <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">
+        <Button size="small" variant="outlined" onClick={resetFilters}>
+          {isRtl ? 'إظهار جميع المراكز' : 'Show All Centers'}
+        </Button>
+        <Button size="small" variant={viewMode === 'cards' ? 'contained' : 'outlined'}
+          startIcon={<CardsViewIcon />} onClick={() => setViewMode('cards')}>
+          {isRtl ? 'بطاقات' : 'Cards'}
+        </Button>
+        <Button size="small" variant={viewMode === 'table' ? 'contained' : 'outlined'}
+          startIcon={<TableViewIcon />} onClick={() => setViewMode('table')}>
+          {isRtl ? 'جدول' : 'Table'}
+        </Button>
+      </Stack>
     </Stack>
     {loading ? <Paper sx={{ p: 6, textAlign: 'center' }}><CircularProgress /></Paper>
-      : <TableContainer component={Paper} sx={{ borderRadius: 3, overflowX: 'auto' }}>
+      : loadError ? <Alert severity="error" action={
+        <Button size="small" onClick={() => void load()}>إعادة المحاولة</Button>
+      }>تعذر تحميل دليل المراكز الصحية: {loadError}</Alert>
+      : centers.length === 0 ? <Paper sx={{ p: 4, textAlign: 'center', borderRadius: 3 }}>
+          <Typography fontWeight={900} sx={{ mb: 1 }}>لا توجد مراكز صحية مسجلة في قاعدة البيانات الحالية.</Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            يمكنك إضافة مركز صحي أو استيراد المراكز من Excel بعد التأكد من البيئة المتصلة.
+          </Typography>
+          <Stack direction="row" gap={1} justifyContent="center" flexWrap="wrap">
+            <Button variant="contained" startIcon={<AddIcon />} onClick={openAdd}>إضافة مركز صحي</Button>
+            {canImport && <Button variant="outlined" startIcon={<UploadFileIcon />}
+              onClick={() => setImportOpen(true)}>استيراد المراكز من Excel</Button>}
+          </Stack>
+        </Paper>
+      : !filtered.length ? <Paper sx={{ p: 4, textAlign: 'center', borderRadius: 3 }}>
+          <Typography fontWeight={900} sx={{ mb: 1 }}>
+            لا توجد مراكز تطابق التصفية الحالية.
+          </Typography>
+          <Typography color="text.secondary" sx={{ mb: 2 }}>
+            يوجد {centers.length} مركزًا مسجلًا بالفعل؛ غيّر المرشحات أو أظهر جميع المراكز.
+          </Typography>
+          <Button variant="contained" onClick={resetFilters}>إظهار جميع المراكز</Button>
+        </Paper>
+      : viewMode === 'cards' ? (
+        <Box sx={{ display: 'grid',
+          gridTemplateColumns: { xs: '1fr', sm: 'repeat(2,minmax(0,1fr))',
+            lg: 'repeat(3,minmax(0,1fr))' }, gap: 2 }}>
+          {filtered.map(center => {
+            const org = centerOrg.get(center.id);
+            const isReference = isFromSource(center);
+            const location = [center.region, center.city, center.district].filter(Boolean).join(' / ');
+            return <Paper key={center.id} elevation={2}
+              sx={{ p: 2.25, borderRadius: 3, minWidth: 0,
+                border: '1px solid #DAE5EF',
+                borderTop: '3px solid #1B5A82',
+                display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+              <Stack direction="row" alignItems="flex-start" justifyContent="space-between" gap={1}>
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography fontWeight={900} fontSize={16} sx={{ overflowWrap: 'anywhere' }}>
+                    {displayName(center)}
+                  </Typography>
+                  {secondaryName(center) && <Typography variant="body2" color="text.secondary">
+                    {secondaryName(center)}
+                  </Typography>}
+                  <Typography variant="caption" color="text.secondary" dir="ltr"
+                    sx={{ display: 'block', textAlign: 'start' }}>
+                    {center.code || '—'}
+                  </Typography>
+                </Box>
+                <Chip size="small" color={center.is_active ? 'success' : 'default'}
+                  label={center.is_active ? 'نشط' : 'غير نشط'} />
+              </Stack>
+              <Stack direction="row" gap={0.75} flexWrap="wrap">
+                <Chip size="small" variant="outlined" color={isReference ? 'info' : 'default'}
+                  label={isReference ? 'من ملف الجهات' : isQA(center) ? 'اختباري QA' : 'سجل آخر'} />
+                {org && <Chip size="small" variant="outlined"
+                  color={org.is_approved ? 'success' : 'warning'}
+                  label={org.is_approved ? 'ارتباط تنظيمي معتمد' : 'ارتباط قيد المراجعة'} />}
+              </Stack>
+              <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5, flex: 1 }}>
+                {[
+                  ['القطاع', org?.parent_name || 'غير مرتبط'],
+                  ['مدير المركز', center.manager_name || 'بانتظار التحقق'],
+                  ['الموقع', location || 'غير متوفر'],
+                  ['نوع المبنى', buildingLabel(center.building_type)],
+                  ['الموظفون', String(center.employee_count || 0)],
+                  ['المستخدمون', String(center.user_count || 0)],
+                ].map(([label, value]) => (
+                  <Box key={label} sx={{ minWidth: 0 }}>
+                    <Typography color="text.secondary" fontSize={11.5}>{label}</Typography>
+                    <Typography fontSize={13.5} fontWeight={750} sx={{ overflowWrap: 'anywhere' }}>
+                      {value}
+                    </Typography>
+                  </Box>
+                ))}
+              </Box>
+              <Stack direction="row" gap={1} justifyContent="flex-end"
+                sx={{ pt: 1.5, borderTop: '1px solid #E5EDF4' }}>
+                <Button size="small" variant="outlined" startIcon={<EditIcon />}
+                  onClick={() => openEdit(center)}>تعديل</Button>
+                <Button size="small" variant="outlined" color={center.is_active ? 'warning' : 'success'}
+                  startIcon={<ToggleOffIcon />} onClick={() => void toggleCenter(center)}>
+                  {center.is_active ? 'تعطيل' : 'تفعيل'}
+                </Button>
+              </Stack>
+            </Paper>;
+          })}
+        </Box>
+      ) : <TableContainer component={Paper} sx={{ borderRadius: 3, overflowX: 'auto' }}>
         <Table sx={{ minWidth: 1030 }}>
           <TableHead><TableRow sx={{ '& .MuiTableCell-root': { fontWeight: 900, fontSize: 14 } }}>
             <TableCell>اسم المركز الصحي</TableCell>
@@ -299,9 +405,7 @@ export function HealthCentersPage() {
                 </TableCell>
               </TableRow>;
             })}
-            {!filtered.length && <TableRow><TableCell colSpan={7}><Alert severity="info">
-              لا توجد مراكز مطابقة. استخدم مرشح «مصدر السجل» لعرض المراكز التجريبية أو جميع السجلات.
-            </Alert></TableCell></TableRow>}
+
           </TableBody>
         </Table>
       </TableContainer>}
