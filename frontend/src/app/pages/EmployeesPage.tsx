@@ -661,7 +661,9 @@ export function EmployeesPage() {
           <Box>
             <Typography variant="h4" fontWeight="bold">{t('employees')}</Typography>
             <Typography variant="body2" color="text.secondary">
-              {totalCount} {isRtl ? 'موظف — مرتبطة بياناتهم بقاعدة PostgreSQL' : 'employees in PostgreSQL'}
+              {totalCount} {showArchived
+                ? (isRtl ? 'سجلًا محذوفًا محفوظًا قابلًا للاستعادة' : 'archived employees available to restore')
+                : (isRtl ? 'موظف — مرتبطة بياناتهم بقاعدة PostgreSQL' : 'employees in PostgreSQL')}
             </Typography>
           </Box>
         </Box>
@@ -682,6 +684,15 @@ export function EmployeesPage() {
           {can(PERMISSIONS.MANAGE_USERS) && (
             <Button variant="outlined" startIcon={<UploadFileIcon />} onClick={() => navigate('/employees/import')}>
               {isRtl ? 'استيراد Excel' : 'Import Excel'}
+            </Button>
+          )}
+          {canArchive && (
+            <Button variant={showArchived ? 'contained' : 'outlined'} color={showArchived ? 'error' : 'inherit'}
+              startIcon={showArchived ? <RestoreEmployeeIcon /> : <DeleteEmployeeIcon />}
+              onClick={() => { setShowArchived(value => !value); setPage(0); }}>
+              {showArchived
+                ? (isRtl ? 'العودة إلى الموظفين' : 'Back to Employees')
+                : (isRtl ? 'الموظفون المحذوفون' : 'Archived Employees')}
             </Button>
           )}
           {IS_STAGING_UI && can(PERMISSIONS.MANAGE_USERS) && (
@@ -798,8 +809,11 @@ export function EmployeesPage() {
                     employee={employee}
                     centerName={getHealthCenterName(employee)}
                     isRtl={isRtl}
-                    canWrite={canWrite}
+                    canWrite={canWrite && !employee.is_archived}
                     canManage={can(PERMISSIONS.MANAGE_USERS)}
+                    canArchive={canArchive}
+                    onArchive={() => openArchiveDialog(employee, 'archive')}
+                    onRestore={() => openArchiveDialog(employee, 'restore')}
                     onView={() => openView(employee)}
                     onEdit={() => openEdit(employee)}
                     onHealthCard={() => navigate(`/employees/${employee.id}/health-card`)}
@@ -834,6 +848,11 @@ export function EmployeesPage() {
                   <TableCell>{employee.employee_number || '-'}</TableCell>
                   <TableCell>
                     <Typography variant="body2" fontWeight="bold">{employee.name}</Typography>
+                    {employee.is_archived && (
+                      <Typography variant="caption" color="error.main" sx={{ display: 'block', mt: 0.5 }}>
+                        {isRtl ? 'سبب الحذف: ' : 'Deletion reason: '}{employee.archive_reason || '—'}
+                      </Typography>
+                    )}
                     {missingEmployeeOptionalFields(employee).length > 0 && (
                       <Chip size="small" color="warning" variant="outlined" sx={{ mt: 0.6 }}
                         title={missingEmployeeOptionalFields(employee).join('، ')}
@@ -877,7 +896,7 @@ export function EmployeesPage() {
                     <Button size="small" variant="outlined" startIcon={<VisibilityIcon />} onClick={() => openView(employee)}>
                       {isRtl ? 'عرض' : 'View'}
                     </Button>
-                    {canWrite && (
+                    {canWrite && !employee.is_archived && (
                       <Button size="small" variant="outlined" startIcon={<EditIcon />} onClick={() => openEdit(employee)}>
                         {isRtl ? 'تعديل' : 'Edit'}
                       </Button>
@@ -886,6 +905,22 @@ export function EmployeesPage() {
                       <Button size="small" variant="outlined" startIcon={<WorkHistoryIcon />}
                         onClick={() => navigate('/admin/employee-lifecycle')}>
                         {isRtl ? 'السجل الوظيفي' : 'Employment History'}
+                      </Button>
+                    )}
+                    {canArchive && !employee.is_archived && (
+                      <Button size="small" variant="contained" color="error"
+                        startIcon={<DeleteEmployeeIcon />}
+                        onClick={() => openArchiveDialog(employee, 'archive')}
+                        sx={{ mx: 0.5 }}>
+                        {isRtl ? 'حذف' : 'Delete'}
+                      </Button>
+                    )}
+                    {canArchive && employee.is_archived && (
+                      <Button size="small" variant="contained" color="success"
+                        startIcon={<RestoreEmployeeIcon />}
+                        onClick={() => openArchiveDialog(employee, 'restore')}
+                        sx={{ mx: 0.5 }}>
+                        {isRtl ? 'استعادة' : 'Restore'}
                       </Button>
                     )}
                   </TableCell>
@@ -916,6 +951,72 @@ export function EmployeesPage() {
           </Paper>
         </>
       )}
+
+      <Dialog open={Boolean(archiveTarget)}
+        onClose={() => !archiveBusy && setArchiveTarget(null)}
+        maxWidth="sm" fullWidth dir={isRtl ? 'rtl' : 'ltr'}
+        PaperProps={{ sx: { borderRadius: 3 } }}>
+        <DialogTitle sx={{ fontWeight: 900, color: archiveAction === 'archive' ? '#B71C1C' : '#21673B' }}>
+          {archiveAction === 'archive'
+            ? (isRtl ? 'حذف موظف مع ذكر السبب' : 'Delete employee with reason')
+            : (isRtl ? 'استعادة الموظف' : 'Restore employee')}
+        </DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={2}>
+            <Typography variant="body1" fontWeight={800}>
+              {archiveTarget?.name || ''}
+            </Typography>
+            <Alert severity={archiveAction === 'archive' ? 'warning' : 'info'}>
+              {archiveAction === 'archive'
+                ? (isRtl
+                  ? 'سيختفي الموظف من القائمة، لكن ستظل بيانات هويته وملفه الصحي وسجل الحذف محفوظة وقابلة للاستعادة. لن تُحذف التقارير أو الفحوص الطبية.'
+                  : 'The employee will disappear from the active list, but their identity, health records and deletion audit history remain safely stored and restorable.')
+                : (isRtl
+                  ? 'سيعود الموظف إلى القائمة؛ ولن يتغير ملفه الصحي أو وضعه الوظيفي بسبب الاستعادة.'
+                  : 'The employee will return to the list; health and employment records remain unchanged.')}
+            </Alert>
+            <TextField
+              autoFocus fullWidth required multiline rows={3}
+              label={archiveAction === 'archive'
+                ? (isRtl ? 'سبب الحذف *' : 'Deletion reason *')
+                : (isRtl ? 'سبب الاستعادة *' : 'Restoration reason *')}
+              placeholder={isRtl
+                ? 'مثال: إدخال السجل بالخطأ ويحتاج إلى إخفائه لحين التحقق من مصدره.'
+                : 'Describe the documented administrative reason.'}
+              value={archiveReason}
+              onChange={event => setArchiveReason(event.target.value)}
+              disabled={archiveBusy}
+              inputProps={{ maxLength: 500 }}
+              helperText={isRtl
+                ? `سبب واضح من 10 إلى 500 حرف، دون ذكر بيانات طبية أو معلومات حساسة. (${archiveReason.trim().length}/500)`
+                : `10–500 characters. Avoid medical or sensitive details. (${archiveReason.trim().length}/500)`}
+            />
+            <FormControlLabel
+              control={<Checkbox checked={archiveConfirmed} disabled={archiveBusy}
+                onChange={(_, checked) => setArchiveConfirmed(checked)} />}
+              label={isRtl
+                ? 'أؤكد صحة اختيار الموظف وسبب الإجراء، وأعلم أنه سيُسجل في سجل العمليات.'
+                : 'I confirm the employee, the reason, and the audit record.'}
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ p: 2, gap: 1 }}>
+          <Button disabled={archiveBusy} onClick={() => setArchiveTarget(null)}>
+            {isRtl ? 'إلغاء' : 'Cancel'}
+          </Button>
+          <Button variant="contained" color={archiveAction === 'archive' ? 'error' : 'success'}
+            startIcon={archiveAction === 'archive' ? <DeleteEmployeeIcon /> : <RestoreEmployeeIcon />}
+            disabled={archiveBusy || !archiveConfirmed ||
+              archiveReason.trim().length < 10 || archiveReason.trim().length > 500}
+            onClick={() => void confirmArchiveAction()}>
+            {archiveBusy
+              ? (isRtl ? 'جارٍ تنفيذ الإجراء...' : 'Processing...')
+              : archiveAction === 'archive'
+                ? (isRtl ? 'تأكيد الحذف الآمن' : 'Confirm deletion')
+                : (isRtl ? 'تأكيد الاستعادة' : 'Confirm restore')}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={resetDialogOpen} onClose={() => !resetBusy && setResetDialogOpen(false)} maxWidth="sm" fullWidth
         PaperProps={{ sx: { borderRadius: 3 } }}>
