@@ -297,7 +297,6 @@ export function CenterDirectoryMatchingPage() {
               {filtered.map(row => {
                 const choice = choices[row.ref] ?? null;
                 const status = statusDetails[row.match_status];
-                const needsEvidence = !!choice && row.selection_method === 'manual';
                 return <TableRow key={row.ref} hover>
                   <TableCell sx={{ minWidth: 190 }}>
                     <Typography fontWeight={900}>{row.name}</Typography>
