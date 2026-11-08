@@ -415,8 +415,6 @@ class CenterDirectoryMatchingView(APIView):
 
         if request.data.get('confirmed') != 'true':
             return Response({'detail': 'مطلوب تأكيد صريح بعد المعاينة.'}, status=400)
-        if request.data.get('confirmation_phrase') != phrase:
-            return Response({'detail': 'عبارة التأكيد غير مطابقة.'}, status=400)
         reason = clean(request.data.get('reason'))
         if not 15 <= len(reason) <= 500:
             return Response({'detail': 'اكتب مبررًا للمطابقة من 15 إلى 500 حرف.'}, status=400)
@@ -443,6 +441,8 @@ class CenterDirectoryMatchingView(APIView):
         ]):
             return Response({'detail': 'المصدر أو اختيارات الربط أو حالة قاعدة البيانات تغيّرت؛ أعد المعاينة.'},
                             status=409)
+        if request.data.get('confirmation_phrase') != phrase:
+            return Response({'detail': 'عبارة التأكيد غير مطابقة.'}, status=400)
 
         with transaction.atomic():
             locked_active, locked_aliases, locked_units, locked_stamp = current_directory(lock=True)
