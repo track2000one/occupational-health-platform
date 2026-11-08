@@ -238,6 +238,23 @@ export function HealthCentersPage() {
           onClick={() => setImportOpen(true)}>
           {isRtl ? 'استيراد المراكز من Excel' : 'Import centers from Excel'}
         </Button>}
+        {canArchiveCenters && <>
+          <Button variant={showArchived ? 'contained' : 'outlined'} color="secondary"
+            startIcon={showArchived ? <RestoreIcon /> : <ArchiveIcon />}
+            onClick={toggleArchiveView}>
+            {showArchived ? 'العودة للمراكز المسجلة' : `المراكز المحذوفة (${archivedCenters.length})`}
+          </Button>
+          <Button variant="outlined" color="error" startIcon={<ResetIcon />}
+            disabled={loading || centers.length === 0}
+            onClick={() => openCenterArchive('reset')}>
+            تصفير
+          </Button>
+          {archivedCenters.length > 0 && <Button variant="outlined" color="success"
+            startIcon={<RestoreIcon />}
+            onClick={() => openCenterArchive('restore_batch')}>
+            استعادة آخر دفعة
+          </Button>}
+        </>}
         <Button variant="contained" startIcon={<AddIcon />} onClick={openAdd}>
           {isRtl ? 'إضافة مركز صحي' : 'Add Health Center'}
         </Button>
@@ -246,7 +263,7 @@ export function HealthCentersPage() {
 
     <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(4,1fr)' }, gap: 2, mb: 2.5 }}>
       {[
-        [isRtl ? 'إجمالي المراكز المسجلة' : 'All registered centers', centers.length],
+        [isRtl ? 'إجمالي المراكز المعروضة' : 'All visible centers', visibleCenters.length],
         [isRtl ? 'المراكز النشطة' : 'Active centers', centers.filter(c => c.is_active).length],
         [isRtl ? 'مراكز ملف الجهات' : 'Reference centers', sourceCenters.length],
         [isRtl ? 'مراكز اختبار QA' : 'QA centers', qaCenters.length],
@@ -254,7 +271,7 @@ export function HealthCentersPage() {
     </Box>
 
     <Alert severity="info" sx={{ mb: 2, fontSize: 14 }}>
-      تعرض الصفحة جميع المراكز المسجلة افتراضيًا، بما فيها غير المرتبطة بملف الجهات.
+      تعرض الصفحة جميع المراكز غير المؤرشفة افتراضيًا، بما فيها غير المرتبطة بملف الجهات.
       يمكنك تصفيتها حسب المصدر والقطاع والحالة. مراكز ملف الجهات مقترحة ولا تعني اعتمادًا تنظيميًا.
       تظل المعلومات غير المتحققة فارغة لحين مراجعتها.
     </Alert>
@@ -264,7 +281,7 @@ export function HealthCentersPage() {
       <TextField select label={isRtl ? 'المدينة' : 'City'} value={cityFilter} onChange={e => setCityFilter(e.target.value)}><MenuItem value="all">{isRtl ? 'كل المدن' : 'All cities'}</MenuItem>{cities.map(item => <MenuItem key={item} value={item}>{item}</MenuItem>)}</TextField>
       <TextField select label={isRtl ? 'مصدر السجل' : 'Data source'} value={sourceFilter}
         onChange={e => { setSourceFilter(e.target.value as typeof sourceFilter); setSectorFilter('all'); }}>
-        <MenuItem value="all">جميع السجلات ({centers.length})</MenuItem>
+        <MenuItem value="all">جميع السجلات ({visibleCenters.length})</MenuItem>
         <MenuItem value="reference">مراكز ملف الجهات ({sourceCenters.length})</MenuItem>
         <MenuItem value="qa">المراكز التجريبية ({qaCenters.length})</MenuItem>
         <MenuItem value="other">سجلات أخرى</MenuItem>
@@ -280,7 +297,7 @@ export function HealthCentersPage() {
       justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }} sx={{ mb: 1.5 }}>
       <Box>
         <Typography fontWeight={900} color="text.secondary">
-          عرض {filtered.length} مركزًا من إجمالي {centers.length} مركز مسجل
+          عرض {filtered.length} مركزًا من إجمالي {visibleCenters.length} مركز {showArchived ? 'مؤرشف' : 'مسجل'}
         </Typography>
         <Typography variant="caption" color="text.secondary">
           مصدر السجل يحدد طريقة العرض فقط ولا يغيّر بيانات المراكز أو الموظفين.
@@ -304,8 +321,10 @@ export function HealthCentersPage() {
       : loadError ? <Alert severity="error" action={
         <Button size="small" onClick={() => void load()}>إعادة المحاولة</Button>
       }>تعذر تحميل دليل المراكز الصحية: {loadError}</Alert>
-      : centers.length === 0 ? <Paper sx={{ p: 4, textAlign: 'center', borderRadius: 3 }}>
-          <Typography fontWeight={900} sx={{ mb: 1 }}>لا توجد مراكز صحية مسجلة في قاعدة البيانات الحالية.</Typography>
+      : visibleCenters.length === 0 ? <Paper sx={{ p: 4, textAlign: 'center', borderRadius: 3 }}>
+          <Typography fontWeight={900} sx={{ mb: 1 }}>
+            {showArchived ? 'لا توجد مراكز في الأرشيف.' : 'لا توجد مراكز صحية غير مؤرشفة في القائمة الحالية.'}
+          </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
             يمكنك إضافة مركز صحي أو استيراد المراكز من Excel بعد التأكد من البيئة المتصلة.
           </Typography>
@@ -320,7 +339,7 @@ export function HealthCentersPage() {
             لا توجد مراكز تطابق التصفية الحالية.
           </Typography>
           <Typography color="text.secondary" sx={{ mb: 2 }}>
-            يوجد {centers.length} مركزًا مسجلًا بالفعل؛ غيّر المرشحات أو أظهر جميع المراكز.
+            يوجد {visibleCenters.length} مركزًا بالفعل؛ غيّر المرشحات أو أظهر جميع المراكز.
           </Typography>
           <Button variant="contained" onClick={resetFilters}>إظهار جميع المراكز</Button>
         </Paper>
