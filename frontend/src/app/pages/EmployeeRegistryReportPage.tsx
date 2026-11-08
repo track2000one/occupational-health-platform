@@ -25,10 +25,10 @@ import {
   type FlexibleEmployeeReportRow,
 } from '../utils/professionalPdfExport';
 
+// Never route Staging requests to Production if its API configuration is absent.
 const API_BASE_URL = (import.meta.env.VITE_API_URL ||
   (typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
-    ? 'http://localhost:8000/api'
-    : 'https://occupational-health-platform-production.up.railway.app/api')).replace(/\/$/, '');
+    ? 'http://localhost:8000/api' : '')).replace(/\/$/, '');
 
 type ReportFilters = {
   search: string;
@@ -144,6 +144,7 @@ export function EmployeeRegistryReportPage() {
     const load = async () => {
       const items: CenterItem[] = [];
       try {
+        if (!API_BASE_URL) throw new Error('رابط API غير مضبوط لهذه البيئة.');
         for (let page = 1; page <= 40; page += 1) {
           const response = await authFetch(`${API_BASE_URL}/health-centers/?active=true&page=${page}`);
           if (!response.ok) throw new Error('تعذر قراءة سجل المراكز الصحية.');
@@ -169,6 +170,7 @@ export function EmployeeRegistryReportPage() {
     }
     setLoading(true);
     try {
+      if (!API_BASE_URL) throw new Error('رابط API غير مضبوط لهذه البيئة.');
       const response = await authFetch(`${API_BASE_URL}/employees/report/?${qs}`);
       const data = await response.json().catch(() => null);
       if (!response.ok) {
