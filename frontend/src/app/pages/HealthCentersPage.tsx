@@ -7,10 +7,12 @@ import {
 } from '@mui/material';
 import {
   Add as AddIcon, Business as BusinessIcon, Edit as EditIcon, Refresh as RefreshIcon,
+  UploadFile as UploadFileIcon,
   Search as SearchIcon, ToggleOff as ToggleOffIcon,
 } from '@mui/icons-material';
 import { toast } from 'sonner';
-import { authFetch, getAccessToken } from '../context/AuthContext';
+import { authFetch, getAccessToken, useAuth } from '../context/AuthContext';
+import { HealthCenterExcelImportDialog } from '../components/HealthCenterExcelImportDialog';
 
 // Never silently send Staging staff edits to the Production API.
 const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
@@ -45,6 +47,9 @@ async function request<T>(path: string, init: RequestInit = {}) {
 export function HealthCentersPage() {
   const { i18n } = useTranslation();
   const isRtl = i18n.language === 'ar';
+  const { user } = useAuth();
+  const canImport = user?.isSuperuser === true || user?.role === 'systemAdmin' || user?.role === 'ohManager';
+  const [importOpen, setImportOpen] = useState(false);
   const [centers, setCenters] = useState<Center[]>([]);
   const [organizationUnits, setOrganizationUnits] = useState<OrgCenter[]>([]);
   const [sourceFilter, setSourceFilter] = useState<'reference' | 'all' | 'qa' | 'other'>('reference');
@@ -164,9 +169,23 @@ export function HealthCentersPage() {
   }
 
   return <Box dir={isRtl ? 'rtl' : 'ltr'}>
+    {canImport && <HealthCenterExcelImportDialog
+      open={importOpen} onClose={() => setImportOpen(false)}
+      onImported={() => load()} />}
     <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', md: 'center' }} spacing={2} sx={{ mb: 3 }}>
       <Stack direction="row" spacing={1.5} alignItems="center"><BusinessIcon sx={{ fontSize: 38, color: 'primary.main' }} /><Box><Typography variant="h4" fontWeight={950}>{isRtl ? 'إدارة المراكز الصحية' : 'Health Centers Management'}</Typography><Typography variant="body2" color="text.secondary">{isRtl ? 'قاعدة البيانات المركزية المعتمدة لأسماء المراكز ومواقعها ونوع المبنى' : 'Central master data for health centers, locations, and building type'}</Typography></Box></Stack>
-      <Stack direction="row" spacing={1}><Button variant="outlined" startIcon={<RefreshIcon />} onClick={() => void load()}>{isRtl ? 'تحديث' : 'Refresh'}</Button><Button variant="contained" startIcon={<AddIcon />} onClick={openAdd}>{isRtl ? 'إضافة مركز صحي' : 'Add Health Center'}</Button></Stack>
+      <Stack direction="row" spacing={1} flexWrap="wrap">
+        <Button variant="outlined" startIcon={<RefreshIcon />} onClick={() => void load()}>
+          {isRtl ? 'تحديث' : 'Refresh'}
+        </Button>
+        {canImport && <Button variant="outlined" startIcon={<UploadFileIcon />}
+          onClick={() => setImportOpen(true)}>
+          {isRtl ? 'استيراد المراكز من Excel' : 'Import centers from Excel'}
+        </Button>}
+        <Button variant="contained" startIcon={<AddIcon />} onClick={openAdd}>
+          {isRtl ? 'إضافة مركز صحي' : 'Add Health Center'}
+        </Button>
+      </Stack>
     </Stack>
 
     <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(4,1fr)' }, gap: 2, mb: 2.5 }}>
