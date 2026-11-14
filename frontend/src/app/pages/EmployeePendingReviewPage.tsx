@@ -163,9 +163,10 @@ export function EmployeePendingReviewPage() {
     </Stack>
 
     <Alert severity="warning" sx={{ mb: 2 }}>
-      البطاقات الصفراء أدناه محفوظة للمراجعة في PostgreSQL، لكنها ليست موظفين
-      مفعّلين بعد. يمكن رفع الملف وحفظ هذه السجلات، ثم تحديد المركز الصحيح واستكمال البيانات لاحقًا.
-      لا تُنشأ مراكز وهمية، ولا يُغيّر ربط أي موظف موجود أو بياناته الطبية.
+      هذه بطاقات مراجعة مصدرها استيراد Excel، وليست بالضرورة بطاقات موظفين جدد.
+      قد تكون بعض الهويات مرتبطة بموظفين نشطين أو مؤرشفين؛ لا تعِد إنشاء الموظف
+      بسبب ظهور هذه البطاقة. استخدم «فحص مطابقة الهويات» لتمييز الحالات دون تعديل البيانات.
+      لا تُنشأ مراكز وهمية، ولا تُغيّر بيانات الموظفين أو سجلاتهم الطبية أثناء الفحص.
     </Alert>
 
     {reconciliationError && <Alert severity="error" sx={{ mb: 2 }}>{reconciliationError}</Alert>}
@@ -279,10 +280,10 @@ export function EmployeePendingReviewPage() {
                   <Button variant="contained" color={conflict ? 'error' : 'warning'}
                     startIcon={<EditIcon />}
                     onClick={() => navigate('/employees/import?review_id=' + row.id)}>
-                    مراجعة واستكمال السجل
+                    فتح بطاقة المراجعة
                   </Button>
                   <Typography fontSize={11.5} color="text.secondary">
-                    تفعيل الموظف يتطلب التحقق من الهوية والمركز وعدم وجود سجل مكرر.
+                    الموظف الموجود لا يُفعّل مرة أخرى؛ استكماله أو استعادته إجراء منفصل بعد التحقق.
                   </Typography>
                 </Stack>
               </CardContent>
