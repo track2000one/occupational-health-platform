@@ -6,7 +6,6 @@ This is an administrative diagnostic, not an authorization to bulk-update staff.
 from collections import Counter, defaultdict
 import unicodedata
 
-from django.http import HttpResponse
 from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
