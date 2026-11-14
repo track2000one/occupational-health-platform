@@ -133,6 +133,23 @@ class EmployeeImportClassificationTests(TestCase):
         self.assertNotIn('اسم مختلف للتجربة', str(result['conflict_reasons']))
         self.assertNotIn('QA-9999', str(result['conflict_reasons']))
 
+    def test_archived_existing_identity_is_counted_but_not_recreated(self):
+        self.existing.is_archived = True
+        self.existing.save(update_fields=['is_archived'])
+        result = self.classify(self.row(), commit=True)
+        self.assertEqual(result['summary']['matched_archived_identities'], 1)
+        self.assertEqual(result['summary']['matched_active_identities'], 0)
+        self.assertEqual(result['summary']['imported_employees'], 0)
+        self.assertEqual(Employee.objects.count(), 1)
+        self.existing.refresh_from_db()
+        self.assertTrue(self.existing.is_archived)
+
+    def test_active_existing_identity_counted_even_with_optional_missing(self):
+        result = self.classify(self.row(nationality=''))
+        self.assertEqual(result['summary']['matched_archived_identities'], 0)
+        self.assertEqual(result['summary']['matched_active_identities'], 1)
+        self.assertEqual(Employee.objects.count(), 1)
+
     def test_nonconflicting_existing_employee_has_no_conflict_reasons(self):
         result = self.classify(self.row())
         self.assertEqual(result['summary']['already_existing'], 1)
