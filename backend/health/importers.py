@@ -9,6 +9,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.validators import validate_email
 from django.db import transaction
+from django.utils import timezone
 from openpyxl import load_workbook
 from openpyxl.utils.datetime import from_excel
 
@@ -535,6 +536,32 @@ def review_fingerprint(file_name: str, sheet_name: str, row_number: int, raw_pay
     return hashlib.sha256(material.encode('utf-8')).hexdigest()
 
 
+# Only administrative absence/invalid optional values can be recovered by
+# provisional registration. Never override identity, duplicates or conflicts.
+PROVISIONAL_RECOVERABLE_ISSUES = (
+    'Missing required field: health_center.',
+    'Health center does not match an active center in the platform.',
+    'More than one active center has this name.',
+    'Invalid email address.',
+    'Mobile number must contain',
+    'Invalid date of birth.',
+    'Invalid appointment date.',
+    'Date of birth cannot be in the future.',
+    'Appointment date cannot be in the future.',
+    'Appointment date must be after date of birth.',
+    'Invalid nationality.',
+    'Children count must be',
+    'Job title or current job exceeds',
+    'Invalid gender.',
+    'Invalid marital status.',
+    'Invalid value for ',
+    'Organization unit reference is not approved',
+    'Organizational sector cannot be assigned',
+    'Organizational unit does not have',
+    'Organizational unit belongs to',
+)
+
+
 def import_employee_roster_sheet(
     ws,
     sheet_name: str,
@@ -772,8 +799,22 @@ def import_employee_roster_sheet(
             if matched_employee else []
         )
         review_issues = duplicate_reasons + existing_notice
+        # Only a unique, well-formed employee identity permits a registry
+        # record. Missing/unmatched center and invalid optional fields can be
+        # registered provisionally, but the original row remains auditable.
+        provisional = (
+            bool(row_errors)
+            and not matched_employee and not true_conflict
+            and bool(raw['name']) and len(raw['name']) <= 200
+            and len(raw['national_id']) == 10
+            and all(
+                issue.startswith(PROVISIONAL_RECOVERABLE_ISSUES)
+                for issue in row_errors
+            )
+        )
         classification = (
             'conflict' if true_conflict else
+            'provisional' if provisional else
             'error' if row_errors else
             'existing' if matched_employee else 'valid'
         )
@@ -814,7 +855,7 @@ def import_employee_roster_sheet(
             or existing_number_map.get(raw['employee_number'])
         )
 
-        if row_errors:
+        if row_errors and not provisional:
             blocker_counts.update(set(row_errors))
             if len(preview_rows) < MAX_EMPLOYEE_PREVIEW_ROWS:
                 preview_rows.append(employee_roster_preview_row(
@@ -870,22 +911,40 @@ def import_employee_roster_sheet(
                 seen_numbers.add(raw['employee_number'])
             continue
 
+        # Quarantine invalid optional values; never convert an unsupported
+        # source value into a guessed clinical or organizational fact.
+        provisional_mobile = (
+            raw['mobile'] if len(mobile_digits) in range(9, 16) else ''
+        ) if provisional else raw['mobile']
+        provisional_email = (
+            raw['email'] if 'Invalid email address.' not in row_errors else ''
+        ) if provisional else raw['email']
+        if provisional:
+            if date_of_birth and date_of_birth > today:
+                date_of_birth = None
+            if appointment_date and appointment_date > today:
+                appointment_date = None
+            if date_of_birth and appointment_date and appointment_date <= date_of_birth:
+                appointment_date = None
+            if not center or any('Organization unit' in issue or
+                                 'Organizational ' in issue for issue in row_errors):
+                org_unit = None
         payload = {
             'name': raw['name'],
-            'email': raw['email'] or None,
+            'email': (provisional_email or None) if len(provisional_email) <= 254 else None,
             'national_id': raw['national_id'],
-            'employee_number': raw['employee_number'] or None,
-            'national_address': raw['national_address'],
-            'mobile': raw['mobile'],
+            'employee_number': raw['employee_number'] if len(raw['employee_number']) <= 40 else None,
+            'national_address': raw['national_address'] if len(raw['national_address']) <= 255 else '',
+            'mobile': provisional_mobile if len(provisional_mobile) <= 30 else '',
             'date_of_birth': date_of_birth,
-            'birth_place': raw['birth_place'],
-            'gender': gender,
-            'marital_status': marital_status,
+            'birth_place': raw['birth_place'] if len(raw['birth_place']) <= 120 else '',
+            'gender': gender or '',
+            'marital_status': marital_status or '',
             'health_center': center.name if center else '',
-            'job_title': raw['job_title'],
-            'job_title_en': raw['job_title_en'],
+            'job_title': raw['job_title'] if len(raw['job_title']) <= 150 else '',
+            'job_title_en': raw['job_title_en'] if len(raw['job_title_en']) <= 150 else '',
             'nationality': nationality or '',
-            'current_job': raw['current_job'],
+            'current_job': raw['current_job'] if len(raw['current_job']) <= 200 else '',
             'appointment_date': appointment_date,
             'periodic_exam_status': periodic_exam_status,
             'vaccination_status': vaccination_status,
@@ -893,6 +952,12 @@ def import_employee_roster_sheet(
             '_center': center,
             '_organization_unit': org_unit,
             '_children_count': children_count,
+            'source_center_name': raw['health_center'][:200] if provisional else '',
+            'registration_status': 'provisional' if provisional else 'verified',
+            '_provisional_source': {
+                'row': row_number, 'raw_payload': raw_input,
+                'employee_payload': review_payload, 'issues': list(row_errors),
+            } if provisional else None,
         }
         valid_payloads.append(payload)
         if raw['national_id']:
@@ -911,18 +976,20 @@ def import_employee_roster_sheet(
     summary = {
         'total_rows': total_rows,
         'valid_rows': len(valid_payloads),
+        'provisional_ready': classification_counts['provisional'],
         'duplicate_rows': len(duplicates),
         'errors_count': len(errors),
         'skipped_rows': 0,
         'imported_employees': 0,
+        'imported_provisional': 0,
         'pending_reviews': len([item for item in review_candidates if item['status'] == 'pending']),
         'conflict_reviews': len([item for item in review_candidates if item['status'] == 'conflict']),
         'staged_for_review': len(review_candidates),
-        'new_ready': classification_counts['valid'],
+        'new_ready': classification_counts['valid'] + classification_counts['provisional'],
         # New employees with optional gaps remain eligible for import, but
         # must not be counted as fully complete (green) in the UI.
         'new_complete': classification_counts['valid'] - new_incomplete_count,
-        'new_optional_incomplete': new_incomplete_count,
+        'new_optional_incomplete': new_incomplete_count + classification_counts['provisional'],
         'already_existing': classification_counts['existing'],
         'true_conflicts': classification_counts['conflict'],
         'needs_correction': classification_counts['error'],
@@ -934,7 +1001,8 @@ def import_employee_roster_sheet(
             for payload in valid_payloads:
                 employee_values = {
                     key: value for key, value in payload.items()
-                    if key not in {'health_center', '_center', '_organization_unit', '_children_count'}
+                    if key not in {'health_center', '_center', '_organization_unit', '_children_count',
+                                   '_provisional_source'}
                 }
                 employee = Employee.objects.create(
                     health_center=payload['_center'], organization_unit=payload['_organization_unit'], **employee_values,
@@ -944,6 +1012,31 @@ def import_employee_roster_sheet(
                         employee=employee, defaults={'children_count': payload['_children_count']},
                     )
                 summary['imported_employees'] += 1
+                source = payload.get('_provisional_source')
+                if source:
+                    summary['imported_provisional'] += 1
+                    fingerprint = review_fingerprint(
+                        file_name, sheet_name, source['row'], source['raw_payload'],
+                    )
+                    # A previously held review may now be resolved by the
+                    # provisional registry entry. Keep its original evidence.
+                    review, _ = EmployeeImportReview.objects.update_or_create(
+                        fingerprint=fingerprint,
+                        defaults={
+                            'source_file': file_name, 'source_sheet': sheet_name,
+                            'source_row': source['row'],
+                            'raw_payload': source['raw_payload'],
+                            'employee_payload': source['employee_payload'],
+                            'issues': source['issues'],
+                            'warnings': [
+                                'سُجل الموظف أوليًا بالهوية والبيانات الصالحة فقط. '
+                                'المركز والحقول غير المؤكدة تحتاج استكمالًا عند المراجعة.'
+                            ],
+                            'status': 'activated', 'activated_employee': employee,
+                            'resolved_by': user, 'created_by': user,
+                            'resolved_at': timezone.now(),
+                        },
+                    )
             for candidate in review_candidates:
                 fingerprint = review_fingerprint(
                     file_name,
