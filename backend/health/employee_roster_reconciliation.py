@@ -214,7 +214,7 @@ def plan_reconciliation(sheet_rows, *, lock=False):
                     else:
                         kind = 'no_change'
                     if additions:
-                        fill_counts.update(additions)
+                        fill_counts.update(additions.keys())
                     if kind in ('restore_and_fill', 'restore_only', 'fill_only'):
                         states.append({
                             'pk': employee.pk, 'identity': identity,
