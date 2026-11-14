@@ -338,6 +338,7 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
   const [file, setFile] = useState<File | null>(null);
   const [sheetName, setSheetName] = useState('');
   const [commitMode, setCommitMode] = useState(false);
+  const [reviewOnlyAcknowledged, setReviewOnlyAcknowledged] = useState(false);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [reviews, setReviews] = useState<ImportReview[]>([]);
@@ -878,6 +879,7 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
       if (!response.ok) throw new Error(body.detail || body.file || body.password || 'Import failed');
       const nextResult = body as ImportResult;
       setResult(nextResult);
+      if (!shouldCommit) setReviewOnlyAcknowledged(false);
       setMappingDirty(false);
       if (!shouldCommit) setMappingConfirmed(false);
       if (employeeMode && nextResult.employee_import_mode === 'flexible') {
@@ -895,10 +897,17 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
       if (employeeMode && shouldCommit) await loadReviews();
       const committedNone = employeeMode && shouldCommit && (nextResult.summary.imported_employees || 0) === 0;
       if (committedNone) {
-        toast.warning(isRtl
-          ? `لم يُنشأ موظف جديد: ${nextResult.summary.true_conflicts || 0} تعارض فعلي، ${nextResult.summary.needs_correction || 0} بحاجة لتصحيح، و${nextResult.summary.already_existing || 0} موجود مسبقًا. راجع أسباب التعارض؛ إعادة رفع الملف نفسه لا تعالجها.`
-          : 'No employees were added. Review the blocking reasons before trying again.',
-        { id: loadingToast, duration: 11000 });
+        if ((nextResult.summary.staged_for_review || 0) > 0) {
+          toast.info(isRtl
+            ? `لم يُنشأ موظف جديد. تمت معالجة ${nextResult.summary.staged_for_review} بطاقة للمراجعة دون تعديل السجلات الموجودة. راجع السجل النشط والمؤرشف قبل إعادة الاستيراد.`
+            : `No new employee was created. ${nextResult.summary.staged_for_review} import reviews were processed without modifying employee records.`,
+          { id: loadingToast, duration: 11000 });
+        } else {
+          toast.warning(isRtl
+            ? 'لا توجد سجلات مؤهلة للإضافة أو بطاقات جديدة للمراجعة. لا تُعِد الاستيراد بالملف نفسه.'
+            : 'No eligible employees or review records. Reuploading the same file will not resolve the issue.',
+          { id: loadingToast, duration: 11000 });
+        }
       } else {
         toast.success(shouldCommit ? (isRtl ? 'اكتملت المعالجة؛ راجع أعداد المضاف والمعلق أدناه.' : 'Processing complete. Check added and pending counts below.') : (isRtl ? 'انتهى الفحص. لم تُضف الأسماء بعد؛ راجع النتائج ثم اضغط إضافة الموظفين.' : 'Preview ready. Review results, then add employees.'), { id: loadingToast });
       }
@@ -1018,14 +1027,45 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
                     : (commitMode ? (isRtl ? 'فحص وحفظ في قاعدة البيانات' : 'Validate & Commit') : (isRtl ? 'فحص ومعاينة فقط' : 'Validate Preview Only'))}
                 </Button>
 
+                {employeeMode && result?.mode === 'preview' && (result.summary.valid_rows || 0) === 0 && (
+                  <Alert severity="warning" sx={{ borderRadius: 3 }}>
+                    <Typography fontWeight={900} sx={{ mb: 1 }}>
+                      {isRtl
+                        ? 'لا توجد أي بطاقة موظف جديدة صالحة للإضافة في هذه الدفعة.'
+                        : 'No new employee record is eligible for creation in this batch.'}
+                    </Typography>
+                    <Typography variant="body2" sx={{ mb: 1.3 }}>
+                      {isRtl
+                        ? 'الأسماء الموجودة سابقًا، بما فيها المؤرشفة، لا تُنشأ مرة أخرى. يمكن استكمال أو استعادة السجل نفسه بعد التحقق؛ أما حفظ بطاقات المراجعة فهو إجراء مستقل لا يضيف موظفين.'
+                        : 'Existing identities, including archived employees, cannot be recreated. Verify and complete or restore those records instead. Saving review cards does not add employees.'}
+                    </Typography>
+                    <Button component={Link} to="/employees" variant="outlined" size="small" sx={{ mb: 1.2 }}>
+                      {isRtl ? 'فتح سجل الموظفين والاستعادة' : 'Open employee registry and recovery'}
+                    </Button>
+                    {(result.summary.staged_for_review || 0) > 0 && (
+                      <FormControlLabel
+                        control={
+                          <Checkbox checked={reviewOnlyAcknowledged}
+                            onChange={event => setReviewOnlyAcknowledged(event.target.checked)} />
+                        }
+                        label={isRtl
+                          ? `أؤكد أنني أريد حفظ ${result.summary.staged_for_review} بطاقة للمراجعة فقط، دون إنشاء أي موظف جديد.`
+                          : `I understand this will stage ${result.summary.staged_for_review} review cards only, without creating new staff.`}
+                      />
+                    )}
+                  </Alert>
+                )}
+
                 {employeeMode && result?.mode === 'preview' && (
                   <Button
                     onClick={() => void upload(true)}
                     disabled={loading || !file || mappingDirty || (result.summary.total_rows || 0) === 0 ||
                       Boolean(result.missing_required_fields?.length) ||
-                      (employeeImportMode === 'flexible' && !mappingConfirmed)}
+                      (employeeImportMode === 'flexible' && !mappingConfirmed) ||
+                      ((result.summary.valid_rows || 0) === 0 &&
+                        (!reviewOnlyAcknowledged || (result.summary.staged_for_review || 0) === 0))}
                     variant="contained"
-                    color="success"
+                    color={(result.summary.valid_rows || 0) > 0 ? 'success' : 'warning'}
                     size="large"
                     startIcon={<StorageIcon />}
                     sx={{ borderRadius: 3, py: 1.4 }}
@@ -1035,8 +1075,8 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
                         ? `إضافة ${result.summary.valid_rows} موظفًا وحفظ ${result.summary.staged_for_review || 0} بطاقة للمراجعة`
                         : `Add ${result.summary.valid_rows} and stage ${result.summary.staged_for_review || 0} reviews`)
                       : (isRtl
-                        ? `حفظ ${result.summary.staged_for_review || 0} بطاقة للمراجعة دون تفعيل`
-                        : `Stage ${result.summary.staged_for_review || 0} review cards`)}
+                        ? `حفظ ${result.summary.staged_for_review || 0} بطاقة للمراجعة فقط — دون إضافة موظفين`
+                        : `Save ${result.summary.staged_for_review || 0} review cards only — no employee creation`)}
                   </Button>
                 )}
 
