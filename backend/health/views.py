@@ -13,7 +13,7 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from .importers import process_excel_import
-from .models import AuditLog, ClinicVisit, CommitteeReferral, DataImportBatch, Employee, EmployeeArchiveEvent, EmployeeEmploymentChange, EmployeeHealthCard, EmployeeImportReview, HealthCenter, HealthCenterProfileAuditEvent, OrganizationUnit, InjuryCase, LabTest, OccupationalHealthAssessment, Vaccination
+from .models import AuditLog, ClinicVisit, CommitteeReferral, DataImportBatch, Employee, EmployeeArchiveEvent, EmployeeEmploymentChange, EmployeeHealthCard, EmployeeImportReview, EmployeeProfileCompletionEvent, HealthCenter, HealthCenterProfileAuditEvent, OrganizationUnit, InjuryCase, LabTest, OccupationalHealthAssessment, Vaccination
 from .serializers import AuditLogSerializer, ClinicVisitSerializer, CommitteeReferralSerializer, DataImportBatchSerializer, EmployeeHealthCardSerializer, EmployeeImportReviewSerializer, EmployeeSerializer, HealthCenterSerializer, InjuryCaseSerializer, LabTestSerializer, OccupationalHealthAssessmentSerializer, PlatformUserSerializer, VaccinationSerializer
 
 
@@ -786,6 +786,92 @@ class EmployeeViewSet(viewsets.ModelViewSet):
     serializer_class=EmployeeSerializer
     permission_classes=[permissions.IsAuthenticated,IsAdminOrManagerForWrite]
     search_fields=['name','email','employee_number','national_id','mobile','job_title','birth_place','national_address']
+
+    @action(detail=True, methods=['post'], url_path='complete-profile')
+    def complete_profile(self, request, pk=None):
+        """Identity-checked, missing-fields-only demographic completion.
+
+        Clinical staff can complete administrative gaps without transferring
+        an existing center, overwriting verified data, or touching clinical data.
+        """
+        role = ''
+        try:
+            role = request.user.health_profile.role
+        except Exception:
+            pass
+        permitted = request.user.is_superuser or request.user.is_staff or role in {
+            'ohManager', 'clinicDoctor', 'ohDoctor', 'dataEntry',
+        }
+        if not permitted:
+            return Response({'detail': 'ليس لديك صلاحية استكمال بيانات الموظف.'}, status=403)
+        if request.data.get('identity_checked') is not True:
+            return Response({'identity_checked': 'تحقق من هوية المراجع أولًا وأكد ذلك صراحة.'},
+                            status=400)
+        reason = str(request.data.get('reason') or '').strip()
+        if not 10 <= len(reason) <= 500:
+            return Response({'reason': 'يلزم سبب توثيقي من 10 إلى 500 حرف.'}, status=400)
+        supplied = request.data.get('fields', {})
+        allowed_fields = {
+            'health_center', 'employee_number', 'email', 'mobile',
+            'national_address', 'date_of_birth', 'birth_place',
+            'gender', 'marital_status', 'nationality', 'job_title',
+            'current_job', 'appointment_date', 'job_title_en',
+        }
+        if not isinstance(supplied, dict) or any(k not in allowed_fields for k in supplied):
+            return Response({'fields': 'أُرسلت حقول غير مسموح بتعديلها من هذه الشاشة.'}, status=400)
+        changes = {
+            k: v for k, v in supplied.items()
+            if v not in ('', None)
+        }
+        if not changes:
+            return Response({'fields': 'اختر حقلًا ناقصًا واحدًا على الأقل لاستكماله.'}, status=400)
+        with transaction.atomic():
+            employee = Employee.objects.select_for_update().get(
+                pk=self.get_object().pk, is_archived=False,
+            )
+            # Existing values can only be corrected by a separate authorized
+            # workflow. Here we complete empty fields and first center linkage.
+            for field, new_value in changes.items():
+                current = getattr(employee, field + '_id' if field == 'health_center' else field)
+                if current not in (None, ''):
+                    return Response({
+                        'detail': f'الحقل {field} مسجل مسبقًا؛ التعديل يتطلب إجراء تصحيح منفصل.'
+                    }, status=409)
+                if field == 'health_center':
+                    try:
+                        center = HealthCenter.objects.get(pk=int(new_value), is_active=True,
+                                                          is_archived=False)
+                    except (TypeError, ValueError, HealthCenter.DoesNotExist):
+                        return Response({'health_center': 'المركز المختار غير موجود أو غير نشط.'},
+                                        status=400)
+                    changes[field] = center.pk
+            serializer = EmployeeSerializer(
+                employee, data=changes, partial=True, context={'request': request},
+            )
+            serializer.is_valid(raise_exception=True)
+            old_center_id = employee.health_center_id
+            updated = serializer.save()
+            if updated.health_center_id:
+                updated.registration_status = 'verified'
+                updated.save(update_fields=['registration_status', 'updated_at'])
+            EmployeeProfileCompletionEvent.objects.create(
+                employee=updated, changed_fields=sorted(changes.keys()),
+                reason=reason, identity_checked=True,
+                previous_center_id=old_center_id,
+                resulting_center_id=updated.health_center_id,
+                performed_by=request.user,
+            )
+            AuditLog.objects.create(
+                user=str(request.user), action='employee_profile_completed_at_visit',
+                model_name='Employee', record_id=str(updated.pk),
+            )
+        result = Response({
+            'employee': EmployeeSerializer(updated, context={'request': request}).data,
+            'completed_fields': sorted(changes.keys()),
+            'notice': 'تم استكمال الحقول الناقصة دون تعديل أي بيانات مثبتة سابقًا.',
+        })
+        result['Cache-Control'] = 'private, no-store'
+        return result
 
     @staticmethod
     def _can_archive_employee(user):
