@@ -1180,6 +1180,12 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
                 <Chip color="info" label={isRtl
                   ? `موجود مسبقًا: ${result.summary.already_existing || 0}`
                   : `Already existing: ${result.summary.already_existing || 0}`} />
+                <Chip color="warning" variant="outlined" label={isRtl
+                  ? `هوية مرتبطة بمؤرشف: ${result.summary.matched_archived_identities || 0}`
+                  : `Identity matches archived record: ${result.summary.matched_archived_identities || 0}`} />
+                <Chip color="info" variant="outlined" label={isRtl
+                  ? `هوية مرتبطة بنشط: ${result.summary.matched_active_identities || 0}`
+                  : `Identity matches active record: ${result.summary.matched_active_identities || 0}`} />
                 <Chip color="error" label={isRtl
                   ? `تعارض فعلي: ${result.summary.true_conflicts || 0}`
                   : `True conflict: ${result.summary.true_conflicts || 0}`} />
@@ -1192,8 +1198,8 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
               </Stack>
               <Typography color="text.secondary" fontSize={13} sx={{ mt: 1.2 }}>
                 {isRtl
-                  ? 'يمكن أن يكون الموظف موجودًا مسبقًا ولديه نواقص اختيارية في الوقت نفسه. لا تُضاف نسخ مكررة ولا تُستبدل بيانات الموظفين الحاليين تلقائيًا.'
-                  : 'Existing staff may also have optional gaps. No duplicate staff or automatic updates to existing records.'}
+                  ? 'مطابقات السجل النشط والمؤرشف قد تتداخل مع التعارضات وأخطاء الحقول؛ ليست أعدادًا إضافية، ولا تسمح بإعادة إنشاء الموظف. يلزم استكمال السجل أو استعادته بعد التحقق.'
+                  : 'Active/archived identity matches overlap with row classifications. Do not recreate employee identities; verify and complete or restore the existing record.'}
               </Typography>
             </Paper>
           )}
