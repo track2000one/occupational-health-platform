@@ -34,6 +34,7 @@ import { LoginPage } from './pages/LoginPage';
 import { DashboardLayout } from './components/layout/DashboardLayout';
 import { DashboardPage } from './pages/DashboardPage';
 import { EmployeesPage } from './pages/EmployeesPage';
+import { EmployeePendingReviewPage } from './pages/EmployeePendingReviewPage';
 import { EmployeeRegistryReportPage } from './pages/EmployeeRegistryReportPage';
 import { EmployeeHealthCardPage } from './pages/EmployeeHealthCardPage';
 import { LabTestsPage } from './pages/LabTestsPage';
@@ -108,6 +109,11 @@ function AppRoutes() {
         <Route path="employees/report" element={
           <PermissionRoute permission="export:reports">
             <EmployeeRegistryReportPage />
+          </PermissionRoute>
+        } />
+        <Route path="employees/pending-import" element={
+          <PermissionRoute permission="manage:users">
+            <EmployeePendingReviewPage />
           </PermissionRoute>
         } />
         <Route path="employees/import" element={
