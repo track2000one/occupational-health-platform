@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import {
-  Alert, Box, Button, Card, CardContent, Chip, CircularProgress, Grid, MenuItem,
-  Paper, Stack, TextField, Typography,
+  Alert, Box, Button, Card, CardContent, Checkbox, Chip, CircularProgress,
+  Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel,
+  Grid, MenuItem, Paper, Stack, TextField, Typography,
 } from '@mui/material';
 import {
   ArrowBack as BackIcon, Refresh as RefreshIcon,
   Edit as EditIcon, WarningAmber as WarningIcon,
+  CleaningServices as CleanupIcon, Restore as RestoreIcon,
 } from '@mui/icons-material';
-import { authFetch, getAccessToken } from '../context/AuthContext';
+import { authFetch, getAccessToken, useAuth } from '../context/AuthContext';
 
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 
@@ -29,6 +31,17 @@ type ReconciliationSnapshot = {
   active_no_empty_fields_to_fill: number;
   possible_fill_fields: Record<string, number>;
   notice_ar: string;
+};
+
+type ReviewCleanupPreview = {
+  mode: 'preview' | 'restore_preview';
+  eligible_count: number;
+  pending_count?: number;
+  conflict_count?: number;
+  original_count?: number;
+  confirm_phrase: string;
+  preview_token: string;
+  notice?: string;
 };
 
 type ReviewRow = {
@@ -69,6 +82,7 @@ function missingFields(row: ReviewRow): string[] {
 
 export function EmployeePendingReviewPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [statusFilter, setStatusFilter] = useState<'pending' | 'conflict'>('pending');
   const [missingCenterOnly, setMissingCenterOnly] = useState(false);
   const [search, setSearch] = useState('');
@@ -82,6 +96,99 @@ export function EmployeePendingReviewPage() {
   const [reconciliation, setReconciliation] = useState<ReconciliationSnapshot | null>(null);
   const [reconciling, setReconciling] = useState(false);
   const [reconciliationError, setReconciliationError] = useState('');
+  const [cleanupOpen, setCleanupOpen] = useState(false);
+  const [cleanupBusy, setCleanupBusy] = useState(false);
+  const [cleanupPreview, setCleanupPreview] = useState<ReviewCleanupPreview | null>(null);
+  const [cleanupReason, setCleanupReason] = useState('');
+  const [cleanupPhrase, setCleanupPhrase] = useState('');
+  const [cleanupConfirmed, setCleanupConfirmed] = useState(false);
+  const [cleanupError, setCleanupError] = useState('');
+  const [cleanupNotice, setCleanupNotice] = useState('');
+
+  const prepareReviewCleanup = async (action: 'preview' | 'restore_preview') => {
+    if (cleanupBusy || !user?.isSuperuser) return;
+    const token = getAccessToken();
+    if (!token || !API) {
+      setCleanupError('تعذر الوصول إلى المنصة. تحقق من تسجيل الدخول.');
+      return;
+    }
+    setCleanupOpen(true);
+    setCleanupBusy(true);
+    setCleanupError('');
+    setCleanupPreview(null);
+    setCleanupPhrase('');
+    setCleanupReason('');
+    setCleanupConfirmed(false);
+    try {
+      const response = await authFetch(API + '/employee-import-reviews/cleanup/', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ action }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || 'تعذرت معاينة التنظيف.');
+      setCleanupPreview(data as ReviewCleanupPreview);
+    } catch (err) {
+      setCleanupError(err instanceof Error ? err.message : 'تعذرت معاينة العملية.');
+    } finally {
+      setCleanupBusy(false);
+    }
+  };
+
+  const confirmReviewCleanup = async () => {
+    const preview = cleanupPreview;
+    if (!preview || cleanupBusy || !cleanupConfirmed ||
+        cleanupReason.trim().length < 20 || cleanupReason.trim().length > 500 ||
+        cleanupPhrase !== preview.confirm_phrase || !user?.isSuperuser) return;
+    const restore = preview.mode === 'restore_preview';
+    if (!window.confirm(restore
+      ? `سيجري استعادة ${preview.eligible_count} بطاقة مراجعة. هل تؤكد الاستعادة؟`
+      : `سيجري استبعاد ${preview.eligible_count} بطاقة مراجعة من قوائم العمل دون حذف أي موظف أو بيانات صحية. هل تؤكد التنظيف؟`)) return;
+    const token = getAccessToken();
+    if (!token || !API) {
+      setCleanupError('انتهت الجلسة؛ سجّل الدخول مجددًا.');
+      return;
+    }
+    setCleanupBusy(true);
+    setCleanupError('');
+    try {
+      const response = await authFetch(API + '/employee-import-reviews/cleanup/', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: restore ? 'restore' : 'commit',
+          preview_token: preview.preview_token,
+          confirm_phrase: cleanupPhrase,
+          reason: cleanupReason.trim(),
+          confirmed: true,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || 'تعذر تنفيذ التنظيف.');
+      setCleanupNotice(restore
+        ? `تمت استعادة ${data.restored_count} بطاقة مراجعة. سجلات الموظفين لم تتغير.`
+        : `تم استبعاد ${data.discarded_count} بطاقة مراجعة من قوائم العمل، دون تغيير أي موظف أو سجل صحي.`);
+      setCleanupOpen(false);
+      setCleanupPreview(null);
+      setCleanupConfirmed(false);
+      setReconciliation(null);
+      setPage(1);
+      setReload(v => v + 1);
+    } catch (err) {
+      setCleanupPreview(null);
+      setCleanupError((err instanceof Error ? err.message : 'تعذر إتمام العملية.') +
+        ' أعد المعاينة قبل المحاولة مجددًا.');
+    } finally {
+      setCleanupBusy(false);
+    }
+  };
+
 
   const inspectIdentityMatches = async () => {
     const token = getAccessToken();
@@ -156,6 +263,18 @@ export function EmployeePendingReviewPage() {
           onClick={() => void inspectIdentityMatches()}>
           {reconciling ? 'جاري مطابقة السجل...' : 'فحص مطابقة الهويات (قراءة فقط)'}
         </Button>
+        {user?.isSuperuser && (
+          <>
+            <Button variant="outlined" color="error" startIcon={<CleanupIcon />}
+              onClick={() => void prepareReviewCleanup('preview')} disabled={cleanupBusy}>
+              تنظيف جميع بطاقات المراجعة
+            </Button>
+            <Button variant="outlined" color="success" startIcon={<RestoreIcon />}
+              onClick={() => void prepareReviewCleanup('restore_preview')} disabled={cleanupBusy}>
+              استعادة آخر تنظيف
+            </Button>
+          </>
+        )}
         <Button variant="contained" onClick={() => navigate('/employees/import')}>
           استيراد ملف Excel
         </Button>
@@ -168,6 +287,90 @@ export function EmployeePendingReviewPage() {
       بسبب ظهور هذه البطاقة. استخدم «فحص مطابقة الهويات» لتمييز الحالات دون تعديل البيانات.
       لا تُنشأ مراكز وهمية، ولا تُغيّر بيانات الموظفين أو سجلاتهم الطبية أثناء الفحص.
     </Alert>
+
+    {cleanupNotice && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setCleanupNotice('')}>
+      {cleanupNotice}
+    </Alert>}
+    <Dialog open={cleanupOpen} onClose={() => !cleanupBusy && setCleanupOpen(false)}
+      maxWidth="sm" fullWidth dir="rtl">
+      <DialogTitle fontWeight={900}>
+        {cleanupPreview?.mode === 'restore_preview'
+          ? 'استعادة بطاقات المراجعة المستبعدة'
+          : 'تنظيف بطاقات مراجعة Excel القديمة'}
+      </DialogTitle>
+      <DialogContent dividers>
+        <Stack gap={2}>
+          <Alert severity="warning">
+            هذا الإجراء يخص بطاقات مراجعة استيراد Excel فقط.
+            لن يحذف أي موظف أو سجله الصحي، ولن يغيّر هويته أو حالته الوظيفية.
+            سيتم حفظ حالات البطاقات السابقة ضمن دفعة قابلة للاستعادة.
+          </Alert>
+          {cleanupBusy && <CircularProgress size={25} />}
+          {cleanupError && <Alert severity="error">{cleanupError}</Alert>}
+          {cleanupPreview && (
+            <>
+              <Grid container spacing={1.5}>
+                <Grid size={{ xs: 6 }}>
+                  <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+                    <Typography fontWeight={900} fontSize={29}>
+                      {cleanupPreview.eligible_count}
+                    </Typography>
+                    <Typography fontSize={12}>
+                      {cleanupPreview.mode === 'restore_preview'
+                        ? 'بطاقة قابلة للاستعادة' : 'بطاقة ستُستبعد من قوائم المراجعة'}
+                    </Typography>
+                  </Paper>
+                </Grid>
+                <Grid size={{ xs: 6 }}>
+                  <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+                    <Typography fontWeight={900} fontSize={29}>0</Typography>
+                    <Typography fontSize={12}>سجلات موظفين ستُحذف</Typography>
+                  </Paper>
+                </Grid>
+              </Grid>
+              {cleanupPreview.mode === 'preview' && (
+                <Typography fontSize={13}>
+                  معلقة: {cleanupPreview.pending_count || 0} —
+                  متعارضة: {cleanupPreview.conflict_count || 0}.
+                  البطاقات المعتمدة سابقًا والمستبعدة مسبقًا خارج نطاق العملية.
+                </Typography>
+              )}
+              {cleanupPreview.mode === 'restore_preview' && (
+                <Typography fontSize={13}>
+                  الدفعة الأصلية: {cleanupPreview.original_count} بطاقة.
+                  لا تشمل الاستعادة أي بطاقات تغيرت بعد التنظيف.
+                </Typography>
+              )}
+              <TextField required fullWidth multiline minRows={3} label="سبب الإجراء"
+                value={cleanupReason} onChange={e => setCleanupReason(e.target.value)}
+                helperText={`من 20 إلى 500 حرف (${cleanupReason.trim().length}/500)`}
+                inputProps={{ maxLength: 500 }} disabled={cleanupBusy} />
+              <TextField required fullWidth label="اكتب عبارة التأكيد كما تظهر"
+                value={cleanupPhrase} onChange={e => setCleanupPhrase(e.target.value)}
+                helperText={cleanupPreview.confirm_phrase} disabled={cleanupBusy} />
+              <FormControlLabel
+                control={<Checkbox checked={cleanupConfirmed} disabled={cleanupBusy}
+                  onChange={(_, checked) => setCleanupConfirmed(checked)} />}
+                label="أؤكد العدد ونطاق الإجراء، وأن سجلات الموظفين والبيانات الطبية ستبقى دون تغيير." />
+            </>
+          )}
+        </Stack>
+      </DialogContent>
+      <DialogActions sx={{ p: 2, gap: 1 }}>
+        <Button disabled={cleanupBusy} onClick={() => setCleanupOpen(false)}>إلغاء</Button>
+        {cleanupPreview && (
+          <Button variant="contained" color={cleanupPreview.mode === 'preview' ? 'error' : 'success'}
+            disabled={cleanupBusy || !cleanupConfirmed ||
+              cleanupReason.trim().length < 20 || cleanupReason.trim().length > 500 ||
+              cleanupPhrase !== cleanupPreview.confirm_phrase}
+            onClick={() => void confirmReviewCleanup()}>
+            {cleanupPreview.mode === 'preview'
+              ? `تأكيد تنظيف ${cleanupPreview.eligible_count} بطاقة`
+              : `تأكيد استعادة ${cleanupPreview.eligible_count} بطاقة`}
+          </Button>
+        )}
+      </DialogActions>
+    </Dialog>
 
     {reconciliationError && <Alert severity="error" sx={{ mb: 2 }}>{reconciliationError}</Alert>}
     {reconciliation && (
