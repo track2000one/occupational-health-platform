@@ -637,6 +637,7 @@ def import_employee_roster_sheet(
     preview_rows: List[Dict[str, Any]] = []
     review_candidates: List[Dict[str, Any]] = []
     classification_counts = Counter()
+    matched_registry_counts = Counter()
     # Only static, non-identifying validation codes are counted. Never put
     # employees, document values or unmasked identities into these metrics.
     blocker_counts = Counter()
@@ -745,6 +746,8 @@ def import_employee_roster_sheet(
             row_errors.append('Organizational unit belongs to a different health center.')
 
         matched_employee = existing_employees.get(raw['national_id'])
+        if matched_employee:
+            matched_registry_counts['archived' if matched_employee.is_archived else 'active'] += 1
         missing_optional = optional_missing_fields(raw)
         if missing_optional:
             optional_incomplete_count += 1
@@ -996,6 +999,9 @@ def import_employee_roster_sheet(
         'new_complete': classification_counts['valid'] - new_incomplete_count,
         'new_optional_incomplete': new_incomplete_count + classification_counts['provisional'],
         'already_existing': classification_counts['existing'],
+        # Overlap is intentional: these counts match identities across ALL row classes.
+        'matched_active_identities': matched_registry_counts['active'],
+        'matched_archived_identities': matched_registry_counts['archived'],
         'true_conflicts': classification_counts['conflict'],
         'needs_correction': classification_counts['error'],
         'optional_incomplete': optional_incomplete_count,
