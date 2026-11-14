@@ -35,6 +35,7 @@ import { DashboardLayout } from './components/layout/DashboardLayout';
 import { DashboardPage } from './pages/DashboardPage';
 import { EmployeesPage } from './pages/EmployeesPage';
 import { EmployeePendingReviewPage } from './pages/EmployeePendingReviewPage';
+import { EmployeeExcelReconciliationPage } from './pages/EmployeeExcelReconciliationPage';
 import { EmployeeRegistryReportPage } from './pages/EmployeeRegistryReportPage';
 import { EmployeeHealthCardPage } from './pages/EmployeeHealthCardPage';
 import { LabTestsPage } from './pages/LabTestsPage';
@@ -114,6 +115,11 @@ function AppRoutes() {
         <Route path="employees/pending-import" element={
           <PermissionRoute permission="manage:users">
             <EmployeePendingReviewPage />
+          </PermissionRoute>
+        } />
+        <Route path="employees/reconcile" element={
+          <PermissionRoute permission="manage:users">
+            <EmployeeExcelReconciliationPage />
           </PermissionRoute>
         } />
         <Route path="employees/import" element={
