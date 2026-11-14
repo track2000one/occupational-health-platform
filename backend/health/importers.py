@@ -22,6 +22,7 @@ from .models import (
     ClinicVisit,
     Employee,
     EmployeeImportReview,
+    HealthCenterAlias,
     OrganizationUnit,
     EmployeeClinicVisit,
     EmployeeHealthProfile,
@@ -557,17 +558,28 @@ def import_employee_roster_sheet(
 
     centers_by_name = {}
     ambiguous_center_names = set()
-    for option in HealthCenter.objects.filter(is_active=True):
+    def register_center_label(label, option):
+        name = normalize_header(label)
+        if not name:
+            return
+        if name in centers_by_name and centers_by_name[name].pk != option.pk:
+            ambiguous_center_names.add(name)
+        else:
+            centers_by_name[name] = option
+
+    active_centers = {
+        item.pk: item for item in
+        HealthCenter.objects.filter(is_active=True, is_archived=False)
+    }
+    for option in active_centers.values():
         for label in (option.name, option.name_ar, option.name_en):
-            alias = normalize_header(label)
-            if not alias:
-                continue
-            if alias in centers_by_name and centers_by_name[alias].pk != option.pk:
-                ambiguous_center_names.add(alias)
-            else:
-                centers_by_name[alias] = option
-    for alias in ambiguous_center_names:
-        centers_by_name.pop(alias, None)
+            register_center_label(label, option)
+    # Match retained historic aliases, never approximate spellings or
+    # references belonging to archived centers.
+    for item in HealthCenterAlias.objects.filter(center_id__in=active_centers.keys()):
+        register_center_label(item.name, active_centers[item.center_id])
+    for label in ambiguous_center_names:
+        centers_by_name.pop(label, None)
     # Organizational references are optional and must already be formally approved.
     approved_org_units = {
         unit.code: unit for unit in OrganizationUnit.objects.filter(
