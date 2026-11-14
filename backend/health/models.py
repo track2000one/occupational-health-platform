@@ -584,6 +584,32 @@ class Employee(models.Model):
 
 
 
+class EmployeeProfileCompletionEvent(models.Model):
+    """Minimum-necessary audit metadata; never duplicate identity or medical data."""
+    employee = models.ForeignKey(
+        Employee, on_delete=models.PROTECT, related_name='completion_events',
+    )
+    changed_fields = models.JSONField(default=list)
+    reason = models.CharField(max_length=500)
+    identity_checked = models.BooleanField(default=False)
+    previous_center = models.ForeignKey(
+        HealthCenter, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='employee_completion_previous',
+    )
+    resulting_center = models.ForeignKey(
+        HealthCenter, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='employee_completion_resulting',
+    )
+    performed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, related_name='employee_profile_completion_events',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at', '-pk']
+
+
 
 class EmployeeRegistryResetBatch(models.Model):
     """Administrative record for a reversible, bulk employee-registry reset.
