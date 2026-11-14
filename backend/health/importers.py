@@ -637,9 +637,13 @@ def import_employee_roster_sheet(
     preview_rows: List[Dict[str, Any]] = []
     review_candidates: List[Dict[str, Any]] = []
     classification_counts = Counter()
+    matched_registry_counts = Counter()
     # Only static, non-identifying validation codes are counted. Never put
     # employees, document values or unmasked identities into these metrics.
     blocker_counts = Counter()
+    # Static, non-identifying categories: let operators see why rows conflict
+    # without exposing staff identifiers or names in aggregate diagnostics.
+    conflict_reason_counts = Counter()
     optional_incomplete_count = 0
     new_incomplete_count = 0
     total_rows = 0
@@ -742,6 +746,8 @@ def import_employee_roster_sheet(
             row_errors.append('Organizational unit belongs to a different health center.')
 
         matched_employee = existing_employees.get(raw['national_id'])
+        if matched_employee:
+            matched_registry_counts['archived' if matched_employee.is_archived else 'active'] += 1
         missing_optional = optional_missing_fields(raw)
         if missing_optional:
             optional_incomplete_count += 1
@@ -819,6 +825,8 @@ def import_employee_roster_sheet(
             'existing' if matched_employee else 'valid'
         )
         classification_counts[classification] += 1
+        if true_conflict:
+            conflict_reason_counts.update(set(duplicate_reasons))
         if classification == 'valid' and missing_optional:
             new_incomplete_count += 1
 
@@ -991,6 +999,9 @@ def import_employee_roster_sheet(
         'new_complete': classification_counts['valid'] - new_incomplete_count,
         'new_optional_incomplete': new_incomplete_count + classification_counts['provisional'],
         'already_existing': classification_counts['existing'],
+        # Overlap is intentional: these counts match identities across ALL row classes.
+        'matched_active_identities': matched_registry_counts['active'],
+        'matched_archived_identities': matched_registry_counts['archived'],
         'true_conflicts': classification_counts['conflict'],
         'needs_correction': classification_counts['error'],
         'optional_incomplete': optional_incomplete_count,
@@ -1090,6 +1101,10 @@ def import_employee_roster_sheet(
         'blocking_reasons': [
             {'reason': reason, 'count': count}
             for reason, count in blocker_counts.most_common()
+        ],
+        'conflict_reasons': [
+            {'reason': reason, 'count': count}
+            for reason, count in conflict_reason_counts.most_common()
         ],
         'duplicates': duplicates[:100],
         'errors': errors[:100],
