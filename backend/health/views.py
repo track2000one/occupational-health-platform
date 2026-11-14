@@ -835,7 +835,12 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 'marital_status', 'mobile', 'email', 'national_address',
                 'job_title', 'current_job',
             )
-            incomplete = Q(date_of_birth__isnull=True) | Q(appointment_date__isnull=True)
+            incomplete = (
+                Q(date_of_birth__isnull=True) |
+                Q(appointment_date__isnull=True) |
+                Q(health_center__isnull=True) |
+                Q(registration_status='provisional')
+            )
             for field in fields:
                 incomplete |= Q(**{field + '__isnull': True}) | Q(**{field: ''})
             queryset = (queryset.filter(incomplete) if completeness == 'missing'
@@ -960,7 +965,9 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 'health_center_id': employee.health_center_id,
                 'health_center': (
                     employee.health_center.name_ar or employee.health_center.name
+                    if employee.health_center else ''
                 ),
+                'registration_status': employee.registration_status,
                 'job_title': employee.job_title or '',
                 'current_job': employee.current_job or '',
                 'gender': employee.gender or '',
