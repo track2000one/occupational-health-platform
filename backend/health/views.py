@@ -23,6 +23,14 @@ class IsAdminOrManagerForWrite(permissions.BasePermission):
             return True
         if not request.user:
             return False
+        if getattr(view, 'action', '') == 'complete_profile':
+            if request.user.is_superuser or request.user.is_staff:
+                return True
+            try:
+                role = request.user.health_profile.role
+            except Exception:
+                role = ''
+            return role in {'ohManager', 'clinicDoctor', 'ohDoctor', 'dataEntry'}
         if getattr(view, 'action', '') == 'health_card':
             if request.user.is_superuser:
                 return True
