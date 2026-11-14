@@ -105,6 +105,26 @@ class EmployeeMasterImportAlignmentTests(TestCase):
         self.assertEqual(employee.employee_number, 'QA-JOB-001')
         self.assertEqual(EmployeeHealthProfile.objects.get(employee=employee).children_count, 0)
 
+    def test_source_nationality_spellings_are_normalized_to_iso_without_data_loss(self):
+        # Synthetic data matching common source labels, never live employee IDs.
+        columns = ('المركز الصحي', 'اسم الموظف', 'رقم الهوية / الإقامة', 'الجنسية')
+        cases = [
+            ('سعودي', 'SA'), ('سعودية', 'SA'), ('مصر', 'EG'),
+            ('كوبي', 'CU'), ('الباكستان', 'PK'),
+            ('البحرين', 'BH'), ('السودان', 'SD'), ('سوريا', 'SY'),
+        ]
+        rows = [
+            (self.real.name, f'Synthetic Employee {index}', f'9876543{index:03d}', label)
+            for index, (label, _) in enumerate(cases, start=1)
+        ]
+        preview = self.run_import(columns, rows, commit=False)
+        self.assertEqual(preview['summary']['valid_rows'], len(cases), preview)
+        result = self.run_import(columns, rows, commit=True)
+        self.assertEqual(result['summary']['imported_employees'], len(cases), result)
+        for index, (label, expected) in enumerate(cases, start=1):
+            employee = Employee.objects.get(national_id=f'9876543{index:03d}')
+            self.assertEqual(employee.nationality, expected, label)
+
     def test_unknown_country_becomes_review_not_fake_country(self):
         result = self.run_import(
             ('المركز الصحي','اسم الموظف','رقم الهوية / الإقامة','الجنسية'),

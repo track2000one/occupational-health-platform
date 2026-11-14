@@ -264,8 +264,23 @@ def _normalized(value):
     value = re.sub('[أإآٱ]', 'ا', value).replace('ى', 'ي').replace('ة', 'ه')
     return ' '.join(value.split())
 
+# Explicit source-language nationality aliases. Never guess a nationality from
+# a person's identity, name, or other demographic fields. These strings are
+# accepted only when explicitly supplied as nationality in the employee roster.
+NATIONALITY_SOURCE_ALIASES = {
+    "سعودي": "SA", "سعودية": "SA",
+    "مصري": "EG", "مصرية": "EG",
+    "سوداني": "SD", "سودانية": "SD",
+    "بحريني": "BH", "بحرينية": "BH",
+    "سوري": "SY", "سورية": "SY",
+    "كوبي": "CU", "كوبية": "CU",
+    "الباكستان": "PK", "باكستاني": "PK", "باكستانية": "PK",
+}
 
 _NORMALIZED_COUNTRIES = {_normalized(name): code for name, code in COUNTRY_LABEL_TO_CODE.items()}
+_NORMALIZED_COUNTRIES.update({
+    _normalized(alias): code for alias, code in NATIONALITY_SOURCE_ALIASES.items()
+})
 _ALLOWED_CODES = set(COUNTRY_LABEL_TO_CODE.values())
 
 
