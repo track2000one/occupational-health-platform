@@ -933,7 +933,7 @@ def import_employee_roster_sheet(
             'name': raw['name'],
             'email': (provisional_email or None) if len(provisional_email) <= 254 else None,
             'national_id': raw['national_id'],
-            'employee_number': raw['employee_number'] if len(raw['employee_number']) <= 40 else None,
+            'employee_number': (raw['employee_number'] or None) if len(raw['employee_number']) <= 40 else None,
             'national_address': raw['national_address'] if len(raw['national_address']) <= 255 else '',
             'mobile': provisional_mobile if len(provisional_mobile) <= 30 else '',
             'date_of_birth': date_of_birth,
