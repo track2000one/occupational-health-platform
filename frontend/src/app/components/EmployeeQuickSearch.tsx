@@ -38,6 +38,8 @@ export type EmployeeSearchOption = {
   healthCenterId?: string | number | null;
   health_center_name?: string | null;
   healthCenterName?: string | null;
+  registration_status?: 'verified' | 'provisional';
+  source_center_name?: string | null;
 };
 
 type EmployeeQuickSearchProps = {
@@ -161,6 +163,11 @@ function SelectedEmployeeSummary({ employee }: { employee: EmployeeSearchOption 
           <Typography variant="body2" sx={{ fontWeight: 900, color: '#0F172A', mb: 0.45 }}>
             {employee.name || '-'}
           </Typography>
+          {employee.registration_status === 'provisional' && (
+            <Typography sx={{ fontSize: 12, fontWeight: 850, color: '#895D0C', bgcolor: '#FFF2BB', px: 1, py: 0.6, borderRadius: 1 }}>
+              تسجيل أولي — تحقق من الهوية؛ المركز: {getHealthCenterName(employee) || employee.source_center_name || 'غير محدد'}
+            </Typography>
+          )}
           <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap>
             <EmployeeInfoLine label="رقم الموظف" value={getEmployeeNumber(employee)} />
             <EmployeeInfoLine label="الهوية" value={maskNationalId(getNationalId(employee))} />
