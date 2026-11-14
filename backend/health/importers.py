@@ -640,6 +640,9 @@ def import_employee_roster_sheet(
     # Only static, non-identifying validation codes are counted. Never put
     # employees, document values or unmasked identities into these metrics.
     blocker_counts = Counter()
+    # Static, non-identifying categories: let operators see why rows conflict
+    # without exposing staff identifiers or names in aggregate diagnostics.
+    conflict_reason_counts = Counter()
     optional_incomplete_count = 0
     new_incomplete_count = 0
     total_rows = 0
@@ -819,6 +822,8 @@ def import_employee_roster_sheet(
             'existing' if matched_employee else 'valid'
         )
         classification_counts[classification] += 1
+        if true_conflict:
+            conflict_reason_counts.update(set(duplicate_reasons))
         if classification == 'valid' and missing_optional:
             new_incomplete_count += 1
 
@@ -1090,6 +1095,10 @@ def import_employee_roster_sheet(
         'blocking_reasons': [
             {'reason': reason, 'count': count}
             for reason, count in blocker_counts.most_common()
+        ],
+        'conflict_reasons': [
+            {'reason': reason, 'count': count}
+            for reason, count in conflict_reason_counts.most_common()
         ],
         'duplicates': duplicates[:100],
         'errors': errors[:100],
