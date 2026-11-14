@@ -1243,6 +1243,33 @@ class EmployeeImportReview(models.Model):
         return f'{name} - {self.status}'
 
 
+
+class EmployeeImportReviewCleanupBatch(models.Model):
+    """Reversible, administrator-approved exclusion of pending Excel review cards.
+
+    Only review IDs and their original statuses are stored. All source evidence,
+    employee identities and clinical records remain in their existing tables.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    original_statuses = models.JSONField(default=dict)
+    reason = models.CharField(max_length=500)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True,
+        related_name='employee_review_cleanup_batches',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    applied_at = models.DateTimeField()
+    restored_at = models.DateTimeField(null=True, blank=True)
+    restored_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='restored_employee_review_cleanup_batches',
+    )
+    restoration_reason = models.CharField(max_length=500, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+
 class TemporaryWorkforceSnapshot(models.Model):
     """A short-lived, encrypted copy of the original A:S administrative roster.
 
