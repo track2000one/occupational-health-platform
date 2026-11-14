@@ -13,6 +13,7 @@ from .center_directory_matching import CenterDirectoryMatchingView, CenterDirect
 from .employee_registry_reset import EmployeeRegistryResetView
 from .employee_review_cleanup import EmployeeImportReviewCleanupView
 from .employee_review_identity_reconciliation import EmployeeReviewIdentityReconciliationPreviewView
+from .employee_roster_reconciliation import EmployeeRosterReconciliationView
 from .workforce_preview import WorkforceRosterPreviewView, WorkforceCenterMappingView
 from .temporary_workforce import TemporaryWorkforceView
 from .workforce_import import WorkforceImportPlanView, WorkforceImportApproveView, WorkforceImportCommitView
@@ -37,6 +38,7 @@ urlpatterns = [
     path('employee-roster-template/', EmployeeRosterTemplateView.as_view(), name='employee-roster-template'),
     path('employee-import-reviews/cleanup/', EmployeeImportReviewCleanupView.as_view(), name='employee-review-safe-cleanup'),
     path('employee-import-reviews/reconciliation-preview/', EmployeeReviewIdentityReconciliationPreviewView.as_view(), name='employee-import-reconciliation-preview'),
+    path('employee-roster/reconcile/', EmployeeRosterReconciliationView.as_view(), name='employee-roster-safe-reconcile'),
     path('employee-import-reviews/bulk-activate/', StagingEmployeeReviewBulkActivationView.as_view(), name='employee-import-review-bulk-activate'),
     path('employee-import-reviews/bulk-discard/', StagingEmployeeReviewBulkDiscardView.as_view(), name='employee-import-review-bulk-discard'),
     path('employee-import-reviews/center-reconciliation/', StagingReviewCenterReconciliationView.as_view(), name='employee-review-center-reconciliation'),
