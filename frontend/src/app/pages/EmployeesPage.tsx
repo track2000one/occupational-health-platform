@@ -354,6 +354,7 @@ export function EmployeesPage() {
   const [centerFilter, setCenterFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [sourceFilter, setSourceFilter] = useState('all');
+  const [completionFilter, setCompletionFilter] = useState('all');
   const [sortMode, setSortMode] = useState('newest');
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
   const [dialogMode, setDialogMode] = useState<'view' | 'add' | 'edit'>('view');
@@ -407,6 +408,7 @@ export function EmployeesPage() {
       if (centerFilter !== 'all') query.set('health_center_id', centerFilter);
       if (statusFilter !== 'all') query.set('employment_status', statusFilter);
       if (sourceFilter !== 'all') query.set('source_category', sourceFilter);
+      if (completionFilter !== 'all') query.set('completion', completionFilter);
       query.set('sort', sortMode);
       const employeesPayload = await apiRequest<unknown>('/employees/?' + query.toString());
       const results = getList<ApiEmployee>(employeesPayload);
@@ -448,7 +450,7 @@ export function EmployeesPage() {
     const timer = setTimeout(() => { void loadData(); }, searchTerm ? 350 : 0);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, searchTerm, centerFilter, statusFilter, sourceFilter, sortMode, showArchived, canArchive]);
+  }, [page, searchTerm, centerFilter, statusFilter, sourceFilter, completionFilter, sortMode, showArchived, canArchive]);
 
   useEffect(() => { void loadCenters(); }, []);
 
@@ -783,6 +785,12 @@ export function EmployeesPage() {
             </Button>
           )}
           {can(PERMISSIONS.MANAGE_USERS) && (
+            <Button variant="outlined" color="warning" startIcon={<UploadFileIcon />}
+              onClick={() => navigate('/employees/pending-import')}>
+              {isRtl ? 'بطاقات الموظفين قيد الاستكمال' : 'Pending employee review cards'}
+            </Button>
+          )}
+          {can(PERMISSIONS.MANAGE_USERS) && (
             <Button variant="outlined" startIcon={<UploadFileIcon />} onClick={() => navigate('/employees/import')}>
               {isRtl ? 'استيراد Excel' : 'Import Excel'}
             </Button>
@@ -872,6 +880,16 @@ export function EmployeesPage() {
             </TextField>
           </Grid>
           <Grid size={{ xs: 12, sm: 4 }}>
+            <TextField fullWidth select
+              label={isRtl ? 'اكتمال بيانات الموظف' : 'Employee data completeness'}
+              value={completionFilter}
+              onChange={event => { setCompletionFilter(event.target.value); setPage(0); }}>
+              <MenuItem value="all">{isRtl ? 'جميع السجلات' : 'All records'}</MenuItem>
+              <MenuItem value="missing">{isRtl ? 'بيانات ناقصة — بطاقات صفراء' : 'Incomplete — yellow cards'}</MenuItem>
+              <MenuItem value="complete">{isRtl ? 'بيانات مكتملة' : 'Complete records'}</MenuItem>
+            </TextField>
+          </Grid>
+          <Grid size={{ xs: 12, sm: 4 }}>
             <TextField fullWidth select label={isRtl ? 'الترتيب' : 'Sort by'} value={sortMode}
               onChange={event => { setSortMode(event.target.value); setPage(0); }}>
               <MenuItem value="newest">{isRtl ? 'الأحدث إضافة' : 'Newest first'}</MenuItem>
@@ -914,6 +932,7 @@ export function EmployeesPage() {
                 <Grid key={employee.id} size={{ xs: 12, md: 6, xl: 4 }}>
                   <EmployeeRegistryCard
                     employee={employee}
+                    missingFields={missingEmployeeOptionalFields(employee)}
                     centerName={getHealthCenterName(employee)}
                     isRtl={isRtl}
                     canWrite={canWrite && !employee.is_archived}
@@ -951,7 +970,9 @@ export function EmployeesPage() {
             </TableHead>
             <TableBody>
               {filteredEmployees.map(employee => (
-                <TableRow key={employee.id} hover>
+                <TableRow key={employee.id} hover sx={missingEmployeeOptionalFields(employee).length && !employee.is_archived
+                  ? { bgcolor: '#FFF4C7', '&:hover': { bgcolor: '#FFEBA3' } }
+                  : undefined}>
                   <TableCell>{employee.employee_number || '-'}</TableCell>
                   <TableCell>
                     <Typography variant="body2" fontWeight="bold">{employee.name}</Typography>

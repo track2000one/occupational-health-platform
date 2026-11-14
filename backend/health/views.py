@@ -411,6 +411,20 @@ class EmployeeImportReviewViewSet(viewsets.ReadOnlyModelViewSet):
         ]
         if requested_statuses:
             queryset = queryset.filter(status__in=requested_statuses)
+        # Search only employee names; do not put identity numbers in URLs/logs.
+        name_query = str(self.request.query_params.get('search') or '').strip()
+        if name_query:
+            if len(name_query) > 100:
+                return queryset.none()
+            queryset = queryset.filter(employee_payload__name__icontains=name_query)
+        center_missing = str(self.request.query_params.get('missing_center') or '').lower()
+        if center_missing in ('true', '1'):
+            queryset = queryset.filter(
+                Q(employee_payload__health_center__isnull=True) |
+                Q(employee_payload__health_center=None) |
+                Q(employee_payload__health_center='') |
+                Q(employee_payload__health_center=0)
+            )
         return queryset
 
     @action(detail=True, methods=['post'])
@@ -812,6 +826,20 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 Q(national_id__icontains=query) | Q(job_title__icontains=query) |
                 Q(email__icontains=query) | Q(mobile__icontains=query)
             )
+        # Completeness refers only to administrative fields, not medical status.
+        # Filtering in SQL avoids showing misleading page-only counts.
+        completeness = str(self.request.query_params.get('completion') or '').strip()
+        if completeness in ('missing', 'complete'):
+            fields = (
+                'employee_number', 'gender', 'nationality', 'birth_place',
+                'marital_status', 'mobile', 'email', 'national_address',
+                'job_title', 'current_job',
+            )
+            incomplete = Q(date_of_birth__isnull=True) | Q(appointment_date__isnull=True)
+            for field in fields:
+                incomplete |= Q(**{field + '__isnull': True}) | Q(**{field: ''})
+            queryset = (queryset.filter(incomplete) if completeness == 'missing'
+                        else queryset.exclude(incomplete))
         # Source roster status is separate from approved employment status.
         # Leave leave/study/temporary conditions distinct from retirement.
         source_category = str(self.request.query_params.get('source_category') or '').strip()
