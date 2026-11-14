@@ -1,6 +1,6 @@
 import { useEffect, useState, type ChangeEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link } from 'react-router';
+import { Link, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
 import {
   Alert,
@@ -332,6 +332,8 @@ type DataImportPageProps = {
 export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
   const { i18n } = useTranslation();
   const isRtl = i18n.language === 'ar';
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedReviewId = searchParams.get('review_id') || '';
   const [file, setFile] = useState<File | null>(null);
   const [sheetName, setSheetName] = useState('');
   const [commitMode, setCommitMode] = useState(false);
@@ -639,6 +641,39 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
     });
     setActiveReview(review);
   };
+
+  // Deep-link from a yellow pending review card. The server rechecks both
+  // access permissions and review status; existing employees aren't cloned.
+  useEffect(() => {
+    if (!employeeMode || !/^\\d+$/.test(requestedReviewId) ||
+        !healthCenters.length || !API_BASE_URL) return;
+    const token = getAccessToken();
+    if (!token) return;
+    let cancelled = false;
+    void authFetch(
+      API_BASE_URL + '/employee-import-reviews/' + Number(requestedReviewId) + '/',
+      { headers: { Authorization: 'Bearer ' + token } },
+    ).then(async response => {
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || 'تعذر فتح بطاقة المراجعة.');
+      if (!cancelled) {
+        if (data.status !== 'pending' && data.status !== 'conflict') {
+          toast.error('تمت معالجة هذه البطاقة مسبقًا.');
+        } else {
+          openReview(data as ImportReview);
+        }
+        setSearchParams({}, { replace: true });
+      }
+    }).catch(error => {
+      if (!cancelled) {
+        toast.error(error instanceof Error ? error.message : 'تعذر تحميل بطاقة المراجعة.');
+        setSearchParams({}, { replace: true });
+      }
+    });
+    return () => { cancelled = true; };
+    // One deep-link request per ID and loaded center directory.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [employeeMode, requestedReviewId, healthCenters.length]);
 
   const updateReviewField = (field: keyof ReviewForm, value: string) => {
     setReviewForm(current => ({ ...current, [field]: value }));
@@ -995,15 +1030,30 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
                     sx={{ borderRadius: 3, py: 1.4 }}
                   >
                     {(result.summary.valid_rows || 0) > 0
-                      ? (isRtl ? `إضافة الموظفين الآن (${result.summary.valid_rows})` : `Add employees now (${result.summary.valid_rows})`)
-                      : (isRtl ? 'حفظ الصفوف للمراجعة والتصحيح' : 'Save rows for review and correction')}
+                      ? (isRtl
+                        ? `إضافة ${result.summary.valid_rows} موظفًا وحفظ ${result.summary.staged_for_review || 0} بطاقة للمراجعة`
+                        : `Add ${result.summary.valid_rows} and stage ${result.summary.staged_for_review || 0} reviews`)
+                      : (isRtl
+                        ? `حفظ ${result.summary.staged_for_review || 0} بطاقة للمراجعة دون تفعيل`
+                        : `Stage ${result.summary.staged_for_review || 0} review cards`)}
                   </Button>
                 )}
 
                 {loading && <LinearProgress />}
                 {uploadError && <Alert severity="error">{uploadError}</Alert>}
-                {employeeMode && result?.mode === 'preview' && <Alert severity="warning">{isRtl ? 'لم يتم حفظ أي موظف بعد. الصفوف غير السليمة ستُحفظ للمراجعة عند الاعتماد، ويمكن تصحيحها داخل المنصة.' : 'No employees saved yet. Invalid rows will be staged on confirmation and can be corrected here.'}</Alert>}
-                {employeeMode && result?.mode === 'commit' && <Button component={Link} to="/employees" variant="outlined">{isRtl ? 'عرض قائمة الموظفين' : 'View employee list'}</Button>}
+                {employeeMode && result?.mode === 'preview' && <Alert severity="warning">
+                  {isRtl
+                    ? 'يمكن حفظ السجلات التي لا تملك مركزًا مطابقًا كبطاقات صفراء للمراجعة، دون تفعيلها أو ربطها بمركز غير مؤكد. الموظفون ذوو الهوية الصحيحة والمركز المطابق يُضافون فقط بعد التأكيد؛ لا يتم إنشاء نسخ مكررة.'
+                    : 'Unmatched centers can be retained as yellow review cards without activation. Only uniquely identified, eligible staff are created after confirmation.'}
+                </Alert>}
+                {employeeMode && result?.mode === 'commit' && <>
+                  <Button component={Link} to="/employees" variant="outlined">
+                    {isRtl ? 'عرض الموظفين المفعّلين' : 'Active employee list'}
+                  </Button>
+                  <Button component={Link} to="/employees/pending-import" variant="contained" color="warning">
+                    {isRtl ? 'عرض البطاقات الصفراء قيد الاستكمال' : 'Review pending yellow cards'}
+                  </Button>
+                </>}
               </Stack>
             </CardContent>
           </Card>
@@ -1492,7 +1542,10 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
                   : [];
                 return (
                   <Grid key={review.id} size={{ xs: 12, md: 6, xl: 4 }}>
-                    <Card sx={{ height: '100%', borderRadius: 4, border: '1px solid',
+                    <Card sx={{ height: '100%', borderRadius: 4, border: '2px solid',
+                      borderTop: '5px solid',
+                      borderTopColor: isActualConflict ? '#C64747' : isExistingMatch ? '#6193BC' : '#D99B00',
+                      bgcolor: isActualConflict ? '#FFF1F1' : isExistingMatch ? '#F0F7FF' : '#FFF3C4',
                       borderColor: selectedReviewIds.includes(review.id)
                         ? 'primary.main' : isExistingMatch ? 'info.light'
                           : isActualConflict ? 'error.light' : 'warning.light',
