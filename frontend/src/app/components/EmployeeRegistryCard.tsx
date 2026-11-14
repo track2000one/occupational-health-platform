@@ -27,6 +27,7 @@ type EmployeeCardRecord = {
 type Props = {
   employee: EmployeeCardRecord;
   centerName: string;
+  missingFields?: string[];
   isRtl: boolean;
   canWrite: boolean;
   canManage: boolean;
@@ -69,7 +70,7 @@ function Info({ label, value }: { label: string; value: string }) {
 }
 
 export function EmployeeRegistryCard({
-  employee, centerName, isRtl, canWrite, canManage, canArchive,
+  employee, centerName, missingFields = [], isRtl, canWrite, canManage, canArchive,
   onArchive, onRestore, onView, onEdit, onHealthCard, onEmploymentHistory,
 }: Props) {
   const status = STATUS[employee.employment_status || 'active'] || STATUS.under_review;
@@ -78,13 +79,17 @@ export function EmployeeRegistryCard({
     employee.roster_source_status !== 'active'
     ? employee.roster_source_status : null;
   const isSynthetic = employee.employee_number?.startsWith('OHP-');
+  const needsCompletion = !employee.is_archived && missingFields.length > 0;
 
   return (
     <Paper elevation={0} component="article" sx={{
       height: '100%', display: 'flex', flexDirection: 'column', minWidth: 0,
       p: { xs: 2, sm: 2.5 }, borderRadius: 3,
-      border: '1px solid #D4E0EA', borderTop: '4px solid #173F5F',
-      background: 'linear-gradient(155deg, #FFFFFF 0%, #F4F8FC 100%)',
+      border: needsCompletion ? '2px solid #E7B638' : '1px solid #D4E0EA',
+      borderTop: needsCompletion ? '5px solid #D99B00' : '4px solid #173F5F',
+      background: needsCompletion
+        ? 'linear-gradient(155deg, #FFFDF0 0%, #FFF2B8 100%)'
+        : 'linear-gradient(155deg, #FFFFFF 0%, #F4F8FC 100%)',
       boxShadow: '0 8px 22px rgba(15, 46, 74, 0.07)',
       transition: 'box-shadow .2s ease, transform .2s ease',
       '&:hover': { boxShadow: '0 12px 26px rgba(15, 46, 74, 0.13)', transform: 'translateY(-2px)' },
@@ -110,6 +115,23 @@ export function EmployeeRegistryCard({
         <Typography sx={{ fontSize: 12, fontWeight: 750, color: '#855700', mb: 1.5 }}>
           {isRtl ? 'سجل تجريبي — بيانات غير حقيقية' : 'Synthetic test record'}
         </Typography>
+      )}
+      {needsCompletion && (
+        <Box sx={{
+          mb: 1.5, px: 1.5, py: 1.2, borderRadius: 2,
+          bgcolor: '#FFF1B5', border: '1px solid #E3B64E',
+        }}>
+          <Stack direction="row" alignItems="center" flexWrap="wrap" gap={0.8} sx={{ mb: 0.7 }}>
+            <Chip size="small" color="warning" variant="filled"
+              label={isRtl ? `بيانات ناقصة: ${missingFields.length}` : `Missing fields: ${missingFields.length}`} />
+            <Typography sx={{ fontSize: 12.5, fontWeight: 800, color: '#80520B' }}>
+              {isRtl ? 'يمكن استكمال البيانات لاحقًا من زر تعديل' : 'Complete these fields using Edit'}
+            </Typography>
+          </Stack>
+          <Typography sx={{ fontSize: 12.5, color: '#73500D', overflowWrap: 'anywhere' }}>
+            {missingFields.join(isRtl ? '، ' : ', ')}
+          </Typography>
+        </Box>
       )}
       <Divider sx={{ mb: 1.8 }} />
       <Box component="dl" sx={{
@@ -159,8 +181,14 @@ export function EmployeeRegistryCard({
           {isRtl ? 'البطاقة الصحية' : 'Health card'}
         </Button>
         {canWrite && !employee.is_archived && (
-          <Button variant="outlined" startIcon={<EditIcon />} onClick={onEdit}>
-            {isRtl ? 'تعديل' : 'Edit'}
+          <Button variant="outlined" startIcon={<EditIcon />} onClick={onEdit}
+            sx={needsCompletion ? { '&&': {
+              color: '#7D5004', borderColor: '#C28A0A', bgcolor: '#FFECB0',
+              '&:hover': { bgcolor: '#FFE08B', borderColor: '#9B730A' },
+            }} : undefined}>
+            {needsCompletion
+              ? (isRtl ? 'استكمال البيانات' : 'Complete data')
+              : (isRtl ? 'تعديل' : 'Edit')}
           </Button>
         )}
         {canManage && (
