@@ -379,7 +379,7 @@ class HealthCenterSerializer(serializers.ModelSerializer):
 
 
 class EmployeeSerializer(serializers.ModelSerializer):
-    health_center_name = serializers.CharField(source='health_center.name', read_only=True)
+    health_center_name = serializers.CharField(source='health_center.name', read_only=True, default='')
     moh_id = serializers.CharField(source='detailed_health_profile.moh_id', required=False, allow_blank=True)
     children_count = serializers.IntegerField(source='detailed_health_profile.children_count', required=False, allow_null=True, min_value=0, max_value=100)
     employment_start_date = serializers.DateField(source='detailed_health_profile.employment_start_date', required=False, allow_null=True)
@@ -392,7 +392,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
     class Meta:
         model = Employee
         fields = '__all__'
-        read_only_fields = ('employment_status', 'is_archived', 'archive_reason', 'archived_at', 'archived_by')
+        read_only_fields = ('employment_status', 'registration_status', 'source_center_name', 'is_archived', 'archive_reason', 'archived_at', 'archived_by')
         extra_kwargs = {
             'name': {'required': True, 'allow_blank': False},
             'national_id': {'required': True, 'allow_blank': False},
@@ -469,10 +469,15 @@ class EmployeeSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         attrs = self._normalize_identity(attrs)
         if self.instance is not None and 'health_center' in attrs:
-            if attrs['health_center'].pk != self.instance.health_center_id:
+            new_center = attrs.get('health_center')
+            if self.instance.health_center_id and (
+                new_center is None or new_center.pk != self.instance.health_center_id
+            ):
                 raise serializers.ValidationError({
                     'health_center': 'Transfer between centers requires an approved employment-status change.'
                 })
+            # A first, documented assignment from NULL is not a transfer. The
+            # administrative employee update endpoint is audited separately.
 
         org = attrs.get('organization_unit', self.instance.organization_unit if self.instance else None)
         if org:
@@ -620,6 +625,7 @@ class LabTestSerializer(serializers.ModelSerializer):
 class VaccinationSerializer(serializers.ModelSerializer):
     class Meta: model = Vaccination; fields = '__all__'
 class ClinicVisitSerializer(serializers.ModelSerializer):
+    identity_checked = serializers.BooleanField(write_only=True, required=False, default=False)
     visit_number = serializers.SerializerMethodField()
     employee_name = serializers.CharField(source='employee.name', read_only=True)
     employee_number = serializers.CharField(source='employee.employee_number', read_only=True)
@@ -631,7 +637,7 @@ class ClinicVisitSerializer(serializers.ModelSerializer):
     class Meta:
         model = ClinicVisit
         fields = [
-            'id', 'visit_number', 'employee', 'employee_name', 'employee_number',
+            'id', 'visit_number', 'employee', 'identity_checked', 'employee_name', 'employee_number',
             'national_id_masked', 'health_center_name', 'job_title', 'visit_date',
             'visit_time', 'clinic_type', 'diagnosis', 'action_taken',
             'sick_leave_days', 'follow_up_date', 'doctor_name', 'status', 'notes',
@@ -660,6 +666,15 @@ class ClinicVisitSerializer(serializers.ModelSerializer):
         return obj.created_by.get_full_name() or obj.created_by.username
 
     def validate(self, attrs):
+        # A centerless initial registration is usable for care, but it must
+        # not be mistaken for a verified identity without a visit-time check.
+        employee = attrs.get('employee') or getattr(self.instance, 'employee', None)
+        if (self.instance is None and employee and
+                employee.registration_status == 'provisional' and
+                attrs.get('identity_checked') is not True):
+            raise serializers.ValidationError({
+                'identity_checked': 'تحقق من هوية المراجع قبل حفظ زيارته على سجل أولي.'
+            })
         visit_date = attrs.get('visit_date') or getattr(self.instance, 'visit_date', None)
         diagnosis = attrs.get('diagnosis')
         if diagnosis is None and self.instance is not None:
@@ -679,6 +694,16 @@ class ClinicVisitSerializer(serializers.ModelSerializer):
         if visit_date and follow_up_date and follow_up_date < visit_date:
             raise serializers.ValidationError({'follow_up_date': 'Follow-up date cannot be before visit date.'})
         return attrs
+
+    def create(self, validated_data):
+        validated_data.pop('identity_checked', None)
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        validated_data.pop('identity_checked', None)
+        return super().update(instance, validated_data)
+
+
 class CommitteeReferralSerializer(serializers.ModelSerializer):
     class Meta: model = CommitteeReferral; fields = '__all__'
 class InjuryCaseSerializer(serializers.ModelSerializer):

@@ -1043,8 +1043,8 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
                 {uploadError && <Alert severity="error">{uploadError}</Alert>}
                 {employeeMode && result?.mode === 'preview' && <Alert severity="warning">
                   {isRtl
-                    ? 'يمكن حفظ السجلات التي لا تملك مركزًا مطابقًا كبطاقات صفراء للمراجعة، دون تفعيلها أو ربطها بمركز غير مؤكد. الموظفون ذوو الهوية الصحيحة والمركز المطابق يُضافون فقط بعد التأكيد؛ لا يتم إنشاء نسخ مكررة.'
-                    : 'Unmatched centers can be retained as yellow review cards without activation. Only uniquely identified, eligible staff are created after confirmation.'}
+                    ? 'الصف ذو الاسم والهوية الصحيحة وغير المكررة يمكن تسجيله كبطاقة موظف صفراء حتى إذا لم يُحدد مركزه، ويظهر في البحث بالهوية وزيارات العيادة. تبقى الهوية غير الصحيحة والتعارضات معلقة للمراجعة، ولا يُنشأ مركز افتراضي أو موظف مكرر. المعاينة لا تحفظ بيانات.'
+                    : 'Unique valid identities may be registered as yellow provisional employee records without a verified center; true conflicts remain pending. Preview is read-only.'}
                 </Alert>}
                 {employeeMode && result?.mode === 'commit' && <>
                   <Button component={Link} to="/employees" variant="outlined">
@@ -1070,7 +1070,7 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
                     <Typography variant="body2">{isRtl ? '2. تتعرف المنصة على أسماء الأعمدة العربية والإنجليزية وتعرض المطابقة قبل الحفظ.' : '2. Arabic and English column names are detected and mapped before saving.'}</Typography>
                     <Typography variant="body2">{isRtl ? '3. الأعمدة الزائدة تُعرض على أنها متجاهلة ولا تُحفظ.' : '3. Extra columns are shown as ignored and are not stored.'}</Typography>
                     <Typography variant="body2">{isRtl ? '4. يمكنك تصحيح أي مطابقة ثم إعادة الفحص قبل الاعتماد.' : '4. Correct any mapping and revalidate before committing.'}</Typography>
-                    <Typography variant="body2">{isRtl ? '5. السليم يُفعّل، والناقص أو المتعارض يُعلّق للمراجعة دون فقد الصف.' : '5. Valid rows activate; incomplete/conflicting rows are staged without data loss.'}</Typography>
+                    <Typography variant="body2">{isRtl ? '5. الموظف صاحب الهوية الصحيحة وغير المكررة يُسجل حتى لو لم يُحدد مركزه؛ يظهر كسجل أولي أصفر. التعارضات وأخطاء الهوية فقط تُعلّق.' : '5. Unique identified employees are registered provisionally without a center; identity conflicts and errors remain pending.'}</Typography>
                   </>
                 ) : (
                   <>
@@ -1173,6 +1173,9 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
                 <Chip color="info" variant="outlined" label={isRtl
                   ? `جديد قابل للإضافة: ${result.summary.new_ready}`
                   : `New eligible: ${result.summary.new_ready}`} />
+                <Chip color="warning" label={isRtl
+                  ? `تسجيل أولي — أصفر: ${result.summary.provisional_ready || 0}`
+                  : `Provisional — yellow: ${result.summary.provisional_ready || 0}`} />
                 <Chip color="info" label={isRtl
                   ? `موجود مسبقًا: ${result.summary.already_existing || 0}`
                   : `Already existing: ${result.summary.already_existing || 0}`} />

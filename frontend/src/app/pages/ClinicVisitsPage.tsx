@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  Alert, Avatar, Box, Button, Chip, CircularProgress, Dialog, DialogActions,
-  DialogContent, DialogTitle, Divider, IconButton, InputAdornment, MenuItem,
+  Alert, Avatar, Box, Button, Checkbox, Chip, CircularProgress, Dialog, DialogActions,
+  DialogContent, DialogTitle, Divider, FormControlLabel, IconButton, InputAdornment, MenuItem,
   Paper, Stack, Table, TableBody, TableCell, TableContainer, TableHead,
   TableRow, TextField, Tooltip, Typography,
 } from '@mui/material';
@@ -16,6 +16,7 @@ import { toast } from 'sonner';
 import { authFetch, getAccessToken, useAuth } from '../context/AuthContext';
 import { PERMISSIONS } from '../data/roles';
 import { EmployeeQuickSearch, type EmployeeSearchOption } from '../components/EmployeeQuickSearch';
+import { ClinicEmployeeCompletionDialog } from '../components/ClinicEmployeeCompletionDialog';
 import { CalendarDateField } from '../components/CalendarDateField';
 import { DateText, useDatePreference } from '../context/DatePreferenceContext';
 import { exportClinicVisitsReport } from '../utils/professionalPdfExport';
@@ -40,12 +41,13 @@ type VisitForm = {
   employeeId: string; employeeName: string; visitDate: string; visitTime: string;
   clinicType: string; diagnosis: string; actionTaken: string; sickLeaveDays: string;
   followUpDate: string; doctorName: string; status: Status; notes: string;
+  identityChecked: boolean;
 };
 
 const EMPTY: VisitForm = {
   employeeId: '', employeeName: '', visitDate: '', visitTime: '', clinicType: 'Employee Clinic',
   diagnosis: '', actionTaken: '', sickLeaveDays: '', followUpDate: '', doctorName: '',
-  status: 'completed', notes: '',
+  status: 'completed', notes: '', identityChecked: false,
 };
 const STATUSES: Record<Status, { ar: string; en: string; color: 'success' | 'warning' | 'info' }> = {
   completed: { ar: 'مكتملة', en: 'Completed', color: 'success' },
@@ -113,6 +115,7 @@ export function ClinicVisitsPage() {
   const [to, setTo] = useState('');
   const [employeeId, setEmployeeId] = useState('');
   const [formOpen, setFormOpen] = useState(false);
+  const [completionEmployeeId, setCompletionEmployeeId] = useState('');
   const [editing, setEditing] = useState<Visit | null>(null);
   const [viewing, setViewing] = useState<Visit | null>(null);
   const [form, setForm] = useState<VisitForm>(EMPTY);
@@ -172,7 +175,7 @@ export function ClinicVisitsPage() {
   }
   function editVisit(visit: Visit) {
     setEditing(visit);
-    setForm({ employeeId: String(visit.employee), employeeName: visit.employee_name, visitDate: visit.visit_date || '', visitTime: (visit.visit_time || '').slice(0, 5), clinicType: visit.clinic_type, diagnosis: visit.diagnosis, actionTaken: visit.action_taken, sickLeaveDays: visit.sick_leave_days == null ? '' : String(visit.sick_leave_days), followUpDate: visit.follow_up_date || '', doctorName: visit.doctor_name, status: visit.status, notes: visit.notes });
+    setForm({ employeeId: String(visit.employee), employeeName: visit.employee_name, visitDate: visit.visit_date || '', visitTime: (visit.visit_time || '').slice(0, 5), clinicType: visit.clinic_type, diagnosis: visit.diagnosis, actionTaken: visit.action_taken, sickLeaveDays: visit.sick_leave_days == null ? '' : String(visit.sick_leave_days), followUpDate: visit.follow_up_date || '', doctorName: visit.doctor_name, status: visit.status, notes: visit.notes, identityChecked: true });
     setFormOpen(true);
   }
   function selectEmployee(id: string, employee: EmployeeSearchOption | null) {
@@ -180,10 +183,14 @@ export function ClinicVisitsPage() {
   }
   async function saveVisit() {
     if (!form.employeeId || !form.visitDate || !form.diagnosis.trim()) { toast.error(rtl ? 'الموظف وتاريخ الزيارة والتشخيص حقول مطلوبة.' : 'Employee, visit date and diagnosis are required.'); return; }
+    if (!editing && !form.identityChecked) {
+      toast.error(rtl ? 'تحقق من هوية المراجع قبل تسجيل زيارته.' : 'Confirm patient identity before recording the visit.');
+      return;
+    }
     if (!editing && visits.some(v => String(v.employee) === form.employeeId && v.status === 'open') && !window.confirm(rtl ? 'يوجد لهذا الموظف سجل زيارة مفتوح. هل تريد تسجيل زيارة أخرى؟' : 'This employee has an open visit. Continue?')) return;
     setSaving(true);
     try {
-      const payload = { employee: Number(form.employeeId), visit_date: form.visitDate, visit_time: form.visitTime || null, clinic_type: form.clinicType, diagnosis: form.diagnosis.trim(), action_taken: form.actionTaken.trim(), sick_leave_days: form.sickLeaveDays === '' ? null : Number(form.sickLeaveDays), follow_up_date: form.followUpDate || null, doctor_name: form.doctorName.trim(), status: form.status, notes: form.notes.trim() };
+      const payload = { employee: Number(form.employeeId), identity_checked: form.identityChecked, visit_date: form.visitDate, visit_time: form.visitTime || null, clinic_type: form.clinicType, diagnosis: form.diagnosis.trim(), action_taken: form.actionTaken.trim(), sick_leave_days: form.sickLeaveDays === '' ? null : Number(form.sickLeaveDays), follow_up_date: form.followUpDate || null, doctor_name: form.doctorName.trim(), status: form.status, notes: form.notes.trim() };
       const response = await authFetch(editing ? `${API}/clinic-visits/${editing.id}/` : `${API}/clinic-visits/`, { method: editing ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       if (!response.ok) throw new Error(await apiError(response));
       setFormOpen(false); setEditing(null); setForm(EMPTY); setReload(v => v + 1);
@@ -252,7 +259,14 @@ export function ClinicVisitsPage() {
     {mode === 'employees' ? <Grid container spacing={2.25}>{employeeCards.map(employee => <EmployeeCard key={employee.id} employee={employee} rtl={rtl} canCreate={canCreate} onHistory={showHistory} onCreate={createVisit} />)}{!loading && employeeCards.length === 0 && <Grid size={{ xs: 12 }}><Alert severity="info">{rtl ? 'لا توجد زيارات مسجلة لعرض بطاقات الموظفين.' : 'No visits found.'}</Alert></Grid>}</Grid>
       : <VisitTable grouped={grouped} loading={loading} rtl={rtl} formatDate={formatDate} canUpdate={canUpdate} onView={setViewing} onEdit={editVisit} onDelete={deleteVisit} />}
 
-    <VisitFormDialog open={formOpen} editing={editing} form={form} setForm={setForm} saving={saving} rtl={rtl} onClose={() => setFormOpen(false)} onEmployee={selectEmployee} onSave={saveVisit} />
+    <VisitFormDialog open={formOpen} editing={editing} form={form} setForm={setForm} saving={saving} rtl={rtl} onClose={() => setFormOpen(false)} onEmployee={selectEmployee} onSave={saveVisit} onCompleteEmployee={() => setCompletionEmployeeId(form.employeeId)} />
+    <ClinicEmployeeCompletionDialog
+      employeeId={completionEmployeeId} open={Boolean(completionEmployeeId)}
+      onClose={() => setCompletionEmployeeId('')}
+      onUpdated={() => {
+        toast.success(rtl ? 'حُفظ استكمال بيانات الموظف، ويمكن متابعة تسجيل الزيارة.' : 'Employee data completed. You may continue recording the visit.');
+      }}
+    />
     <VisitDetails visit={viewing} rtl={rtl} formatDate={formatDate} onClose={() => setViewing(null)} />
   </Box>;
 }
@@ -278,8 +292,8 @@ function VisitDay({ date, visits, rtl, formatDate, canUpdate, onView, onEdit, on
   return <><TableRow className="clinic-visit-day-heading"><TableCell colSpan={8} sx={{ fontWeight: 900, color: '#0F5C7A', py: 1.25 }}><Stack direction="row" spacing={1} alignItems="center"><CalendarMonth fontSize="small" /><span>{label}</span><Chip size="small" label={visits.length} /></Stack></TableCell></TableRow>{visits.map(visit => <TableRow key={visit.id} hover><TableCell><Typography variant="body2" fontFamily="monospace" fontWeight={700}>{visit.visit_number}</Typography></TableCell><TableCell><Stack direction="row" spacing={1} alignItems="center"><Avatar sx={{ width: 30, height: 30, bgcolor: '#148F8B', fontSize: 13 }}>{visit.employee_name.charAt(0)}</Avatar><Box><Typography variant="body2" fontWeight={800}>{visit.employee_name}</Typography><Typography variant="caption" color="text.secondary">{visit.employee_number || '—'} · {visit.health_center_name || '—'}</Typography></Box></Stack></TableCell><TableCell>{visit.visit_time?.slice(0, 5) || '—'}</TableCell><TableCell><Chip size="small" variant="outlined" label={visit.clinic_type} /></TableCell><TableCell>{visit.doctor_name || '—'}</TableCell><TableCell><StatusChip status={visit.status} rtl={rtl} /></TableCell><TableCell>{visit.follow_up_date ? <DateText value={visit.follow_up_date} /> : '—'}</TableCell><TableCell><Stack direction="row" spacing={0.25}><Tooltip title={rtl ? 'عرض' : 'View'}><IconButton size="small" color="primary" onClick={() => onView(visit)}><VisibilityOutlined fontSize="small" /></IconButton></Tooltip>{canUpdate && <><Tooltip title={rtl ? 'تعديل' : 'Edit'}><IconButton size="small" color="info" onClick={() => onEdit(visit)}><EditOutlined fontSize="small" /></IconButton></Tooltip><Tooltip title={rtl ? 'حذف' : 'Delete'}><IconButton size="small" color="error" onClick={() => void onDelete(visit)}><DeleteOutline fontSize="small" /></IconButton></Tooltip></>}</Stack></TableCell></TableRow>)}</>;
 }
 
-function VisitFormDialog({ open, editing, form, setForm, saving, rtl, onClose, onEmployee, onSave }: { open: boolean; editing: Visit | null; form: VisitForm; setForm: Dispatch<SetStateAction<VisitForm>>; saving: boolean; rtl: boolean; onClose: () => void; onEmployee: (id: string, employee: EmployeeSearchOption | null) => void; onSave: () => void }) {
-  return <Dialog open={open} onClose={saving ? undefined : onClose} maxWidth="md" fullWidth><DialogTitle>{editing ? (rtl ? 'تعديل زيارة العيادة' : 'Edit clinic visit') : (rtl ? 'تسجيل زيارة جديدة' : 'Record clinic visit')}</DialogTitle><DialogContent dividers><Grid container spacing={2}><Grid size={{ xs: 12 }}><EmployeeQuickSearch required disabled={Boolean(editing)} value={form.employeeId} onChange={onEmployee} label={rtl ? 'بحث الموظف' : 'Employee'} helperText={rtl ? 'بحث بالاسم أو الهوية أو الرقم الوظيفي أو الجوال' : 'Search by name, ID, employee number or mobile'} /></Grid><Grid size={{ xs: 12, sm: 6 }}><CalendarDateField required label={rtl ? 'تاريخ الزيارة' : 'Visit date'} value={form.visitDate} onChange={value => setForm(p => ({ ...p, visitDate: value }))} /></Grid><Grid size={{ xs: 12, sm: 6 }}><TextField fullWidth required type="time" label={rtl ? 'وقت الزيارة' : 'Visit time'} value={form.visitTime} onChange={e => setForm(p => ({ ...p, visitTime: e.target.value }))} slotProps={{ inputLabel: { shrink: true } }} /></Grid><Grid size={{ xs: 12, sm: 6 }}><TextField fullWidth select required label={rtl ? 'نوع العيادة' : 'Clinic type'} value={form.clinicType} onChange={e => setForm(p => ({ ...p, clinicType: e.target.value }))}>{['Employee Clinic', 'Occupational Health', 'Emergency', 'Specialist'].map(type => <MenuItem key={type} value={type}>{type}</MenuItem>)}</TextField></Grid><Grid size={{ xs: 12, sm: 6 }}><TextField fullWidth label={rtl ? 'اسم الطبيب' : 'Doctor'} value={form.doctorName} onChange={e => setForm(p => ({ ...p, doctorName: e.target.value }))} /></Grid><Grid size={{ xs: 12, sm: 6 }}><TextField fullWidth select label={rtl ? 'حالة الزيارة' : 'Status'} value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value as Status }))}>{(Object.keys(STATUSES) as Status[]).map(status => <MenuItem key={status} value={status}>{rtl ? STATUSES[status].ar : STATUSES[status].en}</MenuItem>)}</TextField></Grid><Grid size={{ xs: 12, sm: 6 }}><TextField fullWidth type="number" label={rtl ? 'أيام الإجازة المرضية' : 'Sick leave days'} value={form.sickLeaveDays} onChange={e => setForm(p => ({ ...p, sickLeaveDays: e.target.value }))} slotProps={{ htmlInput: { min: 0, max: 365 } }} /></Grid><Grid size={{ xs: 12 }}><TextField fullWidth required multiline minRows={2} label={rtl ? 'التشخيص' : 'Diagnosis'} value={form.diagnosis} onChange={e => setForm(p => ({ ...p, diagnosis: e.target.value }))} /></Grid><Grid size={{ xs: 12 }}><TextField fullWidth multiline minRows={2} label={rtl ? 'الإجراء المتخذ' : 'Action taken'} value={form.actionTaken} onChange={e => setForm(p => ({ ...p, actionTaken: e.target.value }))} /></Grid><Grid size={{ xs: 12, sm: 6 }}><CalendarDateField label={rtl ? 'تاريخ المتابعة' : 'Follow-up date'} value={form.followUpDate} onChange={value => setForm(p => ({ ...p, followUpDate: value }))} /></Grid><Grid size={{ xs: 12 }}><TextField fullWidth multiline minRows={2} label={rtl ? 'ملاحظات' : 'Notes'} value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} /></Grid></Grid></DialogContent><DialogActions><Button onClick={onClose} disabled={saving}>{rtl ? 'إلغاء' : 'Cancel'}</Button><Button variant="contained" onClick={() => void onSave()} disabled={saving} startIcon={saving ? <CircularProgress size={18} color="inherit" /> : undefined}>{saving ? (rtl ? 'جاري الحفظ...' : 'Saving...') : (rtl ? 'حفظ' : 'Save')}</Button></DialogActions></Dialog>;
+function VisitFormDialog({ open, editing, form, setForm, saving, rtl, onClose, onEmployee, onSave, onCompleteEmployee }: { open: boolean; editing: Visit | null; form: VisitForm; setForm: Dispatch<SetStateAction<VisitForm>>; saving: boolean; rtl: boolean; onClose: () => void; onEmployee: (id: string, employee: EmployeeSearchOption | null) => void; onSave: () => void; onCompleteEmployee: () => void }) {
+  return <Dialog open={open} onClose={saving ? undefined : onClose} maxWidth="md" fullWidth><DialogTitle>{editing ? (rtl ? 'تعديل زيارة العيادة' : 'Edit clinic visit') : (rtl ? 'تسجيل زيارة جديدة' : 'Record clinic visit')}</DialogTitle><DialogContent dividers><Grid container spacing={2}><Grid size={{ xs: 12 }}><EmployeeQuickSearch required disabled={Boolean(editing)} value={form.employeeId} onChange={onEmployee} label={rtl ? 'بحث الموظف' : 'Employee'} helperText={rtl ? 'بحث بالاسم أو الهوية أو الرقم الوظيفي أو الجوال. الموظف ذو البيانات الناقصة يمكنه تلقي الخدمة بعد التحقق من هويته.' : 'Search by name or ID, then confirm identity before care.'} /></Grid>{form.employeeId && <Grid size={{ xs: 12 }}><Button variant="outlined" color="warning" disabled={saving} onClick={onCompleteEmployee}>استكمال بيانات الموظف الناقصة أثناء الزيارة</Button></Grid>}{!editing && <Grid size={{ xs: 12 }}><Alert severity="warning" sx={{ mb: 1 }}>قد يكون الموظف مسجلًا أوليًا ومركزه غير محدد. تحقق من رقم الهوية قبل حفظ الزيارة، ويمكن استكمال بيانات المركز لاحقًا دون تعطيل الخدمة.</Alert><FormControlLabel control={<Checkbox checked={form.identityChecked} onChange={(_, checked) => setForm(prev => ({ ...prev, identityChecked: checked }))}/>} label={rtl ? 'تحققت من هوية المراجع ومطابقتها قبل تسجيل هذه الزيارة' : 'I verified the patient identity before recording this visit'}/></Grid>}<Grid size={{ xs: 12, sm: 6 }}><CalendarDateField required label={rtl ? 'تاريخ الزيارة' : 'Visit date'} value={form.visitDate} onChange={value => setForm(p => ({ ...p, visitDate: value }))} /></Grid><Grid size={{ xs: 12, sm: 6 }}><TextField fullWidth required type="time" label={rtl ? 'وقت الزيارة' : 'Visit time'} value={form.visitTime} onChange={e => setForm(p => ({ ...p, visitTime: e.target.value }))} slotProps={{ inputLabel: { shrink: true } }} /></Grid><Grid size={{ xs: 12, sm: 6 }}><TextField fullWidth select required label={rtl ? 'نوع العيادة' : 'Clinic type'} value={form.clinicType} onChange={e => setForm(p => ({ ...p, clinicType: e.target.value }))}>{['Employee Clinic', 'Occupational Health', 'Emergency', 'Specialist'].map(type => <MenuItem key={type} value={type}>{type}</MenuItem>)}</TextField></Grid><Grid size={{ xs: 12, sm: 6 }}><TextField fullWidth label={rtl ? 'اسم الطبيب' : 'Doctor'} value={form.doctorName} onChange={e => setForm(p => ({ ...p, doctorName: e.target.value }))} /></Grid><Grid size={{ xs: 12, sm: 6 }}><TextField fullWidth select label={rtl ? 'حالة الزيارة' : 'Status'} value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value as Status }))}>{(Object.keys(STATUSES) as Status[]).map(status => <MenuItem key={status} value={status}>{rtl ? STATUSES[status].ar : STATUSES[status].en}</MenuItem>)}</TextField></Grid><Grid size={{ xs: 12, sm: 6 }}><TextField fullWidth type="number" label={rtl ? 'أيام الإجازة المرضية' : 'Sick leave days'} value={form.sickLeaveDays} onChange={e => setForm(p => ({ ...p, sickLeaveDays: e.target.value }))} slotProps={{ htmlInput: { min: 0, max: 365 } }} /></Grid><Grid size={{ xs: 12 }}><TextField fullWidth required multiline minRows={2} label={rtl ? 'التشخيص' : 'Diagnosis'} value={form.diagnosis} onChange={e => setForm(p => ({ ...p, diagnosis: e.target.value }))} /></Grid><Grid size={{ xs: 12 }}><TextField fullWidth multiline minRows={2} label={rtl ? 'الإجراء المتخذ' : 'Action taken'} value={form.actionTaken} onChange={e => setForm(p => ({ ...p, actionTaken: e.target.value }))} /></Grid><Grid size={{ xs: 12, sm: 6 }}><CalendarDateField label={rtl ? 'تاريخ المتابعة' : 'Follow-up date'} value={form.followUpDate} onChange={value => setForm(p => ({ ...p, followUpDate: value }))} /></Grid><Grid size={{ xs: 12 }}><TextField fullWidth multiline minRows={2} label={rtl ? 'ملاحظات' : 'Notes'} value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} /></Grid></Grid></DialogContent><DialogActions><Button onClick={onClose} disabled={saving}>{rtl ? 'إلغاء' : 'Cancel'}</Button><Button variant="contained" onClick={() => void onSave()} disabled={saving} startIcon={saving ? <CircularProgress size={18} color="inherit" /> : undefined}>{saving ? (rtl ? 'جاري الحفظ...' : 'Saving...') : (rtl ? 'حفظ' : 'Save')}</Button></DialogActions></Dialog>;
 }
 
 function VisitDetails({ visit, rtl, formatDate, onClose }: { visit: Visit | null; rtl: boolean; formatDate: (v?: string | Date | null) => string; onClose: () => void }) {

@@ -108,7 +108,7 @@ class EmployeeCompletionReviewTests(TestCase):
         self.client.force_authenticate(self.viewer)
         self.assertEqual(self.client.get(path).status_code, 403)
 
-    def test_alias_matches_center_on_employee_excel_import_without_guessing_missing_center(self):
+    def test_alias_matches_center_and_unassigned_registers_provisionally_without_guessing(self):
         book = Workbook()
         sheet = book.active
         sheet.title = 'Employees'
@@ -134,15 +134,17 @@ class EmployeeCompletionReviewTests(TestCase):
             workbook(), sheet_name='Employees', commit=False,
             employee_import_mode='template', user=self.admin,
         )
-        self.assertEqual(preview['summary']['new_ready'], 1)
-        self.assertEqual(preview['summary']['needs_correction'], 1)
+        self.assertEqual(preview['summary']['new_ready'], 2)
+        self.assertEqual(preview['summary']['provisional_ready'], 1)
+        self.assertEqual(preview['summary']['needs_correction'], 0)
         self.assertEqual(Employee.objects.count(), 2)
         commit = process_excel_import(
             workbook(), sheet_name='Employees', commit=True,
             employee_import_mode='template', user=self.admin,
         )
-        self.assertEqual(commit['summary']['imported_employees'], 1)
-        self.assertEqual(commit['summary']['pending_reviews'], 1)
+        self.assertEqual(commit['summary']['imported_employees'], 2)
+        self.assertEqual(commit['summary']['imported_provisional'], 1)
+        self.assertEqual(commit['summary']['pending_reviews'], 0)
         added = Employee.objects.get(national_id='9991000031')
         self.assertEqual(added.health_center_id, self.center.pk)
         self.assertEqual(added.employment_status, 'active')
@@ -150,9 +152,12 @@ class EmployeeCompletionReviewTests(TestCase):
             source_file='ci-import-missing-center.xlsx',
             source_row=3,
         )
-        self.assertEqual(unassigned.status, 'pending')
+        self.assertEqual(unassigned.status, 'activated')
         self.assertIsNone(unassigned.employee_payload['health_center'])
-        self.assertFalse(Employee.objects.filter(national_id='9991000032').exists())
-        self.assertEqual(Employee.objects.count(), 3)
+        provisional = Employee.objects.get(national_id='9991000032')
+        self.assertEqual(provisional.registration_status, 'provisional')
+        self.assertIsNone(provisional.health_center_id)
+        self.assertEqual(unassigned.activated_employee_id, provisional.pk)
+        self.assertEqual(Employee.objects.count(), 4)
         self.missing.refresh_from_db()
         self.assertEqual(self.missing.health_center_id, self.center.pk)

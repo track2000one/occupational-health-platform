@@ -130,7 +130,9 @@ type ApiEmployee = {
   age?: number;
   gender: Gender;
   marital_status?: MaritalStatus;
-  health_center: number | string;
+  health_center: number | string | null;
+  source_center_name?: string;
+  registration_status?: 'verified' | 'provisional';
   health_center_name?: string;
   job_title?: string;
   job_title_en?: string;
@@ -227,6 +229,7 @@ const OPTIONAL_EMPLOYEE_FIELDS: Array<[keyof ApiEmployee, string]> = [
   ['job_title', 'المسمى الوظيفي'],
   ['current_job', 'الوظيفة الحالية'],
   ['appointment_date', 'تاريخ التعيين'],
+  ['health_center', 'المركز الصحي'],
 ];
 function missingEmployeeOptionalFields(employee: ApiEmployee): string[] {
   return OPTIONAL_EMPLOYEE_FIELDS.filter(([field]) =>
@@ -472,7 +475,8 @@ export function EmployeesPage() {
   const filteredEmployees = employees;
 
   function getHealthCenterName(employee: ApiEmployee) {
-    return centerNameById.get(String(employee.health_center)) || employee.health_center_name || '-';
+    return centerNameById.get(String(employee.health_center)) || employee.health_center_name ||
+      (employee.source_center_name ? `بانتظار مطابقة: ${employee.source_center_name}` : 'مركز غير محدد');
   }
 
   function openAdd() {
@@ -933,6 +937,7 @@ export function EmployeesPage() {
                   <EmployeeRegistryCard
                     employee={employee}
                     missingFields={missingEmployeeOptionalFields(employee)}
+                    provisional={employee.registration_status === 'provisional'}
                     centerName={getHealthCenterName(employee)}
                     isRtl={isRtl}
                     canWrite={canWrite && !employee.is_archived}
@@ -973,7 +978,10 @@ export function EmployeesPage() {
                 <TableRow key={employee.id} hover sx={missingEmployeeOptionalFields(employee).length && !employee.is_archived
                   ? { bgcolor: '#FFF4C7', '&:hover': { bgcolor: '#FFEBA3' } }
                   : undefined}>
-                  <TableCell>{employee.employee_number || '-'}</TableCell>
+                  <TableCell>{employee.employee_number || '-'}{employee.registration_status === 'provisional' && (
+                    <Chip size="small" color="warning" variant="filled"
+                      label={isRtl ? 'تسجيل أولي' : 'Provisional'} sx={{ display: 'flex', mt: 0.5, width: 'fit-content' }} />
+                  )}</TableCell>
                   <TableCell>
                     <Typography variant="body2" fontWeight="bold">{employee.name}</Typography>
                     {employee.is_archived && (
