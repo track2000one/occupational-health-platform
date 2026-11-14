@@ -95,6 +95,7 @@ type ImportResult = {
   employee_import_mode?: 'template' | 'flexible';
   summary: ImportSummary;
   blocking_reasons?: Array<{ reason: string; count: number }>;
+  conflict_reasons?: Array<{ reason: string; count: number }>;
   sheet_results?: SheetImportResult[];
   duplicates: { row: number; national_id?: string; name?: string; reason: string }[];
   errors: { row: number; reason: string }[];
@@ -895,7 +896,7 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
       const committedNone = employeeMode && shouldCommit && (nextResult.summary.imported_employees || 0) === 0;
       if (committedNone) {
         toast.warning(isRtl
-          ? 'لم يُضف أي موظف؛ جميع السجلات غير مؤهلة أو تحتاج مراجعة. اطلع على أسباب المنع أدناه قبل إعادة الاستيراد.'
+          ? `لم يُنشأ موظف جديد: ${nextResult.summary.true_conflicts || 0} تعارض فعلي، ${nextResult.summary.needs_correction || 0} بحاجة لتصحيح، و${nextResult.summary.already_existing || 0} موجود مسبقًا. راجع أسباب التعارض؛ إعادة رفع الملف نفسه لا تعالجها.`
           : 'No employees were added. Review the blocking reasons before trying again.',
         { id: loadingToast, duration: 11000 });
       } else {
@@ -1194,6 +1195,28 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
                   ? 'يمكن أن يكون الموظف موجودًا مسبقًا ولديه نواقص اختيارية في الوقت نفسه. لا تُضاف نسخ مكررة ولا تُستبدل بيانات الموظفين الحاليين تلقائيًا.'
                   : 'Existing staff may also have optional gaps. No duplicate staff or automatic updates to existing records.'}
               </Typography>
+            </Paper>
+          )}
+
+          {employeeMode && (result.conflict_reasons?.length || 0) > 0 && (
+            <Paper variant="outlined" sx={{ p: 2.5, mb: 2.5, borderRadius: 3, borderColor: 'error.main' }}>
+              <Typography variant="h6" sx={{ mb: 0.75, fontWeight: 900 }}>
+                {isRtl ? 'تفصيل أسباب التعارضات الفعلية' : 'Real conflict reasons'}
+              </Typography>
+              <Alert severity="warning" sx={{ mb: 1.5 }}>
+                {isRtl
+                  ? 'هذه إحصاءات لأسباب التعارض فقط؛ قد يجتمع أكثر من سبب في سجل واحد. لا تُلغِ التحقق من الاسم أو الهوية أو الرقم الوظيفي لمعالجة هذه الحالات.'
+                  : 'Conflict categories may overlap for the same row. Do not bypass identity or employee-number verification.'}
+              </Alert>
+              <Stack gap={1}>
+                {(result.conflict_reasons || []).map((item, i) => (
+                  <Stack key={i} direction="row" justifyContent="space-between" alignItems="center" gap={2}
+                    sx={{ borderBottom: '1px solid', borderColor: 'divider', py: 0.7 }}>
+                    <Typography variant="body2">{localizeImportIssue(item.reason, isRtl)}</Typography>
+                    <Chip color="error" label={item.count} sx={{ fontWeight: 900, minWidth: 58 }} />
+                  </Stack>
+                ))}
+              </Stack>
             </Paper>
           )}
 
