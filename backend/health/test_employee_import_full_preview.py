@@ -23,7 +23,7 @@ def synthetic_staff_file():
         'الرقم الوظيفي', 'الوظيفة الحالية', 'رقم الجوال', 'البريد الإلكتروني',
     ])
     for i in range(1, 38):
-        # 34 valid, 2 invalid (missing name, unknown center),
+        # 34 regular, 1 provisional (unknown center), 1 invalid (missing name),
         # 1 duplicate of the 1st identity
         name = f'Synthetic Staff {i}' if i != 35 else ''
         center = 'Synthetic Clinic One' if i != 36 else 'No such health center'
@@ -71,8 +71,9 @@ class FullEmployeeRosterPreviewTests(TestCase):
         data = response.data
         self.assertEqual(data['mode'], 'preview')
         self.assertEqual(data['summary']['total_rows'], 37)
-        self.assertEqual(data['summary']['valid_rows'], 34)
-        self.assertEqual(data['summary']['errors_count'], 2)
+        self.assertEqual(data['summary']['valid_rows'], 35)
+        self.assertEqual(data['summary']['provisional_ready'], 1)
+        self.assertEqual(data['summary']['errors_count'], 1)
         self.assertEqual(data['summary']['duplicate_rows'], 1)
         self.assertEqual(len(data['preview_rows']), 37)
         self.assertEqual(data['preview_rows_total'], 37)
@@ -91,7 +92,7 @@ class FullEmployeeRosterPreviewTests(TestCase):
         self.assertNotEqual(first['mobile'], '0500000000')
         self.assertNotEqual(first['email'], 'preview1@example.invalid')
         self.assertEqual(data['preview_rows'][34]['status'], 'error')
-        self.assertEqual(data['preview_rows'][35]['status'], 'error')
+        self.assertEqual(data['preview_rows'][35]['status'], 'provisional')
         self.assertFalse(data['preview_rows'][35]['health_center_matched'])
         self.assertEqual(data['preview_rows'][36]['status'], 'conflict')
         self.assertTrue(data['preview_rows'][36]['issues'])
