@@ -1039,9 +1039,14 @@ export function DataImportPage({ employeeMode = false }: DataImportPageProps) {
                         ? 'الأسماء الموجودة سابقًا، بما فيها المؤرشفة، لا تُنشأ مرة أخرى. يمكن استكمال أو استعادة السجل نفسه بعد التحقق؛ أما حفظ بطاقات المراجعة فهو إجراء مستقل لا يضيف موظفين.'
                         : 'Existing identities, including archived employees, cannot be recreated. Verify and complete or restore those records instead. Saving review cards does not add employees.'}
                     </Typography>
-                    <Button component={Link} to="/employees" variant="outlined" size="small" sx={{ mb: 1.2 }}>
-                      {isRtl ? 'فتح سجل الموظفين والاستعادة' : 'Open employee registry and recovery'}
-                    </Button>
+                    <Stack direction={{ xs: 'column', sm: 'row' }} gap={1} sx={{ mb: 1.2 }}>
+                      <Button component={Link} to="/employees/reconcile" variant="contained" color="success">
+                        {isRtl ? 'مطابقة واستكمال الموظفين من Excel' : 'Reconcile and complete existing employees'}
+                      </Button>
+                      <Button component={Link} to="/employees" variant="outlined" size="small">
+                        {isRtl ? 'فتح سجل الموظفين والاستعادة' : 'Open employee registry and recovery'}
+                      </Button>
+                    </Stack>
                     {(result.summary.staged_for_review || 0) > 0 && (
                       <FormControlLabel
                         control={

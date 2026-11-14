@@ -92,7 +92,7 @@ async function resilientFetch(input: RequestInfo | URL, options: RequestInit = {
   const safeToRetry = method === 'GET' || method === 'HEAD' || method === 'OPTIONS';
   const attempts = safeToRetry ? 2 : 1;
   const requestUrl = String(input);
-  const timeoutMs = requestUrl.includes('/excel-import/upload/')
+  const timeoutMs = (requestUrl.includes('/excel-import/upload/') || requestUrl.includes('/employee-roster/reconcile/'))
     ? EXCEL_IMPORT_TIMEOUT_MS
     : safeToRetry ? SAFE_REQUEST_TIMEOUT_MS : WRITE_REQUEST_TIMEOUT_MS;
   let lastError: unknown;
