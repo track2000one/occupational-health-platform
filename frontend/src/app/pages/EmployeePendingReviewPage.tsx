@@ -12,6 +12,25 @@ import { authFetch, getAccessToken } from '../context/AuthContext';
 
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 
+type ReconciliationSnapshot = {
+  mode: 'read_only';
+  review_cards: number;
+  unique_valid_identities: number;
+  invalid_identity_cards: number;
+  repeated_review_cards: number;
+  matched_active: number;
+  matched_archived: number;
+  identity_not_in_registry: number;
+  different_or_missing_name: number;
+  different_unique_fields: number;
+  multiple_reviews_for_identity: number;
+  archived_requires_verified_restore: number;
+  active_possible_fill_only: number;
+  active_no_empty_fields_to_fill: number;
+  possible_fill_fields: Record<string, number>;
+  notice_ar: string;
+};
+
 type ReviewRow = {
   id: number; source_row: number; source_file: string;
   status: 'pending' | 'conflict';
@@ -60,6 +79,32 @@ export function EmployeePendingReviewPage() {
   const [loading, setLoading] = useState(true);
   const [reload, setReload] = useState(0);
   const [error, setError] = useState('');
+  const [reconciliation, setReconciliation] = useState<ReconciliationSnapshot | null>(null);
+  const [reconciling, setReconciling] = useState(false);
+  const [reconciliationError, setReconciliationError] = useState('');
+
+  const inspectIdentityMatches = async () => {
+    const token = getAccessToken();
+    if (!token || !API) {
+      setReconciliationError('تعذر الاتصال بالمنصة؛ تحقق من الجلسة.');
+      return;
+    }
+    setReconciling(true);
+    setReconciliation(null);
+    setReconciliationError('');
+    try {
+      const response = await authFetch(API + '/employee-import-reviews/reconciliation-preview/', {
+        method: 'POST', headers: { Authorization: 'Bearer ' + token },
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || 'تعذر فحص الهويات.');
+      setReconciliation(data as ReconciliationSnapshot);
+    } catch (err) {
+      setReconciliationError(err instanceof Error ? err.message : 'تعذر إتمام الفحص.');
+    } finally {
+      setReconciling(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -107,6 +152,10 @@ export function EmployeePendingReviewPage() {
         <Button variant="outlined" startIcon={<BackIcon />} onClick={() => navigate('/employees')}>
           الموظفون
         </Button>
+        <Button variant="outlined" disabled={reconciling}
+          onClick={() => void inspectIdentityMatches()}>
+          {reconciling ? 'جاري مطابقة السجل...' : 'فحص مطابقة الهويات (قراءة فقط)'}
+        </Button>
         <Button variant="contained" onClick={() => navigate('/employees/import')}>
           استيراد ملف Excel
         </Button>
@@ -119,6 +168,39 @@ export function EmployeePendingReviewPage() {
       لا تُنشأ مراكز وهمية، ولا يُغيّر ربط أي موظف موجود أو بياناته الطبية.
     </Alert>
 
+    {reconciliationError && <Alert severity="error" sx={{ mb: 2 }}>{reconciliationError}</Alert>}
+    {reconciliation && (
+      <Paper variant="outlined" sx={{ p: 2.5, mb: 2, borderRadius: 3 }}>
+        <Typography fontWeight={900} variant="h6" sx={{ mb: 1.5 }}>
+          مطابقة بطاقات المراجعة مع سجل الموظفين
+        </Typography>
+        <Grid container spacing={1.5}>
+          {([
+            ['بطاقات مراجعة محفوظة', reconciliation.review_cards],
+            ['هويات فريدة صالحة', reconciliation.unique_valid_identities],
+            ['مطابقة لسجلات مؤرشفة', reconciliation.matched_archived],
+            ['مطابقة لسجلات نشطة', reconciliation.matched_active],
+            ['هويات غير موجودة في السجل', reconciliation.identity_not_in_registry],
+            ['هويات ذات عدة بطاقات مراجعة', reconciliation.multiple_reviews_for_identity],
+            ['اختلاف في الاسم أو غيابه', reconciliation.different_or_missing_name],
+            ['اختلاف رقم وظيفي أو بريد قائم', reconciliation.different_unique_fields],
+            ['سجلات نشطة محتمل استكمال نواقصها', reconciliation.active_possible_fill_only],
+            ['هويات غير صحيحة في البطاقات', reconciliation.invalid_identity_cards],
+          ] as const).map(([label, number]) => (
+            <Grid key={label} size={{ xs: 12, sm: 6, md: 4 }}>
+              <Box sx={{ p: 1.5, border: '1px solid #D5E0EC', borderRadius: 2 }}>
+                <Typography color="text.secondary" fontSize={12}>{label}</Typography>
+                <Typography fontWeight={900} fontSize={22}>{number}</Typography>
+              </Box>
+            </Grid>
+          ))}
+        </Grid>
+        <Alert severity="info" sx={{ mt: 2 }}>
+          {reconciliation.notice_ar} لا تعني المطابقة بالمصدر إذنًا باستعادة الموظف
+          أو استبدال قيم موجودة؛ يلزم تدقيق الهوية والمركز واعتماد إجراء منفصل.
+        </Alert>
+      </Paper>
+    )}
     <Paper sx={{ p: 2, borderRadius: 3, mb: 2 }}>
       <Stack direction={{ xs: 'column', md: 'row' }} gap={1.5} alignItems="center">
         <TextField size="small" fullWidth label="البحث باسم الموظف" value={search}
