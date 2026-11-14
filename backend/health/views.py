@@ -421,6 +421,7 @@ class EmployeeImportReviewViewSet(viewsets.ReadOnlyModelViewSet):
         if center_missing in ('true', '1'):
             queryset = queryset.filter(
                 Q(employee_payload__health_center__isnull=True) |
+                Q(employee_payload__health_center=None) |
                 Q(employee_payload__health_center='') |
                 Q(employee_payload__health_center=0)
             )
