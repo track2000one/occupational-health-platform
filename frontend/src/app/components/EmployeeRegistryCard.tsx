@@ -28,6 +28,7 @@ type Props = {
   employee: EmployeeCardRecord;
   centerName: string;
   missingFields?: string[];
+  provisional?: boolean;
   isRtl: boolean;
   canWrite: boolean;
   canManage: boolean;
@@ -70,7 +71,7 @@ function Info({ label, value }: { label: string; value: string }) {
 }
 
 export function EmployeeRegistryCard({
-  employee, centerName, missingFields = [], isRtl, canWrite, canManage, canArchive,
+  employee, centerName, missingFields = [], provisional = false, isRtl, canWrite, canManage, canArchive,
   onArchive, onRestore, onView, onEdit, onHealthCard, onEmploymentHistory,
 }: Props) {
   const status = STATUS[employee.employment_status || 'active'] || STATUS.under_review;
@@ -79,7 +80,7 @@ export function EmployeeRegistryCard({
     employee.roster_source_status !== 'active'
     ? employee.roster_source_status : null;
   const isSynthetic = employee.employee_number?.startsWith('OHP-');
-  const needsCompletion = !employee.is_archived && missingFields.length > 0;
+  const needsCompletion = !employee.is_archived && (provisional || missingFields.length > 0);
 
   return (
     <Paper elevation={0} component="article" sx={{
@@ -116,6 +117,9 @@ export function EmployeeRegistryCard({
           {isRtl ? 'سجل تجريبي — بيانات غير حقيقية' : 'Synthetic test record'}
         </Typography>
       )}
+      {provisional && <Typography sx={{ mb: 1, fontSize: 12.5, color: '#8B5E03', fontWeight: 900 }}>
+        {isRtl ? 'تسجيل أولي — يُرجى التحقق من الهوية واستكمال التبعية' : 'Provisional registration — verify identity and placement'}
+      </Typography>}
       {needsCompletion && (
         <Box sx={{
           mb: 1.5, px: 1.5, py: 1.2, borderRadius: 2,
