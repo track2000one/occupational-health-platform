@@ -538,7 +538,18 @@ class Employee(models.Model):
     age = models.PositiveIntegerField(default=0)
     gender = models.CharField(max_length=10, choices=GENDER, default='', blank=True)
     marital_status = models.CharField(max_length=20, choices=MARITAL_STATUS, blank=True)
-    health_center = models.ForeignKey(HealthCenter, on_delete=models.PROTECT, related_name='employees')
+    # Imported staff may be registered by a unique validated identifier before
+    # their organizational placement is known. Never assign a placeholder center.
+    health_center = models.ForeignKey(
+        HealthCenter, null=True, blank=True, on_delete=models.PROTECT,
+        related_name='employees',
+    )
+    source_center_name = models.CharField(max_length=200, blank=True)
+    registration_status = models.CharField(
+        max_length=20,
+        choices=(('verified', 'Verified registry record'), ('provisional', 'Awaiting identity/placement verification')),
+        default='verified', db_index=True,
+    )
     organization_unit = models.ForeignKey(OrganizationUnit, null=True, blank=True,
                                           on_delete=models.PROTECT, related_name='employees')
     job_title = models.CharField(max_length=150, blank=True)
