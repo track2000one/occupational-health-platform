@@ -114,6 +114,30 @@ class EmployeeImportClassificationTests(TestCase):
             for issue in result['preview_rows'][0]['issues']
         ))
 
+    def test_conflict_reasons_are_aggregated_without_personal_data(self):
+        result = self.classify(self.row(
+            name='اسم مختلف للتجربة', number='QA-9999',
+        ))
+        reasons = {
+            item['reason']: item['count']
+            for item in result['conflict_reasons']
+        }
+        self.assertEqual(result['summary']['true_conflicts'], 1, result)
+        self.assertEqual(
+            reasons['Same national ID has a different employee name.'], 1,
+        )
+        self.assertEqual(
+            reasons['Same national ID has a different employee number.'], 1,
+        )
+        self.assertNotIn('9998000001', str(result['conflict_reasons']))
+        self.assertNotIn('اسم مختلف للتجربة', str(result['conflict_reasons']))
+        self.assertNotIn('QA-9999', str(result['conflict_reasons']))
+
+    def test_nonconflicting_existing_employee_has_no_conflict_reasons(self):
+        result = self.classify(self.row())
+        self.assertEqual(result['summary']['already_existing'], 1)
+        self.assertEqual(result['conflict_reasons'], [])
+
     def test_valid_new_employee_with_missing_optional_fields_is_yellow_hint_not_error(self):
         result = self.classify(self.row(
             identity='9998000003', name='موظف تجريبي آخر',
