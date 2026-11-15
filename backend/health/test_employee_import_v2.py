@@ -119,7 +119,6 @@ class EmployeeImportV2PreviewTests(TestCase):
             '/api/employee-roster-template/',
             '/api/workforce-roster/preview/',
             '/api/workforce-roster/import-plan/',
-            '/api/excel-import/upload/',
         )
         for endpoint in legacy:
             with self.subTest(endpoint=endpoint):
@@ -127,6 +126,13 @@ class EmployeeImportV2PreviewTests(TestCase):
                 self.assertEqual(response.status_code, 403, response.content[:250])
                 self.assertTrue(response.json()['legacy_import_disabled'])
                 self.assertEqual(response['Cache-Control'], 'private, no-store')
+        old_excel = self.client.post(
+            '/api/excel-import/upload/',
+            {'file': self.workbook([['QA Authorized', '1000000001']])},
+            format='multipart',
+        )
+        self.assertEqual(old_excel.status_code, 410, old_excel.data)
+        self.assertFalse(DataImportBatch.objects.exists())
         current = self.preview([['QA Authorized', '1000000001']],
                                headers=['اسم الموظف', 'رقم الهوية الوطنية'])
         self.assertEqual(current.status_code, 200, current.data)
