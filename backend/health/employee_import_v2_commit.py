@@ -152,7 +152,7 @@ def preview_commit_info(plan, file_sha, sheet, user_id):
     }
 
 
-def commit_safe_plan(request, plan, file_sha, sheet):
+def commit_safe_plan(request, plan, file_sha, sheet, sheet_rows):
     if not getattr(settings, 'EMPLOYEE_IMPORT_V2_COMMIT_ENABLED', False):
         return Response({'detail': 'الاعتماد لم يُفعّل في بيئة التشغيل الحالية.'}, status=403)
     try:
@@ -185,10 +185,10 @@ def commit_safe_plan(request, plan, file_sha, sheet):
             # Lock all matching records before rebuilding the plan.
             from .employee_import_v2 import identity
             nids = [identity(row['national_id'])
-                    for row in request._employee_import_v2_rows]
+                    for row in sheet_rows]
             list(Employee.objects.select_for_update().filter(
                 national_id__in=nids).order_by('pk').values_list('pk', flat=True))
-            current_plan = registry_match(request._employee_import_v2_rows)
+            current_plan = registry_match(sheet_rows)
             if registry_fingerprint(current_plan) != parsed.get('fingerprint'):
                 return Response({'detail': 'تغيّرت قاعدة الموظفين بعد المعاينة؛ أعد الفحص.'},
                                 status=409)
