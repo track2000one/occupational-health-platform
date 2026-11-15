@@ -17,6 +17,7 @@ jobs:
     env:
       DJANGO_SECRET_KEY: workflow-test-only-secret
       DEBUG: "1"
+      LEGACY_EMPLOYEE_EXCEL_IMPORTS_ENABLED: "true" # Synthetic historical tests only; production defaults false
     defaults:
       run:
         working-directory: backend
@@ -73,6 +74,7 @@ jobs:
     env:
       DATABASE_URL: postgresql://ci_only:synthetic_ci_password@127.0.0.1:5432/occupational_ci
       DEBUG: "True"
+      LEGACY_EMPLOYEE_EXCEL_IMPORTS_ENABLED: "true" # Synthetic PostgreSQL regression only
       SECRET_KEY: synthetic-key-not-for-production
       PGPASSWORD: synthetic_ci_password
     defaults:
