@@ -41,7 +41,12 @@ type PreflightResult = {
   identity_found: number;
   archive_provenance: {
     matching_unfinished_bulk_reset: number;
+    matching_older_unfinished_bulk_reset: number;
+    matching_previously_restored_bulk_reset: number;
     other_or_unverified_archive: number;
+    reset_batches_scanned: number;
+    unfinished_reset_batches_scanned: number;
+    completed_reset_batches_scanned: number;
     archive_reason_missing: number;
     employment_active: number;
     employment_transferred: number;
@@ -51,6 +56,12 @@ type PreflightResult = {
     employment_unknown: number;
     has_unfinished_bulk_reset: boolean;
   };
+  archive_review_examples_masked: Record<string, Array<{
+    row: number;
+    identity_masked: string;
+    name_different: boolean;
+    reason_documented: boolean;
+  }>>;
   yellow_missing_information: number;
   missing_field_counts: Record<string, number>;
   review_examples_masked: Array<{
@@ -104,6 +115,13 @@ const REGISTRY_STATES: Array<{
   { key: 'duplicate_file_identifier', title: 'رقم وظيفي أو بريد مكرر في الملف', tone: 'error' },
   { key: 'invalid_identity', title: 'هوية أو اسم غير صالح', tone: 'error' },
 ];
+const ARCHIVE_GROUPS = [
+  { key: 'matching_unfinished_bulk_reset', label: 'أرشفة تطابق آخر تصفير غير مستعاد (دليل للتدقيق فقط)' },
+  { key: 'matching_older_unfinished_bulk_reset', label: 'أرشفة تطابق تصفيرًا أقدم لم تُعتمد استعادته' },
+  { key: 'matching_previously_restored_bulk_reset', label: 'أرشفة تطابق دفعة مصنفة مستعادة سابقًا — يلزم تدقيق خاص' },
+  { key: 'other_or_unverified_archive', label: 'أرشفة دون تطابق تاريخي فريد مثبت — تتطلب مراجعة مستقلة' },
+] as const;
+
 const COUNTS: Array<{ key: string; label: string; color: 'success' | 'warning' | 'error' | 'info' }> = [
   { key: 'structurally_valid', label: 'مكتملة بنيويًا', color: 'success' },
   { key: 'incomplete_source', label: 'بيانات مصدر ناقصة', color: 'warning' },
@@ -423,14 +441,10 @@ export function EmployeeImportV2Page() {
         <Typography fontWeight={900} sx={{ mb: 1 }}>التحقق من مصدر أرشفة الموظفين</Typography>
         <Grid container spacing={1.5} sx={{ mb: 2 }}>
           {[
-            {
-              label: 'أرشفة تطابق آخر تصفير جماعي غير مستعاد (للتدقيق فقط)',
-              count: preview.archive_provenance.matching_unfinished_bulk_reset,
-            },
-            {
-              label: 'أرشفة مستقلة أو لا يمكن إثبات مصدرها ضمن آخر تصفير',
-              count: preview.archive_provenance.other_or_unverified_archive,
-            },
+            ...ARCHIVE_GROUPS.map(group => ({
+              label: group.label,
+              count: preview.archive_provenance[group.key] || 0,
+            })),
             {
               label: 'حالة وظيفية مسجلة: على رأس العمل',
               count: preview.archive_provenance.employment_active,
@@ -452,11 +466,34 @@ export function EmployeeImportV2Page() {
             </Paper>
           </Grid>)}
         </Grid>
+        <Alert severity="info" sx={{ mb: 2 }}>
+          فُحصت {preview.archive_provenance.reset_batches_scanned} دفعة تصفير مسجلة،
+          منها {preview.archive_provenance.unfinished_reset_batches_scanned} غير مستعادة
+          و{preview.archive_provenance.completed_reset_batches_scanned} مصنفة مستعادة.
+          تطابق الدفعة مبني على رقم السجل الداخلي وتوقيت الأرشفة الدقيق معًا؛
+          ولا يعني أن الموظف مستحق للاستعادة.
+        </Alert>
+        {ARCHIVE_GROUPS.map(group => {
+          const examples = preview.archive_review_examples_masked?.[group.key] || [];
+          return examples.length > 0 && <Paper key={group.key}
+            variant="outlined" sx={{ p: 1.5, mb: 1.5, borderRadius: 2 }}>
+            <Typography variant="body2" fontWeight={800} sx={{ mb: 0.5 }}>
+              عينات تدقيق: {group.label}
+            </Typography>
+            <Stack direction="row" gap={1} flexWrap="wrap">
+              {examples.map(example => <Chip key={example.row} size="small"
+                variant="outlined"
+                label={`صف Excel ${example.row} — ${example.identity_masked}${example.name_different ? ' · اختلاف اسم' : ''}${!example.reason_documented ? ' · سبب أرشفة غير موثق' : ''}`} />)}
+            </Stack>
+          </Paper>;
+        })}
         <Alert severity="warning" sx={{ mb: 2 }}>
           هذه مؤشرات تدقيق مستقلة، ولا تُثبت أهلية الاستعادة. يجب مراجعة سبب
-          الأرشفة وسجل التصفير وحالة الخدمة ونسخة PostgreSQL الاحتياطية قبل
-          اعتماد أي استعادة. لا تستعد جميع المؤرشفين تلقائيًا، ولا تغيّر الأسماء
-          أو الملفات الصحية بسبب اختلاف بيانات Excel.
+          الأرشفة وسجلات جميع دفعات التصفير والحالة الوظيفية الحالية ونسخة
+          PostgreSQL الاحتياطية قبل اعتماد أي استعادة. قد تكون بعض الأرشفة
+          مستقلة عن التصفير أو لا توجد أدلة كافية على مصدرها.
+          لا تستعد جميع المؤرشفين تلقائيًا، ولا تغيّر الأسماء أو الملفات الصحية
+          بسبب اختلاف بيانات Excel.
           {preview.archive_provenance.archive_reason_missing > 0 &&
             ` توجد ${preview.archive_provenance.archive_reason_missing} حالة دون سبب أرشفة مدوّن، وتحتاج تحققًا منفصلًا.`}
         </Alert>
