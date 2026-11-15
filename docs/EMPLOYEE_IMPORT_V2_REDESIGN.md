@@ -97,6 +97,14 @@ Once V2 is fully operational, unused backend source can be removed separately.
 No historical migrations or tables (including EmployeeImportReview) will be
 dropped without proof that no medical or audit references depend on them.
 
+## National ID visibility policy (2026-11-15)
+
+- The **source XLSX must contain full, genuine 10-digit national IDs** for unique identity matching. An already-redacted spreadsheet with symbols such as `10••••1681` or `10****1681` is **not a valid import source**; V2 rejects it with counts and source row numbers without exposing IDs.
+- The import preview, exception cards, employee cards, employee tables and standard employee reports **display IDs masked by default**. Masking is a *presentation-only* concern; the database retains the original verified ID.
+- The employee report includes the masked-ID column by default. In the report settings, only users with both sensitive-data and export permissions may explicitly opt to print **full national IDs**. The server enforces the role restriction, full-ID report requests are audit logged, and responses are not cached.
+- The administrator can alternatively omit the ID column entirely before printing. Full-ID mode is not saved as a user preference, and each new report starts in masked mode.
+- Do not commit original employee XLSX files or full-identifier reports to GitHub.
+
 ## Production release checklist
 
 - [ ] Frontend and backend CI passes with PostgreSQL.
