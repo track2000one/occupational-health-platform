@@ -34,8 +34,7 @@ import { LoginPage } from './pages/LoginPage';
 import { DashboardLayout } from './components/layout/DashboardLayout';
 import { DashboardPage } from './pages/DashboardPage';
 import { EmployeesPage } from './pages/EmployeesPage';
-import { EmployeePendingReviewPage } from './pages/EmployeePendingReviewPage';
-import { EmployeeExcelReconciliationPage } from './pages/EmployeeExcelReconciliationPage';
+import { EmployeeImportV2Page } from './pages/EmployeeImportV2Page';
 import { EmployeeRegistryReportPage } from './pages/EmployeeRegistryReportPage';
 import { EmployeeHealthCardPage } from './pages/EmployeeHealthCardPage';
 import { LabTestsPage } from './pages/LabTestsPage';
@@ -62,9 +61,6 @@ import { CenterDirectoryMatchingPage } from './pages/CenterDirectoryMatchingPage
 import { CenterFoundationPage } from './pages/CenterFoundationPage';
 import { OrganizationStructurePage } from './pages/OrganizationStructurePage';
 import { EmployeeLifecyclePage } from './pages/EmployeeLifecyclePage';
-import { WorkforceRosterPreviewPage } from './pages/WorkforceRosterPreviewPage';
-import { WorkforceTemporaryPage } from './pages/WorkforceTemporaryPage';
-import { WorkforceImportPlansPage } from './pages/WorkforceImportPlansPage';
 import { HealthCardVerificationPage } from './pages/HealthCardVerificationPage';
 import { Toaster } from 'sonner';
 
@@ -112,21 +108,13 @@ function AppRoutes() {
             <EmployeeRegistryReportPage />
           </PermissionRoute>
         } />
-        <Route path="employees/pending-import" element={
-          <PermissionRoute permission="manage:users">
-            <EmployeePendingReviewPage />
-          </PermissionRoute>
-        } />
-        <Route path="employees/reconcile" element={
-          <PermissionRoute permission="manage:users">
-            <EmployeeExcelReconciliationPage />
-          </PermissionRoute>
-        } />
         <Route path="employees/import" element={
           <PermissionRoute permission="manage:users">
-            <DataImportPage employeeMode />
+            <EmployeeImportV2Page />
           </PermissionRoute>
         } />
+        <Route path="employees/pending-import" element={<Navigate to="/employees/import" replace />} />
+        <Route path="employees/reconcile" element={<Navigate to="/employees/import" replace />} />
         <Route path="employee-health-card" element={<EmployeeHealthCardPage />} />
         <Route path="employees/:employeeId/health-card" element={<EmployeeHealthCardPage />} />
         <Route path="lab-tests" element={<LabTestsPage />} />
@@ -163,21 +151,9 @@ function AppRoutes() {
             <AdminUsersPage />
           </PermissionRoute>
         } />
-        <Route path="admin/workforce-import-plans" element={
-          <PermissionRoute permission="manage:users">
-            <WorkforceImportPlansPage />
-          </PermissionRoute>
-        } />
-        <Route path="admin/temporary-workforce" element={
-          <PermissionRoute permission="manage:users">
-            <WorkforceTemporaryPage />
-          </PermissionRoute>
-        } />
-        <Route path="admin/workforce-roster-preview" element={
-          <PermissionRoute permission="manage:users">
-            <WorkforceRosterPreviewPage />
-          </PermissionRoute>
-        } />
+        <Route path="admin/workforce-import-plans" element={<Navigate to="/employees/import" replace />} />
+        <Route path="admin/temporary-workforce" element={<Navigate to="/employees/import" replace />} />
+        <Route path="admin/workforce-roster-preview" element={<Navigate to="/employees/import" replace />} />
         <Route path="admin/employee-lifecycle" element={
           <PermissionRoute permission="manage:users">
             <EmployeeLifecyclePage />
