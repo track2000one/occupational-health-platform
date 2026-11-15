@@ -163,11 +163,11 @@ class EmployeeImportV2PreviewTests(TestCase):
                     if entry.filename == 'xl/worksheets/sheet1.xml':
                         if dimension == 'missing':
                             content, changed = re.subn(
-                                rb'<dimension\\s+ref="[^"]*"\\s*/>', b'', content,
+                                rb'<dimension\s+ref="[^"]*"\s*/>', b'', content,
                             )
                         else:
                             content, changed = re.subn(
-                                rb'<dimension\\s+ref="[^"]*"\\s*/>',
+                                rb'<dimension\s+ref="[^"]*"\s*/>',
                                 b'<dimension ref="A1"/>', content,
                             )
                         self.assertEqual(changed, 1, 'Fixture must change Excel dimension')
