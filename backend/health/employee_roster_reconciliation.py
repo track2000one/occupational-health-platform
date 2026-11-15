@@ -14,6 +14,7 @@ from datetime import date
 from hashlib import sha256
 from io import BytesIO
 import json
+import re
 import unicodedata
 
 from django.core import signing
@@ -47,7 +48,7 @@ TOKEN_TTL = 300
 REVIEW_TOKEN_TTL = 600
 REVIEW_PAGE_SIZE = 25
 REVIEW_CATEGORIES = frozenset((
-    'name_mismatch', 'individually_archived_requires_review',
+    'name_mismatch', 'name_different_scripts', 'individually_archived_requires_review',
     'unique_field_mismatch', 'unique_value_owned_by_other',
 ))
 
@@ -147,6 +148,31 @@ def digest_value(value):
                              ensure_ascii=False).encode('utf-8')).hexdigest()
 
 
+_ARABIC_NAME = re.compile(r'[\u0600-\u06ff]')
+_LATIN_NAME = re.compile(r'[A-Za-z]')
+
+
+def primary_name_script(value):
+    """Only identify unambiguous Arabic-only versus Latin-only written names.
+
+    This is a *diagnostic classification*, NEVER evidence of identity.
+    """
+    text = str(value or '')
+    arabic = bool(_ARABIC_NAME.search(text))
+    latin = bool(_LATIN_NAME.search(text))
+    if arabic and not latin:
+        return 'arabic'
+    if latin and not arabic:
+        return 'latin'
+    return 'mixed_or_unknown'
+
+
+def name_scripts_differ(registry_name, source_name):
+    return {primary_name_script(registry_name), primary_name_script(source_name)} == {
+        'arabic', 'latin',
+    }
+
+
 def plan_reconciliation(sheet_rows, *, lock=False):
     national_ids = list({row['national_id'] for row in sheet_rows if row['national_id']})
     queryset = Employee.objects.filter(national_id__in=national_ids).order_by('pk')
@@ -186,7 +212,11 @@ def plan_reconciliation(sheet_rows, *, lock=False):
         elif employee is None:
             kind = 'new_identity_requires_normal_import'
         elif normalize_person_name(employee.name) != normalize_person_name(raw['name']):
-            kind = 'name_mismatch'
+            # Arabic/Latin differences are not proof of different people, but
+            # must remain blocked until an authoritative bilingual roster is verified.
+            kind = ('name_different_scripts'
+                    if name_scripts_differ(employee.name, raw['name'])
+                    else 'name_mismatch')
         else:
             normalized, issues = normalize_incoming(raw)
             if issues:
@@ -346,8 +376,9 @@ class EmployeeRosterReconciliationView(APIView):
                 'preview_token': token,
                 'confirm_phrase': f"مطابقة {eligible} موظفًا",
                 'warning': warning,
-                'notice': ('لم تُعدل أي بيانات. السجلات ذات الاسم أو الرقم المختلف '
-                           'تحتاج مراجعة. المراكز والجهات التنظيمية لا تُعتمد من Excel آليًا.'),
+                'notice': ('لم تُعدل أي بيانات. اختلاف الاسم العربي والإنجليزي صُنّف '
+                           'منفصلًا ولا يُعامل كتطابق تلقائي دون مصدر رسمي معتمد. '
+                           'المراكز والجهات التنظيمية لا تُعتمد من Excel آليًا.'),
             }, headers={'Cache-Control': 'private, no-store'})
 
         if action in ('review', 'review_decision'):
