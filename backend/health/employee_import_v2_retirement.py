@@ -10,7 +10,7 @@ from django.http import JsonResponse
 
 
 LEGACY_PATH_PREFIXES = (
-    '/api/excel-import/',
+    '/api/excel-import/upload/',  # Preserve read-only historical import audit lists.
     '/api/employee-import-reviews/',
     '/api/employee-roster/reconcile/',
     '/api/employee-roster-template/',
