@@ -133,7 +133,7 @@ def registry_match(sheet_rows):
     # reset's eligibility simply because their PK appears in its JSON list.
     reset_batches = list(
         EmployeeRegistryResetBatch.objects.order_by('-created_at', '-pk')
-        .only('employee_ids', 'applied_at', 'restored_at', 'created_at')
+        .only('employee_ids', 'applied_at', 'restored_at', 'created_at', 'reason')
     )
     latest_unfinished = next(
         (batch for batch in reset_batches if batch.restored_at is None), None
@@ -149,6 +149,8 @@ def registry_match(sheet_rows):
     independent_flags = Counter()
     archive_provenance = Counter()
     archive_review_examples = defaultdict(list)
+    restoration_readiness = Counter()
+    restoration_samples = defaultdict(list)
     planned_rows = []
     missing_counts = Counter()
     review_examples = []
@@ -160,6 +162,7 @@ def registry_match(sheet_rows):
         # and have a name discrepancy. "kind" below is deliberately one
         # primary blocking reason, never a complete status inventory.
         archive_origin = None
+        matching_batch = None
         if employee:
             name_differs = norm_text(source_name) != norm_text(employee.name)
             independent_flags['matched_identity_total'] += 1
@@ -175,6 +178,8 @@ def registry_match(sheet_rows):
                     if employee.archived_at is not None
                     and employee.archived_at == batch.applied_at
                 ]
+                if len(matching_batches) == 1:
+                    matching_batch = matching_batches[0]
                 if len(matching_batches) != 1:
                     # Missing or ambiguous evidence cannot support an
                     # automatic restore or a claim of individual archiving.
@@ -215,6 +220,39 @@ def registry_match(sheet_rows):
             email and
             (email_owners.get(email, set()) - ({employee.pk} if employee else set()))
         )
+        # Restoration assessment is deliberately independent of import V2's
+        # mutually exclusive blocking status. No record is approved or restored
+        # here: a verified reset + matching file still requires a real backup,
+        # employment verification, documented administrator decision and
+        # separately implemented transaction/rollback safeguards.
+        if employee and employee.is_archived:
+            different_identifiers = (
+                (employee_number and employee.employee_number and
+                 norm_text(employee_number) != norm_text(employee.employee_number)) or
+                (email and employee.email and email != norm_email(employee.email))
+            )
+            if (not nvalid or not source_name or id_counts[nid] > 1 or
+                    duplicate_identifier or other_identifier_owner or different_identifiers):
+                assessment = 'identity_or_identifier_review'
+            elif (matching_batch is None or
+                  matching_batch.restored_at is not None):
+                assessment = 'archive_history_review'
+            elif employee.employment_status != Employee.EmploymentStatus.ACTIVE:
+                assessment = 'employment_status_review'
+            elif (not (employee.archive_reason or '').strip() or
+                  employee.archive_reason.strip() != (matching_batch.reason or '').strip()):
+                assessment = 'archive_reason_review'
+            elif name_differs:
+                assessment = 'name_difference_review'
+            else:
+                assessment = 'candidate_for_administrative_review'
+            restoration_readiness[assessment] += 1
+            if len(restoration_samples[assessment]) < 3:
+                restoration_samples[assessment].append({
+                    'row': row['_row'],
+                    'identity_masked': nid[:2] + '••••' + nid[-4:] if nvalid else '—',
+                    'archive_group': archive_origin,
+                })
         if not nvalid or not source_name:
             kind = 'invalid_identity'
         elif id_counts[nid] > 1:
@@ -341,6 +379,27 @@ def registry_match(sheet_rows):
             'has_unfinished_bulk_reset': bool(latest_unfinished),
         },
         'archive_review_examples_masked': dict(archive_review_examples),
+        'restoration_readiness': {
+            'counts': {
+                key: restoration_readiness[key]
+                for key in (
+                    'candidate_for_administrative_review',
+                    'name_difference_review',
+                    'identity_or_identifier_review',
+                    'employment_status_review',
+                    'archive_reason_review',
+                    'archive_history_review',
+                )
+            },
+            'samples_masked': dict(restoration_samples),
+            'scanned_archived': sum(restoration_readiness.values()),
+            'restore_enabled': False,
+            'notice': (
+                'ترشيح أولي لمراجعة المسؤول فقط. لا تعني مطابقة التصفير '
+                'صلاحية الاستعادة ولا يثبت ملف Excel حالة العمل الحالية. '
+                'لن تُستعاد أي سجلات أو تُغيّر بياناتها أثناء هذا الفحص.'
+            ),
+        },
         'registry_facets': {
             'matched_identity_total': independent_flags['matched_identity_total'],
             'active_identity_total': independent_flags['active_identity_total'],
