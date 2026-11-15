@@ -5,6 +5,7 @@ structural checks. Neither preview creates review cards nor modifies staff,
 archive state, organization links, clinical data or auditing.
 """
 from collections import Counter
+from hashlib import sha256
 from io import BytesIO
 import re
 import unicodedata
@@ -99,6 +100,9 @@ class EmployeeImportV2PreviewView(APIView):
     def post(self, request):
         if not request.user.is_superuser:
             return Response({'detail': 'هذه المهمة متاحة للمسؤول الأعلى فقط.'}, status=403)
+        action = str(request.data.get('action') or 'preview')
+        if action not in ('preview', 'commit'):
+            return Response({'detail': 'إجراء غير معروف.'}, status=400)
         file = request.FILES.get('file')
         if not file or not str(file.name).lower().endswith('.xlsx'):
             return Response({'detail': 'اختر ملف Excel بصيغة XLSX.'}, status=400)
@@ -187,7 +191,20 @@ class EmployeeImportV2PreviewView(APIView):
                         'missing_optional': optional_missing,
                     })
             from .employee_import_v2_matching import registry_match
+            from .employee_import_v2_commit import (
+                preview_commit_info, commit_safe_plan,
+            )
             registry_report = registry_match(mapped_rows)
+            file_hash = sha256(raw).hexdigest()
+            if action == 'commit':
+                return commit_safe_plan(
+                    request, registry_report, file_hash, sheet_name, mapped_rows,
+                )
+            preview_details = preview_commit_info(
+                registry_report, file_hash, sheet_name, request.user.pk,
+            )
+            # Never return raw employee records or internal operation plans.
+            registry_report.pop('_internal_planned_rows', None)
             return Response({
                 'mode': 'read_only_registry_match_v2',
                 'sheet_name': sheet_name, 'rows_total': total,
@@ -199,6 +216,7 @@ class EmployeeImportV2PreviewView(APIView):
                 'counts': dict(counts),
                 'sample_masked': samples,
                 **registry_report,
+                **preview_details,
             }, headers={'Cache-Control': 'private, no-store'})
         except Exception:
             return Response({'detail': 'تعذرت قراءة ملف XLSX؛ تحقق من الملف وأسماء الأعمدة.'},
