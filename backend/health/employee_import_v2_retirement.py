@@ -16,6 +16,7 @@ LEGACY_PATH_PREFIXES = (
     '/api/employee-roster-template/',
     '/api/workforce-roster/',
     '/api/staging-employee-card-reset/',
+    '/api/employee-registry-reset/',
 )
 
 
