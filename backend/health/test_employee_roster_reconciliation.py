@@ -439,6 +439,132 @@ class EmployeeRosterReconciliationTests(TestCase):
         self.assertEqual(self.upload('review_decision', rows, **valid).status_code, 403)
         self.assertEqual(Employee.objects.count(), 6)
 
+    def test_private_filtered_excel_export_contains_only_requested_cases(self):
+        from openpyxl import load_workbook
+        rows = self.standard_rows()
+        exported = self.upload(
+            'export_review', rows,
+            review_filter='name_mismatch', review_name_diagnostic='all',
+        )
+        self.assertEqual(exported.status_code, 200, getattr(exported, 'data', None))
+        self.assertIn('spreadsheetml', exported['Content-Type'])
+        self.assertEqual(exported['Cache-Control'], 'private, no-store')
+        self.assertIn('attachment', exported['Content-Disposition'])
+        exported_wb = load_workbook(BytesIO(exported.content), data_only=False)
+        try:
+            sheet = exported_wb['مقارنة الأسماء']
+            self.assertEqual(sheet.max_row, 2)
+            self.assertEqual(sheet['C2'].value, 'QA Original Five')
+            self.assertEqual(sheet['D2'].value, 'QA Revised Five')
+            self.assertEqual(sheet['B2'].value, '99••••0005')
+            self.assertTrue(sheet.sheet_view.rightToLeft)
+            self.assertEqual(sheet['D2'].data_type, 's')
+            self.assertNotIn('9999930005', str(sheet['B2'].value))
+            self.assertIn('المقارنة', exported_wb['الملخص']['B2'].value)
+        finally:
+            exported_wb.close()
+        self.assertFalse(EmployeeExcelMatchReview.objects.exists())
+        self.assertEqual(Employee.objects.count(), 6)
+
+    def test_excel_export_handles_untrusted_formula_like_names_as_text(self):
+        from openpyxl import load_workbook
+        self.name_conflict.name = '=HYPERLINK("https://evil.invalid","QA")'
+        self.name_conflict.save(update_fields=['name', 'updated_at'])
+        rows = [self.row('@DangerousName', '9999930005')]
+        exported = self.upload('export_review', rows, review_filter='name_mismatch')
+        self.assertEqual(exported.status_code, 200, getattr(exported, 'data', None))
+        wb = load_workbook(BytesIO(exported.content))
+        try:
+            sheet = wb['مقارنة الأسماء']
+            self.assertEqual(sheet['C2'].data_type, 's')
+            self.assertTrue(sheet['C2'].value.startswith("'="))
+            self.assertTrue(sheet['D2'].value.startswith("'@"))
+            self.assertNotEqual(sheet['D2'].data_type, 'f')
+        finally:
+            wb.close()
+
+    def test_bulk_review_records_decisions_only_for_approved_signed_selection(self):
+        rows = self.standard_rows()
+        names = self.upload('review', rows, review_filter='all')
+        self.assertEqual(names.status_code, 200, names.data)
+        eligible_rows = [
+            entry for entry in names.data['rows']
+            if entry['status'] in ('name_mismatch', 'individually_archived_requires_review')
+        ]
+        self.assertEqual(len(eligible_rows), 2)
+        signed = [entry['decision_token'] for entry in eligible_rows]
+        response = self.upload(
+            'bulk_review_decision', rows,
+            decision_tokens=__import__('json').dumps(signed),
+            decision='verified',
+            evidence_reference='QA-STAFF-MASTER-REVIEW-2026-01',
+            reason='Confirmed both synthetic records against the same official personnel master list',
+            confirmed='true',
+            shared_evidence_confirmed='true',
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['saved_decisions'], 2)
+        self.assertEqual(response.data['employee_records_modified'], 0)
+        reviews = EmployeeExcelMatchReview.objects.order_by('source_row')
+        self.assertEqual(reviews.count(), 2)
+        self.assertTrue(all(r.decision == 'verified' for r in reviews))
+        self.assertEqual(AuditLog.objects.filter(
+            action='employee_excel_bulk_match_review_decision').count(), 1)
+        self.name_conflict.refresh_from_db()
+        self.manual.refresh_from_db()
+        self.assertTrue(self.name_conflict.is_archived)
+        self.assertTrue(self.manual.is_archived)
+        self.assertEqual(self.name_conflict.name, 'QA Original Five')
+        self.assertEqual(EmployeeProfileCompletionEvent.objects.count(), 0)
+        self.assertEqual(EmployeeArchiveEvent.objects.count(), 0)
+        self.assertEqual(EmployeeHealthCard.objects.count(), 1)
+        retry = self.upload(
+            'bulk_review_decision', rows,
+            decision_tokens=__import__('json').dumps(signed),
+            decision='not_verified',
+            evidence_reference='QA-STAFF-MASTER-REVIEW-2026-02',
+            reason='Additional verification differs but a previous decision already exists',
+            confirmed='true', shared_evidence_confirmed='true',
+        )
+        self.assertEqual(retry.status_code, 409)
+        self.assertEqual(EmployeeExcelMatchReview.objects.count(), 2)
+
+    def test_bulk_review_rejects_mixed_or_stale_selection_atomically(self):
+        import json
+        rows = self.standard_rows()
+        details = self.upload('review', rows, review_filter='all').data['rows']
+        signed = [r['decision_token'] for r in details if r['status'] == 'name_mismatch']
+        self.assertEqual(len(signed), 1)
+        kwargs = {
+            'decision_tokens': json.dumps(signed),
+            'decision': 'verified',
+            'evidence_reference': 'QA-STAFF-MASTER-REVIEW-2026-03',
+            'reason': 'Verified this record in a shared government personnel reference',
+            'confirmed': 'true', 'shared_evidence_confirmed': 'true',
+        }
+        missing_evidence = self.upload(
+            'bulk_review_decision', rows, **{**kwargs, 'shared_evidence_confirmed': 'false'},
+        )
+        self.assertEqual(missing_evidence.status_code, 400)
+        duplicate = self.upload(
+            'bulk_review_decision', rows,
+            **{**kwargs, 'decision_tokens': json.dumps(signed + signed)},
+        )
+        self.assertEqual(duplicate.status_code, 400)
+        altered_source = list(rows)
+        altered_source[-1] = self.row('QA Different Unknown', '9999930007')
+        changed = self.upload('bulk_review_decision', altered_source, **kwargs)
+        self.assertEqual(changed.status_code, 409)
+        self.name_conflict.job_title = 'Changed after the review token was issued'
+        self.name_conflict.save(update_fields=['job_title', 'updated_at'])
+        stale = self.upload('bulk_review_decision', rows, **kwargs)
+        self.assertEqual(stale.status_code, 409)
+        self.assertFalse(EmployeeExcelMatchReview.objects.exists())
+
+        self.client.force_authenticate(self.staff)
+        self.assertEqual(self.upload('bulk_review_decision', rows, **kwargs).status_code, 403)
+        self.assertEqual(self.upload('export_review', rows).status_code, 403)
+
     def test_review_discrepancies_are_paginated_instead_of_dumping_all_names(self):
         rows = []
         for num in range(27):

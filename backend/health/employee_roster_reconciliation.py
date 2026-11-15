@@ -382,7 +382,10 @@ class EmployeeRosterReconciliationView(APIView):
             return Response({'detail': 'هذه العملية متاحة للمسؤول الأعلى فقط.'},
                             status=status.HTTP_403_FORBIDDEN)
         action = request.data.get('action', 'preview')
-        if action not in ('preview', 'commit', 'review', 'review_decision'):
+        if action not in (
+            'preview', 'commit', 'review', 'review_decision',
+            'export_review', 'bulk_review_decision',
+        ):
             return Response({'detail': 'إجراء غير معروف.'}, status=400)
         file = request.FILES.get('file')
         if not file or not file.name.lower().endswith('.xlsx') or file.size > MAX_FILE_BYTES:
@@ -441,6 +444,21 @@ class EmployeeRosterReconciliationView(APIView):
                            'منفصلًا ولا يُعامل كتطابق تلقائي دون مصدر رسمي معتمد. '
                            'المراكز والجهات التنظيمية لا تُعتمد من Excel آليًا.'),
             }, headers={'Cache-Control': 'private, no-store'})
+
+        if action in ('export_review', 'bulk_review_decision'):
+            plan = plan_reconciliation(rows)
+            from .employee_name_bulk_review import (
+                export_reconciled_review, commit_evidenced_bulk_review,
+            )
+            if action == 'export_review':
+                return export_reconciled_review(request, plan, file_hash, sheet_name)
+            return commit_evidenced_bulk_review(
+                request, plan, file_hash, sheet_name,
+                token_salt=TOKEN_SALT,
+                token_ttl=REVIEW_TOKEN_TTL,
+                employee_state=employee_state,
+                digest_value=digest_value,
+            )
 
         if action in ('review', 'review_decision'):
             plan = plan_reconciliation(rows)
