@@ -8,10 +8,12 @@ from zipfile import ZipFile
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
+from django.utils import timezone
+from datetime import timedelta
 from openpyxl import Workbook
 from rest_framework.test import APIClient
 
-from .models import AuditLog, Employee, EmployeeImportReview, DataImportBatch, HealthCenter, OrganizationUnit, EmployeeProfileCompletionEvent
+from .models import AuditLog, Employee, EmployeeImportReview, DataImportBatch, HealthCenter, OrganizationUnit, EmployeeProfileCompletionEvent, EmployeeRegistryResetBatch
 
 
 class EmployeeImportV2PreviewTests(TestCase):
@@ -536,6 +538,57 @@ class EmployeeImportV2PreviewTests(TestCase):
         self.assertEqual(Employee.objects.filter(is_archived=True).count(), 2)
         self.assertFalse(EmployeeImportReview.objects.exists())
         self.assertFalse(DataImportBatch.objects.exists())
+
+    def test_read_only_archive_provenance_distinguishes_bulk_and_individual(self):
+        applied_at = timezone.now()
+        bulk_first = Employee.objects.create(
+            name='QA Archive Original One', national_id='1000001811',
+            is_archived=True, archived_at=applied_at,
+            archive_reason='Synthetic controlled bulk reset',
+            employment_status='active',
+        )
+        bulk_second = Employee.objects.create(
+            name='QA Archive Original Two', national_id='1000001812',
+            is_archived=True, archived_at=applied_at,
+            archive_reason='Synthetic controlled bulk reset',
+            employment_status='retired',
+        )
+        individual = Employee.objects.create(
+            name='QA Individual Archive', national_id='1000001813',
+            is_archived=True, archived_at=applied_at - timedelta(days=3),
+            archive_reason='Individual separation review',
+            employment_status='separated',
+        )
+        reset = EmployeeRegistryResetBatch.objects.create(
+            employee_ids=[bulk_first.pk, bulk_second.pk, individual.pk],
+            applied_at=applied_at,
+            reason='Synthetic unfinished reset for provenance test',
+            created_by=self.admin,
+        )
+        preview = self.preview([
+            ['QA Changed Name', '1000001811', '', '', ''],
+            ['QA Archive Original Two', '1000001812', '', '', ''],
+            ['QA Individual Archive', '1000001813', '', '', ''],
+        ])
+        self.assertEqual(preview.status_code, 200, preview.data)
+        data = preview.data['archive_provenance']
+        self.assertTrue(data['has_unfinished_bulk_reset'])
+        self.assertEqual(data['matching_unfinished_bulk_reset'], 2)
+        self.assertEqual(data['other_or_unverified_archive'], 1)
+        self.assertEqual(data['employment_active'], 1)
+        self.assertEqual(data['employment_retired'], 1)
+        self.assertEqual(data['employment_separated'], 1)
+        self.assertEqual(data['archive_reason_missing'], 0)
+        self.assertEqual(preview.data['registry_facets']['archived_identity_total'], 3)
+        self.assertEqual(preview.data['registry_facets']['archived_with_name_difference'], 1)
+        self.assertEqual(preview.data['safe_import_candidate_counts']['create'], 0)
+        self.assertEqual(preview.data['safe_import_candidate_counts']['fill_only'], 0)
+        self.assertFalse(EmployeeImportReview.objects.exists())
+        self.assertFalse(DataImportBatch.objects.exists())
+        reset.refresh_from_db()
+        self.assertIsNone(reset.restored_at)
+        self.assertTrue(Employee.objects.filter(pk=bulk_first.pk).get().is_archived)
+        self.assertTrue(Employee.objects.filter(pk=individual.pk).get().is_archived)
 
     def test_duplicate_identity_columns_cannot_silently_choose_one(self):
         response = self.preview(
