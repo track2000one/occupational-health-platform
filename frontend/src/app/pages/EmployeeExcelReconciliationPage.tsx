@@ -57,7 +57,8 @@ type Comparison = {
 };
 const REVIEW_FILTERS = [
   ['all', 'جميع الحالات المختلف عليها'],
-  ['name_mismatch', 'اختلاف أسماء الموظفين'],
+  ['name_mismatch', 'اختلاف الأسماء ضمن نفس لغة الكتابة'],
+  ['name_different_scripts', 'اسم عربي مقابل اسم إنجليزي (يتطلب تحققًا)'],
   ['individually_archived_requires_review', 'أرشفة فردية مستقلة'],
   ['unique_field_mismatch', 'اختلاف رقم وظيفي أو بريد'],
   ['unique_value_owned_by_other', 'الرقم أو البريد يخص موظفًا آخر'],
@@ -87,7 +88,8 @@ const CATEGORIES: Record<string, string> = {
   duplicate_email_in_file: 'بريد إلكتروني مكرر داخل Excel',
   duplicate_employee_number_in_file: 'رقم وظيفي مكرر داخل Excel',
   new_identity_requires_normal_import: 'هوية جديدة (تحتاج مسار إضافة الموظفين)',
-  name_mismatch: 'اختلاف اسم الموظف عن السجل الأصلي',
+  name_mismatch: 'اختلاف اسم الموظف ضمن نفس لغة الكتابة',
+  name_different_scripts: 'اختلاف لغة كتابة الاسم: عربي / إنجليزي (لا يعني اختلاف الهوية)',
   invalid_source_value: 'قيمة في المصدر تحتاج تحققًا',
   unique_value_owned_by_other: 'رقم وظيفي أو بريد يخص موظفًا آخر',
   unique_field_mismatch: 'اختلاف الرقم الوظيفي أو البريد الحالي',
@@ -352,9 +354,10 @@ export function EmployeeExcelReconciliationPage() {
           مقارنة بيانات Excel مع سجلات الموظفين الأصلية
         </Typography>
         <Alert severity="warning" sx={{ mb: 2 }}>
-          التصنيفات المتعارضة لا تسمح باستعادة الموظف تلقائيًا. يمكن مقارنة الأسماء
-          والأرقام الوظيفية والمراكز هنا، وتوثيق تحقق إداري من مصدر مستقل.
-          تسجيل قرار المراجعة لا يغيّر اسم الموظف أو رقمه أو حالته أو بياناته الصحية.
+          إذا كان الاسم في Excel باللغة الإنجليزية وفي السجل الأصلي باللغة العربية،
+          فهذه حالة اختلاف لغة كتابة الاسم وليست دليلًا وحدها على اختلاف الشخص.
+          يلزم مرجع رسمي يربط الاسمين برقم الهوية قبل قبول المطابقة.
+          لن تُستعاد أي بطاقة أو يُعدّل اسم أو رقم موظف تلقائيًا.
         </Alert>
         <Stack direction={{ xs: 'column', sm: 'row' }} gap={1.5} alignItems="center" sx={{ mb: 2 }}>
           <TextField select label="نوع الحالة" size="small" sx={{ minWidth: 290 }}

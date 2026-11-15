@@ -71,18 +71,26 @@ class EmployeeRosterReconciliationTests(TestCase):
         self.client.force_authenticate(self.admin)
 
     def spreadsheet(self, rows):
-        wb = Workbook()
-        ws = wb.active
-        ws.title = 'Employees'
-        ws.append([
-            'اسم الموظف', 'رقم الهوية / الإقامة', 'الرقم الوظيفي',
-            'البريد الإلكتروني', 'الجنسية', 'المركز الصحي', 'تاريخ الميلاد',
-        ])
-        for row in rows:
-            ws.append(row)
-        file = BytesIO()
-        wb.save(file)
-        file.seek(0)
+        # XLSX ZIP timestamps are nondeterministic when created on each call.
+        # Keep the very same source bytes for preview/commit/review in a test,
+        # exactly as a real user does by re-uploading one unchanged workbook.
+        if not hasattr(self, '_workbook_cache'):
+            self._workbook_cache = {}
+        key = repr(rows)
+        if key not in self._workbook_cache:
+            wb = Workbook()
+            ws = wb.active
+            ws.title = 'Employees'
+            ws.append([
+                'اسم الموظف', 'رقم الهوية / الإقامة', 'الرقم الوظيفي',
+                'البريد الإلكتروني', 'الجنسية', 'المركز الصحي', 'تاريخ الميلاد',
+            ])
+            for row in rows:
+                ws.append(row)
+            buffer = BytesIO()
+            wb.save(buffer)
+            self._workbook_cache[key] = buffer.getvalue()
+        file = BytesIO(self._workbook_cache[key])
         file.name = 'synthetic-employee-master.xlsx'
         return file
 
@@ -261,6 +269,54 @@ class EmployeeRosterReconciliationTests(TestCase):
         self.assertEqual(conflicts.data['total'], 1)
         self.assertEqual(conflicts.data['rows'][0]['registry_employee_number'], 'QA-KEEP6')
         self.assertEqual(conflicts.data['rows'][0]['source_employee_number'], 'QA-NEW6')
+
+    def test_arabic_vs_latin_names_are_a_separate_blocked_review_category(self):
+        self.old.name = 'سعود عبدالله الشمري'
+        self.old.save(update_fields=['name', 'updated_at'])
+        source = [self.row('Saud Abdullah Alshammari', '9999930001')]
+
+        preview = self.upload('preview', source)
+        self.assertEqual(preview.status_code, 200, preview.data)
+        self.assertEqual(preview.data['eligible_count'], 0)
+        self.assertEqual(preview.data['breakdown']['name_different_scripts'], 1)
+        self.assertEqual(preview.data['breakdown'].get('name_mismatch', 0), 0)
+        self.assertEqual(Employee.objects.count(), 6)
+
+        bilingual = self.upload(
+            'review', source, review_filter='name_different_scripts',
+        )
+        self.assertEqual(bilingual.status_code, 200, bilingual.data)
+        self.assertEqual(bilingual.data['total'], 1)
+        comparison = bilingual.data['rows'][0]
+        self.assertEqual(comparison['registry_name'], 'سعود عبدالله الشمري')
+        self.assertEqual(comparison['source_name'], 'Saud Abdullah Alshammari')
+        self.assertTrue(comparison['archived'])
+        self.assertEqual(comparison['status'], 'name_different_scripts')
+
+        ordinary = self.upload('review', source, review_filter='name_mismatch')
+        self.assertEqual(ordinary.status_code, 200, ordinary.data)
+        self.assertEqual(ordinary.data['total'], 0)
+        blocked = self.upload('commit', source,
+            preview_token=preview.data['preview_token'],
+            confirm_phrase=preview.data['confirm_phrase'],
+            reason='Synthetic test without independent bilingual identity verification',
+            confirmed='true', identity_checked='true')
+        self.assertEqual(blocked.status_code, 409, blocked.data)
+        self.old.refresh_from_db()
+        self.assertEqual(self.old.name, 'سعود عبدالله الشمري')
+        self.assertTrue(self.old.is_archived)
+        self.assertEqual(EmployeeArchiveEvent.objects.count(), 0)
+        self.assertEqual(EmployeeProfileCompletionEvent.objects.count(), 0)
+
+    def test_same_script_name_difference_still_requires_manual_review(self):
+        self.old.name = 'QA Different Name'
+        self.old.save(update_fields=['name', 'updated_at'])
+        preview = self.upload('preview', [
+            self.row('QA Archived One', '9999930001'),
+        ])
+        self.assertEqual(preview.status_code, 200, preview.data)
+        self.assertEqual(preview.data['breakdown']['name_mismatch'], 1)
+        self.assertEqual(preview.data['breakdown'].get('name_different_scripts', 0), 0)
 
     def test_evidenced_match_decision_does_not_restore_or_change_employee(self):
         rows = self.standard_rows()
