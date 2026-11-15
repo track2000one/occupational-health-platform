@@ -2,6 +2,7 @@ import json
 import uuid
 from datetime import date, timedelta
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 from django.db.models import Q
@@ -338,7 +339,7 @@ class ExcelImportViewSet(viewsets.ReadOnlyModelViewSet):
                 pass
             finally:
                 uploaded.seek(0)
-        if legacy_employee_sheet:
+        if legacy_employee_sheet and not settings.LEGACY_EMPLOYEE_EXCEL_IMPORTS_ENABLED:
             return Response({
                 'detail': 'استيراد الموظفين القديم موقوف. استخدم واجهة استيراد الموظفين V2.',
                 'new_interface': '/employees/import',
