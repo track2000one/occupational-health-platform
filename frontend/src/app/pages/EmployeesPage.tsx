@@ -798,18 +798,7 @@ export function EmployeesPage() {
                 : (isRtl ? 'الموظفون المحذوفون' : 'Archived Employees')}
             </Button>
           )}
-          {canBulkReset && !IS_STAGING_UI && (
-            <Button variant="outlined" color="error" startIcon={<ResetTestCardsIcon />}
-              disabled={registryResetBusy} onClick={() => void prepareRegistryReset('preview')}>
-              {isRtl ? 'تصفير' : 'Reset'}
-            </Button>
-          )}
-          {IS_STAGING_UI && can(PERMISSIONS.MANAGE_USERS) && (
-            <Button variant="outlined" color="error" startIcon={<ResetTestCardsIcon />}
-              disabled={resetBusy} onClick={() => void prepareTestCardReset('all_synthetic')}>
-              {isRtl ? 'تصفير بطاقات الاختبار' : 'Clear QA test cards'}
-            </Button>
-          )}
+
           {can(PERMISSIONS.CREATE_EMPLOYEE) && (
             <Button variant="contained" startIcon={<AddIcon />} onClick={openAdd}>
               {t('addEmployee')}
