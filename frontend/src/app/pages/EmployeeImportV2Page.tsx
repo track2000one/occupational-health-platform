@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import {
   Alert, Box, Button, Chip, CircularProgress, Divider, Grid, Paper,
-  Stack, Step, StepLabel, Stepper, Typography, Checkbox, FormControlLabel, TextField,
+  Stack, Step, StepLabel, Stepper, Typography, Checkbox, FormControlLabel, TextField, MenuItem,
 } from '@mui/material';
 import {
   ArrowBack as BackIcon, CloudUpload as UploadIcon,
@@ -100,6 +100,12 @@ export function EmployeeImportV2Page() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [sheet, setSheet] = useState('Employees');
+  const [columnIssue, setColumnIssue] = useState<{
+    headerRow: number;
+    availableColumns: Array<{ index: number; label: string }>;
+  } | null>(null);
+  const [selectedNameColumn, setSelectedNameColumn] = useState<number | ''>('');
+  const [selectedIdentityColumn, setSelectedIdentityColumn] = useState<number | ''>('');
   const [accepted, setAccepted] = useState(false);
   const [reason, setReason] = useState(
     'اعتماد إضافة الهويات الجديدة واستكمال الحقول الفارغة من ملف الموظفين المرجعي دون استعادة المؤرشفين أو تجاوز التعارضات.'
@@ -125,6 +131,10 @@ export function EmployeeImportV2Page() {
       payload.append('action', 'commit');
       payload.append('file', file);
       payload.append('sheet_name', sheet.trim() || 'Employees');
+      if (selectedNameColumn !== '' && selectedIdentityColumn !== '') {
+        payload.append('map_name_column', String(selectedNameColumn));
+        payload.append('map_national_id_column', String(selectedIdentityColumn));
+      }
       payload.append('commit_token', preview.commit_token);
       payload.append('confirm_phrase', preview.confirm_phrase);
       payload.append('confirmed', 'true');
@@ -158,13 +168,28 @@ export function EmployeeImportV2Page() {
       const body = new FormData();
       body.append('file', file);
       body.append('sheet_name', sheet.trim() || 'Employees');
+      if (selectedNameColumn !== '' && selectedIdentityColumn !== '') {
+        body.append('map_name_column', String(selectedNameColumn));
+        body.append('map_national_id_column', String(selectedIdentityColumn));
+      }
       const response = await authFetch(API + '/employee-import-v2/preview/', {
         method: 'POST',
         headers: { Authorization: 'Bearer ' + token },
         body,
       });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.detail || 'تعذر فحص الملف.');
+      if (!response.ok) {
+        if (Array.isArray(data.available_columns) && data.available_columns.length) {
+          setColumnIssue({
+            headerRow: Number(data.header_row) || 1,
+            availableColumns: data.available_columns,
+          });
+        } else {
+          setColumnIssue(null);
+        }
+        throw new Error(data.detail || 'تعذر فحص الملف.');
+      }
+      setColumnIssue(null);
       setPreview(data as PreflightResult);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'تعذر إكمال فحص الملف.');
@@ -217,6 +242,9 @@ export function EmployeeImportV2Page() {
           <input type="file" accept=".xlsx" hidden onChange={event => {
             const picked = event.target.files?.[0] || null;
             setFile(picked);
+            setColumnIssue(null);
+            setSelectedNameColumn('');
+            setSelectedIdentityColumn('');
             setPreview(null);
             setCommitted(null);
             setAccepted(false);
@@ -250,6 +278,9 @@ export function EmployeeImportV2Page() {
         <Box component="input" value={sheet} disabled={busy}
           onChange={(event: React.ChangeEvent<HTMLInputElement>) => {
             setSheet(event.target.value);
+            setColumnIssue(null);
+            setSelectedNameColumn('');
+            setSelectedIdentityColumn('');
             setPreview(null);
             setCommitted(null);
             setAccepted(false);
@@ -269,6 +300,43 @@ export function EmployeeImportV2Page() {
     </Paper>
 
     {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+    {columnIssue && <Paper sx={{ p: { xs: 2, md: 3 }, mb: 2, borderRadius: 3 }}>
+      <Typography variant="h6" fontWeight={900} sx={{ mb: 1 }}>
+        تحديد أعمدة الموظفين
+      </Typography>
+      <Alert severity="info" sx={{ mb: 2 }}>
+        لم يُكتشف اسم العمود بصورة تلقائية. اختر العمود الذي يحتوي على أسماء الموظفين،
+        ثم العمود الذي يحتوي على أرقام الهوية الكاملة. هذه خطوة فحص فقط،
+        ولا تُغيّر أسماء الأعمدة في ملف Excel.
+        صف العناوين الذي تعرّف عليه النظام: {columnIssue.headerRow}.
+      </Alert>
+      <Stack direction={{ xs: 'column', sm: 'row' }} gap={1.5}>
+        <TextField select fullWidth label="عمود اسم الموظف"
+          value={selectedNameColumn}
+          onChange={e => setSelectedNameColumn(Number(e.target.value))}>
+          {columnIssue.availableColumns.map(c => (
+            <MenuItem key={c.index} value={c.index}>
+              {c.index} — {c.label}
+            </MenuItem>
+          ))}
+        </TextField>
+        <TextField select fullWidth label="عمود رقم الهوية / الإقامة"
+          value={selectedIdentityColumn}
+          onChange={e => setSelectedIdentityColumn(Number(e.target.value))}>
+          {columnIssue.availableColumns.map(c => (
+            <MenuItem key={c.index} value={c.index}>
+              {c.index} — {c.label}
+            </MenuItem>
+          ))}
+        </TextField>
+        <Button variant="contained" disabled={busy ||
+          selectedNameColumn === '' || selectedIdentityColumn === '' ||
+          selectedNameColumn === selectedIdentityColumn}
+          onClick={() => void verify()}>
+          إعادة الفحص
+        </Button>
+      </Stack>
+    </Paper>}
 
     {preview && <Paper sx={{ p: { xs: 2, md: 3 }, mb: 3, borderRadius: 3 }}>
       <Typography variant="h6" fontWeight={900} sx={{ mb: 1 }}>
