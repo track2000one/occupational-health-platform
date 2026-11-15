@@ -1,6 +1,6 @@
 # Employee Import V2 — Clean Redesign / إعادة هندسة استيراد الموظفين
 
-Status: **Phase 1 in draft, NOT a production-ready import**.
+Status: **Phase 2 read-only matching completed in a draft PR; NOT deployed or production-ready for import**.
 Owner: Occupational Health Platform.
 Scope: Employee XLSX ingestion and matching only. Clinical labs/vaccinations,
 health-center reference management, organization structure, employee editing,
@@ -40,10 +40,31 @@ review/reconciliation/temporary workforce). Replace it with **one** entry point
   are returned.
 - No schema migration or Employee/EmployeeImportReview/health writes.
 
-### Phase 2 acceptance criteria (not yet implemented)
+### Phase 2: registry preflight implemented (read-only)
 
-- Match **strictly by unique national ID**, with name/employee number
-  discrepancies treated as separate safety checks.
+- One XLSX upload now performs both structural validation and live PostgreSQL
+  lookup against **active and archived employees by national ID**.
+- Classifies new identity candidates, existing records with potential empty
+  fields, previously archived records, name discrepancy, conflicting employee
+  number/email, source duplicates, invalid identifiers, and unapproved or
+  mismatched health-center/organization assignments.
+- Center labels must resolve uniquely to an **active, approved** HealthCenter.
+  Organizational units must resolve uniquely to an **active, approved**
+  OrganizationUnit and not conflict with a center's approved link.
+- Incomplete demographic/administrative fields are flagged for a **yellow
+  card** in the review UI, not treated as automatic denial of identity.
+- The result is grouped in one page with masked-ID exception examples; no
+  employee name, phone, email or full ID is returned in the preview JSON.
+- Duplicate identity columns are refused rather than guessed.
+- Matched identity/center/organization results are **NOT automatic approval**.
+  No database fields, clinical links, archive state or audit rows are changed.
+- All preview and registry checks are read-only, and button "اعتماد وحفظ"
+  remains deliberately disabled.
+
+### Later acceptance criteria (not yet implemented)
+
+- Enforce identity matching as currently implemented, with final commit-time
+  uniqueness, fresh registry snapshot and independent authorized approval.
 - Support archived identities without creating a second record and with
   explicit verified restore decisions; preserve existing clinical links.
 - Never overwrite a non-empty field by default. Mark optional-data gaps
@@ -83,7 +104,8 @@ dropped without proof that no medical or audit references depend on them.
       exception only for controlled synthetic CI and emergency rollback.
 - [ ] Remove unused historical backend source after full V2 validation.
 - [ ] New structural preview and masked output verified in Staging.
-- [ ] Registry-matching and selective commit fully implemented and tested.
+- [x] Read-only registry/archived/center/organization matching with synthetic tests.
+- [ ] Build and validate safe selective commit, per-record conflicts and audit trail.
 - [ ] Backup + rollback tested using synthetic data.
 - [ ] Formal approval to replace Production employee-import workflow.
 - [ ] Post-release monitoring of employee/health record counts.
