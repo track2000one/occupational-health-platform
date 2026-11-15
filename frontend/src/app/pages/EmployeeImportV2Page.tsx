@@ -40,6 +40,7 @@ type PreflightResult = {
     status: string;
     missing_fields: string[];
     center_approved: boolean;
+    organization_approved: boolean;
     existing_record: boolean;
     archived_record: boolean;
   }>;
@@ -70,6 +71,7 @@ const REGISTRY_STATES: Array<{
   { key: 'archived_review', title: 'سجل مؤرشف — يلزم قرار استعادة منفصل', tone: 'warning' },
   { key: 'name_review', title: 'اسم مختلف — يلزم التحقق من المصدر', tone: 'warning' },
   { key: 'center_review', title: 'مركز غير معتمد أو ارتباط مختلف', tone: 'warning' },
+  { key: 'organization_review', title: 'جهة تنظيمية غير معتمدة أو ارتباط مختلف', tone: 'warning' },
   { key: 'identifier_disagreement', title: 'اختلاف الرقم الوظيفي أو البريد', tone: 'error' },
   { key: 'identifier_owned_by_other', title: 'معرّف يخص موظفًا آخر', tone: 'error' },
   { key: 'duplicate_file_identity', title: 'هوية مكررة داخل الملف', tone: 'error' },
