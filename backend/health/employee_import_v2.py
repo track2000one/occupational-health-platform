@@ -1,8 +1,8 @@
 """Independent v2 employee Excel preflight: read-only, no legacy import side effects.
 
-Phase 1 ONLY checks workbook structure, required columns, identity formatting,
-in-file duplicates and source completeness. It deliberately makes no DB writes,
-creates no review cards, restores no staff and never claims registry matches.
+Phase 2 adds READ-ONLY registry and approved health-center matching to the
+structural checks. Neither preview creates review cards nor modifies staff,
+archive state, organization links, clinical data or auditing.
 """
 from collections import Counter
 from io import BytesIO
@@ -32,6 +32,16 @@ HEADERS = {
     'date_of_birth': {'تاريخ الميلاد', 'date of birth', 'dob'},
     'appointment_date': {'تاريخ التعيين', 'appointment date', 'date hired'},
     'job_title': {'المسمى الوظيفي', 'مسمى الوظيفي', 'job title'},
+    'job_title_en': {'المسمى الوظيفي الانجليزي', 'job title english'},
+    'current_job': {'الوظيفة الحالية', 'current job'},
+    'gender': {'الجنس', 'gender'},
+    'marital_status': {'الحالة الاجتماعية', 'marital status'},
+    'national_address': {'العنوان الوطني', 'national address'},
+    'birth_place': {'مكان الميلاد', 'place of birth'},
+    'organization_unit': {'الجهة الوحدة التنظيمية المعتمدة', 'الوحدة التنظيمية',
+                          'الجهة التنظيمية', 'organizational unit'},
+    'sector': {'القطاع المقترح', 'القطاع', 'sector'},
+
 }
 REQUIRED = ('name', 'national_id')
 
@@ -123,6 +133,7 @@ class EmployeeImportV2PreviewView(APIView):
 
             counts = Counter()
             seen = set()
+            mapped_rows = []
             samples = []
             total = 0
             for row_number, cells in enumerate(
@@ -153,6 +164,11 @@ class EmployeeImportV2PreviewView(APIView):
                 if len(nid) == 10:
                     seen.add(nid)
                 counts[classification] += 1
+                from .employee_import_v2_matching import source_profile
+                mapped_rows.append({
+                    **source_profile(cells, mapping),
+                    '_row': row_number,
+                })
                 if len(samples) < 8:
                     samples.append({
                         'row': row_number, 'classification': classification,
@@ -160,8 +176,10 @@ class EmployeeImportV2PreviewView(APIView):
                         if len(nid) == 10 else '—',
                         'missing_optional': optional_missing,
                     })
+            from .employee_import_v2_matching import registry_match
+            registry_report = registry_match(mapped_rows)
             return Response({
-                'mode': 'read_only_v2_structure_preflight',
+                'mode': 'read_only_registry_match_v2',
                 'sheet_name': sheet_name, 'rows_total': total,
                 'header_row': header_row,
                 'recognized_columns': list(mapping),
@@ -170,13 +188,7 @@ class EmployeeImportV2PreviewView(APIView):
                 ],
                 'counts': dict(counts),
                 'sample_masked': samples,
-                'database_identity_checked': False,
-                'employee_count_created': 0,
-                'employee_count_updated': 0,
-                'import_enabled': False,
-                'notice': ('هذا فحص بنية ملف فقط. لا تتم مطابقة السجل الحالي أو إنشاء أو '
-                           'استعادة أو تعديل أي موظف. سيُبنى الفحص النهائي '
-                           'والاعتماد في المرحلة التالية.'),
+                **registry_report,
             }, headers={'Cache-Control': 'private, no-store'})
         except Exception:
             return Response({'detail': 'تعذرت قراءة ملف XLSX؛ تحقق من الملف وأسماء الأعمدة.'},
