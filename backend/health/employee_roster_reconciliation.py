@@ -19,7 +19,7 @@ import unicodedata
 from django.core import signing
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 from openpyxl import load_workbook
 from rest_framework import permissions, status
@@ -34,8 +34,8 @@ from .importers import (
     mapped_employee_cell, parse_date, resolve_employee_field_mapping,
 )
 from .models import (
-    AuditLog, Employee, EmployeeArchiveEvent, EmployeeProfileCompletionEvent,
-    EmployeeRegistryResetBatch,
+    AuditLog, Employee, EmployeeArchiveEvent, EmployeeExcelMatchReview,
+    EmployeeProfileCompletionEvent, EmployeeRegistryResetBatch,
 )
 
 
@@ -44,6 +44,12 @@ MAX_ROWS = 2500
 MAX_CHANGES = 500
 TOKEN_SALT = 'employee-excel-verified-fill-restore-2026-v1'
 TOKEN_TTL = 300
+REVIEW_TOKEN_TTL = 600
+REVIEW_PAGE_SIZE = 25
+REVIEW_CATEGORIES = frozenset((
+    'name_mismatch', 'individually_archived_requires_review',
+    'unique_field_mismatch', 'unique_value_owned_by_other',
+))
 
 FIELD_MAX_LENGTH = {
     'employee_number': 40, 'email': 254, 'mobile': 30,
@@ -136,6 +142,11 @@ def current_reset_batch():
     ).order_by('-created_at').first()
 
 
+def digest_value(value):
+    return sha256(json.dumps(value, sort_keys=True, default=str,
+                             ensure_ascii=False).encode('utf-8')).hexdigest()
+
+
 def plan_reconciliation(sheet_rows, *, lock=False):
     national_ids = list({row['national_id'] for row in sheet_rows if row['national_id']})
     queryset = Employee.objects.filter(national_id__in=national_ids).order_by('pk')
@@ -157,6 +168,7 @@ def plan_reconciliation(sheet_rows, *, lock=False):
     number_counts = Counter(row['employee_number'] for row in sheet_rows if row['employee_number'])
 
     results = []
+    comparison_rows = []
     counts = Counter()
     fill_counts = Counter()
     states = []
@@ -225,12 +237,33 @@ def plan_reconciliation(sheet_rows, *, lock=False):
             states_for_signature = employee_state(employee)
         else:
             states_for_signature = None
+        masked_id = ((identity[:2] + '••••' + identity[-4:])
+                     if len(identity) == 10 else '—')
         results.append({
-            'status': kind,
-            'row': raw['_row'],
-            'national_id_masked': ((identity[:2] + '••••' + identity[-4:])
-                                  if len(identity) == 10 else '—'),
+            'status': kind, 'row': raw['_row'],
+            'national_id_masked': masked_id,
         })
+        if kind in REVIEW_CATEGORIES and employee is not None:
+            comparison_rows.append({
+                'row': raw['_row'], 'status': kind,
+                'employee_pk': employee.pk,
+                'national_id_masked': masked_id,
+                'source_name': raw['name'],
+                'registry_name': employee.name,
+                'source_employee_number': raw['employee_number'],
+                'registry_employee_number': employee.employee_number or '',
+                'source_email_present': bool(raw['email']),
+                'registry_email_present': bool(employee.email),
+                'email_mismatch': bool(raw['email'] and employee.email
+                                       and raw['email'] != employee.email),
+                'source_center': raw['health_center'],
+                'registry_center': (employee.health_center.name
+                                    if employee.health_center else ''),
+                'archived': employee.is_archived,
+                'employment_status': employee.employment_status,
+                'source_row_hash': digest_value(raw),
+                'registry_snapshot_hash': digest_value(states_for_signature),
+            })
         states.append({'_snapshot': states_for_signature, '_row': raw['_row']})
 
     fingerprint_payload = {
@@ -245,7 +278,7 @@ def plan_reconciliation(sheet_rows, *, lock=False):
     return {
         'counts': counts, 'fill_counts': fill_counts,
         'operations': operations, 'digest': digest,
-        'examples': results[:30],
+        'examples': results[:30], 'comparison_rows': comparison_rows,
         'total': len(sheet_rows),
     }
 
@@ -259,7 +292,7 @@ class EmployeeRosterReconciliationView(APIView):
             return Response({'detail': 'هذه العملية متاحة للمسؤول الأعلى فقط.'},
                             status=status.HTTP_403_FORBIDDEN)
         action = request.data.get('action', 'preview')
-        if action not in ('preview', 'commit'):
+        if action not in ('preview', 'commit', 'review', 'review_decision'):
             return Response({'detail': 'إجراء غير معروف.'}, status=400)
         file = request.FILES.get('file')
         if not file or not file.name.lower().endswith('.xlsx') or file.size > MAX_FILE_BYTES:
@@ -316,6 +349,125 @@ class EmployeeRosterReconciliationView(APIView):
                 'notice': ('لم تُعدل أي بيانات. السجلات ذات الاسم أو الرقم المختلف '
                            'تحتاج مراجعة. المراكز والجهات التنظيمية لا تُعتمد من Excel آليًا.'),
             }, headers={'Cache-Control': 'private, no-store'})
+
+        if action in ('review', 'review_decision'):
+            plan = plan_reconciliation(rows)
+            if action == 'review':
+                category = str(request.data.get('review_filter') or 'all')
+                if category != 'all' and category not in REVIEW_CATEGORIES:
+                    return Response({'detail': 'تصنيف مراجعة غير معروف.'}, status=400)
+                try:
+                    offset = int(request.data.get('review_offset', '0'))
+                except (TypeError, ValueError):
+                    return Response({'detail': 'رقم الصفحة غير صحيح.'}, status=400)
+                if offset < 0 or offset > MAX_ROWS:
+                    return Response({'detail': 'رقم الصفحة خارج النطاق.'}, status=400)
+                matches = [
+                    row for row in plan['comparison_rows']
+                    if category == 'all' or row['status'] == category
+                ]
+                page = matches[offset:offset + REVIEW_PAGE_SIZE]
+                review_records = {
+                    review.source_row: review
+                    for review in EmployeeExcelMatchReview.objects.filter(
+                        workbook_sha256=file_hash, sheet_name=sheet_name,
+                        source_row__in=[r['row'] for r in page],
+                    )
+                }
+                displayed = []
+                for row in page:
+                    saved = review_records.get(row['row'])
+                    item = {key: value for key, value in row.items()
+                            if key not in ('source_row_hash', 'registry_snapshot_hash')}
+                    item['decision_status'] = (
+                        saved.decision if saved and
+                        saved.source_row_sha256 == row['source_row_hash'] and
+                        saved.registry_snapshot_sha256 == row['registry_snapshot_hash']
+                        else 'stale' if saved else 'pending'
+                    )
+                    item['decision_token'] = signing.dumps({
+                        'file_sha': file_hash, 'sheet': sheet_name,
+                        'row': row['row'], 'pk': row['employee_pk'],
+                        'kind': row['status'], 'source_hash': row['source_row_hash'],
+                        'registry_hash': row['registry_snapshot_hash'],
+                        'admin_id': request.user.pk,
+                    }, salt=TOKEN_SALT + '-review')
+                    displayed.append(item)
+                return Response({
+                    'mode': 'review', 'total': len(matches),
+                    'offset': offset, 'page_size': REVIEW_PAGE_SIZE,
+                    'review_filter': category,
+                    'rows': displayed,
+                    'notice': ('مقارنة إدارية للقراءة فقط. يعتمد التحقق على مستند رسمي '
+                               'مستقل؛ تسجيل قرار المراجعة لا يستعيد أو يعدّل أي موظف.'),
+                }, headers={'Cache-Control': 'private, no-store'})
+
+            try:
+                review_token = signing.loads(
+                    request.data.get('decision_token'),
+                    salt=TOKEN_SALT + '-review', max_age=REVIEW_TOKEN_TTL,
+                )
+            except (signing.BadSignature, signing.SignatureExpired, ValueError, TypeError):
+                return Response({'detail': 'انتهت صلاحية مقارنة السجل. أعد عرض المراجعة.'},
+                                status=409)
+            decision = str(request.data.get('decision') or '')
+            evidence = str(request.data.get('evidence_reference') or '').strip()
+            reason_text = str(request.data.get('reason') or '').strip()
+            if (decision not in ('verified', 'not_verified') or
+                    len(evidence) < 6 or len(evidence) > 255 or
+                    len(reason_text) < 20 or len(reason_text) > 500 or
+                    request.data.get('confirmed') != 'true'):
+                return Response({'detail': 'يلزم قرار وتوثيق مرجعه ومبرر لا يقل عن 20 حرفًا مع التأكيد.'},
+                                status=400)
+            if (not isinstance(review_token, dict) or
+                    review_token.get('file_sha') != file_hash or
+                    review_token.get('sheet') != sheet_name or
+                    review_token.get('admin_id') != request.user.pk):
+                return Response({'detail': 'مصدر الملف أو المسؤول لا يطابق المعاينة.'}, status=409)
+            matched = next((
+                entry for entry in plan['comparison_rows']
+                if entry['row'] == review_token.get('row') and
+                entry['employee_pk'] == review_token.get('pk') and
+                entry['status'] == review_token.get('kind') and
+                entry['source_row_hash'] == review_token.get('source_hash') and
+                entry['registry_snapshot_hash'] == review_token.get('registry_hash')
+            ), None)
+            if matched is None:
+                return Response({'detail': 'تغيرت بيانات المطابقة؛ أعد الفحص قبل توثيق القرار.'},
+                                status=409)
+            with transaction.atomic():
+                employee = Employee.objects.select_for_update().get(pk=matched['employee_pk'])
+                if digest_value(employee_state(employee)) != matched['registry_snapshot_hash']:
+                    return Response({'detail': 'تغيّر سجل الموظف بعد المقارنة؛ أعد الفحص.'},
+                                    status=409)
+                if EmployeeExcelMatchReview.objects.filter(
+                    workbook_sha256=file_hash, sheet_name=sheet_name,
+                    source_row=matched['row'],
+                ).exists():
+                    return Response({'detail': 'سُجّل قرار لهذه الحالة سابقًا؛ يمنع اعتماده ثانية دون مراجعة مستقلة.'},
+                                    status=409)
+                try:
+                    record = EmployeeExcelMatchReview.objects.create(
+                        employee=employee, workbook_sha256=file_hash,
+                        sheet_name=sheet_name, source_row=matched['row'],
+                        source_row_sha256=matched['source_row_hash'],
+                        registry_snapshot_sha256=matched['registry_snapshot_hash'],
+                        discrepancy_type=matched['status'], decision=decision,
+                        evidence_reference=evidence, reason=reason_text,
+                        reviewed_by=request.user,
+                    )
+                except IntegrityError:
+                    return Response({'detail': 'تم توثيق قرار متزامن لهذه الحالة؛ حدّث الشاشة.'},
+                                    status=409)
+                AuditLog.objects.create(
+                    user=str(request.user), action='employee_excel_match_review_decision',
+                    model_name='EmployeeExcelMatchReview', record_id=str(record.pk),
+                )
+                return Response({
+                    'mode': 'review_decision', 'decision': record.decision,
+                    'review_id': record.pk, 'employee_modified': False,
+                    'notice': 'تم توثيق المراجعة دون استعادة أو تعديل أو إنشاء أي موظف.',
+                }, headers={'Cache-Control': 'private, no-store'})
 
         reason = str(request.data.get('reason') or '').strip()
         if not 20 <= len(reason) <= 500 or request.data.get('confirmed') != 'true' or (
