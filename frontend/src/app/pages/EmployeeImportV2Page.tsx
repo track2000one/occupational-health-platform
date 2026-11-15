@@ -31,6 +31,13 @@ type PreflightResult = {
   }>;
   database_identity_checked: true;
   registry_counts: Record<string, number>;
+  registry_facets: {
+    matched_identity_total: number;
+    active_identity_total: number;
+    archived_identity_total: number;
+    name_difference_total: number;
+    archived_with_name_difference: number;
+  };
   identity_found: number;
   yellow_missing_information: number;
   missing_field_counts: Record<string, number>;
@@ -381,7 +388,26 @@ export function EmployeeImportV2Page() {
           </Typography>
         </Paper>
       </Stack>
-      <Typography fontWeight={900} sx={{ mb: 1 }}>مطابقة الموظفين مع قاعدة البيانات</Typography>
+      <Typography fontWeight={900} sx={{ mb: 1 }}>الحالة الفعلية للسجلات المتطابقة</Typography>
+      <Grid container spacing={1.5} sx={{ mb: 2 }}>
+        {[
+          { label: 'موظفون نشطون أو غير مؤرشفين في السجل', count: preview.registry_facets.active_identity_total },
+          { label: 'إجمالي السجلات المؤرشفة (بما فيها اختلافات الأسماء)', count: preview.registry_facets.archived_identity_total },
+          { label: 'أسماء مختلفة عن السجل الأصلي', count: preview.registry_facets.name_difference_total },
+          { label: 'مؤرشفون ولديهم أيضًا اختلاف في الاسم', count: preview.registry_facets.archived_with_name_difference },
+        ].map(item => <Grid key={item.label} size={{ xs: 12, sm: 6 }}>
+          <Paper variant="outlined" sx={{ p: 1.75, borderRadius: 2 }}>
+            <Typography variant="h5" fontWeight={900}>{item.count}</Typography>
+            <Typography variant="body2">{item.label}</Typography>
+          </Paper>
+        </Grid>)}
+      </Grid>
+      <Alert severity="info" sx={{ mb: 2 }}>
+        الأعداد أعلاه مستقلة ويمكن أن تتداخل؛ الموظف المؤرشف قد يكون اسمه
+        مختلفًا أيضًا. أما بطاقات التصنيف أدناه فتعرض السبب الأساسي الذي أوقف
+        الاستكمال التلقائي لكل صف، لذلك لا تجمع الفئتين معًا.
+      </Alert>
+      <Typography fontWeight={900} sx={{ mb: 1 }}>تصنيف سبب المنع الأساسي</Typography>
       <Grid container spacing={1.5} sx={{ mb: 2 }}>
         {REGISTRY_STATES.filter(item => (preview.registry_counts[item.key] || 0) > 0)
           .map(item => <Grid key={item.key} size={{ xs: 12, sm: 6, lg: 4 }}>
