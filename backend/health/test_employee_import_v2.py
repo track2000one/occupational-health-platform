@@ -3,6 +3,8 @@
 No employee, review card, import batch, archive or medical writes are allowed.
 """
 from io import BytesIO
+import re
+from zipfile import ZipFile
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
@@ -131,6 +133,91 @@ class EmployeeImportV2PreviewTests(TestCase):
         self.assertEqual(response.data['sample_masked'][0]['identity_masked'],
                          '10••••1681')
         self.assertNotIn('1000001681', str(response.data))
+
+    def _file_with_missing_or_false_dimensions(self, rows, *, dimension='missing'):
+        """Rewrite only XLSX worksheet dimension metadata, as external generators do."""
+        headers = [
+            'المركز الصحي', 'اسم الموظف', 'رقم الهوية / الإقامة',
+            'الرقم الوظيفي', 'البريد الإلكتروني', 'رقم الجوال',
+            'تاريخ الميلاد', 'مكان الميلاد', 'الجنس', 'الحالة الاجتماعية',
+            'العنوان الوطني', 'المسمى الوظيفي', 'تاريخ التعيين',
+            'الجنسية', 'الوظيفة الحالية', 'المسمى الوظيفي بالإنجليزية',
+            'عدد الأطفال', 'رمز الوحدة التنظيمية',
+            'مسمى المركز المرجعي (للعرض فقط)',
+            'مسمى الجهة أو الوحدة من المصدر (للعرض فقط)',
+            'المسار التنظيمي الأصلي (للعرض فقط)',
+            'نوع التبعية التنظيمية (للعرض فقط)',
+            'حالة التحقق من الاعتماد (للعرض فقط)',
+            'المعرف المؤقت من الدليل (للعرض فقط)',
+            'القطاع الاستشاري المقترح (للعرض فقط)',
+            'الجهة أو الوحدة المعتمدة في المنصة (بعد التحقق)',
+            'معرف الجهة المعتمد في المنصة (بعد التحقق)',
+            'ملاحظة الربط والتحقق (للعرض فقط)',
+        ]
+        workbook = self.workbook(rows, headers=headers).getvalue()
+        output = BytesIO()
+        with ZipFile(BytesIO(workbook)) as source:
+            with ZipFile(output, 'w') as sink:
+                for entry in source.infolist():
+                    content = source.read(entry.filename)
+                    if entry.filename == 'xl/worksheets/sheet1.xml':
+                        if dimension == 'missing':
+                            content, changed = re.subn(
+                                rb'<dimension\\s+ref="[^"]*"\\s*/>', b'', content,
+                            )
+                        else:
+                            content, changed = re.subn(
+                                rb'<dimension\\s+ref="[^"]*"\\s*/>',
+                                b'<dimension ref="A1"/>', content,
+                            )
+                        self.assertEqual(changed, 1, 'Fixture must change Excel dimension')
+                    sink.writestr(entry, content)
+        output.seek(0)
+        output.name = 'synthetic-review-no-dimensions.xlsx'
+        return output
+
+    def test_reviewed_1423_row_file_with_no_dimension_is_read_completely(self):
+        # Structural reproduction of the uploaded file: 28 columns, no
+        # worksheet dimension element, and 1,423 unique synthetic IDs.
+        rows = []
+        for index in range(1423):
+            row = [''] * 28
+            row[1] = f'Synthetic Worker {index:04d}'
+            row[2] = str(1000000000 + index)
+            row[3] = f'QA-{index:04d}'
+            row[13] = 'السعودية'
+            rows.append(row)
+        original = self._file_with_missing_or_false_dimensions(rows)
+        result = self.client.post(
+            self.url, {'file': original, 'sheet_name': 'Employees'}, format='multipart',
+        )
+        self.assertEqual(result.status_code, 200, result.data)
+        self.assertEqual(result.data['rows_total'], 1423)
+        self.assertEqual(result.data['header_row'], 1)
+        self.assertIn('name', result.data['recognized_columns'])
+        self.assertIn('national_id', result.data['recognized_columns'])
+        self.assertEqual(result.data['sample_masked'][0]['identity_masked'], '10••••0000')
+        self.assertNotIn('1000000000', str(result.data))
+        self.assertFalse(Employee.objects.exists())
+        self.assertFalse(DataImportBatch.objects.exists())
+
+    def test_false_a1_only_dimension_does_not_hide_real_header_columns(self):
+        row = [''] * 28
+        row[1] = 'QA Known Staff'
+        row[2] = '1000001777'
+        row[3] = 'QA-1777'
+        row[13] = 'السعودية'
+        original = self._file_with_missing_or_false_dimensions(
+            [row], dimension='false_A1',
+        )
+        result = self.client.post(
+            self.url, {'file': original, 'sheet_name': 'Employees'}, format='multipart',
+        )
+        self.assertEqual(result.status_code, 200, result.data)
+        self.assertEqual(result.data['rows_total'], 1)
+        self.assertEqual(result.data['header_row'], 1)
+        self.assertEqual(result.data['sample_masked'][0]['identity_masked'], '10••••1777')
+        self.assertFalse(Employee.objects.exists())
 
     def test_exact_reviewed_employee_workbook_header_layout_is_recognized(self):
         # Only synthetic rows; column labels match the real 28-column template.
