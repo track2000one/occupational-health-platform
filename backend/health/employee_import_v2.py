@@ -39,14 +39,16 @@ HEADERS = {
     'date_of_birth': {'تاريخ الميلاد', 'date of birth', 'dob'},
     'appointment_date': {'تاريخ التعيين', 'appointment date', 'date hired'},
     'job_title': {'المسمى الوظيفي', 'مسمى الوظيفي', 'job title'},
-    'job_title_en': {'المسمى الوظيفي الانجليزي', 'job title english'},
+    'job_title_en': {'المسمى الوظيفي الانجليزي', 'المسمى الوظيفي بالإنجليزية',
+                     'المسمى الوظيفي بالانجليزية', 'job title english'},
     'current_job': {'الوظيفة الحالية', 'current job'},
     'gender': {'الجنس', 'gender'},
     'marital_status': {'الحالة الاجتماعية', 'marital status'},
     'national_address': {'العنوان الوطني', 'national address'},
     'birth_place': {'مكان الميلاد', 'place of birth'},
     'organization_unit': {'الجهة الوحدة التنظيمية المعتمدة', 'الوحدة التنظيمية',
-                          'الجهة التنظيمية', 'organizational unit'},
+                          'الجهة التنظيمية', 'organizational unit',
+                          'الجهة أو الوحدة المعتمدة في المنصة (بعد التحقق)'},
     'sector': {'القطاع المقترح', 'القطاع', 'sector'},
 
 }
