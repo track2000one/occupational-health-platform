@@ -27,7 +27,11 @@ review/reconciliation/temporary workforce). Replace it with **one** entry point
 ### Phase 1 implemented in this PR
 
 - Old employee-import navigation/route components retired in frontend;
-  all former employee-specific UI routes redirect to the same new page.
+  all former employee-specific UI routes and `/data-import` redirect to v2.
+  Nine obsolete frontend modules were removed.
+- Legacy employee and generic Excel API paths, including old bulk reset,
+  are blocked by default with a 403/no-store response. Dedicated health-center
+  and organization administration APIs are outside this retirement.
 - New endpoint `/api/employee-import-v2/preview/` is read-only and private.
 - Only recognizes columns and checks basic identity format, in-file
   duplicates and missing fields. Does **not** check or change PostgreSQL.
@@ -64,17 +68,20 @@ Do **not** delete production PostgreSQL Employee records, archived employees,
 visits, medical/occupational data, audit logs, historical migrations,
 or data-import batch provenance.
 
-Legacy backend endpoints and shared generic Excel importer need a separate
-dependency and compatibility review before decommissioning. Merely hiding
-legacy UI does not make those endpoints unavailable to API callers;
-do **not** advertise full server-side retirement until verified. Avoid
-dropping historical tables or migrations, including EmployeeImportReview,
-until confirmed that no medical or auditing references depend on them.
+Legacy backend source, audit tables and historical tests remain in code for
+safe rollback and dependency review; their public API entrypoints are
+disabled by default. Synthetic CI alone explicitly enables old API routes
+to regression-test old behavior, and verifies the default-disabled guard.
+Once V2 is fully operational, unused backend source can be removed separately.
+No historical migrations or tables (including EmployeeImportReview) will be
+dropped without proof that no medical or audit references depend on them.
 
 ## Production release checklist
 
 - [ ] Frontend and backend CI passes with PostgreSQL.
-- [ ] Audit/retire direct legacy employee Excel POST entrypoints safely.
+- [x] Block legacy employee and general Excel APIs by default; leave
+      exception only for controlled synthetic CI and emergency rollback.
+- [ ] Remove unused historical backend source after full V2 validation.
 - [ ] New structural preview and masked output verified in Staging.
 - [ ] Registry-matching and selective commit fully implemented and tested.
 - [ ] Backup + rollback tested using synthetic data.
