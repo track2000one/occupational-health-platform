@@ -125,6 +125,7 @@ def registry_match(sheet_rows):
     centers = matched_center_map()
     organization_names, organization_units = approved_organization_map()
     counts = Counter()
+    planned_rows = []
     missing_counts = Counter()
     review_examples = []
     summary = Counter()
@@ -173,7 +174,7 @@ def registry_match(sheet_rows):
         elif employee and employee.is_archived:
             kind = 'archived_review'
         elif source_center and approved_center_id is None:
-            kind = 'center_review'
+            kind = 'center_review' if employee else 'new_provisional'
         elif (employee and approved_center_id and employee.health_center_id and
               approved_center_id != employee.health_center_id):
             kind = 'center_review'
@@ -184,7 +185,7 @@ def registry_match(sheet_rows):
             (employee and employee.organization_unit_id and
              employee.organization_unit_id != approved_unit_id)
         ):
-            kind = 'organization_review'
+            kind = 'organization_review' if employee else 'new_provisional'
         elif employee:
             has_fill = any(
                 row.get(field) and not getattr(employee, field, None)
@@ -213,6 +214,19 @@ def registry_match(sheet_rows):
             summary['yellow_missing_information'] += 1
 
         counts[kind] += 1
+        if kind in ('new_candidate', 'new_incomplete', 'new_provisional', 'existing_fill_only'):
+            planned_rows.append({
+                'row': row, 'national_id': nid, 'kind': kind,
+                'employee_pk': employee.pk if employee else None,
+                'approved_center_id': approved_center_id,
+                'approved_unit_id': (
+                    approved_unit_id if approved_unit and (
+                        not approved_unit.health_center_id or not approved_center_id
+                        or approved_unit.health_center_id == approved_center_id
+                    ) else None
+                ),
+                'missing_fields': missing,
+            })
         summary['identity_found'] += bool(employee)
         if len(review_examples) < REVIEW_LIMIT and (
             kind not in ('new_candidate', 'existing_no_change') or missing
@@ -230,6 +244,7 @@ def registry_match(sheet_rows):
 
     return {
         'mode': 'read_only_registry_match_v2',
+        '_internal_planned_rows': planned_rows,
         'rows_total': total,
         'registry_counts': dict(counts),
         'identity_found': summary['identity_found'],
