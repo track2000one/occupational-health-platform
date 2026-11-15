@@ -10,6 +10,8 @@ load_dotenv(BASE_DIR / '.env')
 
 SECRET_KEY = os.getenv('SECRET_KEY', 'dev-change-me')
 DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
+# Old Excel import routes are disabled by default. True only for synthetic CI or controlled rollback.
+LEGACY_EMPLOYEE_EXCEL_IMPORTS_ENABLED = os.getenv('LEGACY_EMPLOYEE_EXCEL_IMPORTS_ENABLED', 'false').lower() == 'true'
 
 ALLOWED_HOSTS = [
     host.strip()
@@ -52,6 +54,7 @@ MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
+    'health.employee_import_v2_retirement.RetiredEmployeeExcelImportMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
