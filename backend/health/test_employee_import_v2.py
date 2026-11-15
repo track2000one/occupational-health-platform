@@ -687,7 +687,8 @@ class EmployeeImportV2PreviewTests(TestCase):
             return Employee.objects.create(
                 name=name, national_id=national_id, is_archived=True,
                 archived_at=archived_at, archive_reason=reason,
-                employment_status=status, employee_number=employee_number,
+                employment_status=status,
+                employee_number=employee_number or ('QA-' + national_id[-4:]),
             )
 
         ready = archived('QA Restore Candidate', '1000001981')
