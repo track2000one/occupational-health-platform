@@ -5,7 +5,7 @@ No employee, review card, import batch, archive or medical writes are allowed.
 from io import BytesIO
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from openpyxl import Workbook
 from rest_framework.test import APIClient
 
@@ -105,3 +105,26 @@ class EmployeeImportV2PreviewTests(TestCase):
             self.url, {'file': BytesIO(b'not an xlsx file')}, format='multipart',
         )
         self.assertEqual(response.status_code, 400)
+
+    @override_settings(LEGACY_EMPLOYEE_EXCEL_IMPORTS_ENABLED=False)
+    def test_old_employee_import_endpoints_are_retired_but_v2_works(self):
+        legacy = (
+            '/api/employee-roster/reconcile/',
+            '/api/employee-import-reviews/cleanup/',
+            '/api/employee-roster-template/',
+            '/api/workforce-roster/preview/',
+            '/api/workforce-roster/import-plan/',
+            '/api/excel-import/upload/',
+        )
+        for endpoint in legacy:
+            with self.subTest(endpoint=endpoint):
+                response = self.client.post(endpoint, {}, format='multipart')
+                self.assertEqual(response.status_code, 403, response.content[:250])
+                self.assertTrue(response.json()['legacy_import_disabled'])
+                self.assertEqual(response['Cache-Control'], 'private, no-store')
+        current = self.preview([['QA Authorized', '1000000001']],
+                               headers=['اسم الموظف', 'رقم الهوية الوطنية'])
+        self.assertEqual(current.status_code, 200, current.data)
+        self.assertEqual(Employee.objects.count(), 0)
+        self.assertEqual(EmployeeImportReview.objects.count(), 0)
+        self.assertEqual(DataImportBatch.objects.count(), 0)
