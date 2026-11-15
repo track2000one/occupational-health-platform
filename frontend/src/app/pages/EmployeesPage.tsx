@@ -799,6 +799,12 @@ export function EmployeesPage() {
               {isRtl ? 'استيراد Excel' : 'Import Excel'}
             </Button>
           )}
+          {canBulkReset && (
+            <Button variant="contained" color="success" startIcon={<UploadFileIcon />}
+              onClick={() => navigate('/employees/reconcile')}>
+              {isRtl ? 'مطابقة واستكمال الموظفين من Excel' : 'Reconcile and complete employees from Excel'}
+            </Button>
+          )}
           {canArchive && (
             <Button variant={showArchived ? 'contained' : 'outlined'} color={showArchived ? 'error' : 'inherit'}
               startIcon={showArchived ? <RestoreEmployeeIcon /> : <DeleteEmployeeIcon />}
