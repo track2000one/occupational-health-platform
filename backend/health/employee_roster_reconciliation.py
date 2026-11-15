@@ -47,6 +47,11 @@ TOKEN_SALT = 'employee-excel-verified-fill-restore-2026-v1'
 TOKEN_TTL = 300
 REVIEW_TOKEN_TTL = 600
 REVIEW_PAGE_SIZE = 25
+NAME_DIAGNOSTICS = (
+    'orthographic', 'reordered', 'missing_or_extra_parts',
+    'same_first_and_last', 'same_first_only', 'same_last_only',
+    'different_or_complex',
+)
 REVIEW_CATEGORIES = frozenset((
     'name_mismatch', 'name_different_scripts', 'individually_archived_requires_review',
     'unique_field_mismatch', 'unique_value_owned_by_other',
@@ -173,6 +178,52 @@ def name_scripts_differ(registry_name, source_name):
     }
 
 
+_ARABIC_DIACRITICS = re.compile(r'[\u064b-\u065f\u0670\u06d6-\u06ed]')
+_NAME_SEPARATOR = re.compile(r'[^\u0621-\u064aA-Za-z0-9]+')
+
+
+def name_parts_for_diagnostics(value):
+    """Create non-authoritative comparison tokens without editing source text."""
+    value = unicodedata.normalize('NFKC', str(value or '')).strip().lower()
+    value = _ARABIC_DIACRITICS.sub('', value).replace('ـ', '')
+    for source, replacement in (('أ', 'ا'), ('إ', 'ا'), ('آ', 'ا'),
+                                ('ٱ', 'ا'), ('ى', 'ي'), ('ة', 'ه')):
+        value = value.replace(source, replacement)
+    return tuple(token for token in _NAME_SEPARATOR.sub(' ', value).split() if token)
+
+
+def name_difference_diagnostic(registry_name, source_name):
+    """Describe ONLY the text discrepancy, not who owns a national ID.
+
+    Even the highest similarity stays manually blocked as name_mismatch.
+    """
+    registry = name_parts_for_diagnostics(registry_name)
+    incoming = name_parts_for_diagnostics(source_name)
+    if not registry or not incoming:
+        return 'different_or_complex'
+    if registry == incoming:
+        return 'orthographic'
+    if len(registry) == len(incoming) and sorted(registry) == sorted(incoming):
+        return 'reordered'
+    # The shorter name can omit patronymics, with original word order kept.
+    short, long_ = ((registry, incoming) if len(registry) < len(incoming)
+                    else (incoming, registry))
+    matched = iter(long_)
+    if len(short) >= 2 and len(short) != len(long_) and all(
+        any(word == candidate for candidate in matched) for word in short
+    ):
+        return 'missing_or_extra_parts'
+    if len(registry) >= 3 and len(incoming) >= 3 and (
+        registry[0] == incoming[0] and registry[-1] == incoming[-1]
+    ):
+        return 'same_first_and_last'
+    if registry[0] == incoming[0]:
+        return 'same_first_only'
+    if registry[-1] == incoming[-1]:
+        return 'same_last_only'
+    return 'different_or_complex'
+
+
 def plan_reconciliation(sheet_rows, *, lock=False):
     national_ids = list({row['national_id'] for row in sheet_rows if row['national_id']})
     queryset = Employee.objects.filter(national_id__in=national_ids).order_by('pk')
@@ -197,6 +248,7 @@ def plan_reconciliation(sheet_rows, *, lock=False):
     comparison_rows = []
     counts = Counter()
     fill_counts = Counter()
+    diagnostic_counts = Counter()
     states = []
     for raw in sheet_rows:
         identity = raw['national_id']
@@ -263,6 +315,12 @@ def plan_reconciliation(sheet_rows, *, lock=False):
                             'kind': kind, 'additions': additions,
                         })
         counts[kind] += 1
+        name_diagnostic = (
+            name_difference_diagnostic(employee.name, raw['name'])
+            if kind == 'name_mismatch' and employee is not None else None
+        )
+        if name_diagnostic:
+            diagnostic_counts[name_diagnostic] += 1
         if employee is not None:
             states_for_signature = employee_state(employee)
         else:
@@ -280,6 +338,7 @@ def plan_reconciliation(sheet_rows, *, lock=False):
                 'national_id_masked': masked_id,
                 'source_name': raw['name'],
                 'registry_name': employee.name,
+                'name_diagnostic': name_diagnostic,
                 'source_employee_number': raw['employee_number'],
                 'registry_employee_number': employee.employee_number or '',
                 'source_email_present': bool(raw['email']),
@@ -307,6 +366,7 @@ def plan_reconciliation(sheet_rows, *, lock=False):
     operations = [s for s in states if 'additions' in s]
     return {
         'counts': counts, 'fill_counts': fill_counts,
+        'name_diagnostic_counts': diagnostic_counts,
         'operations': operations, 'digest': digest,
         'examples': results[:30], 'comparison_rows': comparison_rows,
         'total': len(sheet_rows),
@@ -372,6 +432,7 @@ class EmployeeRosterReconciliationView(APIView):
                 'mode': 'preview', 'total_rows': plan['total'],
                 'eligible_count': eligible, 'breakdown': dict(plan['counts']),
                 'fill_field_counts': dict(plan['fill_counts']),
+                'name_diagnostic_counts': dict(plan['name_diagnostic_counts']),
                 'examples_masked': plan['examples'],
                 'preview_token': token,
                 'confirm_phrase': f"مطابقة {eligible} موظفًا",
@@ -393,9 +454,16 @@ class EmployeeRosterReconciliationView(APIView):
                     return Response({'detail': 'رقم الصفحة غير صحيح.'}, status=400)
                 if offset < 0 or offset > MAX_ROWS:
                     return Response({'detail': 'رقم الصفحة خارج النطاق.'}, status=400)
+                name_filter = str(request.data.get('review_name_diagnostic') or 'all')
+                if name_filter != 'all' and name_filter not in NAME_DIAGNOSTICS:
+                    return Response({'detail': 'نوع اختلاف الاسم غير معروف.'}, status=400)
                 matches = [
                     row for row in plan['comparison_rows']
-                    if category == 'all' or row['status'] == category
+                    if (category == 'all' or row['status'] == category) and
+                    (name_filter == 'all' or (
+                        row['status'] == 'name_mismatch' and
+                        row['name_diagnostic'] == name_filter
+                    ))
                 ]
                 page = matches[offset:offset + REVIEW_PAGE_SIZE]
                 review_records = {
@@ -428,6 +496,8 @@ class EmployeeRosterReconciliationView(APIView):
                     'mode': 'review', 'total': len(matches),
                     'offset': offset, 'page_size': REVIEW_PAGE_SIZE,
                     'review_filter': category,
+                    'review_name_diagnostic': name_filter,
+                    'name_diagnostic_counts': dict(plan['name_diagnostic_counts']),
                     'rows': displayed,
                     'notice': ('مقارنة إدارية للقراءة فقط. يعتمد التحقق على مستند رسمي '
                                'مستقل؛ تسجيل قرار المراجعة لا يستعيد أو يعدّل أي موظف.'),
