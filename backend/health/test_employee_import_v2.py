@@ -9,7 +9,7 @@ from django.test import TestCase, override_settings
 from openpyxl import Workbook
 from rest_framework.test import APIClient
 
-from .models import AuditLog, Employee, EmployeeImportReview, DataImportBatch, HealthCenter, OrganizationUnit
+from .models import AuditLog, Employee, EmployeeImportReview, DataImportBatch, HealthCenter, OrganizationUnit, EmployeeProfileCompletionEvent
 
 
 class EmployeeImportV2PreviewTests(TestCase):
@@ -321,3 +321,104 @@ class EmployeeImportV2PreviewTests(TestCase):
             response.data['registry_counts']['identifier_owned_by_other'], 1
         )
         self.assertEqual(Employee.objects.count(), 1)
+
+    def apply_v2(self, rows, *, different_file=False):
+        original = self.workbook(rows).getvalue()
+        def infile(b):
+            f = BytesIO(b)
+            f.name = 'qa-v2-upload.xlsx'
+            return f
+        preview = self.client.post(self.url, {
+            'action': 'preview', 'file': infile(original),
+            'sheet_name': 'Employees',
+        }, format='multipart')
+        self.assertEqual(preview.status_code, 200, preview.data)
+        changed = (self.workbook([['Other Name', '1000001999']]).getvalue()
+                   if different_file else original)
+        result = self.client.post(self.url, {
+            'action': 'commit', 'file': infile(changed),
+            'sheet_name': 'Employees',
+            'commit_token': preview.data['commit_token'],
+            'confirm_phrase': preview.data['confirm_phrase'],
+            'confirmed': 'true', 'identity_checked': 'true',
+            'reason': 'Approved synthetic staff source with verified employee identities',
+        }, format='multipart')
+        return preview, result
+
+    @override_settings(EMPLOYEE_IMPORT_V2_COMMIT_ENABLED=False)
+    def test_v2_commit_disabled_by_default(self):
+        preview, result = self.apply_v2([
+            ['QA Candidate', '1000001501', 'QA-1501', '', 'السعودية'],
+        ])
+        self.assertFalse(preview.data['commit_available'])
+        self.assertEqual(result.status_code, 403, result.data)
+        self.assertFalse(Employee.objects.exists())
+        self.assertFalse(DataImportBatch.objects.exists())
+
+    @override_settings(EMPLOYEE_IMPORT_V2_COMMIT_ENABLED=True)
+    def test_v2_creates_new_provisional_with_normalized_nationality(self):
+        preview, result = self.apply_v2([
+            ['QA Candidate', '1000001502', 'QA-1502', '', 'السعودية'],
+        ])
+        self.assertEqual(preview.data['safe_import_candidate_counts']['create'], 1)
+        self.assertEqual(result.status_code, 200, result.data)
+        self.assertEqual(result.data['created'], 1)
+        self.assertEqual(result.data['provisional'], 1)
+        self.assertEqual(result.data['archived_restored'], 0)
+        employee = Employee.objects.get(national_id='1000001502')
+        self.assertEqual(employee.nationality, 'SA')
+        self.assertEqual(employee.registration_status, 'provisional')
+        self.assertIsNone(employee.health_center)
+        self.assertEqual(DataImportBatch.objects.filter(mode='commit').count(), 1)
+        self.assertEqual(AuditLog.objects.filter(
+            action='employee_import_v2_controlled_commit').count(), 1)
+
+    @override_settings(EMPLOYEE_IMPORT_V2_COMMIT_ENABLED=True)
+    def test_v2_fill_only_does_not_restore_archived_employee(self):
+        active = Employee.objects.create(
+            name='QA Active', national_id='1000001503',
+            employee_number='QA-1503', nationality='', email='keep.qa@example.invalid',
+        )
+        archived = Employee.objects.create(
+            name='QA Archived', national_id='1000001504',
+            employee_number='QA-1504', nationality='', is_archived=True,
+        )
+        preview, result = self.apply_v2([
+            ['QA Active', '1000001503', 'QA-1503', '', 'السعودية'],
+            ['QA Archived', '1000001504', 'QA-1504', '', 'السعودية'],
+        ])
+        self.assertEqual(result.status_code, 200, result.data)
+        self.assertEqual(result.data['filled'], 1)
+        self.assertEqual(result.data['skipped'], 1)
+        active.refresh_from_db()
+        archived.refresh_from_db()
+        self.assertEqual(active.nationality, 'SA')
+        self.assertEqual(active.email, 'keep.qa@example.invalid')
+        self.assertTrue(archived.is_archived)
+        self.assertEqual(archived.nationality, '')
+        self.assertEqual(EmployeeProfileCompletionEvent.objects.count(), 1)
+
+    @override_settings(EMPLOYEE_IMPORT_V2_COMMIT_ENABLED=True)
+    def test_v2_changed_workbook_is_rejected(self):
+        _, result = self.apply_v2(
+            [['QA Candidate', '1000001505', 'QA-1505', '', 'السعودية']],
+            different_file=True,
+        )
+        self.assertEqual(result.status_code, 409, result.data)
+        self.assertFalse(Employee.objects.exists())
+
+    @override_settings(EMPLOYEE_IMPORT_V2_COMMIT_ENABLED=True)
+    def test_v2_skips_conflicting_job_number_but_adds_safe_candidate(self):
+        Employee.objects.create(
+            name='QA Owner', national_id='1000001506', employee_number='QA-DUP',
+        )
+        preview, result = self.apply_v2([
+            ['QA Different', '1000001507', 'QA-DUP', '', 'السعودية'],
+            ['QA New', '1000001508', 'QA-1508', '', 'السعودية'],
+        ])
+        self.assertEqual(preview.data['registry_counts']['identifier_owned_by_other'], 1)
+        self.assertEqual(result.status_code, 200, result.data)
+        self.assertEqual(result.data['created'], 1)
+        self.assertEqual(result.data['skipped'], 1)
+        self.assertFalse(Employee.objects.filter(national_id='1000001507').exists())
+        self.assertTrue(Employee.objects.filter(national_id='1000001508').exists())
