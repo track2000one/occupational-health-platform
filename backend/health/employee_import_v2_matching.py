@@ -8,7 +8,7 @@ import re
 import unicodedata
 
 from django.db.models import Q
-from django.db.models.functions import Lower
+from django.db.models.functions import Lower, Trim
 
 from .models import Employee, HealthCenter, OrganizationUnit
 
@@ -100,14 +100,17 @@ def registry_match(sheet_rows):
     if numbers or emails:
         q = Q()
         if numbers:
-            q |= Q(employee_number__in=[
-                row['employee_number'].strip() for row in sheet_rows if row['employee_number']
-            ])
+            q |= Q(_number_lower__in={
+                row['employee_number'].strip().casefold()
+                for row in sheet_rows if row['employee_number']
+            })
         if emails:
             q |= Q(_mail_lower__in=emails)
         identifier_owners = list(
-            Employee.objects.annotate(_mail_lower=Lower('email')).filter(q)
-            .only('pk', 'employee_number', 'email')
+            Employee.objects.annotate(
+                _mail_lower=Lower(Trim('email')),
+                _number_lower=Lower(Trim('employee_number')),
+            ).filter(q).only('pk', 'employee_number', 'email')
         )
     else:
         identifier_owners = []
