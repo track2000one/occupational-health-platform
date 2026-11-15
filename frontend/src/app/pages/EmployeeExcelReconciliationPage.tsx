@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import {
-  Alert, Box, Button, Checkbox, Chip, CircularProgress, Divider,
-  FormControlLabel, Grid, Paper, Stack, TextField, Typography,
+  Alert, Box, Button, Checkbox, Chip, CircularProgress, Dialog,
+  DialogActions, DialogContent, DialogTitle, Divider, FormControlLabel,
+  Grid, MenuItem, Paper, Stack, Table, TableBody, TableCell,
+  TableContainer, TableHead, TableRow, TextField, Typography,
 } from '@mui/material';
 import {
   ArrowBack as BackIcon, UploadFile as UploadIcon,
@@ -24,6 +26,47 @@ type Preview = {
   confirm_phrase: string;
   warning: string;
   notice: string;
+};
+type ComparisonRow = {
+  row: number;
+  status: string;
+  employee_pk: number;
+  national_id_masked: string;
+  source_name: string;
+  registry_name: string;
+  source_employee_number: string;
+  registry_employee_number: string;
+  source_email_present: boolean;
+  registry_email_present: boolean;
+  email_mismatch: boolean;
+  source_center: string;
+  registry_center: string;
+  archived: boolean;
+  employment_status: string;
+  decision_status: 'pending' | 'stale' | 'verified' | 'not_verified';
+  decision_token: string;
+};
+type Comparison = {
+  mode: 'review';
+  total: number;
+  offset: number;
+  page_size: number;
+  review_filter: string;
+  rows: ComparisonRow[];
+  notice: string;
+};
+const REVIEW_FILTERS = [
+  ['all', 'جميع الحالات المختلف عليها'],
+  ['name_mismatch', 'اختلاف أسماء الموظفين'],
+  ['individually_archived_requires_review', 'أرشفة فردية مستقلة'],
+  ['unique_field_mismatch', 'اختلاف رقم وظيفي أو بريد'],
+  ['unique_value_owned_by_other', 'الرقم أو البريد يخص موظفًا آخر'],
+] as const;
+const REVIEW_LABELS: Record<string,string> = {
+  pending: 'لم تُراجع',
+  stale: 'قرار قديم يستلزم إعادة التحقق',
+  verified: 'تم توثيق التحقق (دون تعديل)',
+  not_verified: 'تحتاج تصحيحًا / لم يثبت التطابق',
 };
 type Done = {
   mode: 'committed';
@@ -73,6 +116,86 @@ export function EmployeeExcelReconciliationPage() {
   const [acknowledged, setAcknowledged] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [comparison, setComparison] = useState<Comparison | null>(null);
+  const [comparisonFilter, setComparisonFilter] = useState('name_mismatch');
+  const [comparisonBusy, setComparisonBusy] = useState(false);
+  const [decisionTarget, setDecisionTarget] = useState<ComparisonRow | null>(null);
+  const [decisionAction, setDecisionAction] = useState('not_verified');
+  const [decisionReference, setDecisionReference] = useState('');
+  const [decisionReason, setDecisionReason] = useState('');
+  const [decisionConfirmed, setDecisionConfirmed] = useState(false);
+  const [decisionBusy, setDecisionBusy] = useState(false);
+  const [reviewNotice, setReviewNotice] = useState('');
+
+  const fetchComparison = async (filter = comparisonFilter, offset = 0) => {
+    if (!file || comparisonBusy || busy || !user?.isSuperuser) return;
+    setComparisonBusy(true);
+    setError('');
+    try {
+      const token = getAccessToken();
+      if (!token) throw new Error('انتهت جلسة المسؤول؛ أعد تسجيل الدخول.');
+      const form = new FormData();
+      form.append('action', 'review');
+      form.append('file', file);
+      form.append('sheet_name', sheet || 'Employees');
+      form.append('review_filter', filter);
+      form.append('review_offset', String(offset));
+      const response = await authFetch(API + '/employee-roster/reconcile/', {
+        method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: form,
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || 'تعذرت قراءة تفاصيل المقارنة.');
+      setComparison(data as Comparison);
+      setComparisonFilter(filter);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'تعذر تحميل حالات التعارض.');
+    } finally {
+      setComparisonBusy(false);
+    }
+  };
+
+  const recordDecision = async () => {
+    if (!decisionTarget || !file || decisionBusy || !decisionConfirmed ||
+        decisionReference.trim().length < 6 || decisionReference.trim().length > 255 ||
+        decisionReason.trim().length < 20 || decisionReason.trim().length > 500) return;
+    if (!window.confirm('توثيق القرار لا يستعيد أو يغيّر أي موظف. هل تؤكد أن المستند المرجعي تحقق منه المسؤول؟')) return;
+    setDecisionBusy(true);
+    setError('');
+    try {
+      const token = getAccessToken();
+      if (!token) throw new Error('انتهت جلسة المسؤول؛ أعد تسجيل الدخول.');
+      const form = new FormData();
+      form.append('action', 'review_decision');
+      form.append('file', file);
+      form.append('sheet_name', sheet || 'Employees');
+      form.append('decision_token', decisionTarget.decision_token);
+      form.append('decision', decisionAction);
+      form.append('evidence_reference', decisionReference.trim());
+      form.append('reason', decisionReason.trim());
+      form.append('confirmed', 'true');
+      const response = await authFetch(API + '/employee-roster/reconcile/', {
+        method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: form,
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || 'تعذر توثيق المراجعة.');
+      setReviewNotice('سُجّل القرار للمراجعة فقط، ولم يتغير سجل الموظف أو أي بيانات صحية.');
+      setDecisionTarget(null);
+      setDecisionReference('');
+      setDecisionReason('');
+      setDecisionConfirmed(false);
+      setComparison(prev => prev ? {
+        ...prev,
+        rows: prev.rows.map(r => r.row === decisionTarget.row
+          ? { ...r, decision_status: decisionAction as ComparisonRow['decision_status'] }
+          : r),
+      } : null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'تعذر حفظ قرار المراجعة.');
+    } finally {
+      setDecisionBusy(false);
+    }
+  };
+
 
   const process = async (action: 'preview' | 'commit') => {
     if (busy || !file || !user?.isSuperuser) return;
@@ -89,6 +212,8 @@ export function EmployeeExcelReconciliationPage() {
     if (action === 'preview') {
       setPreview(null);
       setResult(null);
+      setComparison(null);
+      setReviewNotice('');
       setAcknowledged(false);
       setReason('');
       setPhrase('');
@@ -164,11 +289,11 @@ export function EmployeeExcelReconciliationPage() {
           <input type="file" accept=".xlsx" hidden onChange={e => {
             const candidate = e.target.files?.[0] || null;
             setFile(candidate);
-            setPreview(null); setResult(null); setError('');
+            setPreview(null); setResult(null); setComparison(null); setError('');
           }}/>
         </Button>
         <TextField label="اسم ورقة الموظفين" value={sheet} sx={{ maxWidth: 300 }}
-          onChange={e => { setSheet(e.target.value); setPreview(null); }} />
+          onChange={e => { setSheet(e.target.value); setPreview(null); setComparison(null); }} />
         <Button variant="contained" color="primary" startIcon={<PreviewIcon />}
           disabled={!file || busy} onClick={() => void process('preview')}>
           فحص مطابقة الملف (قراءة فقط)
@@ -222,6 +347,101 @@ export function EmployeeExcelReconciliationPage() {
         {preview.warning && <Alert severity="warning" sx={{ mt: 1.5 }}>{preview.warning}</Alert>}
       </Paper>
 
+      <Paper sx={{ p: 3, mb: 2 }}>
+        <Typography variant="h6" fontWeight={900} sx={{ mb: 1 }}>
+          مقارنة بيانات Excel مع سجلات الموظفين الأصلية
+        </Typography>
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          التصنيفات المتعارضة لا تسمح باستعادة الموظف تلقائيًا. يمكن مقارنة الأسماء
+          والأرقام الوظيفية والمراكز هنا، وتوثيق تحقق إداري من مصدر مستقل.
+          تسجيل قرار المراجعة لا يغيّر اسم الموظف أو رقمه أو حالته أو بياناته الصحية.
+        </Alert>
+        <Stack direction={{ xs: 'column', sm: 'row' }} gap={1.5} alignItems="center" sx={{ mb: 2 }}>
+          <TextField select label="نوع الحالة" size="small" sx={{ minWidth: 290 }}
+            value={comparisonFilter} onChange={e => {
+              setComparisonFilter(e.target.value);
+              setComparison(null);
+            }}>
+            {REVIEW_FILTERS.map(([value, label]) =>
+              <MenuItem key={value} value={value}>{label}</MenuItem>)}
+          </TextField>
+          <Button variant="outlined" disabled={comparisonBusy || busy}
+            onClick={() => void fetchComparison(comparisonFilter, 0)}>
+            {comparisonBusy ? 'جاري فحص المقارنة...' : 'عرض جدول المقارنة التفصيلي'}
+          </Button>
+        </Stack>
+        {reviewNotice && <Alert severity="success" sx={{ mb: 2 }}
+          onClose={() => setReviewNotice('')}>{reviewNotice}</Alert>}
+        {comparison && <>
+          <Typography fontSize={13} sx={{ mb: 1 }}>
+            عدد الحالات المطابقة للتصفية: <strong>{comparison.total}</strong>،
+            المعروضة: {comparison.rows.length} سجلًا — الصفحة {Math.floor(comparison.offset / comparison.page_size) + 1}
+          </Typography>
+          <TableContainer sx={{ overflowX: 'auto', maxHeight: 550, border: '1px solid', borderColor: 'divider' }}>
+            <Table stickyHeader size="small" sx={{ minWidth: 1240 }}>
+              <TableHead><TableRow>
+                {['صف Excel', 'الهوية (مخفية)', 'اسم السجل الأصلي', 'اسم Excel',
+                  'الرقم الوظيفي الحالي', 'الرقم الوظيفي في Excel',
+                  'المركز الحالي', 'المركز في Excel (مرجعي)',
+                  'حالة السجل', 'سبب التعارض', 'قرار المراجعة'].map(h =>
+                    <TableCell key={h} sx={{ fontWeight: 900, whiteSpace: 'nowrap' }}>{h}</TableCell>)}
+              </TableRow></TableHead>
+              <TableBody>
+                {comparison.rows.map(row => <TableRow key={row.row} hover>
+                  <TableCell>{row.row}</TableCell>
+                  <TableCell>{row.national_id_masked}</TableCell>
+                  <TableCell sx={{ minWidth: 170 }}>{row.registry_name}</TableCell>
+                  <TableCell sx={{ minWidth: 170 }}>{row.source_name}</TableCell>
+                  <TableCell>{row.registry_employee_number || '—'}</TableCell>
+                  <TableCell>{row.source_employee_number || '—'}</TableCell>
+                  <TableCell>{row.registry_center || 'غير محدد'}</TableCell>
+                  <TableCell>{row.source_center || 'غير محدد'}</TableCell>
+                  <TableCell>
+                    <Chip size="small" color={row.archived ? 'warning' : 'success'}
+                      label={row.archived ? 'مؤرشف' : 'نشط'} />
+                  </TableCell>
+                  <TableCell sx={{ minWidth: 180 }}>
+                    {CATEGORIES[row.status] || row.status}
+                    {row.email_mismatch && <Typography fontSize={11} color="error">
+                      يوجد اختلاف في البريد الإلكتروني (القيمة مخفية)
+                    </Typography>}
+                  </TableCell>
+                  <TableCell sx={{ minWidth: 210 }}>
+                    <Stack gap={1}>
+                      <Typography fontSize={11}>
+                        {REVIEW_LABELS[row.decision_status] || row.decision_status}
+                      </Typography>
+                      <Button variant="outlined" size="small"
+                        disabled={row.decision_status !== 'pending' || comparisonBusy}
+                        onClick={() => {
+                          setDecisionTarget(row);
+                          setDecisionAction('not_verified');
+                          setDecisionReference('');
+                          setDecisionReason('');
+                          setDecisionConfirmed(false);
+                        }}>
+                        توثيق قرار المطابقة
+                      </Button>
+                    </Stack>
+                  </TableCell>
+                </TableRow>)}
+              </TableBody>
+            </Table>
+          </TableContainer>
+          <Stack direction="row" gap={1} justifyContent="center" sx={{ mt: 2 }}>
+            <Button variant="outlined" disabled={comparisonBusy || comparison.offset === 0}
+              onClick={() => void fetchComparison(comparisonFilter, Math.max(0, comparison.offset - comparison.page_size))}>
+              السابق
+            </Button>
+            <Button variant="outlined" disabled={comparisonBusy ||
+              comparison.offset + comparison.page_size >= comparison.total}
+              onClick={() => void fetchComparison(comparisonFilter, comparison.offset + comparison.page_size)}>
+              التالي
+            </Button>
+          </Stack>
+        </>}
+      </Paper>
+
       {preview.eligible_count > 0 && preview.eligible_count <= 500 && (
         <Paper sx={{ p: 3, mb: 2, border: '1px solid #94A3B8' }}>
           <Typography fontWeight={900} variant="h6" sx={{ mb: 1 }}>
@@ -254,6 +474,51 @@ export function EmployeeExcelReconciliationPage() {
         </Paper>
       )}
     </>}
+
+    <Dialog open={Boolean(decisionTarget)} onClose={() => {
+      if (!decisionBusy) setDecisionTarget(null);
+    }} maxWidth="sm" fullWidth dir="rtl">
+      <DialogTitle fontWeight={900}>توثيق مراجعة اختلاف بيانات الموظف</DialogTitle>
+      <DialogContent dividers>
+        <Stack gap={2}>
+          <Alert severity="warning">
+            يجب التحقق من مصدر رسمي مستقل. هذا القرار يوثّق المراجعة فقط ولا
+            يعتمد اختلاف الاسم أو يسمح باستعادة الموظف تلقائيًا.
+          </Alert>
+          {decisionTarget && <Paper variant="outlined" sx={{ p: 2 }}>
+            <Typography variant="body2">اسم السجل الأصلي: <strong>{decisionTarget.registry_name}</strong></Typography>
+            <Typography variant="body2">اسم Excel: <strong>{decisionTarget.source_name}</strong></Typography>
+            <Typography variant="body2">الهوية المخفية: {decisionTarget.national_id_masked}</Typography>
+            <Typography variant="body2">رقم الموظف الحالي: {decisionTarget.registry_employee_number || '—'}</Typography>
+            <Typography variant="body2">رقم الموظف في Excel: {decisionTarget.source_employee_number || '—'}</Typography>
+          </Paper>}
+          <TextField select label="نتيجة التحقق الإداري" value={decisionAction}
+            disabled={decisionBusy} onChange={e => setDecisionAction(e.target.value)}>
+            <MenuItem value="not_verified">لم يثبت التطابق — يلزم تصحيح المصدر</MenuItem>
+            <MenuItem value="verified">تم التحقق من صاحب الهوية بمصدر مستقل (دون تعديل)</MenuItem>
+          </TextField>
+          <TextField label="المرجع الرسمي للمطابقة" required
+            value={decisionReference} onChange={e => setDecisionReference(e.target.value)}
+            helperText="مثال: رقم معاملة/قرار تحقق رسمي، دون نسخ بيانات هوية أو تقارير طبية"
+            inputProps={{ maxLength: 255 }} disabled={decisionBusy}/>
+          <TextField label="المبرر وملاحظات التحقق" multiline minRows={3} required
+            value={decisionReason} onChange={e => setDecisionReason(e.target.value)}
+            helperText="20–500 حرف؛ لا تكتب معلومات طبية أو بيانات شخصية"
+            inputProps={{ maxLength: 500 }} disabled={decisionBusy}/>
+          <FormControlLabel control={<Checkbox checked={decisionConfirmed}
+            disabled={decisionBusy} onChange={(_, checked) => setDecisionConfirmed(checked)}/>}
+            label="راجعت المستند الرسمي وتأكدت أن توثيق القرار لا يغير أي سجل موظف."/>
+        </Stack>
+      </DialogContent>
+      <DialogActions>
+        <Button disabled={decisionBusy} onClick={() => setDecisionTarget(null)}>إلغاء</Button>
+        <Button variant="contained" disabled={decisionBusy || !decisionConfirmed ||
+          decisionReference.trim().length < 6 || decisionReason.trim().length < 20 ||
+          decisionReason.trim().length > 500} onClick={() => void recordDecision()}>
+          {decisionBusy ? 'جاري تسجيل القرار...' : 'حفظ قرار المراجعة فقط'}
+        </Button>
+      </DialogActions>
+    </Dialog>
 
     {result && <Alert severity="success" sx={{ mb: 2 }}>
       <Typography fontWeight={900}>تمت العملية وفق المعاينة المعتمدة</Typography>
