@@ -784,25 +784,9 @@ export function EmployeesPage() {
             </Button>
           )}
           {can(PERMISSIONS.MANAGE_USERS) && (
-            <Button variant="outlined" startIcon={<UploadFileIcon />} onClick={() => navigate('/admin/workforce-roster-preview')}>
-              {isRtl ? 'فحص الملف الجديد' : 'Preview Current Roster'}
-            </Button>
-          )}
-          {can(PERMISSIONS.MANAGE_USERS) && (
-            <Button variant="outlined" color="warning" startIcon={<UploadFileIcon />}
-              onClick={() => navigate('/employees/pending-import')}>
-              {isRtl ? 'بطاقات الموظفين قيد الاستكمال' : 'Pending employee review cards'}
-            </Button>
-          )}
-          {can(PERMISSIONS.MANAGE_USERS) && (
-            <Button variant="outlined" startIcon={<UploadFileIcon />} onClick={() => navigate('/employees/import')}>
-              {isRtl ? 'استيراد Excel' : 'Import Excel'}
-            </Button>
-          )}
-          {canBulkReset && (
-            <Button variant="contained" color="success" startIcon={<UploadFileIcon />}
-              onClick={() => navigate('/employees/reconcile')}>
-              {isRtl ? 'مطابقة واستكمال الموظفين من Excel' : 'Reconcile and complete employees from Excel'}
+            <Button variant="contained" color="primary" startIcon={<UploadFileIcon />}
+              onClick={() => navigate('/employees/import')}>
+              {isRtl ? 'استيراد بيانات الموظفين' : 'Import Employees'}
             </Button>
           )}
           {canArchive && (
