@@ -62,6 +62,17 @@ type PreflightResult = {
     name_different: boolean;
     reason_documented: boolean;
   }>>;
+  restoration_readiness: {
+    counts: Record<string, number>;
+    samples_masked: Record<string, Array<{
+      row: number;
+      identity_masked: string;
+      archive_group: string | null;
+    }>>;
+    scanned_archived: number;
+    restore_enabled: false;
+    notice: string;
+  };
   yellow_missing_information: number;
   missing_field_counts: Record<string, number>;
   review_examples_masked: Array<{
@@ -120,6 +131,15 @@ const ARCHIVE_GROUPS = [
   { key: 'matching_older_unfinished_bulk_reset', label: 'أرشفة تطابق تصفيرًا أقدم لم تُعتمد استعادته' },
   { key: 'matching_previously_restored_bulk_reset', label: 'أرشفة تطابق دفعة مصنفة مستعادة سابقًا — يلزم تدقيق خاص' },
   { key: 'other_or_unverified_archive', label: 'أرشفة دون تطابق تاريخي فريد مثبت — تتطلب مراجعة مستقلة' },
+] as const;
+
+const RESTORATION_REVIEW_GROUPS = [
+  { key: 'candidate_for_administrative_review', label: 'مطابقة أولية للمراجعة الإدارية (ليست موافقة استعادة)', tone: 'info' },
+  { key: 'name_difference_review', label: 'اختلاف اسم — يلزم دليل تحقق قبل الاستعادة', tone: 'warning' },
+  { key: 'identity_or_identifier_review', label: 'هوية أو رقم وظيفي أو بريد يحتاج معالجة تعارض', tone: 'error' },
+  { key: 'employment_status_review', label: 'الحالة الوظيفية غير نشطة أو غير مؤكدة', tone: 'warning' },
+  { key: 'archive_reason_review', label: 'سبب الأرشفة لا يطابق سجل التصفير', tone: 'warning' },
+  { key: 'archive_history_review', label: 'دليل الأرشفة غير كافٍ أو سبق اعتماد استعادة الدفعة', tone: 'error' },
 ] as const;
 
 const COUNTS: Array<{ key: string; label: string; color: 'success' | 'warning' | 'error' | 'info' }> = [
@@ -496,6 +516,42 @@ export function EmployeeImportV2Page() {
           بسبب اختلاف بيانات Excel.
           {preview.archive_provenance.archive_reason_missing > 0 &&
             ` توجد ${preview.archive_provenance.archive_reason_missing} حالة دون سبب أرشفة مدوّن، وتحتاج تحققًا منفصلًا.`}
+        </Alert>
+      </>}
+      {preview.registry_facets.archived_identity_total > 0 && <>
+        <Divider sx={{ my: 2 }} />
+        <Typography fontWeight={900} sx={{ mb: 1 }}>
+          تقييم أهلية مراجعة الاستعادة — قراءة فقط
+        </Typography>
+        <Alert severity="info" sx={{ mb: 2 }}>
+          تم تقييم {preview.restoration_readiness.scanned_archived} سجل مؤرشف بمقارنة
+          مصدر الأرشفة، الاسم، المعرّفات والحالة الوظيفية وسبب التصفير.
+          النتائج مؤشرات للمراجعة الإدارية فقط، ولا تسمح بالاستعادة أو تغيير
+          بطاقة الموظف. تصنيفات هذه المرحلة مستقلة عن أسباب منع الاستيراد.
+        </Alert>
+        <Grid container spacing={1.5} sx={{ mb: 2 }}>
+          {RESTORATION_REVIEW_GROUPS.map(group => (
+            <Grid key={group.key} size={{ xs: 12, sm: 6, lg: 4 }}>
+              <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}>
+                <Typography variant="h5" fontWeight={900}>
+                  {preview.restoration_readiness.counts[group.key] || 0}
+                </Typography>
+                <Typography variant="body2">{group.label}</Typography>
+                {(preview.restoration_readiness.samples_masked[group.key] || []).length > 0 &&
+                  <Stack gap={0.5} sx={{ mt: 1.25 }}>
+                    {preview.restoration_readiness.samples_masked[group.key].map(item =>
+                      <Typography key={item.row} variant="caption" color="text.secondary">
+                        صف Excel {item.row} — {item.identity_masked}
+                      </Typography>)}
+                  </Stack>}
+              </Paper>
+            </Grid>
+          ))}
+        </Grid>
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          {preview.restoration_readiness.notice} تتطلب أي عملية استعادة مستقبلية
+          نسخة احتياطية PostgreSQL قابلة للاسترجاع، وتحققًا من الحالة الوظيفية
+          وقرارًا إداريًا موثقًا وسجل تدقيق مستقلًا.
         </Alert>
       </>}
       <Typography fontWeight={900} sx={{ mb: 1 }}>تصنيف سبب المنع الأساسي</Typography>
