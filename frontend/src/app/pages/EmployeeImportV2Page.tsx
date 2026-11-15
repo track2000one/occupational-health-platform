@@ -39,6 +39,18 @@ type PreflightResult = {
     archived_with_name_difference: number;
   };
   identity_found: number;
+  archive_provenance: {
+    matching_unfinished_bulk_reset: number;
+    other_or_unverified_archive: number;
+    archive_reason_missing: number;
+    employment_active: number;
+    employment_transferred: number;
+    employment_retired: number;
+    employment_separated: number;
+    employment_under_review: number;
+    employment_unknown: number;
+    has_unfinished_bulk_reset: boolean;
+  };
   yellow_missing_information: number;
   missing_field_counts: Record<string, number>;
   review_examples_masked: Array<{
@@ -407,6 +419,48 @@ export function EmployeeImportV2Page() {
         مختلفًا أيضًا. أما بطاقات التصنيف أدناه فتعرض السبب الأساسي الذي أوقف
         الاستكمال التلقائي لكل صف، لذلك لا تجمع الفئتين معًا.
       </Alert>
+      {preview.registry_facets.archived_identity_total > 0 && <>
+        <Typography fontWeight={900} sx={{ mb: 1 }}>التحقق من مصدر أرشفة الموظفين</Typography>
+        <Grid container spacing={1.5} sx={{ mb: 2 }}>
+          {[
+            {
+              label: 'أرشفة تطابق آخر تصفير جماعي غير مستعاد (للتدقيق فقط)',
+              count: preview.archive_provenance.matching_unfinished_bulk_reset,
+            },
+            {
+              label: 'أرشفة مستقلة أو لا يمكن إثبات مصدرها ضمن آخر تصفير',
+              count: preview.archive_provenance.other_or_unverified_archive,
+            },
+            {
+              label: 'حالة وظيفية مسجلة: على رأس العمل',
+              count: preview.archive_provenance.employment_active,
+            },
+            {
+              label: 'حالة وظيفية مسجلة: متقاعد أو منتهية خدمته',
+              count: preview.archive_provenance.employment_retired +
+                preview.archive_provenance.employment_separated,
+            },
+            {
+              label: 'حالة وظيفية مسجلة: منقول أو قيد المراجعة',
+              count: preview.archive_provenance.employment_transferred +
+                preview.archive_provenance.employment_under_review,
+            },
+          ].map(item => <Grid key={item.label} size={{ xs: 12, sm: 6, lg: 4 }}>
+            <Paper variant="outlined" sx={{ p: 1.75, borderRadius: 2 }}>
+              <Typography variant="h5" fontWeight={900}>{item.count}</Typography>
+              <Typography variant="body2">{item.label}</Typography>
+            </Paper>
+          </Grid>)}
+        </Grid>
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          هذه مؤشرات تدقيق مستقلة، ولا تُثبت أهلية الاستعادة. يجب مراجعة سبب
+          الأرشفة وسجل التصفير وحالة الخدمة ونسخة PostgreSQL الاحتياطية قبل
+          اعتماد أي استعادة. لا تستعد جميع المؤرشفين تلقائيًا، ولا تغيّر الأسماء
+          أو الملفات الصحية بسبب اختلاف بيانات Excel.
+          {preview.archive_provenance.archive_reason_missing > 0 &&
+            ` توجد ${preview.archive_provenance.archive_reason_missing} حالة دون سبب أرشفة مدوّن، وتحتاج تحققًا منفصلًا.`}
+        </Alert>
+      </>}
       <Typography fontWeight={900} sx={{ mb: 1 }}>تصنيف سبب المنع الأساسي</Typography>
       <Grid container spacing={1.5} sx={{ mb: 2 }}>
         {REGISTRY_STATES.filter(item => (preview.registry_counts[item.key] || 0) > 0)
