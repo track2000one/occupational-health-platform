@@ -93,6 +93,45 @@ class EmployeeImportV2PreviewTests(TestCase):
         self.assertEqual(response.data['registry_counts']['new_incomplete'], 1)
         self.assertEqual(response.data['yellow_missing_information'], 1)
 
+    def test_masked_national_ids_are_rejected_with_safe_row_numbers(self):
+        for masked in ('10••••1681', '10****1681', '10xx1681', '10…1681'):
+            with self.subTest(masked_format=masked[-4:]):
+                result = self.preview([
+                    ['QA Masked Identity', masked, 'QA-MASK-1', '', 'السعودية'],
+                ])
+                self.assertEqual(result.status_code, 400, result.data)
+                self.assertEqual(result.data['masked_identity_count'], 1)
+                self.assertEqual(result.data['masked_identity_source_rows'], [2])
+                self.assertNotIn(masked, str(result.data))
+                self.assertFalse(Employee.objects.exists())
+                self.assertFalse(DataImportBatch.objects.exists())
+
+    @override_settings(EMPLOYEE_IMPORT_V2_COMMIT_ENABLED=True)
+    def test_approval_cannot_import_redacted_source_national_id(self):
+        from io import BytesIO
+        file = self.workbook([
+            ['QA Masked Identity', '10••••1681', 'QA-MASK-2', '', 'السعودية'],
+        ])
+        response = self.client.post(self.url, {
+            'action': 'commit', 'file': file, 'sheet_name': 'Employees',
+            'commit_token': 'not-a-valid-preview-token',
+            'confirmed': 'true', 'identity_checked': 'true',
+            'reason': 'Synthetic request must never import masked identifiers.',
+        }, format='multipart')
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertEqual(response.data['masked_identity_count'], 1)
+        self.assertFalse(Employee.objects.exists())
+        self.assertFalse(AuditLog.objects.exists())
+
+    def test_full_excel_identity_is_masked_only_in_preview_not_in_source(self):
+        response = self.preview([
+            ['QA Valid Identity', '1000001681', 'QA-1681', '', 'السعودية'],
+        ])
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['sample_masked'][0]['identity_masked'],
+                         '10••••1681')
+        self.assertNotIn('1000001681', str(response.data))
+
     def test_missing_required_headers_rejected(self):
         response = self.preview([['QA', 'Center 1']],
                                 headers=['اسم الموظف', 'المركز الصحي'])
