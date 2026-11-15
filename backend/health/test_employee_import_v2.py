@@ -67,7 +67,7 @@ class EmployeeImportV2PreviewTests(TestCase):
         self.assertEqual(result['counts']['invalid_core'], 1)
         self.assertEqual(result['recognized_columns'][0], 'name')
         self.assertTrue(result['database_identity_checked'])
-        self.assertEqual(result['registry_counts']['center_review'], 1)
+        self.assertEqual(result['registry_counts']['new_provisional'], 1)
         self.assertEqual(result['registry_counts']['duplicate_file_identity'], 2)
         self.assertEqual(result['registry_counts']['invalid_identity'], 1)
         self.assertFalse(result['import_enabled'])
@@ -162,7 +162,7 @@ class EmployeeImportV2PreviewTests(TestCase):
              'المركز غير المعتمد', 'السعودية'],
         ])
         self.assertEqual(preview.status_code, 200, preview.data)
-        self.assertEqual(preview.data['registry_counts']['center_review'], 1)
+        self.assertEqual(preview.data['registry_counts']['new_provisional'], 1)
         self.assertEqual(Employee.objects.count(), 0)
         self.assertFalse(EmployeeImportReview.objects.exists())
 
@@ -274,7 +274,7 @@ class EmployeeImportV2PreviewTests(TestCase):
             headers=headers,
         )
         self.assertEqual(blocked.status_code, 200, blocked.data)
-        self.assertEqual(blocked.data['registry_counts']['organization_review'], 1)
+        self.assertEqual(blocked.data['registry_counts']['new_provisional'], 1)
         self.assertFalse(Employee.objects.exists())
 
     def test_mismatched_organization_center_is_review_only(self):
@@ -296,7 +296,7 @@ class EmployeeImportV2PreviewTests(TestCase):
         ]
         response = self.preview(rows, headers=headers)
         self.assertEqual(response.status_code, 200, response.data)
-        self.assertEqual(response.data['registry_counts']['organization_review'], 1)
+        self.assertEqual(response.data['registry_counts']['new_provisional'], 1)
         self.assertFalse(Employee.objects.exists())
 
     def test_duplicate_identity_columns_cannot_silently_choose_one(self):
