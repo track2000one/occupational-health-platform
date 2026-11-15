@@ -9,6 +9,7 @@ import {
 import {
   ArrowBack as BackIcon, UploadFile as UploadIcon,
   FactCheck as PreviewIcon, ManageAccounts as SaveIcon,
+  Download as DownloadIcon, FactCheckOutlined as BatchReviewIcon,
 } from '@mui/icons-material';
 import { authFetch, getAccessToken, useAuth } from '../context/AuthContext';
 
@@ -142,6 +143,103 @@ export function EmployeeExcelReconciliationPage() {
   const [decisionConfirmed, setDecisionConfirmed] = useState(false);
   const [decisionBusy, setDecisionBusy] = useState(false);
   const [reviewNotice, setReviewNotice] = useState('');
+  const [exportBusy, setExportBusy] = useState(false);
+  const [selectedReviewRows, setSelectedReviewRows] = useState<number[]>([]);
+  const [batchDialogOpen, setBatchDialogOpen] = useState(false);
+  const [batchBusy, setBatchBusy] = useState(false);
+  const [batchDecision, setBatchDecision] = useState<'verified' | 'not_verified'>('not_verified');
+  const [batchEvidence, setBatchEvidence] = useState('');
+  const [batchReason, setBatchReason] = useState('');
+  const [batchAcknowledged, setBatchAcknowledged] = useState(false);
+  const [batchError, setBatchError] = useState('');
+  const selectedReviewCards = comparison?.rows.filter(r =>
+    selectedReviewRows.includes(r.row) && r.decision_status === 'pending'
+  ) || [];
+
+  const downloadReviewExcel = async () => {
+    if (!file || busy || comparisonBusy || exportBusy || !user?.isSuperuser) return;
+    setExportBusy(true);
+    setError('');
+    try {
+      const token = getAccessToken();
+      if (!token) throw new Error('انتهت جلسة المسؤول؛ أعد تسجيل الدخول.');
+      const form = new FormData();
+      form.append('action', 'export_review');
+      form.append('file', file);
+      form.append('sheet_name', sheet || 'Employees');
+      form.append('review_filter', comparisonFilter);
+      form.append('review_name_diagnostic', comparisonFilter === 'name_mismatch' ? nameSubtype : 'all');
+      const response = await authFetch(API + '/employee-roster/reconcile/', {
+        method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: form,
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.detail || 'تعذر تصدير تقرير المراجعة.');
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'employee_excel_discrepancy_review.xlsx';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => window.URL.revokeObjectURL(url), 2000);
+      setReviewNotice('تم إعداد تقرير Excel للتصفية الحالية فقط. احتفظ به في مكان مصرح به؛ يتضمن أسماء وبيانات وظيفية.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'تعذر تنزيل التقرير.');
+    } finally {
+      setExportBusy(false);
+    }
+  };
+
+  const submitBatchReview = async () => {
+    if (!file || batchBusy || !batchAcknowledged || !selectedReviewCards.length ||
+        selectedReviewCards.length > 25 || batchEvidence.trim().length < 6 ||
+        batchReason.trim().length < 30 || batchReason.trim().length > 500) return;
+    if (!window.confirm(
+      `هل تؤكد توثيق ${selectedReviewCards.length} قرار مراجعة فقط؟ لن يُستعاد أو يُحدّث أي موظف.`
+    )) return;
+    setBatchBusy(true);
+    setBatchError('');
+    try {
+      const token = getAccessToken();
+      if (!token) throw new Error('انتهت جلسة المسؤول؛ أعد تسجيل الدخول.');
+      const form = new FormData();
+      form.append('action', 'bulk_review_decision');
+      form.append('file', file);
+      form.append('sheet_name', sheet || 'Employees');
+      form.append('decision_tokens', JSON.stringify(selectedReviewCards.map(r => r.decision_token)));
+      form.append('decision', batchDecision);
+      form.append('evidence_reference', batchEvidence.trim());
+      form.append('reason', batchReason.trim());
+      form.append('shared_evidence_confirmed', 'true');
+      form.append('confirmed', 'true');
+      const response = await authFetch(API + '/employee-roster/reconcile/', {
+        method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: form,
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || 'تعذر توثيق الدفعة.');
+      setReviewNotice(
+        `تم توثيق ${data.saved_decisions} قرار مراجعة فقط. عدد سجلات الموظفين المعدلة: ${data.employee_records_modified}.`
+      );
+      setComparison(prev => prev ? {
+        ...prev, rows: prev.rows.map(row =>
+          selectedReviewRows.includes(row.row)
+            ? { ...row, decision_status: batchDecision }
+            : row),
+      } : null);
+      setSelectedReviewRows([]);
+      setBatchDialogOpen(false);
+      setBatchEvidence('');
+      setBatchReason('');
+      setBatchAcknowledged(false);
+    } catch (err) {
+      setBatchError(err instanceof Error ? err.message : 'تعذر توثيق الدفعة.');
+    } finally {
+      setBatchBusy(false);
+    }
+  };
 
   const fetchComparison = async (filter = comparisonFilter, offset = 0, diagnostic = nameSubtype) => {
     if (!file || comparisonBusy || busy || !user?.isSuperuser) return;
@@ -164,6 +262,7 @@ export function EmployeeExcelReconciliationPage() {
       if (!response.ok) throw new Error(data.detail || 'تعذرت قراءة تفاصيل المقارنة.');
       setComparison(data as Comparison);
       setComparisonFilter(filter);
+      setSelectedReviewRows([]);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'تعذر تحميل حالات التعارض.');
     } finally {
@@ -230,6 +329,7 @@ export function EmployeeExcelReconciliationPage() {
       setPreview(null);
       setResult(null);
       setComparison(null);
+      setSelectedReviewRows([]);
       setReviewNotice('');
       setAcknowledged(false);
       setReason('');
@@ -306,11 +406,11 @@ export function EmployeeExcelReconciliationPage() {
           <input type="file" accept=".xlsx" hidden onChange={e => {
             const candidate = e.target.files?.[0] || null;
             setFile(candidate);
-            setPreview(null); setResult(null); setComparison(null); setError('');
+            setPreview(null); setResult(null); setComparison(null); setSelectedReviewRows([]); setError('');
           }}/>
         </Button>
         <TextField label="اسم ورقة الموظفين" value={sheet} sx={{ maxWidth: 300 }}
-          onChange={e => { setSheet(e.target.value); setPreview(null); setComparison(null); }} />
+          onChange={e => { setSheet(e.target.value); setPreview(null); setComparison(null); setSelectedReviewRows([]); }} />
         <Button variant="contained" color="primary" startIcon={<PreviewIcon />}
           disabled={!file || busy} onClick={() => void process('preview')}>
           فحص مطابقة الملف (قراءة فقط)
@@ -393,6 +493,7 @@ export function EmployeeExcelReconciliationPage() {
             value={comparisonFilter} onChange={e => {
               setComparisonFilter(e.target.value);
               setComparison(null);
+              setSelectedReviewRows([]);
             }}>
             {REVIEW_FILTERS.map(([value, label]) =>
               <MenuItem key={value} value={value}>{label}</MenuItem>)}
@@ -402,6 +503,7 @@ export function EmployeeExcelReconciliationPage() {
               value={nameSubtype} onChange={e => {
                 setNameSubtype(e.target.value);
                 setComparison(null);
+                setSelectedReviewRows([]);
               }}>
               <MenuItem value="all">جميع اختلافات الأسماء</MenuItem>
               {Object.entries(NAME_DIAGNOSTICS).map(([value, label]) =>
@@ -412,10 +514,46 @@ export function EmployeeExcelReconciliationPage() {
             onClick={() => void fetchComparison(comparisonFilter, 0)}>
             {comparisonBusy ? 'جاري فحص المقارنة...' : 'عرض جدول المقارنة التفصيلي'}
           </Button>
+          <Button variant="outlined" color="success" startIcon={<DownloadIcon />}
+            disabled={busy || comparisonBusy || exportBusy}
+            onClick={() => void downloadReviewExcel()}>
+            {exportBusy ? 'جاري تجهيز Excel...' : 'تصدير جميع الحالات المفلترة إلى Excel'}
+          </Button>
         </Stack>
         {reviewNotice && <Alert severity="success" sx={{ mb: 2 }}
           onClose={() => setReviewNotice('')}>{reviewNotice}</Alert>}
         {comparison && <>
+          <Stack direction={{ xs: 'column', sm: 'row' }} gap={1} alignItems="center"
+            sx={{ mb: 1.5 }}>
+            <Button variant="outlined" color="secondary"
+              disabled={!comparison.rows.some(row => row.decision_status === 'pending')}
+              onClick={() => {
+                const eligible = comparison.rows
+                  .filter(row => row.decision_status === 'pending')
+                  .slice(0, 25).map(row => row.row);
+                const all = eligible.every(row => selectedReviewRows.includes(row));
+                setSelectedReviewRows(all ? [] : eligible);
+              }}>
+              {comparison.rows.filter(row => row.decision_status === 'pending').every(
+                row => selectedReviewRows.includes(row.row)
+              ) ? 'إلغاء تحديد الصفحة' : 'تحديد بطاقات الصفحة القابلة للمراجعة'}
+            </Button>
+            <Button variant="contained" color="primary" startIcon={<BatchReviewIcon />}
+              disabled={!selectedReviewCards.length || busy || batchBusy}
+              onClick={() => {
+                setBatchDecision('not_verified');
+                setBatchEvidence('');
+                setBatchReason('');
+                setBatchError('');
+                setBatchAcknowledged(false);
+                setBatchDialogOpen(true);
+              }}>
+              توثيق مراجعة {selectedReviewCards.length} بطاقة محددة
+            </Button>
+            <Typography fontSize={12} color="text.secondary">
+              الحد الأقصى 25 حالة في الدفعة، ولا تُستعاد أي بطاقة موظف عبر هذه الأداة.
+            </Typography>
+          </Stack>
           <Typography fontSize={13} sx={{ mb: 1 }}>
             عدد الحالات المطابقة للتصفية: <strong>{comparison.total}</strong>،
             المعروضة: {comparison.rows.length} سجلًا — الصفحة {Math.floor(comparison.offset / comparison.page_size) + 1}
@@ -423,6 +561,7 @@ export function EmployeeExcelReconciliationPage() {
           <TableContainer sx={{ overflowX: 'auto', maxHeight: 550, border: '1px solid', borderColor: 'divider' }}>
             <Table stickyHeader size="small" sx={{ minWidth: 1240 }}>
               <TableHead><TableRow>
+                <TableCell sx={{ fontWeight: 900 }}>تحديد</TableCell>
                 {['صف Excel', 'الهوية (مخفية)', 'اسم السجل الأصلي', 'اسم Excel',
                   'الرقم الوظيفي الحالي', 'الرقم الوظيفي في Excel',
                   'المركز الحالي', 'المركز في Excel (مرجعي)',
@@ -431,6 +570,18 @@ export function EmployeeExcelReconciliationPage() {
               </TableRow></TableHead>
               <TableBody>
                 {comparison.rows.map(row => <TableRow key={row.row} hover>
+                  <TableCell>
+                    <Checkbox size="small"
+                      disabled={row.decision_status !== 'pending' || comparisonBusy || batchBusy}
+                      checked={selectedReviewRows.includes(row.row)}
+                      onChange={(_, checked) => {
+                        setSelectedReviewRows(current => checked
+                          ? [...current.filter(n => n !== row.row), row.row].slice(0, 25)
+                          : current.filter(n => n !== row.row));
+                      }}
+                      inputProps={{ 'aria-label': `تحديد صف Excel رقم ${row.row}` }}
+                    />
+                  </TableCell>
                   <TableCell>{row.row}</TableCell>
                   <TableCell>{row.national_id_masked}</TableCell>
                   <TableCell sx={{ minWidth: 170 }}>{row.registry_name}</TableCell>
@@ -522,6 +673,48 @@ export function EmployeeExcelReconciliationPage() {
         </Paper>
       )}
     </>}
+
+    <Dialog open={batchDialogOpen}
+      onClose={() => !batchBusy && setBatchDialogOpen(false)} maxWidth="sm" fullWidth dir="rtl">
+      <DialogTitle fontWeight={900}>توثيق جماعي لقرارات المطابقة</DialogTitle>
+      <DialogContent dividers>
+        <Stack gap={2}>
+          <Alert severity="warning">
+            المحدد: <strong>{selectedReviewCards.length}</strong> بطاقة مراجعة.
+            هذا توثيق إداري فقط؛ لن تُستعاد أو تُحدّث بيانات أي موظف.
+            استخدم الإجراء الجماعي فقط إذا كان المستند الرسمي نفسه يغطي جميع البطاقات المحددة.
+            إذا اختلفت مستندات الإثبات، راجع كل بطاقة على حدة.
+          </Alert>
+          {batchError && <Alert severity="error">{batchError}</Alert>}
+          <TextField select label="قرار المراجعة الموحد" value={batchDecision}
+            disabled={batchBusy} onChange={e => setBatchDecision(e.target.value as 'verified' | 'not_verified')}>
+            <MenuItem value="not_verified">لم يثبت التطابق — يتطلب تصحيحًا</MenuItem>
+            <MenuItem value="verified">تم التحقق من صاحب الهوية بمصدر رسمي (دون استعادة)</MenuItem>
+          </TextField>
+          <TextField required label="مرجع المستند الرسمي المشترك" value={batchEvidence}
+            disabled={batchBusy} inputProps={{ maxLength: 255 }}
+            onChange={e => setBatchEvidence(e.target.value)}
+            helperText="يجب أن يكون المرجع صالحًا للتحقق من جميع الموظفين المحددين، دون إدخال أرقام هويات أو بيانات صحية"/>
+          <TextField required multiline minRows={3} label="مبرر المراجعة الجماعية" value={batchReason}
+            disabled={batchBusy} inputProps={{ maxLength: 500 }}
+            onChange={e => setBatchReason(e.target.value)}
+            helperText="30–500 حرف؛ سجّل أساس القرار والمصدر المعتمد"/>
+          <FormControlLabel
+            control={<Checkbox checked={batchAcknowledged} disabled={batchBusy}
+              onChange={(_, checked) => setBatchAcknowledged(checked)} />}
+            label="أؤكد أن المرجع الرسمي يغطي جميع السجلات المحددة، وأعلم أن هذا القرار لا يستعيد الموظفين أو يعدّل بياناتهم."/>
+        </Stack>
+      </DialogContent>
+      <DialogActions>
+        <Button disabled={batchBusy} onClick={() => setBatchDialogOpen(false)}>إلغاء</Button>
+        <Button variant="contained" disabled={batchBusy || !batchAcknowledged ||
+          !selectedReviewCards.length || batchEvidence.trim().length < 6 ||
+          batchReason.trim().length < 30 || batchReason.trim().length > 500}
+          onClick={() => void submitBatchReview()}>
+          {batchBusy ? 'جاري توثيق القرارات...' : `توثيق ${selectedReviewCards.length} قرارًا دون تعديل الموظفين`}
+        </Button>
+      </DialogActions>
+    </Dialog>
 
     <Dialog open={Boolean(decisionTarget)} onClose={() => {
       if (!decisionBusy) setDecisionTarget(null);
