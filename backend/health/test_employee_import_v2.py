@@ -679,6 +679,58 @@ class EmployeeImportV2PreviewTests(TestCase):
         self.assertIsNone(latest_reset.restored_at)
         self.assertIsNotNone(completed_reset.restored_at)
 
+    def test_archived_restoration_readiness_requires_full_independent_checks(self):
+        applied = timezone.now() - timedelta(days=3)
+        synthetic_reason = 'Controlled synthetic reset for QA only'
+        def archived(name, national_id, *, archived_at=applied, reason=synthetic_reason,
+                     status='active', employee_number=''):
+            return Employee.objects.create(
+                name=name, national_id=national_id, is_archived=True,
+                archived_at=archived_at, archive_reason=reason,
+                employment_status=status, employee_number=employee_number,
+            )
+
+        ready = archived('QA Restore Candidate', '1000001981')
+        mismatch = archived('QA Registry Name', '1000001982')
+        retired = archived('QA Retired', '1000001983', status='retired')
+        reason_mismatch = archived('QA Wrong Reason', '1000001984', reason='Different audit reason')
+        unverified = archived('QA Unverified', '1000001985',
+                              archived_at=applied - timedelta(days=1))
+        conflict = archived('QA Identifier Conflict', '1000001986',
+                            employee_number='EXISTING-1986')
+        EmployeeRegistryResetBatch.objects.create(
+            employee_ids=[ready.pk, mismatch.pk, retired.pk,
+                          reason_mismatch.pk, unverified.pk, conflict.pk],
+            reason=synthetic_reason, applied_at=applied, created_by=self.admin,
+        )
+        response = self.preview([
+            ['QA Restore Candidate', '1000001981', '', '', ''],
+            ['QA Different Source Name', '1000001982', '', '', ''],
+            ['QA Retired', '1000001983', '', '', ''],
+            ['QA Wrong Reason', '1000001984', '', '', ''],
+            ['QA Unverified', '1000001985', '', '', ''],
+            ['QA Identifier Conflict', '1000001986', 'EXCEL-1986', '', ''],
+        ])
+        self.assertEqual(response.status_code, 200, response.data)
+        readiness = response.data['restoration_readiness']
+        self.assertFalse(readiness['restore_enabled'])
+        self.assertEqual(readiness['scanned_archived'], 6)
+        counts = readiness['counts']
+        for key in (
+            'candidate_for_administrative_review', 'name_difference_review',
+            'employment_status_review', 'archive_reason_review',
+            'archive_history_review', 'identity_or_identifier_review',
+        ):
+            self.assertEqual(counts[key], 1, key)
+        self.assertEqual(sum(counts.values()), response.data['registry_facets']['archived_identity_total'])
+        self.assertEqual(readiness['samples_masked']['candidate_for_administrative_review'][0]['row'], 2)
+        self.assertNotIn('1000001981', str(readiness))
+        self.assertNotIn('QA Restore Candidate', str(readiness))
+        self.assertEqual(Employee.objects.filter(is_archived=True).count(), 6)
+        self.assertFalse(AuditLog.objects.exists())
+        self.assertFalse(EmployeeImportReview.objects.exists())
+        self.assertFalse(DataImportBatch.objects.exists())
+
     def test_duplicate_identity_columns_cannot_silently_choose_one(self):
         response = self.preview(
             [['QA Header', '1000001211', '1000001212', 'QA-1211']],
