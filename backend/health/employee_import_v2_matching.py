@@ -126,18 +126,29 @@ def registry_match(sheet_rows):
 
     centers = matched_center_map()
     organization_names, organization_units = approved_organization_map()
-    # An unfinished bulk reset is only provenance evidence, not an authorization
-    # to reinstate staff. Individual archives and retired/separated people stay
-    # blocked until a distinct, documented review.
-    reset = EmployeeRegistryResetBatch.objects.filter(
-        restored_at__isnull=True,
-    ).order_by('-created_at').only('employee_ids', 'applied_at').first()
-    reset_ids = {
-        str(item) for item in (reset.employee_ids or [])
-    } if reset else set()
+    # Check every recorded bulk reset, not just the latest one. Matching BOTH
+    # employee PK and the exact archive timestamp is evidence of provenance,
+    # never permission to restore. Completed resets must remain a separate,
+    # suspicious category; individually archived records never inherit an old
+    # reset's eligibility simply because their PK appears in its JSON list.
+    reset_batches = list(
+        EmployeeRegistryResetBatch.objects.order_by('-created_at', '-pk')
+        .only('employee_ids', 'applied_at', 'restored_at', 'created_at')
+    )
+    latest_unfinished = next(
+        (batch for batch in reset_batches if batch.restored_at is None), None
+    )
+    reset_history = defaultdict(list)
+    for batch in reset_batches:
+        for employee_pk in {str(pk) for pk in (batch.employee_ids or [])}:
+            reset_history[employee_pk].append(batch)
+    unfinished_batch_count = sum(
+        1 for batch in reset_batches if batch.restored_at is None
+    )
     counts = Counter()
     independent_flags = Counter()
     archive_provenance = Counter()
+    archive_review_examples = defaultdict(list)
     planned_rows = []
     missing_counts = Counter()
     review_examples = []
@@ -148,6 +159,7 @@ def registry_match(sheet_rows):
         # Orthogonal diagnostics: a matched employee can be both archived
         # and have a name discrepancy. "kind" below is deliberately one
         # primary blocking reason, never a complete status inventory.
+        archive_origin = None
         if employee:
             name_differs = norm_text(source_name) != norm_text(employee.name)
             independent_flags['matched_identity_total'] += 1
@@ -158,10 +170,23 @@ def registry_match(sheet_rows):
                 employee.is_archived and name_differs
             )
             if employee.is_archived:
-                in_reset = bool(reset and str(employee.pk) in reset_ids and
-                                employee.archived_at == reset.applied_at)
-                archive_provenance['matching_unfinished_bulk_reset'] += int(in_reset)
-                archive_provenance['other_or_unverified_archive'] += int(not in_reset)
+                matching_batches = [
+                    batch for batch in reset_history.get(str(employee.pk), [])
+                    if employee.archived_at is not None
+                    and employee.archived_at == batch.applied_at
+                ]
+                if len(matching_batches) != 1:
+                    # Missing or ambiguous evidence cannot support an
+                    # automatic restore or a claim of individual archiving.
+                    archive_origin = 'other_or_unverified_archive'
+                elif matching_batches[0].restored_at is not None:
+                    archive_origin = 'matching_previously_restored_bulk_reset'
+                elif (latest_unfinished is not None and
+                      matching_batches[0].pk == latest_unfinished.pk):
+                    archive_origin = 'matching_unfinished_bulk_reset'
+                else:
+                    archive_origin = 'matching_older_unfinished_bulk_reset'
+                archive_provenance[archive_origin] += 1
                 if not (employee.archive_reason or '').strip():
                     archive_provenance['archive_reason_missing'] += 1
                 archive_provenance[
@@ -249,6 +274,16 @@ def registry_match(sheet_rows):
             summary['yellow_missing_information'] += 1
 
         counts[kind] += 1
+        # A small stratified set of masked workbook row references allows the
+        # administrator to cross-check each provenance group in their private
+        # XLSX without exposing raw identities, names or contact details.
+        if archive_origin and len(archive_review_examples[archive_origin]) < 3:
+            archive_review_examples[archive_origin].append({
+                'row': row['_row'],
+                'identity_masked': nid[:2] + '••••' + nid[-4:] if nvalid else '—',
+                'name_different': norm_text(source_name) != norm_text(employee.name),
+                'reason_documented': bool((employee.archive_reason or '').strip()),
+            })
         if kind in ('new_candidate', 'new_incomplete', 'new_provisional', 'existing_fill_only'):
             planned_rows.append({
                 'row': row, 'national_id': nid, 'kind': kind,
@@ -285,8 +320,16 @@ def registry_match(sheet_rows):
         'archive_provenance': {
             'matching_unfinished_bulk_reset':
                 archive_provenance['matching_unfinished_bulk_reset'],
+            'matching_older_unfinished_bulk_reset':
+                archive_provenance['matching_older_unfinished_bulk_reset'],
+            'matching_previously_restored_bulk_reset':
+                archive_provenance['matching_previously_restored_bulk_reset'],
             'other_or_unverified_archive':
                 archive_provenance['other_or_unverified_archive'],
+            'reset_batches_scanned': len(reset_batches),
+            'unfinished_reset_batches_scanned': unfinished_batch_count,
+            'completed_reset_batches_scanned':
+                len(reset_batches) - unfinished_batch_count,
             'archive_reason_missing':
                 archive_provenance['archive_reason_missing'],
             'employment_active': archive_provenance['employment_active'],
@@ -295,8 +338,9 @@ def registry_match(sheet_rows):
             'employment_separated': archive_provenance['employment_separated'],
             'employment_under_review': archive_provenance['employment_under_review'],
             'employment_unknown': archive_provenance['employment_unknown'],
-            'has_unfinished_bulk_reset': bool(reset),
+            'has_unfinished_bulk_reset': bool(latest_unfinished),
         },
+        'archive_review_examples_masked': dict(archive_review_examples),
         'registry_facets': {
             'matched_identity_total': independent_flags['matched_identity_total'],
             'active_identity_total': independent_flags['active_identity_total'],
