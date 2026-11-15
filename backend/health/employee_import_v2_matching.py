@@ -10,7 +10,7 @@ import unicodedata
 from django.db.models import Q
 from django.db.models.functions import Lower
 
-from .models import Employee, HealthCenter
+from .models import Employee, HealthCenter, OrganizationUnit
 
 
 REVIEW_LIMIT = 30
@@ -46,7 +46,7 @@ def cell_at(cells, mapping, key):
 
 def source_profile(cells, mapping):
     return {field: cell_at(cells, mapping, field)
-            for field in ('name', 'national_id', *REQUIRED_PROFILE_FIELDS, 'email')}
+            for field in ('name', 'national_id', *REQUIRED_PROFILE_FIELDS, 'email', 'organization_unit')}
 
 
 def matched_center_map():
@@ -61,6 +61,19 @@ def matched_center_map():
             if label:
                 names[norm_text(label)].add(center.pk)
     return names
+
+
+def approved_organization_map():
+    names = defaultdict(set)
+    units = {}
+    for unit in OrganizationUnit.objects.filter(
+        is_active=True, is_approved=True,
+    ).only('id', 'name', 'code', 'health_center_id'):
+        units[unit.pk] = unit
+        for label in (unit.name, unit.code):
+            if label:
+                names[norm_text(label)].add(unit.pk)
+    return names, units
 
 
 def registry_match(sheet_rows):
@@ -107,6 +120,7 @@ def registry_match(sheet_rows):
             email_owners[norm_email(owner.email)].add(owner.pk)
 
     centers = matched_center_map()
+    organization_names, organization_units = approved_organization_map()
     counts = Counter()
     missing_counts = Counter()
     review_examples = []
@@ -119,6 +133,10 @@ def registry_match(sheet_rows):
         source_center = row['health_center'].strip()
         center_ids = centers.get(norm_text(source_center), set()) if source_center else set()
         approved_center_id = next(iter(center_ids)) if len(center_ids) == 1 else None
+        source_unit = row['organization_unit'].strip()
+        unit_ids = organization_names.get(norm_text(source_unit), set()) if source_unit else set()
+        approved_unit_id = next(iter(unit_ids)) if len(unit_ids) == 1 else None
+        approved_unit = organization_units.get(approved_unit_id)
         nvalid = (len(nid) == 10 and nid[0] in ('1', '2') and
                   len(row['national_id'].strip()) == 10 and
                   all(c.isdecimal() for c in row['national_id'].strip()))
@@ -156,11 +174,21 @@ def registry_match(sheet_rows):
         elif (employee and approved_center_id and employee.health_center_id and
               approved_center_id != employee.health_center_id):
             kind = 'center_review'
+        elif source_unit and (
+            not approved_unit_id or
+            (approved_unit and approved_unit.health_center_id and approved_center_id
+             and approved_unit.health_center_id != approved_center_id) or
+            (employee and employee.organization_unit_id and
+             employee.organization_unit_id != approved_unit_id)
+        ):
+            kind = 'organization_review'
         elif employee:
             has_fill = any(
                 row.get(field) and not getattr(employee, field, None)
                 for field in TEXT_FIELDS + ('date_of_birth', 'appointment_date', 'email')
-            ) or bool(approved_center_id and not employee.health_center_id)
+            ) or bool(approved_center_id and not employee.health_center_id) or bool(
+                approved_unit_id and not employee.organization_unit_id
+            )
             kind = 'existing_fill_only' if has_fill else 'existing_no_change'
         elif source_center and approved_center_id:
             kind = 'new_candidate'
@@ -182,11 +210,7 @@ def registry_match(sheet_rows):
             summary['yellow_missing_information'] += 1
 
         counts[kind] += 1
-        if kind in ('existing_fill_only', 'existing_no_change', 'archived_review',
-                    'identifier_disagreement', 'name_review', 'center_review'):
-            summary['identity_found'] += bool(employee)
-        else:
-            summary['identity_found'] += bool(employee)
+        summary['identity_found'] += bool(employee)
         if len(review_examples) < REVIEW_LIMIT and (
             kind not in ('new_candidate', 'existing_no_change') or missing
         ):
@@ -196,6 +220,7 @@ def registry_match(sheet_rows):
                 'status': kind,
                 'missing_fields': missing[:8],
                 'center_approved': bool(approved_center_id),
+                'organization_approved': bool(approved_unit_id),
                 'existing_record': bool(employee),
                 'archived_record': bool(employee and employee.is_archived),
             })
@@ -214,6 +239,6 @@ def registry_match(sheet_rows):
         'import_enabled': False,
         'notice': ('هذه نتائج مطابقة قراءة فقط مع السجلات الحالية، بما فيها المؤرشفة. '
                    'الاسم المختلف أو الرقم المتعارض لا يُعتمد تلقائيًا. '
-                   'المركز لا يُعد معتمدًا إلا إذا طابق مركزًا مفعلًا معتمدًا رسميًا. '
+                   'المركز والجهة التنظيمية لا يُعتمدان إلا بالمطابقة الفريدة مع سجل معتمد. '
                    'لم تُنشأ أو تُعدل أي بطاقة.'),
     }
