@@ -611,6 +611,44 @@ class EmployeeProfileCompletionEvent(models.Model):
 
 
 
+class EmployeeExcelMatchReview(models.Model):
+    """Administrative discrepancy-review decision, never a staff edit.
+
+    Does not duplicate staff names, identity numbers or workbook contents.
+    It records only keyed provenance and fixed digests for a reviewed row.
+    """
+    class Decision(models.TextChoices):
+        VERIFIED = 'verified', 'Same person verified externally'
+        NOT_VERIFIED = 'not_verified', 'Needs correction / not verified'
+
+    employee = models.ForeignKey(
+        Employee, on_delete=models.PROTECT, related_name='excel_match_reviews',
+    )
+    workbook_sha256 = models.CharField(max_length=64, db_index=True)
+    sheet_name = models.CharField(max_length=128)
+    source_row = models.PositiveIntegerField()
+    source_row_sha256 = models.CharField(max_length=64)
+    registry_snapshot_sha256 = models.CharField(max_length=64)
+    discrepancy_type = models.CharField(max_length=64)
+    decision = models.CharField(max_length=16, choices=Decision.choices)
+    evidence_reference = models.CharField(max_length=255)
+    reason = models.CharField(max_length=500)
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name='employee_excel_match_reviews',
+    )
+    reviewed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-reviewed_at', '-pk']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['workbook_sha256', 'sheet_name', 'source_row'],
+                name='unique_employee_excel_review_row',
+            ),
+        ]
+
+
 class EmployeeRegistryResetBatch(models.Model):
     """Administrative record for a reversible, bulk employee-registry reset.
 
