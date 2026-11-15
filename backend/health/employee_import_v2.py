@@ -21,10 +21,16 @@ MAX_FILE_SIZE = 10 * 1024 * 1024
 MAX_ROWS = 2500
 MAX_COLUMNS = 120
 HEADERS = {
-    'name': {'اسم الموظف', 'الاسم', 'اسم الموظفين', 'employee name', 'name', 'full name'},
+    'name': {'اسم الموظف', 'اسم الموظف الكامل', 'الاسم', 'اسم الموظفين',
+             'الاسم الكامل', 'اسم الموظف رباعي', 'employee name', 'name', 'full name'},
     'national_id': {'رقم الهوية', 'رقم الهوية الاقامة', 'رقم الهوية الإقامة',
-                    'رقم الهوية الوطنية', 'الهوية', 'السجل المدني',
-                    'national id', 'national id iqama', 'national_id'},
+                    'رقم الهوية / الإقامة', 'رقم الهوية/الإقامة',
+                    'رقم الهوية او الاقامة', 'رقم الهوية أو الإقامة',
+                    'رقم الهوية (مخفي)', 'رقم الهوية مخفي',
+                    'رقم الهوية الوطنية', 'رقم الهوية الوطنية / الإقامة',
+                    'الهوية', 'السجل المدني', 'national id',
+                    'national id iqama', 'national id iqama number',
+                    'national_id'},
     'employee_number': {'الرقم الوظيفي', 'رقم الموظف', 'employee number', 'employee id'},
     'email': {'البريد الالكتروني', 'البريد', 'email', 'email address'},
     'mobile': {'رقم الجوال', 'الجوال', 'mobile', 'mobile number'},
@@ -49,7 +55,7 @@ REQUIRED = ('name', 'national_id')
 
 def heading(value):
     text = unicodedata.normalize('NFKC', str(value or '')).strip().lower()
-    text = re.sub(r'[\u064b-\u065f\u0670\u0640\u200b-\u200f\ufeff]', '', text)
+    text = re.sub(r'[\u064b-\u065f\u0670\u0640\u200b-\u200f\u202a-\u202e\u2060\ufeff]', '', text)
     text = re.sub(r'[أإآٱ]', 'ا', text).replace('ى', 'ي')
     text = re.sub(r'[^\w\u0600-\u06ff]+', ' ', text.replace('_', ' '))
     return ' '.join(text.split())
@@ -145,6 +151,28 @@ class EmployeeImportV2PreviewView(APIView):
                 return Response({'detail': 'تعذر اكتشاف أسماء الأعمدة.'}, status=400)
             header_row, headers, mapping = detected
             normalized_headers = [heading(value) for value in headers]
+            # Explicit column selection is a fallback for unusual Excel exports.
+            # It never bypasses ID validation, conflict checks, or masked-ID rejection.
+            manual_requested = any(request.data.get(
+                'map_' + field + '_column'
+            ) not in (None, '') for field in REQUIRED)
+            if manual_requested:
+                indices = {}
+                for field in REQUIRED:
+                    raw_index = request.data.get('map_' + field + '_column')
+                    try:
+                        value = int(raw_index)
+                    except (ValueError, TypeError):
+                        return Response({'detail': 'حدد عمودي الاسم والهوية بصورة صحيحة.'},
+                                        status=400)
+                    if not 1 <= value <= len(headers) or not heading(headers[value - 1]):
+                        return Response({'detail': 'رقم العمود المختار خارج نطاق صف العناوين.'},
+                                        status=400)
+                    indices[field] = value - 1
+                if indices['name'] == indices['national_id']:
+                    return Response({'detail': 'لا يمكن استخدام العمود نفسه للاسم والهوية.'},
+                                    status=400)
+                mapping.update(indices)
             ambiguous_fields = [
                 field for field, aliases in NORMALIZED.items()
                 if sum(1 for value in normalized_headers if value in aliases) > 1
@@ -156,11 +184,27 @@ class EmployeeImportV2PreviewView(APIView):
                 }, status=400)
             missing = [field for field in REQUIRED if field not in mapping]
             if missing:
+                # Never expose source row values if a real header is not identified.
+                # Header text is returned only when other known headers prove this is
+                # an actual header row; otherwise the UI receives column numbers.
+                safe_header = len(mapping) >= 2
+                columns = [{
+                    'index': index + 1,
+                    'label': (
+                        str(value).strip()[:80] if (
+                            safe_header and isinstance(value, str)
+                            and not any(ch.isdecimal() for ch in value)
+                            and 0 < len(value.strip()) <= 80
+                        ) else f'العمود {index + 1}'
+                    ),
+                } for index, value in enumerate(headers)]
                 return Response({
-                    'detail': 'يلزم وجود اسم الموظف ورقم الهوية ضمن الأعمدة.',
+                    'detail': 'لم يتعرف النظام على جميع الأعمدة المطلوبة. حدد عمودي الاسم والهوية من القائمة دون تعديل ملف Excel.',
                     'missing_required': missing,
                     'recognized_columns': list(mapping),
-                }, status=400)
+                    'header_row': header_row,
+                    'available_columns': columns,
+                }, status=400, headers={'Cache-Control': 'private, no-store'})
 
             counts = Counter()
             seen = set()
