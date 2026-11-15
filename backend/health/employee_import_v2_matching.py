@@ -127,6 +127,7 @@ def registry_match(sheet_rows):
     centers = matched_center_map()
     organization_names, organization_units = approved_organization_map()
     counts = Counter()
+    independent_flags = Counter()
     planned_rows = []
     missing_counts = Counter()
     review_examples = []
@@ -134,6 +135,18 @@ def registry_match(sheet_rows):
     for row, nid in zip(sheet_rows, national_ids):
         employee = registry.get(nid)
         source_name = row['name'].strip()
+        # Orthogonal diagnostics: a matched employee can be both archived
+        # and have a name discrepancy. "kind" below is deliberately one
+        # primary blocking reason, never a complete status inventory.
+        if employee:
+            name_differs = norm_text(source_name) != norm_text(employee.name)
+            independent_flags['matched_identity_total'] += 1
+            independent_flags['archived_identity_total'] += int(employee.is_archived)
+            independent_flags['active_identity_total'] += int(not employee.is_archived)
+            independent_flags['name_difference_total'] += int(name_differs)
+            independent_flags['archived_with_name_difference'] += int(
+                employee.is_archived and name_differs
+            )
         employee_number = row['employee_number'].strip()
         email = norm_email(row['email'])
         source_center = row['health_center'].strip()
@@ -249,6 +262,13 @@ def registry_match(sheet_rows):
         '_internal_planned_rows': planned_rows,
         'rows_total': total,
         'registry_counts': dict(counts),
+        'registry_facets': {
+            'matched_identity_total': independent_flags['matched_identity_total'],
+            'active_identity_total': independent_flags['active_identity_total'],
+            'archived_identity_total': independent_flags['archived_identity_total'],
+            'name_difference_total': independent_flags['name_difference_total'],
+            'archived_with_name_difference': independent_flags['archived_with_name_difference'],
+        },
         'identity_found': summary['identity_found'],
         'yellow_missing_information': summary['yellow_missing_information'],
         'missing_field_counts': dict(missing_counts),
@@ -258,6 +278,8 @@ def registry_match(sheet_rows):
         'employee_count_updated': 0,
         'import_enabled': False,
         'notice': ('هذه نتائج مطابقة قراءة فقط مع السجلات الحالية، بما فيها المؤرشفة. '
+                   'قد تتداخل حالات الأرشفة واختلاف الاسم، لذلك يُعرض إجمالي كل حالة '
+                   'مستقلًا عن تصنيف المنع الأساسي. '
                    'الاسم المختلف أو الرقم المتعارض لا يُعتمد تلقائيًا. '
                    'المركز والجهة التنظيمية لا يُعتمدان إلا بالمطابقة الفريدة مع سجل معتمد. '
                    'لم تُنشأ أو تُعدل أي بطاقة.'),
