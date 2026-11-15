@@ -123,6 +123,16 @@ class EmployeeImportV2PreviewView(APIView):
             if not detected:
                 return Response({'detail': 'تعذر اكتشاف أسماء الأعمدة.'}, status=400)
             header_row, headers, mapping = detected
+            normalized_headers = [heading(value) for value in headers]
+            ambiguous_fields = [
+                field for field, aliases in NORMALIZED.items()
+                if sum(1 for value in normalized_headers if value in aliases) > 1
+            ]
+            if ambiguous_fields:
+                return Response({
+                    'detail': 'يوجد أكثر من عمود للبيان نفسه. راجع الأعمدة المكررة قبل الفحص.',
+                    'ambiguous_columns': ambiguous_fields,
+                }, status=400)
             missing = [field for field in REQUIRED if field not in mapping]
             if missing:
                 return Response({
