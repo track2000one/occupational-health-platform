@@ -20,6 +20,8 @@ from rest_framework.views import APIView
 MAX_FILE_SIZE = 10 * 1024 * 1024
 MAX_ROWS = 2500
 MAX_COLUMNS = 120
+# Allow a limited number of physically empty rows without permitting oversized sheets.
+MAX_SCANNED_ROWS = MAX_ROWS + 250
 HEADERS = {
     'name': {'اسم الموظف', 'اسم الموظف الكامل', 'الاسم', 'اسم الموظفين',
              'الاسم الكامل', 'اسم الموظف رباعي', 'employee name', 'name', 'full name'},
@@ -99,9 +101,12 @@ def is_masked_identity(value):
 def detect_header(sheet):
     best = None
     score = -1
+    # XLSX files produced by some generators omit <dimension ref="..." />.
+    # ReadOnlyWorksheet.max_row/max_column are then None. Never interpret
+    # missing dimension metadata as "only row/column 1".
     for number, cells in enumerate(
-        sheet.iter_rows(min_row=1, max_row=min(sheet.max_row or 1, 15),
-                        max_col=min(sheet.max_column or 1, MAX_COLUMNS),
+        sheet.iter_rows(min_row=1, max_row=30,
+                        max_col=MAX_COLUMNS + 1,
                         values_only=True), start=1
     ):
         normalized = [heading(c) for c in cells]
@@ -146,12 +151,19 @@ class EmployeeImportV2PreviewView(APIView):
                     'available_sheets': workbook.sheetnames[:15],
                 }, status=400)
             sheet = workbook[sheet_name]
+            # Incorrect A1-only dimension metadata can also occur in generated
+            # workbooks. Neither header detection nor data import may trust it.
+            if sheet.max_column in (None, 1) or sheet.max_row in (None, 1):
+                sheet.reset_dimensions()
             if (sheet.max_column or 0) > MAX_COLUMNS:
                 return Response({'detail': 'الملف يتجاوز حد 120 عمودًا.'}, status=400)
             detected = detect_header(sheet)
             if not detected:
                 return Response({'detail': 'تعذر اكتشاف أسماء الأعمدة.'}, status=400)
             header_row, headers, mapping = detected
+            if any(text_cell(value) for value in headers[MAX_COLUMNS:]):
+                return Response({'detail': 'الملف يتجاوز حد 120 عمودًا.'}, status=400)
+            headers = headers[:MAX_COLUMNS]
             normalized_headers = [heading(value) for value in headers]
             # Explicit column selection is a fallback for unusual Excel exports.
             # It never bypasses ID validation, conflict checks, or masked-ID rejection.
@@ -167,7 +179,7 @@ class EmployeeImportV2PreviewView(APIView):
                     except (ValueError, TypeError):
                         return Response({'detail': 'حدد عمودي الاسم والهوية بصورة صحيحة.'},
                                         status=400)
-                    if not 1 <= value <= len(headers) or not heading(headers[value - 1]):
+                    if not 1 <= value <= min(len(headers), MAX_COLUMNS) or not heading(headers[value - 1]):
                         return Response({'detail': 'رقم العمود المختار خارج نطاق صف العناوين.'},
                                         status=400)
                     indices[field] = value - 1
@@ -199,7 +211,7 @@ class EmployeeImportV2PreviewView(APIView):
                             and 0 < len(value.strip()) <= 80
                         ) else f'العمود {index + 1}'
                     ),
-                } for index, value in enumerate(headers)]
+                } for index, value in enumerate(headers) if text_cell(value)]
                 return Response({
                     'detail': 'لم يتعرف النظام على جميع الأعمدة المطلوبة. حدد عمودي الاسم والهوية من القائمة دون تعديل ملف Excel.',
                     'missing_required': missing,
@@ -216,9 +228,14 @@ class EmployeeImportV2PreviewView(APIView):
             masked_identity_rows = []
             for row_number, cells in enumerate(
                 sheet.iter_rows(min_row=header_row + 1,
-                                max_col=min(sheet.max_column or 1, MAX_COLUMNS),
+                                max_col=MAX_COLUMNS + 1,
                                 values_only=True), start=header_row + 1
             ):
+                if row_number - header_row > MAX_SCANNED_ROWS:
+                    return Response({'detail': 'عدد صفوف الورقة كبير جدًا؛ قسّم الملف قبل الفحص.'}, status=400)
+                if any(text_cell(value) for value in cells[MAX_COLUMNS:]):
+                    return Response({'detail': 'الملف يتجاوز حد 120 عمودًا.'}, status=400)
+                cells = cells[:MAX_COLUMNS]
                 if not any(text_cell(value) for value in cells):
                     continue
                 total += 1
