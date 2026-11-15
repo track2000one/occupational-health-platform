@@ -71,18 +71,26 @@ class EmployeeRosterReconciliationTests(TestCase):
         self.client.force_authenticate(self.admin)
 
     def spreadsheet(self, rows):
-        wb = Workbook()
-        ws = wb.active
-        ws.title = 'Employees'
-        ws.append([
-            'اسم الموظف', 'رقم الهوية / الإقامة', 'الرقم الوظيفي',
-            'البريد الإلكتروني', 'الجنسية', 'المركز الصحي', 'تاريخ الميلاد',
-        ])
-        for row in rows:
-            ws.append(row)
-        file = BytesIO()
-        wb.save(file)
-        file.seek(0)
+        # XLSX ZIP timestamps are nondeterministic when created on each call.
+        # Keep the very same source bytes for preview/commit/review in a test,
+        # exactly as a real user does by re-uploading one unchanged workbook.
+        if not hasattr(self, '_workbook_cache'):
+            self._workbook_cache = {}
+        key = repr(rows)
+        if key not in self._workbook_cache:
+            wb = Workbook()
+            ws = wb.active
+            ws.title = 'Employees'
+            ws.append([
+                'اسم الموظف', 'رقم الهوية / الإقامة', 'الرقم الوظيفي',
+                'البريد الإلكتروني', 'الجنسية', 'المركز الصحي', 'تاريخ الميلاد',
+            ])
+            for row in rows:
+                ws.append(row)
+            buffer = BytesIO()
+            wb.save(buffer)
+            self._workbook_cache[key] = buffer.getvalue()
+        file = BytesIO(self._workbook_cache[key])
         file.name = 'synthetic-employee-master.xlsx'
         return file
 
