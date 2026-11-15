@@ -505,6 +505,38 @@ class EmployeeImportV2PreviewTests(TestCase):
         self.assertEqual(response.data['registry_counts']['new_provisional'], 1)
         self.assertFalse(Employee.objects.exists())
 
+    def test_independent_archived_and_name_mismatch_counts_include_overlap(self):
+        cases = [
+            ('QA Active Original', '1000001771', False, 'QA Active Modified'),
+            ('QA Archived Original', '1000001772', True, 'QA Archived Modified'),
+            ('QA Archived Same', '1000001773', True, 'QA Archived Same'),
+            ('QA Active Same', '1000001774', False, 'QA Active Same'),
+        ]
+        for database_name, national_id, archived, _ in cases:
+            Employee.objects.create(
+                name=database_name, national_id=national_id, is_archived=archived,
+            )
+        preview = self.preview([
+            [source_name, national_id, '', '', '']
+            for _, national_id, _, source_name in cases
+        ])
+        self.assertEqual(preview.status_code, 200, preview.data)
+        flags = preview.data['registry_facets']
+        self.assertEqual(flags['matched_identity_total'], 4)
+        self.assertEqual(flags['active_identity_total'], 2)
+        self.assertEqual(flags['archived_identity_total'], 2)
+        self.assertEqual(flags['name_difference_total'], 2)
+        self.assertEqual(flags['archived_with_name_difference'], 1)
+        # Primary status is exclusive; facets are NOT exclusive.
+        self.assertEqual(preview.data['registry_counts']['name_review'], 2)
+        self.assertEqual(preview.data['registry_counts']['archived_review'], 1)
+        self.assertEqual(preview.data['safe_import_candidate_counts']['create'], 0)
+        self.assertEqual(preview.data['safe_import_candidate_counts']['fill_only'], 0)
+        self.assertEqual(Employee.objects.count(), 4)
+        self.assertEqual(Employee.objects.filter(is_archived=True).count(), 2)
+        self.assertFalse(EmployeeImportReview.objects.exists())
+        self.assertFalse(DataImportBatch.objects.exists())
+
     def test_duplicate_identity_columns_cannot_silently_choose_one(self):
         response = self.preview(
             [['QA Header', '1000001211', '1000001212', 'QA-1211']],
