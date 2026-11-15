@@ -10,7 +10,7 @@ import unicodedata
 from django.db.models import Q
 from django.db.models.functions import Lower, Trim
 
-from .models import Employee, HealthCenter, OrganizationUnit
+from .models import Employee, HealthCenter, OrganizationUnit, EmployeeRegistryResetBatch
 
 
 REVIEW_LIMIT = 30
@@ -126,8 +126,18 @@ def registry_match(sheet_rows):
 
     centers = matched_center_map()
     organization_names, organization_units = approved_organization_map()
+    # An unfinished bulk reset is only provenance evidence, not an authorization
+    # to reinstate staff. Individual archives and retired/separated people stay
+    # blocked until a distinct, documented review.
+    reset = EmployeeRegistryResetBatch.objects.filter(
+        restored_at__isnull=True,
+    ).order_by('-created_at').only('employee_ids', 'applied_at').first()
+    reset_ids = {
+        str(item) for item in (reset.employee_ids or [])
+    } if reset else set()
     counts = Counter()
     independent_flags = Counter()
+    archive_provenance = Counter()
     planned_rows = []
     missing_counts = Counter()
     review_examples = []
@@ -147,6 +157,16 @@ def registry_match(sheet_rows):
             independent_flags['archived_with_name_difference'] += int(
                 employee.is_archived and name_differs
             )
+            if employee.is_archived:
+                in_reset = bool(reset and str(employee.pk) in reset_ids and
+                                employee.archived_at == reset.applied_at)
+                archive_provenance['matching_unfinished_bulk_reset'] += int(in_reset)
+                archive_provenance['other_or_unverified_archive'] += int(not in_reset)
+                if not (employee.archive_reason or '').strip():
+                    archive_provenance['archive_reason_missing'] += 1
+                archive_provenance[
+                    'employment_' + (employee.employment_status or 'unknown')
+                ] += 1
         employee_number = row['employee_number'].strip()
         email = norm_email(row['email'])
         source_center = row['health_center'].strip()
@@ -262,6 +282,21 @@ def registry_match(sheet_rows):
         '_internal_planned_rows': planned_rows,
         'rows_total': total,
         'registry_counts': dict(counts),
+        'archive_provenance': {
+            'matching_unfinished_bulk_reset':
+                archive_provenance['matching_unfinished_bulk_reset'],
+            'other_or_unverified_archive':
+                archive_provenance['other_or_unverified_archive'],
+            'archive_reason_missing':
+                archive_provenance['archive_reason_missing'],
+            'employment_active': archive_provenance['employment_active'],
+            'employment_transferred': archive_provenance['employment_transferred'],
+            'employment_retired': archive_provenance['employment_retired'],
+            'employment_separated': archive_provenance['employment_separated'],
+            'employment_under_review': archive_provenance['employment_under_review'],
+            'employment_unknown': archive_provenance['employment_unknown'],
+            'has_unfinished_bulk_reset': bool(reset),
+        },
         'registry_facets': {
             'matched_identity_total': independent_flags['matched_identity_total'],
             'active_identity_total': independent_flags['active_identity_total'],
