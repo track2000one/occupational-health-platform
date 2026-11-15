@@ -270,6 +270,56 @@ class EmployeeRosterReconciliationTests(TestCase):
         self.assertEqual(conflicts.data['rows'][0]['registry_employee_number'], 'QA-KEEP6')
         self.assertEqual(conflicts.data['rows'][0]['source_employee_number'], 'QA-NEW6')
 
+    def test_name_subtypes_only_describe_text_and_never_authorize_restoration(self):
+        from .employee_roster_reconciliation import name_difference_diagnostic
+
+        cases = [
+            ('أحمد علي حسن', 'احمد علي حسن', 'orthographic'),
+            ('محمد علي بن صالح', 'محمد بن علي صالح', 'reordered'),
+            ('محمد عبدالله أحمد القحطاني', 'محمد عبدالله القحطاني', 'missing_or_extra_parts'),
+            ('محمد عبدالله أحمد القحطاني', 'محمد سالم أحمد القحطاني', 'same_first_and_last'),
+            ('محمد عبدالله القحطاني', 'محمد سالم الدوسري', 'same_first_only'),
+            ('سعيد خالد السالم', 'حمد محمد السالم', 'same_last_only'),
+            ('عبدالله خالد السالم', 'محمد علي القحطاني', 'different_or_complex'),
+        ]
+        for registry_name, excel_name, expected in cases:
+            with self.subTest(kind=expected):
+                self.assertEqual(
+                    name_difference_diagnostic(registry_name, excel_name),
+                    expected,
+                )
+
+    def test_name_subtype_preview_and_filtered_review_are_read_only(self):
+        self.name_conflict.name = 'محمد عبدالله أحمد القحطاني'
+        self.name_conflict.save(update_fields=['name', 'updated_at'])
+        source = [self.row('محمد عبدالله القحطاني', '9999930005')]
+        preview = self.upload('preview', source)
+        self.assertEqual(preview.status_code, 200, preview.data)
+        self.assertEqual(preview.data['eligible_count'], 0)
+        self.assertEqual(preview.data['breakdown']['name_mismatch'], 1)
+        self.assertEqual(preview.data['name_diagnostic_counts'], {
+            'missing_or_extra_parts': 1,
+        })
+        filtered = self.upload('review', source,
+                               review_filter='name_mismatch',
+                               review_name_diagnostic='missing_or_extra_parts')
+        self.assertEqual(filtered.status_code, 200, filtered.data)
+        self.assertEqual(filtered.data['total'], 1)
+        self.assertEqual(filtered.data['rows'][0]['name_diagnostic'],
+                         'missing_or_extra_parts')
+        other = self.upload('review', source, review_filter='name_mismatch',
+                            review_name_diagnostic='reordered')
+        self.assertEqual(other.status_code, 200, other.data)
+        self.assertEqual(other.data['total'], 0)
+        invalid = self.upload('review', source,
+                              review_name_diagnostic='unknown_category')
+        self.assertEqual(invalid.status_code, 400)
+        self.name_conflict.refresh_from_db()
+        self.assertEqual(self.name_conflict.name, 'محمد عبدالله أحمد القحطاني')
+        self.assertTrue(self.name_conflict.is_archived)
+        self.assertEqual(EmployeeProfileCompletionEvent.objects.count(), 0)
+        self.assertEqual(EmployeeExcelMatchReview.objects.count(), 0)
+
     def test_arabic_vs_latin_names_are_a_separate_blocked_review_category(self):
         self.old.name = 'سعود عبدالله الشمري'
         self.old.save(update_fields=['name', 'updated_at'])
