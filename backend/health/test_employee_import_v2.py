@@ -590,6 +590,95 @@ class EmployeeImportV2PreviewTests(TestCase):
         self.assertTrue(Employee.objects.filter(pk=bulk_first.pk).get().is_archived)
         self.assertTrue(Employee.objects.filter(pk=individual.pk).get().is_archived)
 
+    def test_historical_reset_provenance_fails_closed_and_is_read_only(self):
+        old_time = timezone.now() - timedelta(days=10)
+        latest_time = timezone.now() - timedelta(days=1)
+        completed_time = timezone.now() - timedelta(days=30)
+        older_employee = Employee.objects.create(
+            name='QA Older Bulk', national_id='1000001881',
+            is_archived=True, archived_at=old_time,
+            archive_reason='Older synthetic batch', employment_status='active',
+        )
+        latest_employee = Employee.objects.create(
+            name='QA Latest Bulk', national_id='1000001882',
+            is_archived=True, archived_at=latest_time,
+            archive_reason='Latest synthetic batch', employment_status='active',
+        )
+        completed_employee = Employee.objects.create(
+            name='QA Completed Anomaly', national_id='1000001883',
+            is_archived=True, archived_at=completed_time,
+            archive_reason='Completed synthetic batch', employment_status='under_review',
+        )
+        independent = Employee.objects.create(
+            name='QA Independent', national_id='1000001884',
+            is_archived=True, archived_at=latest_time - timedelta(hours=2),
+            archive_reason='', employment_status='retired',
+        )
+        ambiguous = Employee.objects.create(
+            name='QA Ambiguous', national_id='1000001885',
+            is_archived=True, archived_at=old_time,
+            archive_reason='Ambiguous batch link', employment_status='active',
+        )
+        old_reset = EmployeeRegistryResetBatch.objects.create(
+            employee_ids=[older_employee.pk, ambiguous.pk],
+            applied_at=old_time, reason='Synthetic old unfinished reset',
+            created_by=self.admin,
+        )
+        EmployeeRegistryResetBatch.objects.create(
+            employee_ids=[ambiguous.pk], applied_at=old_time,
+            reason='Synthetic ambiguous matching timestamp', created_by=self.admin,
+        )
+        completed_reset = EmployeeRegistryResetBatch.objects.create(
+            employee_ids=[completed_employee.pk], applied_at=completed_time,
+            reason='Synthetic completed reset', created_by=self.admin,
+            restored_at=timezone.now() - timedelta(days=20),
+        )
+        latest_reset = EmployeeRegistryResetBatch.objects.create(
+            employee_ids=[latest_employee.pk], applied_at=latest_time,
+            reason='Synthetic latest unfinished reset', created_by=self.admin,
+        )
+        response = self.preview([
+            ['QA Older Bulk', '1000001881', '', '', ''],
+            ['QA Latest Bulk Name Diff', '1000001882', '', '', ''],
+            ['QA Completed Anomaly', '1000001883', '', '', ''],
+            ['QA Independent', '1000001884', '', '', ''],
+            ['QA Ambiguous', '1000001885', '', '', ''],
+        ])
+        self.assertEqual(response.status_code, 200, response.data)
+        counts = response.data['archive_provenance']
+        self.assertEqual(counts['matching_unfinished_bulk_reset'], 1)
+        self.assertEqual(counts['matching_older_unfinished_bulk_reset'], 1)
+        self.assertEqual(counts['matching_previously_restored_bulk_reset'], 1)
+        self.assertEqual(counts['other_or_unverified_archive'], 2)
+        self.assertEqual(counts['reset_batches_scanned'], 4)
+        self.assertEqual(counts['unfinished_reset_batches_scanned'], 3)
+        self.assertEqual(counts['completed_reset_batches_scanned'], 1)
+        self.assertEqual(counts['archive_reason_missing'], 1)
+        self.assertEqual(sum(counts[key] for key in (
+            'matching_unfinished_bulk_reset', 'matching_older_unfinished_bulk_reset',
+            'matching_previously_restored_bulk_reset', 'other_or_unverified_archive',
+        )), response.data['registry_facets']['archived_identity_total'])
+        self.assertEqual(response.data['registry_facets']['archived_with_name_difference'], 1)
+        self.assertEqual(response.data['safe_import_candidate_counts']['create'], 0)
+        self.assertEqual(response.data['safe_import_candidate_counts']['fill_only'], 0)
+        samples = response.data['archive_review_examples_masked']
+        self.assertEqual(samples['matching_unfinished_bulk_reset'][0]['row'], 3)
+        self.assertTrue(samples['matching_unfinished_bulk_reset'][0]['name_different'])
+        self.assertFalse(samples['other_or_unverified_archive'][0]['reason_documented'])
+        self.assertNotIn('1000001882', str(samples))
+        self.assertNotIn('QA Latest Bulk', str(samples))
+        self.assertEqual(Employee.objects.count(), 5)
+        self.assertEqual(Employee.objects.filter(is_archived=True).count(), 5)
+        self.assertFalse(EmployeeImportReview.objects.exists())
+        self.assertFalse(DataImportBatch.objects.exists())
+        self.assertFalse(AuditLog.objects.exists())
+        old_reset.refresh_from_db()
+        latest_reset.refresh_from_db()
+        completed_reset.refresh_from_db()
+        self.assertIsNone(old_reset.restored_at)
+        self.assertIsNone(latest_reset.restored_at)
+        self.assertIsNotNone(completed_reset.restored_at)
+
     def test_duplicate_identity_columns_cannot_silently_choose_one(self):
         response = self.preview(
             [['QA Header', '1000001211', '1000001212', 'QA-1211']],
