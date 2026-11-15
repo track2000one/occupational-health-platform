@@ -120,7 +120,7 @@ def export_reconciled_review(request, plan, file_hash, sheet_name):
     summary.title = 'الملخص'
     summary.sheet_view.rightToLeft = True
     summary.append(['تقرير مراجعة اختلاف بيانات الموظفين'])
-    summary.append(['الغرض', 'مقارنة إدارية فقط؛ لا يجيز الملف استعادة أو تعديل موظف'])
+    summary.append(['الغرض', 'المقارنة إدارية فقط؛ لا يجيز الملف استعادة أو تعديل موظف'])
     summary.append(['عدد الحالات', len(rows)])
     summary.append(['نوع الحالة', CATEGORY_LABELS.get(category, 'جميع التصنيفات')])
     summary.append(['تفصيل الاسم', SUBTYPE_LABELS.get(subtype, 'جميع التفصيلات')])
