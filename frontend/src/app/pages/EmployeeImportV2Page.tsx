@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import {
   Alert, Box, Button, Chip, CircularProgress, Divider, Grid, Paper,
-  Stack, Step, StepLabel, Stepper, Typography,
+  Stack, Step, StepLabel, Stepper, Typography, Checkbox, FormControlLabel, TextField,
 } from '@mui/material';
 import {
   ArrowBack as BackIcon, CloudUpload as UploadIcon,
@@ -48,6 +48,12 @@ type PreflightResult = {
   employee_count_updated: 0;
   import_enabled: false;
   notice: string;
+  safe_import_candidate_counts: { create: number; fill_only: number; provisional: number };
+  requires_manual_review: number;
+  commit_token: string;
+  confirm_phrase: string;
+  commit_available: boolean;
+  commit_notice: string;
 };
 
 const FIELDS: Record<string, string> = {
@@ -66,6 +72,7 @@ const REGISTRY_STATES: Array<{
 }> = [
   { key: 'new_candidate', title: 'هوية جديدة ومركز معتمد — مرشح للفحص النهائي', tone: 'info' },
   { key: 'new_incomplete', title: 'هوية جديدة تحتاج استكمال بيانات', tone: 'warning' },
+  { key: 'new_provisional', title: 'هوية جديدة بإسناد غير معتمد — بطاقة مبدئية دون مركز وهمي', tone: 'warning' },
   { key: 'existing_fill_only', title: 'سجل موجود — حقول فارغة قابلة للاستكمال', tone: 'info' },
   { key: 'existing_no_change', title: 'سجل موجود لا يحتاج استكمالًا ظاهرًا', tone: 'success' },
   { key: 'archived_review', title: 'سجل مؤرشف — يلزم قرار استعادة منفصل', tone: 'warning' },
@@ -93,12 +100,57 @@ export function EmployeeImportV2Page() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [sheet, setSheet] = useState('Employees');
+  const [accepted, setAccepted] = useState(false);
+  const [reason, setReason] = useState(
+    'اعتماد إضافة الهويات الجديدة واستكمال الحقول الفارغة من ملف الموظفين المرجعي دون استعادة المؤرشفين أو تجاوز التعارضات.'
+  );
+  const [committed, setCommitted] = useState<{
+    created: number; filled: number; provisional: number; skipped: number;
+    archived_restored: number; existing_overwritten: number; batch_id: number;
+  } | null>(null);
+
+  const applyApprovedImport = async () => {
+    if (!file || !preview || !preview.commit_available || !accepted || busy ||
+        reason.trim().length < 20) return;
+    const total = preview.safe_import_candidate_counts.create +
+      preview.safe_import_candidate_counts.fill_only;
+    if (!window.confirm(
+      `اعتماد إدراج ${total} سجلًا مؤهلًا فقط؟ لن تُستعاد السجلات المؤرشفة أو تُستبدل البيانات الموجودة. سيتم تنفيذ إجراء فعلي في قاعدة البيانات.`
+    )) return;
+    setBusy(true); setError('');
+    try {
+      const token = getAccessToken();
+      if (!token) throw new Error('انتهت جلسة المسؤول. أعد تسجيل الدخول.');
+      const payload = new FormData();
+      payload.append('action', 'commit');
+      payload.append('file', file);
+      payload.append('sheet_name', sheet.trim() || 'Employees');
+      payload.append('commit_token', preview.commit_token);
+      payload.append('confirm_phrase', preview.confirm_phrase);
+      payload.append('confirmed', 'true');
+      payload.append('identity_checked', 'true');
+      payload.append('reason', reason.trim());
+      const response = await authFetch(API + '/employee-import-v2/preview/', {
+        method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: payload,
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || 'تعذر حفظ دفعة الاستيراد.');
+      setCommitted(data);
+      setPreview(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'تعذر تنفيذ عملية الاستيراد.');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const verify = async () => {
     if (!file || busy || !user?.isSuperuser) return;
     setBusy(true);
     setError('');
     setPreview(null);
+    setCommitted(null);
+    setAccepted(false);
     try {
       if (!API) throw new Error('إعداد اتصال بيئة المنصة غير مكتمل. لا تُرسل الملف إلى أي بيئة أخرى.');
       const token = getAccessToken();
@@ -143,7 +195,7 @@ export function EmployeeImportV2Page() {
     </Stack>
 
     <Paper sx={{ p: { xs: 2, md: 3 }, mb: 3, borderRadius: 3 }}>
-      <Stepper activeStep={preview ? 1 : 0} alternativeLabel>
+      <Stepper activeStep={committed ? 3 : preview ? 2 : 0} alternativeLabel>
         {['رفع ملف Excel', 'فحص البيانات والمطابقة', 'المراجعة والاعتماد'].map(title =>
           <Step key={title}><StepLabel>{title}</StepLabel></Step>
         )}
@@ -151,9 +203,10 @@ export function EmployeeImportV2Page() {
     </Paper>
 
     <Alert severity="info" icon={<SecurityIcon />} sx={{ mb: 2 }}>
-      يستعمل هذا الإصدار شاشة موحدة. عند فحص Excel يجري التحقق من الهويات
-      مقابل السجلات النشطة والمؤرشفة، دون استعادة أو إضافة أو تعديل الموظفين،
-      ودون تغيير المراكز أو الجهات التنظيمية أو أي بيانات صحية.
+      في الخطوة الأولى يجري الفحص دون تعديل. عند تفعيل الاستيراد الآمن
+      والضغط على زر الاعتماد بعد المراجعة، تُضاف الهويات الجديدة وتُستكمل
+      الحقول الفارغة فقط. السجلات المؤرشفة أو المتعارضة لا تُستعاد تلقائيًا
+      ولا تُعدّل ملفاتها الصحية.
     </Alert>
 
     <Paper sx={{ p: { xs: 2, md: 3 }, mb: 3, borderRadius: 3 }}>
@@ -165,6 +218,8 @@ export function EmployeeImportV2Page() {
             const picked = event.target.files?.[0] || null;
             setFile(picked);
             setPreview(null);
+            setCommitted(null);
+            setAccepted(false);
             setError('');
             event.target.value = '';
           }} />
@@ -189,6 +244,8 @@ export function EmployeeImportV2Page() {
           onChange={(event: React.ChangeEvent<HTMLInputElement>) => {
             setSheet(event.target.value);
             setPreview(null);
+            setCommitted(null);
+            setAccepted(false);
           }}
           sx={{
             border: '1px solid', borderColor: 'divider', p: 1.25, borderRadius: 1.5,
@@ -294,20 +351,55 @@ export function EmployeeImportV2Page() {
     </Paper>}
 
     <Paper sx={{ p: { xs: 2, md: 3 }, borderRadius: 3 }}>
-      <Stack direction={{ xs: 'column', md: 'row' }}
-        justifyContent="space-between" alignItems={{ md: 'center' }} gap={1.5}>
-        <Box>
-          <Typography variant="h6" fontWeight={900}>
-            3. المراجعة والاعتماد
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            اكتملت المطابقة التشخيصية للهوية والمراكز والسجلات المؤرشفة.
-            الخطوة التالية هي بناء اعتماد انتقائي موثق وآمن، مع حماية
-            البيانات الصحية وعدم استبدال الحقول الممتلئة.
-          </Typography>
-        </Box>
-        <Button variant="contained" disabled>الاعتماد والحفظ — غير مفعل بعد</Button>
-      </Stack>
+      <Typography variant="h6" fontWeight={900} sx={{ mb: 1 }}>3. المراجعة والاعتماد</Typography>
+      {preview && <>
+        <Grid container spacing={1.5} sx={{ mb: 2 }}>
+          <Grid size={{ xs: 12, sm: 4 }}>
+            <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+              <Typography variant="h4">{preview.safe_import_candidate_counts.create}</Typography>
+              <Typography variant="body2">مرشحون للإضافة الجديدة</Typography>
+            </Paper>
+          </Grid>
+          <Grid size={{ xs: 12, sm: 4 }}>
+            <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+              <Typography variant="h4">{preview.safe_import_candidate_counts.fill_only}</Typography>
+              <Typography variant="body2">مرشحون لاستكمال الحقول الفارغة</Typography>
+            </Paper>
+          </Grid>
+          <Grid size={{ xs: 12, sm: 4 }}>
+            <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+              <Typography variant="h4" color="warning.main">{preview.requires_manual_review}</Typography>
+              <Typography variant="body2">تبقى للمراجعة أو الأرشيف</Typography>
+            </Paper>
+          </Grid>
+        </Grid>
+        <Alert severity="warning" sx={{ mb: 2 }}>{preview.commit_notice}</Alert>
+        {preview.commit_available ? <Stack gap={1.5}>
+          <TextField value={reason} multiline minRows={2} label="مبرر الاعتماد الإداري"
+            inputProps={{ maxLength: 500 }}
+            onChange={e => setReason(e.target.value)} />
+          <FormControlLabel
+            control={<Checkbox checked={accepted}
+              onChange={(_, checked) => setAccepted(checked)} disabled={busy}/>}
+            label="راجعت مصدر الهوية والنتائج، وأوافق على إضافة المرشحين الآمنين واستكمال الحقول الفارغة فقط دون المساس بالمؤرشفين أو البيانات الصحية."/>
+          <Button variant="contained" color="success" disabled={busy || !accepted || reason.trim().length < 20 ||
+            (preview.safe_import_candidate_counts.create + preview.safe_import_candidate_counts.fill_only === 0)}
+            onClick={() => void applyApprovedImport()}>
+            {busy ? 'جاري اعتماد الدفعة...' : preview.confirm_phrase}
+          </Button>
+        </Stack> :
+        <Alert severity="info">تم تجهيز آلية الاعتماد، ولكنها غير مفعلة في بيئة التشغيل الحالية
+          حتى تُختبر سلامة النسخ الاحتياطي والمطابقة على Staging.</Alert>}
+      </>}
+      {committed && <Alert severity="success">
+        اكتملت عملية الاستيراد. أُضيف {committed.created} موظفًا، واستُكملت بيانات
+        {committed.filled}، منها {committed.provisional} تسجيل مبدئي،
+        وتُرك {committed.skipped} سجلًا دون تغيير للمراجعة.
+        رقم دفعة التدقيق {committed.batch_id}.
+      </Alert>}
+      {!preview && !committed && <Typography variant="body2" color="text.secondary">
+        ارفع الملف وافحصه أولًا لعرض أعداد السجلات التي يمكن اعتمادها.
+      </Typography>}
     </Paper>
   </Box>;
 }
