@@ -298,3 +298,26 @@ class EmployeeImportV2PreviewTests(TestCase):
         self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual(response.data['registry_counts']['organization_review'], 1)
         self.assertFalse(Employee.objects.exists())
+
+    def test_duplicate_identity_columns_cannot_silently_choose_one(self):
+        response = self.preview(
+            [['QA Header', '1000001211', '1000001212', 'QA-1211']],
+            headers=['اسم الموظف', 'رقم الهوية الوطنية', 'رقم الهوية', 'الرقم الوظيفي'],
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn('national_id', response.data['ambiguous_columns'])
+        self.assertFalse(Employee.objects.exists())
+
+    def test_employee_number_owner_matching_is_case_insensitive(self):
+        Employee.objects.create(
+            name='صاحب الرقم القديم', national_id='1000001213',
+            employee_number='QA-AbC-1213',
+        )
+        response = self.preview([
+            ['موظف مختلف', '1000001214', 'qa-abc-1213', '', ''],
+        ])
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(
+            response.data['registry_counts']['identifier_owned_by_other'], 1
+        )
+        self.assertEqual(Employee.objects.count(), 1)
