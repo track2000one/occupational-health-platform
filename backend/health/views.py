@@ -2,6 +2,7 @@ import json
 import uuid
 from datetime import date, timedelta
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 from django.db.models import Q
@@ -12,6 +13,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from openpyxl import load_workbook
 from .importers import process_excel_import
 from .models import AuditLog, ClinicVisit, CommitteeReferral, DataImportBatch, Employee, EmployeeArchiveEvent, EmployeeEmploymentChange, EmployeeHealthCard, EmployeeImportReview, EmployeeProfileCompletionEvent, HealthCenter, HealthCenterProfileAuditEvent, OrganizationUnit, InjuryCase, LabTest, OccupationalHealthAssessment, Vaccination
 from .serializers import AuditLogSerializer, ClinicVisitSerializer, CommitteeReferralSerializer, DataImportBatchSerializer, EmployeeHealthCardSerializer, EmployeeImportReviewSerializer, EmployeeSerializer, HealthCenterSerializer, InjuryCaseSerializer, LabTestSerializer, OccupationalHealthAssessmentSerializer, PlatformUserSerializer, VaccinationSerializer
@@ -314,6 +316,34 @@ class ExcelImportViewSet(viewsets.ReadOnlyModelViewSet):
         commit=truthy(request.data.get('commit'))
         sheet_name=str(request.data.get('sheetName') or '').strip()
         employee_import_mode=str(request.data.get('employeeImportMode') or '').strip().lower()
+        # Retire ALL legacy employee XLSX writes, while preserving lab/vaccine
+        # and other clinical Excel imports. Never save legacy preview cards.
+        legacy_employee_sheet = (
+            employee_import_mode in ('template', 'flexible')
+            or sheet_name.casefold() in ('employees', 'employee', 'الموظفون', 'الموظفين')
+        )
+        if not legacy_employee_sheet:
+            try:
+                document = load_workbook(uploaded, read_only=True, data_only=True)
+                try:
+                    legacy_employee_sheet = any(
+                        str(name).strip().casefold() in (
+                            'employees', 'employee', 'الموظفون', 'الموظفين'
+                        )
+                        for name in document.sheetnames
+                    )
+                finally:
+                    document.close()
+            except Exception:
+                # Ordinary XLSX validation below handles malformed files.
+                pass
+            finally:
+                uploaded.seek(0)
+        if legacy_employee_sheet and not settings.LEGACY_EMPLOYEE_EXCEL_IMPORTS_ENABLED:
+            return Response({
+                'detail': 'استيراد الموظفين القديم موقوف. استخدم واجهة استيراد الموظفين V2.',
+                'new_interface': '/employees/import',
+            }, status=410)
         field_mapping=None
         try:
             center_corrections=json.loads(str(request.data.get('centerCorrections') or '{}'))

@@ -60,7 +60,8 @@ type ReportPayload = {
 };
 
 const DEFAULT_COLUMNS: Array<keyof FlexibleEmployeeReportRow> = [
-  'name', 'employee_number', 'health_center', 'job_title', 'employment_status',
+  'name', 'employee_number', 'national_id_masked', 'health_center',
+  'job_title', 'employment_status',
 ];
 
 const STATUS_LABELS: Record<string, string> = {

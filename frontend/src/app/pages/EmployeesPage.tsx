@@ -784,25 +784,9 @@ export function EmployeesPage() {
             </Button>
           )}
           {can(PERMISSIONS.MANAGE_USERS) && (
-            <Button variant="outlined" startIcon={<UploadFileIcon />} onClick={() => navigate('/admin/workforce-roster-preview')}>
-              {isRtl ? 'فحص الملف الجديد' : 'Preview Current Roster'}
-            </Button>
-          )}
-          {can(PERMISSIONS.MANAGE_USERS) && (
-            <Button variant="outlined" color="warning" startIcon={<UploadFileIcon />}
-              onClick={() => navigate('/employees/pending-import')}>
-              {isRtl ? 'بطاقات الموظفين قيد الاستكمال' : 'Pending employee review cards'}
-            </Button>
-          )}
-          {can(PERMISSIONS.MANAGE_USERS) && (
-            <Button variant="outlined" startIcon={<UploadFileIcon />} onClick={() => navigate('/employees/import')}>
-              {isRtl ? 'استيراد Excel' : 'Import Excel'}
-            </Button>
-          )}
-          {canBulkReset && (
-            <Button variant="contained" color="success" startIcon={<UploadFileIcon />}
-              onClick={() => navigate('/employees/reconcile')}>
-              {isRtl ? 'مطابقة واستكمال الموظفين من Excel' : 'Reconcile and complete employees from Excel'}
+            <Button variant="contained" color="primary" startIcon={<UploadFileIcon />}
+              onClick={() => navigate('/employees/import')}>
+              {isRtl ? 'استيراد بيانات الموظفين' : 'Import Employees'}
             </Button>
           )}
           {canArchive && (
@@ -814,18 +798,7 @@ export function EmployeesPage() {
                 : (isRtl ? 'الموظفون المحذوفون' : 'Archived Employees')}
             </Button>
           )}
-          {canBulkReset && !IS_STAGING_UI && (
-            <Button variant="outlined" color="error" startIcon={<ResetTestCardsIcon />}
-              disabled={registryResetBusy} onClick={() => void prepareRegistryReset('preview')}>
-              {isRtl ? 'تصفير' : 'Reset'}
-            </Button>
-          )}
-          {IS_STAGING_UI && can(PERMISSIONS.MANAGE_USERS) && (
-            <Button variant="outlined" color="error" startIcon={<ResetTestCardsIcon />}
-              disabled={resetBusy} onClick={() => void prepareTestCardReset('all_synthetic')}>
-              {isRtl ? 'تصفير بطاقات الاختبار' : 'Clear QA test cards'}
-            </Button>
-          )}
+
           {can(PERMISSIONS.CREATE_EMPLOYEE) && (
             <Button variant="contained" startIcon={<AddIcon />} onClick={openAdd}>
               {t('addEmployee')}
