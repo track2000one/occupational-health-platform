@@ -21,6 +21,7 @@ type Preview = {
   eligible_count: number;
   breakdown: Record<string, number>;
   fill_field_counts: Record<string, number>;
+  name_diagnostic_counts: Record<string, number>;
   examples_masked: Array<{ status: string; row: number; national_id_masked: string }>;
   preview_token: string;
   confirm_phrase: string;
@@ -43,6 +44,7 @@ type ComparisonRow = {
   registry_center: string;
   archived: boolean;
   employment_status: string;
+  name_diagnostic: string | null;
   decision_status: 'pending' | 'stale' | 'verified' | 'not_verified';
   decision_token: string;
 };
@@ -52,6 +54,8 @@ type Comparison = {
   offset: number;
   page_size: number;
   review_filter: string;
+  review_name_diagnostic: string;
+  name_diagnostic_counts: Record<string, number>;
   rows: ComparisonRow[];
   notice: string;
 };
@@ -63,6 +67,15 @@ const REVIEW_FILTERS = [
   ['unique_field_mismatch', 'اختلاف رقم وظيفي أو بريد'],
   ['unique_value_owned_by_other', 'الرقم أو البريد يخص موظفًا آخر'],
 ] as const;
+const NAME_DIAGNOSTICS: Record<string, string> = {
+  orthographic: 'فرق إملائي أو تشكيل فقط',
+  reordered: 'تبديل ترتيب مقاطع الاسم',
+  missing_or_extra_parts: 'جزء مفقود أو إضافي في الاسم',
+  same_first_and_last: 'اتفاق الأول والأخير مع اختلاف الوسط',
+  same_first_only: 'اتفاق الاسم الأول فقط',
+  same_last_only: 'اتفاق اسم العائلة فقط',
+  different_or_complex: 'اختلاف أوسع يحتاج تحققًا',
+};
 const REVIEW_LABELS: Record<string,string> = {
   pending: 'لم تُراجع',
   stale: 'قرار قديم يستلزم إعادة التحقق',
@@ -120,6 +133,7 @@ export function EmployeeExcelReconciliationPage() {
   const [error, setError] = useState('');
   const [comparison, setComparison] = useState<Comparison | null>(null);
   const [comparisonFilter, setComparisonFilter] = useState('name_mismatch');
+  const [nameSubtype, setNameSubtype] = useState('all');
   const [comparisonBusy, setComparisonBusy] = useState(false);
   const [decisionTarget, setDecisionTarget] = useState<ComparisonRow | null>(null);
   const [decisionAction, setDecisionAction] = useState('not_verified');
@@ -129,7 +143,7 @@ export function EmployeeExcelReconciliationPage() {
   const [decisionBusy, setDecisionBusy] = useState(false);
   const [reviewNotice, setReviewNotice] = useState('');
 
-  const fetchComparison = async (filter = comparisonFilter, offset = 0) => {
+  const fetchComparison = async (filter = comparisonFilter, offset = 0, diagnostic = nameSubtype) => {
     if (!file || comparisonBusy || busy || !user?.isSuperuser) return;
     setComparisonBusy(true);
     setError('');
@@ -141,6 +155,7 @@ export function EmployeeExcelReconciliationPage() {
       form.append('file', file);
       form.append('sheet_name', sheet || 'Employees');
       form.append('review_filter', filter);
+      form.append('review_name_diagnostic', diagnostic);
       form.append('review_offset', String(offset));
       const response = await authFetch(API + '/employee-roster/reconcile/', {
         method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: form,
@@ -338,6 +353,20 @@ export function EmployeeExcelReconciliationPage() {
             </Stack>
           </Grid>)}
         </Grid>
+        {!!Object.keys(preview.name_diagnostic_counts || {}).length && <>
+          <Typography fontWeight={900} sx={{ my: 2 }}>
+            تفصيل اختلاف الأسماء ضمن لغة الكتابة نفسها (مؤشرات نصية فقط)
+          </Typography>
+          <Stack direction="row" gap={1} flexWrap="wrap" sx={{ mb: 2 }}>
+            {Object.entries(preview.name_diagnostic_counts).map(([key, n]) =>
+              <Chip key={key} variant="outlined" color="warning"
+                label={`${NAME_DIAGNOSTICS[key] || key}: ${n}`} />)}
+          </Stack>
+          <Alert severity="warning" sx={{ mb: 1.5 }}>
+            التشابه الإملائي أو الاتفاق في أجزاء الاسم ليس إثباتًا للهوية،
+            ولا يجيز استعادة الموظف أو تغيير سجله تلقائيًا.
+          </Alert>
+        </>}
         {!!Object.keys(preview.fill_field_counts).length && <>
           <Typography fontWeight={900} sx={{ my: 2 }}>الحقول المتوقع استكمالها</Typography>
           <Stack direction="row" gap={1} flexWrap="wrap">
@@ -368,6 +397,17 @@ export function EmployeeExcelReconciliationPage() {
             {REVIEW_FILTERS.map(([value, label]) =>
               <MenuItem key={value} value={value}>{label}</MenuItem>)}
           </TextField>
+          {comparisonFilter === 'name_mismatch' && (
+            <TextField select label="تفصيل اختلاف الاسم" size="small" sx={{ minWidth: 280 }}
+              value={nameSubtype} onChange={e => {
+                setNameSubtype(e.target.value);
+                setComparison(null);
+              }}>
+              <MenuItem value="all">جميع اختلافات الأسماء</MenuItem>
+              {Object.entries(NAME_DIAGNOSTICS).map(([value, label]) =>
+                <MenuItem key={value} value={value}>{label}</MenuItem>)}
+            </TextField>
+          )}
           <Button variant="outlined" disabled={comparisonBusy || busy}
             onClick={() => void fetchComparison(comparisonFilter, 0)}>
             {comparisonBusy ? 'جاري فحص المقارنة...' : 'عرض جدول المقارنة التفصيلي'}
@@ -386,7 +426,7 @@ export function EmployeeExcelReconciliationPage() {
                 {['صف Excel', 'الهوية (مخفية)', 'اسم السجل الأصلي', 'اسم Excel',
                   'الرقم الوظيفي الحالي', 'الرقم الوظيفي في Excel',
                   'المركز الحالي', 'المركز في Excel (مرجعي)',
-                  'حالة السجل', 'سبب التعارض', 'قرار المراجعة'].map(h =>
+                  'حالة السجل', 'نوع اختلاف الاسم', 'سبب التعارض', 'قرار المراجعة'].map(h =>
                     <TableCell key={h} sx={{ fontWeight: 900, whiteSpace: 'nowrap' }}>{h}</TableCell>)}
               </TableRow></TableHead>
               <TableBody>
@@ -402,6 +442,11 @@ export function EmployeeExcelReconciliationPage() {
                   <TableCell>
                     <Chip size="small" color={row.archived ? 'warning' : 'success'}
                       label={row.archived ? 'مؤرشف' : 'نشط'} />
+                  </TableCell>
+                  <TableCell sx={{ minWidth: 190 }}>
+                    {row.name_diagnostic
+                      ? (NAME_DIAGNOSTICS[row.name_diagnostic] || row.name_diagnostic)
+                      : '—'}
                   </TableCell>
                   <TableCell sx={{ minWidth: 180 }}>
                     {CATEGORIES[row.status] || row.status}
