@@ -9,7 +9,7 @@ from django.test import TestCase, override_settings
 from openpyxl import Workbook
 from rest_framework.test import APIClient
 
-from .models import AuditLog, Employee, EmployeeImportReview, DataImportBatch, HealthCenter
+from .models import AuditLog, Employee, EmployeeImportReview, DataImportBatch, HealthCenter, OrganizationUnit
 
 
 class EmployeeImportV2PreviewTests(TestCase):
@@ -240,3 +240,61 @@ class EmployeeImportV2PreviewTests(TestCase):
         self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual(response.data['registry_counts']['identifier_disagreement'], 1)
         self.assertEqual(Employee.objects.get(national_id='1000001018').employee_number, 'QA-OLD-18')
+
+    def test_organization_name_must_be_unique_and_formally_approved(self):
+        center = HealthCenter.objects.create(
+            name='QA Organization Center', name_ar='المركز التنظيمي',
+            code='QA-HC-201', approval_status='approved',
+        )
+        org = OrganizationUnit.objects.create(
+            code='QA-UNIT-201', name='الوحدة التنظيمية الرسمية',
+            kind='unit', health_center=center,
+            is_approved=True, is_active=True,
+        )
+        headers = [
+            'اسم الموظف', 'رقم الهوية / الإقامة', 'الرقم الوظيفي',
+            'المركز الصحي', 'الجنسية', 'الجهة / الوحدة التنظيمية المعتمدة',
+        ]
+        response = self.preview(
+            [['موظف التنظيم', '1000001111', 'QA-1111',
+              'المركز التنظيمي', 'السعودية', 'الوحدة التنظيمية الرسمية']],
+            headers=headers,
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['registry_counts']['new_candidate'], 1)
+        self.assertEqual(Employee.objects.count(), 0)
+        org.refresh_from_db()
+        self.assertTrue(org.is_approved)
+
+        org.is_approved = False
+        org.save(update_fields=['is_approved'])
+        blocked = self.preview(
+            [['موظف التنظيم', '1000001112', 'QA-1112',
+              'المركز التنظيمي', 'السعودية', 'الوحدة التنظيمية الرسمية']],
+            headers=headers,
+        )
+        self.assertEqual(blocked.status_code, 200, blocked.data)
+        self.assertEqual(blocked.data['registry_counts']['organization_review'], 1)
+        self.assertFalse(Employee.objects.exists())
+
+    def test_mismatched_organization_center_is_review_only(self):
+        center = HealthCenter.objects.create(
+            name='QA Source Center', code='QA-HC-202', approval_status='approved',
+        )
+        other_center = HealthCenter.objects.create(
+            name='QA Other Center', code='QA-HC-203', approval_status='approved',
+        )
+        OrganizationUnit.objects.create(
+            name='QA Other Unit', code='QA-UNIT-203', kind='unit',
+            health_center=other_center, is_approved=True,
+        )
+        rows = [['QA Test Org User', '1000001113', 'QA-1113',
+                 'QA Source Center', 'SA', 'QA Other Unit']]
+        headers = [
+            'اسم الموظف', 'رقم الهوية الوطنية', 'الرقم الوظيفي',
+            'المركز الصحي', 'الجنسية', 'الجهة / الوحدة التنظيمية المعتمدة',
+        ]
+        response = self.preview(rows, headers=headers)
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['registry_counts']['organization_review'], 1)
+        self.assertFalse(Employee.objects.exists())
