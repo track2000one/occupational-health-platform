@@ -132,6 +132,80 @@ class EmployeeImportV2PreviewTests(TestCase):
                          '10••••1681')
         self.assertNotIn('1000001681', str(response.data))
 
+    def test_exact_reviewed_employee_workbook_header_layout_is_recognized(self):
+        # Only synthetic rows; column labels match the real 28-column template.
+        headers = [
+            'المركز الصحي', 'اسم الموظف', 'رقم الهوية / الإقامة',
+            'الرقم الوظيفي', 'البريد الإلكتروني', 'رقم الجوال',
+            'تاريخ الميلاد', 'مكان الميلاد', 'الجنس', 'الحالة الاجتماعية',
+            'العنوان الوطني', 'المسمى الوظيفي', 'تاريخ التعيين',
+            'الجنسية', 'الوظيفة الحالية', 'المسمى الوظيفي بالإنجليزية',
+            'عدد الأطفال', 'رمز الوحدة التنظيمية',
+            'مسمى المركز المرجعي (للعرض فقط)',
+            'مسمى الجهة أو الوحدة من المصدر (للعرض فقط)',
+            'المسار التنظيمي الأصلي (للعرض فقط)',
+            'نوع التبعية التنظيمية (للعرض فقط)',
+            'حالة التحقق من الاعتماد (للعرض فقط)',
+            'المعرف المؤقت من الدليل (للعرض فقط)',
+            'القطاع الاستشاري المقترح (للعرض فقط)',
+            'الجهة أو الوحدة المعتمدة في المنصة (بعد التحقق)',
+            'معرف الجهة المعتمد في المنصة (بعد التحقق)',
+            'ملاحظة الربط والتحقق (للعرض فقط)',
+        ]
+        row = [''] * len(headers)
+        row[1] = 'Synthetic Excel Test'
+        row[2] = '1000001981'
+        row[3] = 'QA-1981'
+        row[13] = 'السعودية'
+        response = self.preview([row], headers=headers)
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['rows_total'], 1)
+        self.assertEqual(response.data['header_row'], 1)
+        self.assertIn('name', response.data['recognized_columns'])
+        self.assertIn('national_id', response.data['recognized_columns'])
+        self.assertEqual(response.data['sample_masked'][0]['identity_masked'],
+                         '10••••1981')
+        self.assertNotIn('1000001981', str(response.data))
+        self.assertFalse(Employee.objects.exists())
+
+    def test_fallback_column_selector_recovers_unusual_headers_without_edits(self):
+        headers = ['المركز الصحي', 'اسم العامل حسب المصدر', 'معرف العامل الأصلي']
+        rows = [['', 'QA Unusual Header', '1000001982']]
+        result = self.preview(rows, headers=headers)
+        self.assertEqual(result.status_code, 400, result.data)
+        self.assertIn('name', result.data['missing_required'])
+        self.assertIn('national_id', result.data['missing_required'])
+        self.assertEqual(result.data['header_row'], 1)
+        self.assertEqual(len(result.data['available_columns']), len(headers))
+        response = self.client.post(self.url, {
+            'file': self.workbook(rows, headers=headers),
+            'sheet_name': 'Employees',
+            'map_name_column': '2',
+            'map_national_id_column': '3',
+        }, format='multipart')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['rows_total'], 1)
+        self.assertEqual(response.data['sample_masked'][0]['identity_masked'],
+                         '10••••1982')
+        self.assertNotIn('1000001982', str(response.data))
+        self.assertFalse(Employee.objects.exists())
+
+    def test_manual_mappings_reject_same_column_and_masked_source(self):
+        rows = [['QA Mask Source', '10••••1983']]
+        headers = ['اسم الموظف المختلف', 'رقم الهوية المختلف']
+        same = self.client.post(self.url, {
+            'file': self.workbook(rows, headers=headers),
+            'map_name_column': '1', 'map_national_id_column': '1',
+        }, format='multipart')
+        self.assertEqual(same.status_code, 400, same.data)
+        masked = self.client.post(self.url, {
+            'file': self.workbook(rows, headers=headers),
+            'map_name_column': '1', 'map_national_id_column': '2',
+        }, format='multipart')
+        self.assertEqual(masked.status_code, 400, masked.data)
+        self.assertEqual(masked.data['masked_identity_count'], 1)
+        self.assertFalse(Employee.objects.exists())
+
     def test_missing_required_headers_rejected(self):
         response = self.preview([['QA', 'Center 1']],
                                 headers=['اسم الموظف', 'المركز الصحي'])
