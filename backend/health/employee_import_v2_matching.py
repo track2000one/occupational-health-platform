@@ -46,7 +46,9 @@ def cell_at(cells, mapping, key):
 
 def source_profile(cells, mapping):
     return {field: cell_at(cells, mapping, field)
-            for field in ('name', 'national_id', *REQUIRED_PROFILE_FIELDS, 'email', 'organization_unit')}
+            for field in ('name', 'national_id', *REQUIRED_PROFILE_FIELDS, 'email', 'organization_unit',
+                          'gender', 'marital_status', 'national_address', 'birth_place',
+                          'current_job', 'job_title_en')}
 
 
 def matched_center_map():
