@@ -71,6 +71,23 @@ def identity(value):
     return ''.join(str(unicodedata.digit(c)) for c in raw if c.isdecimal())
 
 
+def is_masked_identity(value):
+    """Reject a masked Excel value; no import may reconstruct its missing digits.
+
+    Excel number formatting that visually masks a *full underlying value*
+    remains valid, because openpyxl reads the real stored cell value.
+    """
+    raw = text_cell(value)
+    if not raw:
+        return False
+    has_digits = any(char.isdecimal() for char in raw)
+    mask_symbols = ('•', '●', '▪', '*', '×', '✱', '✳', '…')
+    return has_digits and (
+        any(marker in raw for marker in mask_symbols)
+        or bool(re.search(r'\d[xX]{2,}\d', raw))
+    )
+
+
 def detect_header(sheet):
     best = None
     score = -1
@@ -150,6 +167,7 @@ class EmployeeImportV2PreviewView(APIView):
             mapped_rows = []
             samples = []
             total = 0
+            masked_identity_rows = []
             for row_number, cells in enumerate(
                 sheet.iter_rows(min_row=header_row + 1,
                                 max_col=min(sheet.max_column or 1, MAX_COLUMNS),
@@ -162,7 +180,10 @@ class EmployeeImportV2PreviewView(APIView):
                     return Response({'detail': 'يتجاوز الملف حد 2500 سجل؛ قسّم الملف قبل الفحص.'},
                                     status=400)
                 name = text_cell(cells[mapping['name']])
-                nid = identity(cells[mapping['national_id']])
+                source_identity = cells[mapping['national_id']]
+                if is_masked_identity(source_identity):
+                    masked_identity_rows.append(row_number)
+                nid = identity(source_identity)
                 optional_missing = [
                     key for key in ('health_center', 'employee_number', 'nationality')
                     if key in mapping and not text_cell(cells[mapping[key]])
@@ -190,6 +211,18 @@ class EmployeeImportV2PreviewView(APIView):
                         if len(nid) == 10 else '—',
                         'missing_optional': optional_missing,
                     })
+            if masked_identity_rows:
+                return Response({
+                    'detail': (
+                        'ملف Excel يحتوي على أرقام هوية مخفية بالفعل. '
+                        'لا يمكن استعادة الأرقام الناقصة من رموز الإخفاء، '
+                        'ولا يجوز استيراد هذا الملف. استخدم المصدر الأصلي '
+                        'الذي يحفظ رقم الهوية كاملًا؛ وستُخفى الهوية في '
+                        'شاشة الاستيراد والتقارير افتراضيًا.'
+                    ),
+                    'masked_identity_count': len(masked_identity_rows),
+                    'masked_identity_source_rows': masked_identity_rows[:20],
+                }, status=400, headers={'Cache-Control': 'private, no-store'})
             from .employee_import_v2_matching import registry_match
             from .employee_import_v2_commit import (
                 preview_commit_info, commit_safe_plan,
