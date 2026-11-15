@@ -53,7 +53,7 @@ import { OccupationalHealthPage } from './pages/OccupationalHealthPage';
 import { FitnessForDutyPage } from './pages/FitnessForDutyPage';
 import { CampaignsPage } from './pages/CampaignsPage';
 import { DataQualityPage } from './pages/DataQualityPage';
-import { DataImportPage } from './pages/DataImportPage';
+
 import { AppearanceSettingsPage } from './pages/AppearanceSettingsPage';
 import { PeriodicStatisticsPage } from './pages/PeriodicStatisticsPage';
 import { HealthCentersPage } from './pages/HealthCentersPage';
@@ -128,11 +128,7 @@ function AppRoutes() {
         <Route path="periodic-statistics" element={<PeriodicStatisticsPage />} />
         <Route path="reports" element={<ReportsPage />} />
         <Route path="data-quality" element={<DataQualityPage />} />
-        <Route path="data-import" element={
-          <PermissionRoute permission="manage:users">
-            <DataImportPage />
-          </PermissionRoute>
-        } />
+        <Route path="data-import" element={<Navigate to="/employees/import" replace />} />
         <Route path="notifications" element={<NotificationsPage />} />
         <Route path="appointments" element={<AppointmentsPage />} />
         <Route path="admin" element={
