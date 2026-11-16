@@ -47,6 +47,19 @@ type ArchivedEmployeeReviewPage = {
   }>;
 };
 
+type DirectApproval = {
+  create: number;
+  fill: number;
+  restore_original: number;
+  needs_manual_review: number;
+  missing_optional_count: number;
+  available: boolean;
+  requires_employment_and_backup_verification: boolean;
+  confirm_phrase: string;
+  approval_token: string;
+  notice: string;
+};
+
 type PreflightResult = {
   mode: 'read_only_registry_match_v2';
   sheet_name: string;
@@ -127,6 +140,7 @@ type PreflightResult = {
   confirm_phrase: string;
   commit_available: boolean;
   commit_notice: string;
+  direct_approval: DirectApproval;
 };
 
 const FIELDS: Record<string, string> = {
@@ -208,48 +222,71 @@ export function EmployeeImportV2Page() {
   const [selectedNameColumn, setSelectedNameColumn] = useState<number | ''>('');
   const [selectedIdentityColumn, setSelectedIdentityColumn] = useState<number | ''>('');
   const [accepted, setAccepted] = useState(false);
+  const [verifiedEmployment, setVerifiedEmployment] = useState(false);
+  const [verifiedBackup, setVerifiedBackup] = useState(false);
+  const [hrEvidence, setHrEvidence] = useState('');
+  const [backupEvidence, setBackupEvidence] = useState('');
   const [reason, setReason] = useState(
-    'اعتماد إضافة الهويات الجديدة واستكمال الحقول الفارغة من ملف الموظفين المرجعي دون استعادة المؤرشفين أو تجاوز التعارضات.'
+    'اعتماد إدراج الموظفين من ملف Excel واستعادة السجلات الأصلية المطابقة دون استبدال البيانات أو تجاوز التعارضات.'
   );
   const [committed, setCommitted] = useState<{
     created: number; filled: number; provisional: number; skipped: number;
-    archived_restored: number; existing_overwritten: number; batch_id: number;
+    restored?: number; archived_restored?: number; existing_overwritten?: number;
+    batch_id?: number; missing_optional_count?: number;
   } | null>(null);
 
   const applyApprovedImport = async () => {
-    if (!file || !preview || !preview.commit_available || !accepted || busy ||
-        reason.trim().length < 20) return;
-    const total = preview.safe_import_candidate_counts.create +
-      preview.safe_import_candidate_counts.fill_only;
-    if (!window.confirm(
-      `اعتماد إدراج ${total} سجلًا مؤهلًا فقط؟ لن تُستعاد السجلات المؤرشفة أو تُستبدل البيانات الموجودة. سيتم تنفيذ إجراء فعلي في قاعدة البيانات.`
+    if (!file || !preview || !preview.direct_approval?.available ||
+        !accepted || busy || reason.trim().length < 20) return;
+    const approved = preview.direct_approval;
+    const total = approved.create + approved.fill + approved.restore_original;
+    if (total === 0) return;
+    if (approved.restore_original > 0 && (
+        !verifiedEmployment || !verifiedBackup ||
+        hrEvidence.trim().length < 8 || backupEvidence.trim().length < 8
     )) return;
-    setBusy(true); setError('');
+    if (!window.confirm(
+      `اعتماد إدراج ${total} سجلًا؟ سيُضاف ${approved.create} جديدًا،
+      وتُستكمل ${approved.fill} بطاقة، وتُستعاد ${approved.restore_original}
+      بطاقة أصلية بعد التحقق؛ بينما يبقى ${approved.needs_manual_review}
+      سجلًا للمراجعة. لا تُغيّر بيانات الموظفين أو ملفاتهم الصحية.`
+    )) return;
+    setBusy(true);
+    setError('');
     try {
       const token = getAccessToken();
       if (!token) throw new Error('انتهت جلسة المسؤول. أعد تسجيل الدخول.');
       const payload = new FormData();
-      payload.append('action', 'commit');
+      payload.append('action', 'approve_roster');
       payload.append('file', file);
       payload.append('sheet_name', sheet.trim() || 'Employees');
       if (selectedNameColumn !== '' && selectedIdentityColumn !== '') {
         payload.append('map_name_column', String(selectedNameColumn));
         payload.append('map_national_id_column', String(selectedIdentityColumn));
       }
-      payload.append('commit_token', preview.commit_token);
-      payload.append('confirm_phrase', preview.confirm_phrase);
+      payload.append('approval_token', approved.approval_token);
+      payload.append('confirm_phrase', approved.confirm_phrase);
       payload.append('confirmed', 'true');
-      payload.append('identity_checked', 'true');
+      payload.append('identity_checked', String(accepted));
       payload.append('reason', reason.trim());
+      if (approved.restore_original > 0) {
+        payload.append('hr_reference', hrEvidence.trim());
+        payload.append('backup_reference', backupEvidence.trim());
+        payload.append('verified_current_employment', String(verifiedEmployment));
+        payload.append('verified_backup_restore', String(verifiedBackup));
+      }
       const response = await authFetch(API + '/employee-import-v2/preview/', {
-        method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: payload,
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + token },
+        body: payload,
       });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.detail || 'تعذر حفظ دفعة الاستيراد.');
+      if (!response.ok) throw new Error(data.detail || 'تعذر اعتماد إدراج بيانات الموظفين.');
       setCommitted(data);
       setPreview(null);
+      setReviewPageData(null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'تعذر تنفيذ عملية الاستيراد.');
+      setError(cause instanceof Error ? cause.message : 'تعذر اعتماد الملف.');
     } finally {
       setBusy(false);
     }
@@ -914,29 +951,79 @@ export function EmployeeImportV2Page() {
             </Paper>
           </Grid>
         </Grid>
-        <Alert severity="warning" sx={{ mb: 2 }}>{preview.commit_notice}</Alert>
-        {preview.commit_available ? <Stack gap={1.5}>
-          <TextField value={reason} multiline minRows={2} label="مبرر الاعتماد الإداري"
+        <Divider sx={{ my: 2 }} />
+        <Typography variant="h6" fontWeight={900} sx={{ mb: 1 }}>
+          اعتماد وإدراج بيانات الموظفين مباشرة من ملف Excel
+        </Typography>
+        <Alert severity="info" sx={{ mb: 2 }}>
+          {preview.direct_approval.notice} لا تمنع البيانات التكميلية الناقصة
+          إدراج السجل، وستظهر البطاقة الناقصة باللون الأصفر.
+        </Alert>
+        <Grid container spacing={1.5} sx={{ mb: 2 }}>
+          {[
+            ['إضافة موظفين جدد', preview.direct_approval.create],
+            ['استكمال حقول فارغة', preview.direct_approval.fill],
+            ['استعادة سجلات أصلية مطابقة', preview.direct_approval.restore_original],
+            ['تحتاج تحققًا منفصلًا', preview.direct_approval.needs_manual_review],
+          ].map(([title, amount]) => <Grid size={{ xs: 6, md: 3 }} key={String(title)}>
+            <Paper variant="outlined" sx={{ p: 1.5 }}>
+              <Typography variant="h5" fontWeight={900}>{amount}</Typography>
+              <Typography variant="body2">{title}</Typography>
+            </Paper>
+          </Grid>)}
+        </Grid>
+        <Stack gap={1.5}>
+          <TextField value={reason} multiline minRows={2}
+            label="مبرر اعتماد ملف الموظفين"
             inputProps={{ maxLength: 500 }}
             onChange={e => setReason(e.target.value)} />
+          {preview.direct_approval.restore_original > 0 && <>
+            <TextField label="مرجع إثبات الخدمة الحالية للموظفين المراد استعادتهم"
+              value={hrEvidence}
+              onChange={event => setHrEvidence(event.target.value)} />
+            <TextField label="مرجع النسخة الاحتياطية الحقيقية المختبرة لقاعدة PostgreSQL"
+              value={backupEvidence}
+              onChange={event => setBackupEvidence(event.target.value)} />
+            <FormControlLabel
+              control={<Checkbox checked={verifiedEmployment}
+                onChange={(_, value) => setVerifiedEmployment(value)} disabled={busy}/>}
+              label="تحققت من المستندات الرسمية التي تؤكد استمرار خدمة جميع المرشحين للاستعادة." />
+            <FormControlLabel
+              control={<Checkbox checked={verifiedBackup}
+                onChange={(_, value) => setVerifiedBackup(value)} disabled={busy}/>}
+              label="تحققت من توفر نسخة احتياطية حقيقية وإتمام اختبار استرجاعها بنجاح." />
+          </>}
           <FormControlLabel
             control={<Checkbox checked={accepted}
               onChange={(_, checked) => setAccepted(checked)} disabled={busy}/>}
-            label="راجعت مصدر الهوية والنتائج، وأوافق على إضافة المرشحين الآمنين واستكمال الحقول الفارغة فقط دون المساس بالمؤرشفين أو البيانات الصحية."/>
-          <Button variant="contained" color="success" disabled={busy || !accepted || reason.trim().length < 20 ||
-            (preview.safe_import_candidate_counts.create + preview.safe_import_candidate_counts.fill_only === 0)}
+            label="أعتمد إدراج السجلات المطابقة من Excel مع السماح بنقص الحقول الاختيارية، دون تكرار الهويات أو تعديل الملفات الطبية أو تجاوز التعارضات." />
+          <Button variant="contained" color="success" size="large"
+            disabled={busy || !preview.direct_approval.available ||
+              !accepted || reason.trim().length < 20 ||
+              (preview.direct_approval.create + preview.direct_approval.fill +
+                preview.direct_approval.restore_original === 0) ||
+              (preview.direct_approval.restore_original > 0 && (
+                !verifiedEmployment || !verifiedBackup ||
+                hrEvidence.trim().length < 8 || backupEvidence.trim().length < 8
+              ))}
             onClick={() => void applyApprovedImport()}>
-            {busy ? 'جاري اعتماد الدفعة...' : preview.confirm_phrase}
+            {busy ? 'جاري إدراج الموظفين...' : preview.direct_approval.confirm_phrase}
           </Button>
-        </Stack> :
-        <Alert severity="info">تم تجهيز آلية الاعتماد، ولكنها غير مفعلة في بيئة التشغيل الحالية
-          حتى تُختبر سلامة النسخ الاحتياطي والمطابقة على Staging.</Alert>}
+          {!preview.direct_approval.available &&
+            <Alert severity="warning">
+              زر الاعتماد المباشر جاهز برمجيًا، لكن حفظ البيانات أو استعادة المؤرشفين
+              ما زال مقفلًا بإعدادات التشغيل لحماية قاعدة Production.
+              يتطلب التشغيل التحقق من النسخة الاحتياطية وإثباتات الخدمة
+              وتفعيل صلاحية الإدراج والاستعادة من مسؤول البيئة.
+            </Alert>}
+        </Stack>
       </>}
       {committed && <Alert severity="success">
-        اكتملت عملية الاستيراد. أُضيف {committed.created} موظفًا، واستُكملت بيانات
-        {committed.filled}، منها {committed.provisional} تسجيل مبدئي،
-        وتُرك {committed.skipped} سجلًا دون تغيير للمراجعة.
-        رقم دفعة التدقيق {committed.batch_id}.
+        تم اعتماد ملف الموظفين: أضيف {committed.created} موظفًا جديدًا،
+        واستُكملت {committed.filled} بطاقة، واستُعيد
+        {committed.restored || 0} سجلًا أصليًا، وبقي
+        {committed.skipped} سجلًا للمراجعة.
+        البيانات الناقصة قابلة للاستكمال لاحقًا من البطاقات الصفراء.
       </Alert>}
       {!preview && !committed && <Typography variant="body2" color="text.secondary">
         ارفع الملف وافحصه أولًا لعرض أعداد السجلات التي يمكن اعتمادها.
