@@ -15,6 +15,16 @@ const API = (import.meta.env.VITE_API_URL ||
   (typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
     ? 'http://localhost:8000/api' : '')).replace(/\/$/, '');
 
+type GuardedRestorePreview = {
+  mode: 'employee_v2_restore_preview';
+  count: number;
+  selected_rows_masked: Array<{ row: number; identity_masked: string }>;
+  confirm_phrase: string;
+  preview_token: string;
+  restore_available: boolean;
+  notice: string;
+};
+
 type ArchivedEmployeeReviewPage = {
   mode: 'archived_employee_review_page_read_only';
   category: string;
@@ -177,6 +187,17 @@ export function EmployeeImportV2Page() {
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<PreflightResult | null>(null);
   const [reviewPageData, setReviewPageData] = useState<ArchivedEmployeeReviewPage | null>(null);
+  const [selectedRestoreRows, setSelectedRestoreRows] = useState<number[]>([]);
+  const [restorePreview, setRestorePreview] = useState<GuardedRestorePreview | null>(null);
+  const [restoredCount, setRestoredCount] = useState<number | null>(null);
+  const [restoreReason, setRestoreReason] = useState('');
+  const [restoreTypedPhrase, setRestoreTypedPhrase] = useState('');
+  const [hrReference, setHrReference] = useState('');
+  const [backupReference, setBackupReference] = useState('');
+  const [verifiedEmployment, setVerifiedEmployment] = useState(false);
+  const [verifiedBackup, setVerifiedBackup] = useState(false);
+  const [verifiedIdentity, setVerifiedIdentity] = useState(false);
+  const [confirmedRestore, setConfirmedRestore] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [sheet, setSheet] = useState('Employees');
@@ -258,8 +279,68 @@ export function EmployeeImportV2Page() {
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.detail || 'تعذر عرض حالات المراجعة.');
       setReviewPageData(data as ArchivedEmployeeReviewPage);
+      setSelectedRestoreRows([]);
+      setRestorePreview(null);
+      setRestoreTypedPhrase('');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'تعذر تحميل حالات المراجعة.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const reviewRestoreBatch = async (action: 'restore_preview' | 'restore_commit') => {
+    if (!file || !preview || busy || selectedRestoreRows.length === 0 ||
+        selectedRestoreRows.length > 25 || !user?.isSuperuser) return;
+    if (action === 'restore_commit' && !restorePreview?.restore_available) return;
+    if (action === 'restore_commit' && !window.confirm(
+      'سيُعاد إظهار السجلات الأصلية المحددة فقط. لا تُغيّر بيانات الموظفين أو ملفاتهم الصحية. هل تؤكد إجراء الاستعادة بعد التحقق من الخدمة والنسخة الاحتياطية؟'
+    )) return;
+    setBusy(true);
+    setError('');
+    try {
+      if (!API) throw new Error('إعداد اتصال المنصة غير مكتمل.');
+      const token = getAccessToken();
+      if (!token) throw new Error('انتهت جلسة المسؤول. أعد تسجيل الدخول.');
+      const body = new FormData();
+      body.append('action', action);
+      body.append('file', file);
+      body.append('sheet_name', sheet.trim() || 'Employees');
+      body.append('selected_rows', [...selectedRestoreRows].sort((a, b) => a - b).join(','));
+      if (selectedNameColumn !== '' && selectedIdentityColumn !== '') {
+        body.append('map_name_column', String(selectedNameColumn));
+        body.append('map_national_id_column', String(selectedIdentityColumn));
+      }
+      if (action === 'restore_commit' && restorePreview) {
+        body.append('preview_token', restorePreview.preview_token);
+        body.append('confirm_phrase', restoreTypedPhrase);
+        body.append('reason', restoreReason.trim());
+        body.append('hr_reference', hrReference.trim());
+        body.append('backup_reference', backupReference.trim());
+        body.append('verified_current_employment', String(verifiedEmployment));
+        body.append('verified_backup_restore', String(verifiedBackup));
+        body.append('reviewed_original_identity', String(verifiedIdentity));
+        body.append('confirmed', String(confirmedRestore));
+      }
+      const response = await authFetch(API + '/employee-import-v2/preview/', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + token },
+        body,
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || 'تعذر فحص الدفعة.');
+      if (action === 'restore_preview') {
+        setRestorePreview(data as GuardedRestorePreview);
+        setRestoreTypedPhrase('');
+      } else {
+        setRestoredCount(Number(data.restored) || 0);
+        setRestorePreview(null);
+        setSelectedRestoreRows([]);
+        setReviewPageData(null);
+        setPreview(null);
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'تعذرت معالجة دفعة الاستعادة.');
     } finally {
       setBusy(false);
     }
@@ -271,6 +352,9 @@ export function EmployeeImportV2Page() {
     setError('');
     setPreview(null);
     setReviewPageData(null);
+    setSelectedRestoreRows([]);
+    setRestorePreview(null);
+    setRestoredCount(null);
     setCommitted(null);
     setAccepted(false);
     try {
@@ -359,6 +443,9 @@ export function EmployeeImportV2Page() {
             setSelectedIdentityColumn('');
             setPreview(null);
             setReviewPageData(null);
+            setSelectedRestoreRows([]);
+            setRestorePreview(null);
+            setRestoredCount(null);
             setCommitted(null);
             setAccepted(false);
             setError('');
@@ -413,6 +500,10 @@ export function EmployeeImportV2Page() {
     </Paper>
 
     {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+    {restoredCount !== null && <Alert severity="success" sx={{ mb: 2 }}>
+      تمت استعادة {restoredCount} سجلًا أصليًا دون إنشاء هويات جديدة
+      أو استبدال بيانات. يمكن الآن مراجعة البطاقات الصفراء واستكمال النواقص.
+    </Alert>}
     {columnIssue && <Paper sx={{ p: { xs: 2, md: 3 }, mb: 2, borderRadius: 3 }}>
       <Typography variant="h6" fontWeight={900} sx={{ mb: 1 }}>
         تحديد أعمدة الموظفين
@@ -624,12 +715,33 @@ export function EmployeeImportV2Page() {
           <Typography variant="body2" sx={{ mb: 1 }}>
             {reviewPageData.total} سجلًا — الصفحة {reviewPageData.page} من {reviewPageData.total_pages}
           </Typography>
+          {reviewPageData.category === 'candidate_for_administrative_review' &&
+            <Button size="small" variant="outlined" sx={{ mb: 1 }}
+              disabled={busy} onClick={() => {
+                setSelectedRestoreRows(reviewPageData.items.map(item => item.row));
+                setRestorePreview(null);
+                setRestoreTypedPhrase('');
+              }}>
+              تحديد جميع حالات هذه الصفحة للمراجعة (بحد أقصى 25)
+            </Button>}
           <Stack gap={1}>
             {reviewPageData.items.map(item =>
               <Paper key={item.row} variant="outlined" sx={{ p: 1.5 }}>
-                <Typography variant="body2" fontWeight={800}>
-                  صف Excel {item.row} — {item.identity_masked}
-                </Typography>
+                <Stack direction="row" alignItems="center" gap={0.5}>
+                  {reviewPageData.category === 'candidate_for_administrative_review' &&
+                    <Checkbox size="small"
+                      checked={selectedRestoreRows.includes(item.row)}
+                      disabled={busy}
+                      onChange={(_, checked) => {
+                        setRestorePreview(null);
+                        setRestoreTypedPhrase('');
+                        setSelectedRestoreRows(old =>
+                          checked ? [...old, item.row] : old.filter(row => row !== item.row));
+                      }} />}
+                  <Typography variant="body2" fontWeight={800}>
+                    صف Excel {item.row} — {item.identity_masked}
+                  </Typography>
+                </Stack>
                 <Typography variant="body2">
                   الاسم في Excel: {item.source_name}
                 </Typography>
@@ -648,6 +760,74 @@ export function EmployeeImportV2Page() {
                 لا توجد سجلات في هذا التصنيف.
               </Typography>}
           </Stack>
+          {reviewPageData.category === 'candidate_for_administrative_review' &&
+            <Paper variant="outlined" sx={{ mt: 2, p: 2, borderRadius: 2 }}>
+              <Typography fontWeight={900} sx={{ mb: 1 }}>
+                مراجعة استعادة السجلات الأصلية — دون انتظار اكتمال البيانات
+              </Typography>
+              <Alert severity="warning" sx={{ mb: 1.5 }}>
+                سيتم استعادة السجلات القديمة نفسها، وليس إنشاء موظفين جدد.
+                لا تُستعاد أي حالة ما لم يُتحقق من خدمة الموظف الحالية وتطابق
+                الهوية ووجود نسخة احتياطية حقيقية مختبرة. البيانات الناقصة
+                ستبقى ناقصة ويمكن استكمالها لاحقًا.
+              </Alert>
+              <Button variant="outlined" disabled={busy ||
+                selectedRestoreRows.length === 0 || selectedRestoreRows.length > 25}
+                onClick={() => void reviewRestoreBatch('restore_preview')}>
+                فحص استعادة {selectedRestoreRows.length} موظفًا محددًا
+              </Button>
+              {restorePreview && <Stack gap={1.5} sx={{ mt: 2 }}>
+                <Typography fontWeight={800}>
+                  نتيجة فحص الاستعادة: {restorePreview.count} سجلًا مطابقًا.
+                </Typography>
+                <Alert severity={restorePreview.restore_available ? 'info' : 'warning'}>
+                  {restorePreview.notice}
+                  {!restorePreview.restore_available &&
+                    ' التنفيذ مقفل حاليًا حتى اعتماد النسخ الاحتياطي الحقيقي وتفعيل صلاحية الاستعادة المستقلة.'}
+                </Alert>
+                {restorePreview.restore_available && <>
+                  <TextField fullWidth
+                    label="اكتب عبارة التأكيد الظاهرة كما هي"
+                    value={restoreTypedPhrase}
+                    onChange={event => setRestoreTypedPhrase(event.target.value)}
+                    helperText={restorePreview.confirm_phrase} />
+                  <TextField label="سبب الاستعادة الإداري" fullWidth multiline
+                    minRows={2} value={restoreReason}
+                    onChange={event => setRestoreReason(event.target.value)} />
+                  <TextField label="مرجع إثبات الخدمة الحالية من الموارد البشرية"
+                    fullWidth value={hrReference}
+                    onChange={event => setHrReference(event.target.value)} />
+                  <TextField label="مرجع النسخة الاحتياطية المختبرة"
+                    fullWidth value={backupReference}
+                    onChange={event => setBackupReference(event.target.value)} />
+                  <FormControlLabel
+                    control={<Checkbox checked={verifiedEmployment}
+                      onChange={(_, checked) => setVerifiedEmployment(checked)} />}
+                    label="تحققت من أن الموظفين المحددين على رأس العمل بمستند معتمد." />
+                  <FormControlLabel
+                    control={<Checkbox checked={verifiedBackup}
+                      onChange={(_, checked) => setVerifiedBackup(checked)} />}
+                    label="تحققت من النسخة الاحتياطية الحقيقية وإمكانية استرجاعها." />
+                  <FormControlLabel
+                    control={<Checkbox checked={verifiedIdentity}
+                      onChange={(_, checked) => setVerifiedIdentity(checked)} />}
+                    label="تحققت من الهوية والسجل الأصلي دون تعارض." />
+                  <FormControlLabel
+                    control={<Checkbox checked={confirmedRestore}
+                      onChange={(_, checked) => setConfirmedRestore(checked)} />}
+                    label="أوافق على استعادة هذه السجلات الأصلية فقط دون تغيير البيانات الطبية." />
+                  <Button variant="contained" color="success"
+                    disabled={busy || restoreTypedPhrase !== restorePreview.confirm_phrase ||
+                      restoreReason.trim().length < 20 ||
+                      hrReference.trim().length < 8 || backupReference.trim().length < 8 ||
+                      !verifiedEmployment || !verifiedBackup || !verifiedIdentity ||
+                      !confirmedRestore}
+                    onClick={() => void reviewRestoreBatch('restore_commit')}>
+                    {restorePreview.confirm_phrase}
+                  </Button>
+                </>}
+              </Stack>}
+            </Paper>}
           <Stack direction="row" justifyContent="space-between" sx={{ mt: 2 }}>
             <Button variant="outlined"
               disabled={busy || reviewPageData.page <= 1}
