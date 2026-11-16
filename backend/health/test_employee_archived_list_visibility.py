@@ -51,12 +51,15 @@ class ArchivedListVisibilityTests(TestCase):
         }, format='json')
 
     def commit(self, preview, mode='hide', scope='all', ids=None, **extra):
+        arguments = {
+            'preview_token': preview.data['preview_token'],
+            'confirmed': True,
+            'confirm_phrase': preview.data['confirm_phrase'],
+            'reason': 'إخفاء دفعة موظفين مؤرشفة من العرض',
+        }
+        arguments.update(extra)
         return self.call(
-            'execute', mode=mode, scope=scope, ids=ids,
-            preview_token=preview.data['preview_token'],
-            confirmed=True, confirm_phrase=preview.data['confirm_phrase'],
-            reason='إخفاء دفعة موظفين مؤرشفة من العرض',
-            **extra,
+            'execute', mode=mode, scope=scope, ids=ids, **arguments,
         )
 
     def list_archived(self, hidden=False):
