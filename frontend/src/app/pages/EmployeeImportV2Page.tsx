@@ -191,6 +191,7 @@ export function EmployeeImportV2Page() {
   const [restorePreview, setRestorePreview] = useState<GuardedRestorePreview | null>(null);
   const [restoredCount, setRestoredCount] = useState<number | null>(null);
   const [restoreReason, setRestoreReason] = useState('');
+  const [restoreTypedPhrase, setRestoreTypedPhrase] = useState('');
   const [hrReference, setHrReference] = useState('');
   const [backupReference, setBackupReference] = useState('');
   const [verifiedEmployment, setVerifiedEmployment] = useState(false);
@@ -280,6 +281,7 @@ export function EmployeeImportV2Page() {
       setReviewPageData(data as ArchivedEmployeeReviewPage);
       setSelectedRestoreRows([]);
       setRestorePreview(null);
+      setRestoreTypedPhrase('');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'تعذر تحميل حالات المراجعة.');
     } finally {
@@ -311,7 +313,7 @@ export function EmployeeImportV2Page() {
       }
       if (action === 'restore_commit' && restorePreview) {
         body.append('preview_token', restorePreview.preview_token);
-        body.append('confirm_phrase', restorePreview.confirm_phrase);
+        body.append('confirm_phrase', restoreTypedPhrase);
         body.append('reason', restoreReason.trim());
         body.append('hr_reference', hrReference.trim());
         body.append('backup_reference', backupReference.trim());
@@ -329,6 +331,7 @@ export function EmployeeImportV2Page() {
       if (!response.ok) throw new Error(data.detail || 'تعذر فحص الدفعة.');
       if (action === 'restore_preview') {
         setRestorePreview(data as GuardedRestorePreview);
+        setRestoreTypedPhrase('');
       } else {
         setRestoredCount(Number(data.restored) || 0);
         setRestorePreview(null);
@@ -717,6 +720,7 @@ export function EmployeeImportV2Page() {
               disabled={busy} onClick={() => {
                 setSelectedRestoreRows(reviewPageData.items.map(item => item.row));
                 setRestorePreview(null);
+                setRestoreTypedPhrase('');
               }}>
               تحديد جميع حالات هذه الصفحة للمراجعة (بحد أقصى 25)
             </Button>}
@@ -730,6 +734,7 @@ export function EmployeeImportV2Page() {
                       disabled={busy}
                       onChange={(_, checked) => {
                         setRestorePreview(null);
+                        setRestoreTypedPhrase('');
                         setSelectedRestoreRows(old =>
                           checked ? [...old, item.row] : old.filter(row => row !== item.row));
                       }} />}
@@ -781,6 +786,11 @@ export function EmployeeImportV2Page() {
                     ' التنفيذ مقفل حاليًا حتى اعتماد النسخ الاحتياطي الحقيقي وتفعيل صلاحية الاستعادة المستقلة.'}
                 </Alert>
                 {restorePreview.restore_available && <>
+                  <TextField fullWidth
+                    label="اكتب عبارة التأكيد الظاهرة كما هي"
+                    value={restoreTypedPhrase}
+                    onChange={event => setRestoreTypedPhrase(event.target.value)}
+                    helperText={restorePreview.confirm_phrase} />
                   <TextField label="سبب الاستعادة الإداري" fullWidth multiline
                     minRows={2} value={restoreReason}
                     onChange={event => setRestoreReason(event.target.value)} />
@@ -807,7 +817,8 @@ export function EmployeeImportV2Page() {
                       onChange={(_, checked) => setConfirmedRestore(checked)} />}
                     label="أوافق على استعادة هذه السجلات الأصلية فقط دون تغيير البيانات الطبية." />
                   <Button variant="contained" color="success"
-                    disabled={busy || restoreReason.trim().length < 20 ||
+                    disabled={busy || restoreTypedPhrase !== restorePreview.confirm_phrase ||
+                      restoreReason.trim().length < 20 ||
                       hrReference.trim().length < 8 || backupReference.trim().length < 8 ||
                       !verifiedEmployment || !verifiedBackup || !verifiedIdentity ||
                       !confirmedRestore}
