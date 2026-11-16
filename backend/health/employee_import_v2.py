@@ -131,8 +131,21 @@ class EmployeeImportV2PreviewView(APIView):
         if not request.user.is_superuser:
             return Response({'detail': 'هذه المهمة متاحة للمسؤول الأعلى فقط.'}, status=403)
         action = str(request.data.get('action') or 'preview')
-        if action not in ('preview', 'commit'):
+        if action not in ('preview', 'commit', 'review_page'):
             return Response({'detail': 'إجراء غير معروف.'}, status=400)
+        category = None
+        review_page = 1
+        if action == 'review_page':
+            from .employee_import_v2_matching import RESTORATION_REVIEW_CATEGORIES
+            category = str(request.data.get('review_category') or '').strip()
+            if category not in (*RESTORATION_REVIEW_CATEGORIES, 'all'):
+                return Response({'detail': 'تصنيف المراجعة غير معروف.'}, status=400)
+            try:
+                review_page = int(request.data.get('review_page') or 1)
+            except (TypeError, ValueError):
+                return Response({'detail': 'رقم الصفحة غير صالح.'}, status=400)
+            if not 1 <= review_page <= 100:
+                return Response({'detail': 'رقم الصفحة خارج النطاق.'}, status=400)
         file = request.FILES.get('file')
         if not file or not str(file.name).lower().endswith('.xlsx'):
             return Response({'detail': 'اختر ملف Excel بصيغة XLSX.'}, status=400)
@@ -290,8 +303,36 @@ class EmployeeImportV2PreviewView(APIView):
             from .employee_import_v2_commit import (
                 preview_commit_info, commit_safe_plan,
             )
-            registry_report = registry_match(mapped_rows)
+            registry_report = registry_match(
+                mapped_rows, review_category=category
+            )
             file_hash = sha256(raw).hexdigest()
+            if action == 'review_page':
+                from .employee_import_v2_matching import RESTORATION_REVIEW_PAGE_SIZE
+                review_queue = registry_report.pop('_internal_review_queue', [])
+                total_results = len(review_queue)
+                total_pages = max(
+                    1, (total_results + RESTORATION_REVIEW_PAGE_SIZE - 1)
+                    // RESTORATION_REVIEW_PAGE_SIZE,
+                )
+                if review_page > total_pages:
+                    return Response({'detail': 'رقم الصفحة خارج النطاق.'},
+                                    status=400, headers={'Cache-Control': 'private, no-store'})
+                start = (review_page - 1) * RESTORATION_REVIEW_PAGE_SIZE
+                return Response({
+                    'mode': 'archived_employee_review_page_read_only',
+                    'category': category,
+                    'page': review_page,
+                    'page_size': RESTORATION_REVIEW_PAGE_SIZE,
+                    'total': total_results,
+                    'total_pages': total_pages,
+                    'items': review_queue[start:start + RESTORATION_REVIEW_PAGE_SIZE],
+                    'restore_enabled': False,
+                    'notice': (
+                        'هذه قائمة مطابقة للمسؤول الأعلى فقط. لا تمثل اعتمادًا '
+                        'للاستعادة ولا تغير أي حالة موظف أو ملف صحي.'
+                    ),
+                }, headers={'Cache-Control': 'private, no-store'})
             if action == 'commit':
                 return commit_safe_plan(
                     request, registry_report, file_hash, sheet_name, mapped_rows,
@@ -301,6 +342,7 @@ class EmployeeImportV2PreviewView(APIView):
             )
             # Never return raw employee records or internal operation plans.
             registry_report.pop('_internal_planned_rows', None)
+            registry_report.pop('_internal_review_queue', None)
             return Response({
                 'mode': 'read_only_registry_match_v2',
                 'sheet_name': sheet_name, 'rows_total': total,

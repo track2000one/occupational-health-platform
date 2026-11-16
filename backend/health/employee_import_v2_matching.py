@@ -14,6 +14,15 @@ from .models import Employee, HealthCenter, OrganizationUnit, EmployeeRegistryRe
 
 
 REVIEW_LIMIT = 30
+RESTORATION_REVIEW_PAGE_SIZE = 25
+RESTORATION_REVIEW_CATEGORIES = (
+    'candidate_for_administrative_review',
+    'name_difference_review',
+    'identity_or_identifier_review',
+    'employment_status_review',
+    'archive_reason_review',
+    'archive_history_review',
+)
 REQUIRED_PROFILE_FIELDS = (
     'employee_number', 'nationality', 'date_of_birth',
     'mobile', 'appointment_date', 'job_title', 'health_center',
@@ -78,8 +87,12 @@ def approved_organization_map():
     return names, units
 
 
-def registry_match(sheet_rows):
-    """Classify all workbook rows and return aggregate, masked, read-only results."""
+def registry_match(sheet_rows, *, review_category=None):
+    """Classify workbook; collect review detail only for explicit admin request.
+
+    National IDs, contact data and employee primary keys are NEVER exposed
+    to the review-page response. No approval decision or employee write.
+    """
     from .employee_import_v2 import identity
 
     total = len(sheet_rows)
@@ -151,6 +164,7 @@ def registry_match(sheet_rows):
     archive_review_examples = defaultdict(list)
     restoration_readiness = Counter()
     restoration_samples = defaultdict(list)
+    review_queue = [] if review_category is not None else None
     planned_rows = []
     missing_counts = Counter()
     review_examples = []
@@ -247,6 +261,22 @@ def registry_match(sheet_rows):
             else:
                 assessment = 'candidate_for_administrative_review'
             restoration_readiness[assessment] += 1
+            if review_queue is not None and (
+                review_category == 'all' or assessment == review_category
+            ):
+                review_queue.append({
+                    'row': row['_row'],
+                    'identity_masked': (
+                        nid[:2] + '••••' + nid[-4:] if nvalid else '—'
+                    ),
+                    'source_name': source_name[:200],
+                    'registry_name': str(employee.name)[:200],
+                    'assessment': assessment,
+                    'archive_group': archive_origin,
+                    'employment_status': employee.employment_status,
+                    'has_name_difference': name_differs,
+                    'reason_documented': bool((employee.archive_reason or '').strip()),
+                })
             if len(restoration_samples[assessment]) < 3:
                 restoration_samples[assessment].append({
                     'row': row['_row'],
@@ -353,6 +383,7 @@ def registry_match(sheet_rows):
     return {
         'mode': 'read_only_registry_match_v2',
         '_internal_planned_rows': planned_rows,
+        '_internal_review_queue': review_queue,
         'rows_total': total,
         'registry_counts': dict(counts),
         'archive_provenance': {

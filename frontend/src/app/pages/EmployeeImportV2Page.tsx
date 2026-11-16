@@ -15,6 +15,28 @@ const API = (import.meta.env.VITE_API_URL ||
   (typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
     ? 'http://localhost:8000/api' : '')).replace(/\/$/, '');
 
+type ArchivedEmployeeReviewPage = {
+  mode: 'archived_employee_review_page_read_only';
+  category: string;
+  page: number;
+  page_size: number;
+  total: number;
+  total_pages: number;
+  restore_enabled: false;
+  notice: string;
+  items: Array<{
+    row: number;
+    identity_masked: string;
+    source_name: string;
+    registry_name: string;
+    assessment: string;
+    archive_group: string | null;
+    employment_status: string;
+    has_name_difference: boolean;
+    reason_documented: boolean;
+  }>;
+};
+
 type PreflightResult = {
   mode: 'read_only_registry_match_v2';
   sheet_name: string;
@@ -154,6 +176,7 @@ export function EmployeeImportV2Page() {
   const { user } = useAuth();
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<PreflightResult | null>(null);
+  const [reviewPageData, setReviewPageData] = useState<ArchivedEmployeeReviewPage | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [sheet, setSheet] = useState('Employees');
@@ -211,11 +234,43 @@ export function EmployeeImportV2Page() {
     }
   };
 
+  const loadReviewPage = async (category: string, page: number) => {
+    if (!file || !preview || busy || !user?.isSuperuser) return;
+    setBusy(true);
+    setError('');
+    try {
+      if (!API) throw new Error('إعداد اتصال المنصة غير مكتمل.');
+      const token = getAccessToken();
+      if (!token) throw new Error('انتهت جلسة المسؤول. أعد تسجيل الدخول.');
+      const body = new FormData();
+      body.append('action', 'review_page');
+      body.append('file', file);
+      body.append('sheet_name', sheet.trim() || 'Employees');
+      body.append('review_category', category);
+      body.append('review_page', String(page));
+      if (selectedNameColumn !== '' && selectedIdentityColumn !== '') {
+        body.append('map_name_column', String(selectedNameColumn));
+        body.append('map_national_id_column', String(selectedIdentityColumn));
+      }
+      const response = await authFetch(API + '/employee-import-v2/preview/', {
+        method: 'POST', headers: { Authorization: 'Bearer ' + token }, body,
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || 'تعذر عرض حالات المراجعة.');
+      setReviewPageData(data as ArchivedEmployeeReviewPage);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'تعذر تحميل حالات المراجعة.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const verify = async () => {
     if (!file || busy || !user?.isSuperuser) return;
     setBusy(true);
     setError('');
     setPreview(null);
+    setReviewPageData(null);
     setCommitted(null);
     setAccepted(false);
     try {
@@ -303,6 +358,7 @@ export function EmployeeImportV2Page() {
             setSelectedNameColumn('');
             setSelectedIdentityColumn('');
             setPreview(null);
+            setReviewPageData(null);
             setCommitted(null);
             setAccepted(false);
             setError('');
@@ -537,6 +593,12 @@ export function EmployeeImportV2Page() {
                   {preview.restoration_readiness.counts[group.key] || 0}
                 </Typography>
                 <Typography variant="body2">{group.label}</Typography>
+                {(preview.restoration_readiness.counts[group.key] || 0) > 0 &&
+                  <Button size="small" variant="outlined" sx={{ mt: 1 }}
+                    disabled={busy}
+                    onClick={() => void loadReviewPage(group.key, 1)}>
+                    استعراض حالات الفئة (25 لكل صفحة)
+                  </Button>}
                 {(preview.restoration_readiness.samples_masked[group.key] || []).length > 0 &&
                   <Stack gap={0.5} sx={{ mt: 1.25 }}>
                     {preview.restoration_readiness.samples_masked[group.key].map(item =>
@@ -548,6 +610,57 @@ export function EmployeeImportV2Page() {
             </Grid>
           ))}
         </Grid>
+        {reviewPageData && <Paper variant="outlined"
+          sx={{ p: { xs: 1.5, sm: 2 }, mb: 2, borderRadius: 2 }}>
+          <Typography fontWeight={900} sx={{ mb: 1 }}>
+            قائمة المراجعة التفصيلية — {RESTORATION_REVIEW_GROUPS.find(
+              v => v.key === reviewPageData.category)?.label || 'جميع الحالات'}
+          </Typography>
+          <Alert severity="info" sx={{ mb: 1.5 }}>
+            تظهر أسماء الموظفين للمسؤول الأعلى فقط لتسهيل مطابقتها
+            مع المستندات المرجعية. تبقى أرقام الهوية مخفية، ولا توجد
+            في هذه الصفحة وظيفة للاعتماد أو الاستعادة.
+          </Alert>
+          <Typography variant="body2" sx={{ mb: 1 }}>
+            {reviewPageData.total} سجلًا — الصفحة {reviewPageData.page} من {reviewPageData.total_pages}
+          </Typography>
+          <Stack gap={1}>
+            {reviewPageData.items.map(item =>
+              <Paper key={item.row} variant="outlined" sx={{ p: 1.5 }}>
+                <Typography variant="body2" fontWeight={800}>
+                  صف Excel {item.row} — {item.identity_masked}
+                </Typography>
+                <Typography variant="body2">
+                  الاسم في Excel: {item.source_name}
+                </Typography>
+                <Typography variant="body2">
+                  الاسم في السجل: {item.registry_name}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {item.has_name_difference ? 'يوجد اختلاف في الاسم · ' : ''}
+                  الحالة الوظيفية المسجلة: {item.employment_status}
+                  {item.reason_documented ? ' · سبب الأرشفة موثق' : ' · سبب الأرشفة غير موثق'}
+                </Typography>
+              </Paper>
+            )}
+            {reviewPageData.items.length === 0 &&
+              <Typography color="text.secondary" variant="body2">
+                لا توجد سجلات في هذا التصنيف.
+              </Typography>}
+          </Stack>
+          <Stack direction="row" justifyContent="space-between" sx={{ mt: 2 }}>
+            <Button variant="outlined"
+              disabled={busy || reviewPageData.page <= 1}
+              onClick={() => void loadReviewPage(reviewPageData.category, reviewPageData.page - 1)}>
+              الصفحة السابقة
+            </Button>
+            <Button variant="outlined"
+              disabled={busy || reviewPageData.page >= reviewPageData.total_pages}
+              onClick={() => void loadReviewPage(reviewPageData.category, reviewPageData.page + 1)}>
+              الصفحة التالية
+            </Button>
+          </Stack>
+        </Paper>}
         <Alert severity="warning" sx={{ mb: 2 }}>
           {preview.restoration_readiness.notice} تتطلب أي عملية استعادة مستقبلية
           نسخة احتياطية PostgreSQL قابلة للاسترجاع، وتحققًا من الحالة الوظيفية
