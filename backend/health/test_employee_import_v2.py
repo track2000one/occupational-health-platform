@@ -732,6 +732,66 @@ class EmployeeImportV2PreviewTests(TestCase):
         self.assertFalse(EmployeeImportReview.objects.exists())
         self.assertFalse(DataImportBatch.objects.exists())
 
+    def test_archived_review_page_is_masked_paginated_and_read_only(self):
+        instant = timezone.now()
+        staff = []
+        rows = []
+        for index in range(28):
+            national_id = f'100001{index:04d}'
+            name = f'QA Registry Person {index}'
+            employee = Employee.objects.create(
+                name=name, national_id=national_id,
+                employee_number=f'QA-RV-{index:04d}',
+                is_archived=True, archived_at=instant,
+                archive_reason='Synthetic reset for review paging',
+                employment_status='active',
+            )
+            staff.append(employee.pk)
+            rows.append([name if index else 'QA Source Different',
+                         national_id, f'QA-RV-{index:04d}', '', ''])
+        EmployeeRegistryResetBatch.objects.create(
+            employee_ids=staff, applied_at=instant,
+            reason='Synthetic reset for review paging', created_by=self.admin,
+        )
+
+        def load(category, page):
+            return self.client.post(self.url, {
+                'action': 'review_page', 'file': self.workbook(rows),
+                'sheet_name': 'Employees', 'review_category': category,
+                'review_page': str(page),
+            }, format='multipart')
+
+        first = load('candidate_for_administrative_review', 1)
+        self.assertEqual(first.status_code, 200, first.data)
+        self.assertEqual(first.data['mode'], 'archived_employee_review_page_read_only')
+        self.assertEqual(first.data['total'], 27)
+        self.assertEqual(first.data['page_size'], 25)
+        self.assertEqual(first.data['total_pages'], 2)
+        self.assertEqual(len(first.data['items']), 25)
+        self.assertFalse(first.data['restore_enabled'])
+        self.assertEqual(first['Cache-Control'], 'private, no-store')
+        self.assertEqual(first.data['items'][0]['row'], 3)
+        self.assertEqual(first.data['items'][0]['source_name'], 'QA Registry Person 1')
+        self.assertEqual(first.data['items'][0]['identity_masked'], '10••••0001')
+        self.assertNotIn('1000010001', str(first.data))
+        last = load('candidate_for_administrative_review', 2)
+        self.assertEqual(last.status_code, 200, last.data)
+        self.assertEqual(len(last.data['items']), 2)
+        names = load('name_difference_review', 1)
+        self.assertEqual(names.status_code, 200, names.data)
+        self.assertEqual(names.data['total'], 1)
+        self.assertEqual(names.data['items'][0]['source_name'], 'QA Source Different')
+        self.assertEqual(names.data['items'][0]['registry_name'], 'QA Registry Person 0')
+        self.assertEqual(load('not_a_real_group', 1).status_code, 400)
+        self.assertEqual(load('candidate_for_administrative_review', 3).status_code, 400)
+        self.client.force_authenticate(self.staff)
+        self.assertEqual(load('all', 1).status_code, 403)
+        self.assertEqual(Employee.objects.count(), 28)
+        self.assertEqual(Employee.objects.filter(is_archived=True).count(), 28)
+        self.assertFalse(EmployeeImportReview.objects.exists())
+        self.assertFalse(DataImportBatch.objects.exists())
+        self.assertFalse(AuditLog.objects.exists())
+
     def test_duplicate_identity_columns_cannot_silently_choose_one(self):
         response = self.preview(
             [['QA Header', '1000001211', '1000001212', 'QA-1211']],
