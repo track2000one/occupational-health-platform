@@ -77,11 +77,28 @@ class HealthCenterExcelImportTests(TestCase):
         rows = [('مركز الشرق التجريبي', 'QA-EAST', ''),
                 ('مركز جديد تجريبي', 'QA-NEW', 'الشرقية'),
                 ('مركز جديد تجريبي', 'QA-NEW', 'الشرقية')]
-        prev = self.post(rows)
+        # Commit must receive exactly the same XLSX bytes validated in preview.
+        # A freshly regenerated ZIP may have different metadata timestamps.
+        source_bytes = workbook_upload(rows).read()
+
+        def post_original(action='preview', **extra):
+            return self.client.post(
+                self.url, {
+                    'file': SimpleUploadedFile(
+                        'health_centers.xlsx', source_bytes,
+                        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    ),
+                    'action': action,
+                    **extra,
+                },
+                format='multipart',
+            )
+
+        prev = post_original()
         self.assertEqual(prev.status_code, 200, prev.data)
         self.assertEqual(prev.data['counts']['new'], 1)
-        ret = self.post(
-            rows, 'commit', preview_token=prev.data['preview_token'],
+        ret = post_original(
+            'commit', preview_token=prev.data['preview_token'],
             confirmed='true', confirm_text='اعتماد المراكز الجديدة',
         )
         self.assertEqual(ret.status_code, 200, ret.data)
@@ -95,8 +112,8 @@ class HealthCenterExcelImportTests(TestCase):
         self.employee.refresh_from_db()
         self.assertEqual(self.center.name_ar, 'مركز الشرق التجريبي')
         self.assertEqual(self.employee.health_center_id, self.center.pk)
-        self.assertEqual(self.post(
-            rows, 'commit', preview_token=prev.data['preview_token'],
+        self.assertEqual(post_original(
+            'commit', preview_token=prev.data['preview_token'],
             confirmed='true', confirm_text='اعتماد المراكز الجديدة',
         ).status_code, 409)
 
