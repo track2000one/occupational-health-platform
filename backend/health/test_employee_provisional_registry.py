@@ -12,7 +12,7 @@ from .employee_roster_template import COLUMNS
 from .importers import process_excel_import
 from .models import (
     AuditLog, Employee, EmployeeImportReview, EmployeeProfileCompletionEvent,
-    HealthCenter, ClinicVisit,
+    HealthCenter, ClinicVisit, UserProfile,
 )
 
 
@@ -162,6 +162,68 @@ class ProvisionalRegistrationAndVisitTests(TestCase):
         self.assertTrue(AuditLog.objects.filter(action='employee_profile_completed_at_visit').exists())
         repeated = self.client.post(path, request, format='json')
         self.assertEqual(repeated.status_code, 409)
+        self.assertEqual(EmployeeProfileCompletionEvent.objects.count(), 1)
+
+    def test_data_entry_role_can_complete_yellow_card_but_cannot_overwrite_existing_data(self):
+        UserProfile.objects.update_or_create(
+            user=self.viewer, defaults={'role': 'dataEntry'},
+        )
+        employee = Employee.objects.create(
+            name='Synthetic Missing Profile', national_id='9998111032',
+            employee_number='QA-EXISTING-1032', health_center=None,
+            registration_status='provisional', mobile='', nationality='',
+        )
+        self.client.force_authenticate(self.viewer)
+        path = '/api/employees/%d/complete-profile/' % employee.pk
+        denied = self.client.post(path, {
+            'identity_checked': False,
+            'reason': 'Identity verification is still outstanding',
+            'fields': {'mobile': '0501112222'},
+        }, format='json')
+        self.assertEqual(denied.status_code, 400, denied.data)
+        self.assertEqual(EmployeeProfileCompletionEvent.objects.count(), 0)
+        saved = self.client.post(path, {
+            'identity_checked': True,
+            'reason': 'Identity checked and confirmed at front desk',
+            'fields': {
+                'mobile': '0501112222',
+                'health_center': self.center.pk,
+                'nationality': 'SA',
+            },
+        }, format='json')
+        self.assertEqual(saved.status_code, 200, saved.data)
+        employee.refresh_from_db()
+        self.assertEqual(employee.mobile, '0501112222')
+        self.assertEqual(employee.health_center_id, self.center.pk)
+        self.assertEqual(employee.nationality, 'SA')
+        self.assertEqual(employee.employee_number, 'QA-EXISTING-1032')
+        self.assertEqual(employee.registration_status, 'verified')
+        event = EmployeeProfileCompletionEvent.objects.get(employee=employee)
+        self.assertEqual(event.performed_by_id, self.viewer.pk)
+        self.assertEqual(event.changed_fields, ['health_center', 'mobile', 'nationality'])
+        self.assertTrue(AuditLog.objects.filter(
+            action='employee_profile_completed_at_visit', record_id=str(employee.pk)
+        ).exists())
+        repeat = self.client.post(path, {
+            'identity_checked': True,
+            'reason': 'Attempt to overwrite a previously verified field',
+            'fields': {'mobile': '0503334444'},
+        }, format='json')
+        self.assertEqual(repeat.status_code, 409, repeat.data)
+        invalid_identity_edit = self.client.post(path, {
+            'identity_checked': True,
+            'reason': 'Attempt to change identity using completion endpoint',
+            'fields': {'national_id': '9998111033'},
+        }, format='json')
+        self.assertEqual(invalid_identity_edit.status_code, 400, invalid_identity_edit.data)
+        unauthorized_patch = self.client.patch(
+            '/api/employees/%d/' % employee.pk,
+            {'name': 'Wrong New Name'}, format='json',
+        )
+        self.assertEqual(unauthorized_patch.status_code, 403, unauthorized_patch.data)
+        employee.refresh_from_db()
+        self.assertEqual(employee.name, 'Synthetic Missing Profile')
+        self.assertEqual(employee.mobile, '0501112222')
         self.assertEqual(EmployeeProfileCompletionEvent.objects.count(), 1)
 
     def test_nonstaff_user_cannot_edit_employee_admin_fields(self):
