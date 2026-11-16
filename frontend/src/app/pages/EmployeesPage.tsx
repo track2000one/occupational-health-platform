@@ -89,6 +89,18 @@ type RegistryBulkResult =
   | { mode: 'archived'; archived_count: number; active_count: number; batch_id: string }
   | { mode: 'restored'; restored_count: number; batch_id: string };
 
+type ArchivedVisibilityPreview = {
+  mode: 'archived_employee_list_visibility_preview';
+  operation: 'hide' | 'show';
+  scope: 'selected' | 'all';
+  count: number;
+  confirm_phrase: string;
+  preview_token: string;
+  permanent_deleted: 0;
+  notice: string;
+};
+
+
 type Gender = 'male' | 'female';
 type MaritalStatus = '' | 'single' | 'married' | 'divorced' | 'widowed';
 type ExamStatus = 'completed' | 'incomplete' | 'overdue';
@@ -383,9 +395,18 @@ export function EmployeesPage() {
   const [archiveReason, setArchiveReason] = useState('');
   const [archiveConfirmed, setArchiveConfirmed] = useState(false);
   const [archiveBusy, setArchiveBusy] = useState(false);
+  const [showHiddenArchived, setShowHiddenArchived] = useState(false);
+  const [selectedArchivedIds, setSelectedArchivedIds] = useState<number[]>([]);
+  const [visibilityPreview, setVisibilityPreview] = useState<ArchivedVisibilityPreview | null>(null);
+  const [visibilityBusy, setVisibilityBusy] = useState(false);
+  const [visibilityReason, setVisibilityReason] = useState('');
+  const [visibilityTypedPhrase, setVisibilityTypedPhrase] = useState('');
+  const [visibilityConfirmed, setVisibilityConfirmed] = useState(false);
 
   const canArchive = can(PERMISSIONS.MANAGE_USERS);
   const canBulkReset = canArchive && user?.isSuperuser === true;
+  const archivedFiltersClear = !searchTerm.trim() && centerFilter === 'all' &&
+    statusFilter === 'all' && sourceFilter === 'all' && completionFilter === 'all';
   const canWrite = can(PERMISSIONS.UPDATE_EMPLOYEE) || can(PERMISSIONS.UPDATE_EMPLOYEE_BASIC);
   const ageValue = calculateAgeFromIso(form.date_of_birth);
   const computedAge = ageValue === null ? '' : String(ageValue);
@@ -406,7 +427,10 @@ export function EmployeesPage() {
     setConnectionError('');
     try {
       const query = new URLSearchParams({ page: String(page + 1) });
-      if (showArchived && canArchive) query.set('archived', 'true');
+      if (showArchived && canArchive) {
+        query.set('archived', 'true');
+        if (showHiddenArchived && canBulkReset) query.set('hidden', 'true');
+      }
       if (searchTerm.trim()) query.set('search', searchTerm.trim());
       if (centerFilter !== 'all') query.set('health_center_id', centerFilter);
       if (statusFilter !== 'all') query.set('employment_status', statusFilter);
@@ -453,7 +477,8 @@ export function EmployeesPage() {
     const timer = setTimeout(() => { void loadData(); }, searchTerm ? 350 : 0);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, searchTerm, centerFilter, statusFilter, sourceFilter, completionFilter, sortMode, showArchived, canArchive]);
+  }, [page, searchTerm, centerFilter, statusFilter, sourceFilter, completionFilter,
+      sortMode, showArchived, showHiddenArchived, canArchive, canBulkReset]);
 
   useEffect(() => { void loadCenters(); }, []);
 
@@ -701,6 +726,86 @@ export function EmployeesPage() {
     }
   }
 
+  function resetArchiveVisibilitySelection() {
+    setSelectedArchivedIds([]);
+    setVisibilityPreview(null);
+    setVisibilityReason('');
+    setVisibilityTypedPhrase('');
+    setVisibilityConfirmed(false);
+  }
+
+  async function prepareArchivedVisibility(scope: 'selected' | 'all') {
+    if (!showArchived || !canBulkReset || visibilityBusy) return;
+    if (scope === 'all' && !archivedFiltersClear) {
+      toast.error('لتحديد كل السجلات، أزل فلاتر البحث أولًا حتى لا يُشمل نطاق غير مقصود.');
+      return;
+    }
+    if (scope === 'selected' && selectedArchivedIds.length === 0) return;
+    setVisibilityBusy(true);
+    setVisibilityPreview(null);
+    setVisibilityReason('');
+    setVisibilityTypedPhrase('');
+    setVisibilityConfirmed(false);
+    try {
+      const result = await apiRequest<ArchivedVisibilityPreview>(
+        '/employees/archived-list-visibility/', {
+          method: 'POST',
+          body: JSON.stringify({
+            action: 'preview',
+            mode: showHiddenArchived ? 'show' : 'hide',
+            scope,
+            ids: scope === 'selected' ? selectedArchivedIds : [],
+          }),
+        },
+      );
+      setVisibilityPreview(result);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'تعذرت معاينة السجلات.');
+    } finally {
+      setVisibilityBusy(false);
+    }
+  }
+
+  async function confirmArchivedVisibility() {
+    const offer = visibilityPreview;
+    if (!offer || !canBulkReset || visibilityBusy || offer.count === 0 ||
+        visibilityTypedPhrase !== offer.confirm_phrase || !visibilityConfirmed ||
+        visibilityReason.trim().length < 10 || visibilityReason.trim().length > 80) return;
+    if (!window.confirm(
+      'تأكيد إزالة أو إظهار البطاقات في القائمة الإدارية فقط؟ لا تُحذف بيانات الموظفين نهائيًا.'
+    )) return;
+    setVisibilityBusy(true);
+    try {
+      const result = await apiRequest<{ changed: number; permanent_deleted: 0 }>(
+        '/employees/archived-list-visibility/', {
+          method: 'POST',
+          body: JSON.stringify({
+            action: 'execute',
+            mode: offer.operation,
+            scope: offer.scope,
+            ids: offer.scope === 'selected' ? selectedArchivedIds : [],
+            preview_token: offer.preview_token,
+            confirm_phrase: visibilityTypedPhrase,
+            reason: visibilityReason.trim(),
+            confirmed: true,
+          }),
+        },
+      );
+      resetArchiveVisibilitySelection();
+      setPage(0);
+      await loadData();
+      toast.success(
+        `تم ${offer.operation === 'hide' ? 'حذف' : 'إظهار'} ${result.changed} سجلًا من العرض فقط. لا توجد بيانات محذوفة نهائيًا.`,
+        { duration: 9000 },
+      );
+    } catch (error) {
+      setVisibilityPreview(null);
+      toast.error(error instanceof Error ? error.message : 'تعذر تحديث ظهور البطاقات.');
+    } finally {
+      setVisibilityBusy(false);
+    }
+  }
+
   function openArchiveDialog(employee: ApiEmployee, action: 'archive' | 'restore') {
     if (!canArchive) return;
     setArchiveTarget(employee);
@@ -792,7 +897,12 @@ export function EmployeesPage() {
           {canArchive && (
             <Button variant={showArchived ? 'contained' : 'outlined'} color={showArchived ? 'error' : 'inherit'}
               startIcon={showArchived ? <RestoreEmployeeIcon /> : <DeleteEmployeeIcon />}
-              onClick={() => { setShowArchived(value => !value); setPage(0); }}>
+              onClick={() => {
+                setShowArchived(value => !value);
+                setShowHiddenArchived(false);
+                setPage(0);
+                resetArchiveVisibilitySelection();
+              }}>
               {showArchived
                 ? (isRtl ? 'العودة إلى الموظفين' : 'Back to Employees')
                 : (isRtl ? 'الموظفون المحذوفون' : 'Archived Employees')}
@@ -900,6 +1010,50 @@ export function EmployeesPage() {
         </Stack>
       </Paper>
 
+      {showArchived && canBulkReset && <Paper variant="outlined"
+        sx={{ p: 2, mb: 2, borderRadius: 2, borderColor: '#ADC7DB' }}>
+        <Stack direction={{ xs: 'column', md: 'row' }} gap={1}
+          alignItems={{ md: 'center' }} flexWrap="wrap">
+          <Typography variant="body2" fontWeight={900}>
+            إدارة البطاقات المؤرشفة — {selectedArchivedIds.length} محددة من الصفحة
+          </Typography>
+          <Button variant="outlined" size="small" disabled={loading || visibilityBusy || !employees.length}
+            onClick={() => {
+              setSelectedArchivedIds(employees.map(emp => Number(emp.id)));
+              setVisibilityPreview(null);
+            }}>
+            تحديد الكل (هذه الصفحة: {employees.length})
+          </Button>
+          <Button variant="outlined" size="small" disabled={!selectedArchivedIds.length}
+            onClick={() => resetArchiveVisibilitySelection()}>
+            إلغاء التحديد
+          </Button>
+          <Button variant="contained" color={showHiddenArchived ? 'success' : 'error'}
+            size="small" disabled={visibilityBusy || !selectedArchivedIds.length}
+            onClick={() => void prepareArchivedVisibility('selected')}>
+            {showHiddenArchived ? 'إظهار المحدد' : 'حذف المحدد من القائمة'}
+          </Button>
+          <Button variant="outlined" color={showHiddenArchived ? 'success' : 'error'}
+            size="small" disabled={!archivedFiltersClear || !totalCount || visibilityBusy}
+            onClick={() => void prepareArchivedVisibility('all')}>
+            {showHiddenArchived ? 'إظهار كل السجلات المخفية' :
+              `تحديد الكل وحذف من العرض (${totalCount} سجلًا)`}
+          </Button>
+          <Button variant="outlined" size="small" onClick={() => {
+            setShowHiddenArchived(value => !value);
+            setPage(0);
+            resetArchiveVisibilitySelection();
+          }}>
+            {showHiddenArchived ? 'عرض الأرشيف الظاهر' : 'عرض المحذوف من القائمة'}
+          </Button>
+        </Stack>
+        <Typography variant="caption" color="text.secondary">
+          الحذف هنا من قائمة العرض فقط، وليس من قاعدة PostgreSQL؛
+          جميع الملفات الصحية وسجلات الهوية والأرشفة محفوظة ويمكن إظهارها مجددًا.
+          تحديد كل النتائج يتطلب إزالة فلاتر البحث.
+        </Typography>
+      </Paper>}
+
       {loading ? (
         <Paper sx={{ p: 5, textAlign: 'center' }}>
           <CircularProgress />
@@ -913,6 +1067,23 @@ export function EmployeesPage() {
             <Grid container spacing={2.5} sx={{ mb: 2 }}>
               {filteredEmployees.map(employee => (
                 <Grid key={employee.id} size={{ xs: 12, md: 6, xl: 4 }}>
+                  <Box sx={{ position: 'relative' }}>
+                    {showArchived && canBulkReset &&
+                      <Box sx={{
+                        position: 'absolute', top: 5, left: 6, zIndex: 2,
+                        borderRadius: 2, bgcolor: 'background.paper',
+                        boxShadow: 1,
+                      }}>
+                        <Checkbox size="small" aria-label="تحديد موظف من الأرشيف"
+                          checked={selectedArchivedIds.includes(Number(employee.id))}
+                          disabled={visibilityBusy}
+                          onChange={(_, checked) => {
+                            setVisibilityPreview(null);
+                            setSelectedArchivedIds(old => checked
+                              ? [...old, Number(employee.id)]
+                              : old.filter(id => id !== Number(employee.id)));
+                          }}/>
+                      </Box>}
                   <EmployeeRegistryCard
                     employee={employee}
                     missingFields={missingEmployeeOptionalFields(employee)}
@@ -929,6 +1100,7 @@ export function EmployeesPage() {
                     onHealthCard={() => navigate(`/employees/${employee.id}/health-card`)}
                     onEmploymentHistory={() => navigate('/admin/employee-lifecycle')}
                   />
+                  </Box>
                 </Grid>
               ))}
             </Grid>
@@ -940,6 +1112,7 @@ export function EmployeesPage() {
           }}>
             <TableHead>
               <TableRow>
+                {showArchived && canBulkReset && <TableCell>تحديد</TableCell>}
                 <TableCell>{isRtl ? 'الرقم الوظيفي' : 'Employee No.'}</TableCell>
                 <TableCell>{isRtl ? 'الاسم الكامل' : 'Full Name'}</TableCell>
                 <TableCell>{isRtl ? 'الهوية الوطنية' : 'National ID'}</TableCell>
@@ -957,6 +1130,15 @@ export function EmployeesPage() {
                 <TableRow key={employee.id} hover sx={missingEmployeeOptionalFields(employee).length && !employee.is_archived
                   ? { bgcolor: '#FFF4C7', '&:hover': { bgcolor: '#FFEBA3' } }
                   : undefined}>
+                  {showArchived && canBulkReset && <TableCell>
+                    <Checkbox size="small" checked={selectedArchivedIds.includes(Number(employee.id))}
+                      onChange={(_, checked) => {
+                        setVisibilityPreview(null);
+                        setSelectedArchivedIds(old => checked
+                          ? [...old, Number(employee.id)]
+                          : old.filter(id => id !== Number(employee.id)));
+                      }} />
+                  </TableCell>}
                   <TableCell>{employee.employee_number || '-'}{employee.registration_status === 'provisional' && (
                     <Chip size="small" color="warning" variant="filled"
                       label={isRtl ? 'تسجيل أولي' : 'Provisional'} sx={{ display: 'flex', mt: 0.5, width: 'fit-content' }} />
@@ -1066,6 +1248,47 @@ export function EmployeesPage() {
           </Paper>
         </>
       )}
+
+      <Dialog open={Boolean(visibilityPreview)}
+        onClose={() => !visibilityBusy && resetArchiveVisibilitySelection()}
+        maxWidth="sm" fullWidth>
+        <DialogTitle fontWeight={900}>
+          {visibilityPreview?.operation === 'hide'
+            ? 'حذف مؤرشفين من قائمة العرض' : 'إعادة إظهار سجلات مؤرشفة'}
+        </DialogTitle>
+        <DialogContent dividers>
+          <Stack gap={1.5}>
+            <Alert severity="warning">
+              {visibilityPreview?.notice} لا يُسمح بالحذف النهائي للهوية أو الملف الصحي.
+            </Alert>
+            <Typography fontWeight={900}>
+              العدد المشمول: {visibilityPreview?.count || 0}
+            </Typography>
+            <TextField fullWidth label="سبب الإجراء الإداري (10 إلى 80 حرفًا)"
+              value={visibilityReason} onChange={event => setVisibilityReason(event.target.value)}
+              inputProps={{ maxLength: 80 }} />
+            <TextField fullWidth label="اكتب عبارة التأكيد كما هي"
+              value={visibilityTypedPhrase} helperText={visibilityPreview?.confirm_phrase}
+              onChange={event => setVisibilityTypedPhrase(event.target.value)} />
+            <FormControlLabel
+              control={<Checkbox checked={visibilityConfirmed}
+                onChange={(_, checked) => setVisibilityConfirmed(checked)} />}
+              label="أعلم أن الإجراء يغير قائمة العرض فقط ويحافظ على جميع بيانات الموظفين وسجلاتهم الطبية." />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button disabled={visibilityBusy} onClick={resetArchiveVisibilitySelection}>
+            إلغاء
+          </Button>
+          <Button variant="contained" color={visibilityPreview?.operation === 'hide' ? 'error' : 'success'}
+            disabled={visibilityBusy || !visibilityPreview?.count || !visibilityConfirmed ||
+              visibilityReason.trim().length < 10 ||
+              visibilityTypedPhrase !== visibilityPreview?.confirm_phrase}
+            onClick={() => void confirmArchivedVisibility()}>
+            تأكيد الإجراء
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={Boolean(archiveTarget)}
         onClose={() => !archiveBusy && setArchiveTarget(null)}

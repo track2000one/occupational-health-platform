@@ -935,6 +935,15 @@ class EmployeeViewSet(viewsets.ModelViewSet):
               str(self.request.query_params.get('archived') or '').lower() == 'true' and
               self._can_archive_employee(self.request.user)):
             queryset = queryset.filter(is_archived=True)
+            # 'حذف من القائمة' is reversible presentation only. The archive
+            # stays intact for identity matching, clinical history and audit.
+            from .employee_archived_list_visibility import hidden_archive_employee_ids
+            hidden_ids = hidden_archive_employee_ids()
+            if (self.request.user.is_superuser and
+                    str(self.request.query_params.get('hidden') or '').lower() == 'true'):
+                queryset = queryset.filter(pk__in=hidden_ids)
+            else:
+                queryset = queryset.exclude(pk__in=hidden_ids)
         else:
             queryset = queryset.filter(is_archived=False)
         requested_status = str(self.request.query_params.get('employment_status') or '').strip()
