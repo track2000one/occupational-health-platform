@@ -121,7 +121,10 @@ class ArchivedListVisibilityTests(TestCase):
     def test_unprivileged_and_invalid_scope_fail_without_writes(self):
         self.client.force_authenticate(self.staff)
         self.assertEqual(self.call().status_code, 403)
-        self.assertEqual(self.list_archived(hidden=True).data['count'], 0)
+        # Non-admin archive requests fall back to the ordinary active-only list.
+        ordinary = self.list_archived(hidden=True)
+        self.assertEqual(ordinary.data['count'], 1)
+        self.assertFalse(ordinary.data['results'][0]['is_archived'])
         self.client.force_authenticate(self.admin)
         self.assertEqual(self.call(scope='unknown').status_code, 409)
         self.assertEqual(self.call(scope='selected', ids=[self.active.pk]).status_code, 409)
