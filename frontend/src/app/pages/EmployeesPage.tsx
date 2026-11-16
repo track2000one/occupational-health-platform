@@ -1010,6 +1010,11 @@ export function EmployeesPage() {
         </Stack>
       </Paper>
 
+      {showArchived && canArchive && !canBulkReset && <Alert severity="warning" sx={{ mb: 2 }}>
+        أدوات «تحديد الكل» و«الحذف من العرض» تتطلب الدخول بحساب المسؤول الأعلى
+        (Superuser)؛ حساب إدارة المستخدمين وحده لا يكفي. يمكنك تسجيل الخروج
+        ثم الدخول بالحساب المخوّل. لا يُمكن حذف سجلات الموظفين نهائيًا من هنا.
+      </Alert>}
       {showArchived && canBulkReset && <Paper variant="outlined"
         sx={{ p: 2, mb: 2, borderRadius: 2, borderColor: '#ADC7DB' }}>
         <Stack direction={{ xs: 'column', md: 'row' }} gap={1}
