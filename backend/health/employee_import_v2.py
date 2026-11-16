@@ -131,7 +131,7 @@ class EmployeeImportV2PreviewView(APIView):
         if not request.user.is_superuser:
             return Response({'detail': 'هذه المهمة متاحة للمسؤول الأعلى فقط.'}, status=403)
         action = str(request.data.get('action') or 'preview')
-        if action not in ('preview', 'commit', 'review_page'):
+        if action not in ('preview', 'commit', 'review_page', 'restore_preview', 'restore_commit'):
             return Response({'detail': 'إجراء غير معروف.'}, status=400)
         category = None
         review_page = 1
@@ -299,6 +299,12 @@ class EmployeeImportV2PreviewView(APIView):
                     'masked_identity_count': len(masked_identity_rows),
                     'masked_identity_source_rows': masked_identity_rows[:20],
                 }, status=400, headers={'Cache-Control': 'private, no-store'})
+            file_hash = sha256(raw).hexdigest()
+            if action in ('restore_preview', 'restore_commit'):
+                from .employee_import_v2_restore import handle_restore
+                return handle_restore(
+                    request, mapped_rows, file_hash, sheet_name, action,
+                )
             from .employee_import_v2_matching import registry_match
             from .employee_import_v2_commit import (
                 preview_commit_info, commit_safe_plan,
@@ -306,7 +312,6 @@ class EmployeeImportV2PreviewView(APIView):
             registry_report = registry_match(
                 mapped_rows, review_category=category
             )
-            file_hash = sha256(raw).hexdigest()
             if action == 'review_page':
                 from .employee_import_v2_matching import RESTORATION_REVIEW_PAGE_SIZE
                 review_queue = registry_report.pop('_internal_review_queue', [])
