@@ -131,7 +131,7 @@ class EmployeeImportV2PreviewView(APIView):
         if not request.user.is_superuser:
             return Response({'detail': 'هذه المهمة متاحة للمسؤول الأعلى فقط.'}, status=403)
         action = str(request.data.get('action') or 'preview')
-        if action not in ('preview', 'commit', 'review_page', 'restore_preview', 'restore_commit'):
+        if action not in ('preview', 'commit', 'review_page', 'restore_preview', 'restore_commit', 'approve_roster'):
             return Response({'detail': 'إجراء غير معروف.'}, status=400)
         category = None
         review_page = 1
@@ -300,6 +300,9 @@ class EmployeeImportV2PreviewView(APIView):
                     'masked_identity_source_rows': masked_identity_rows[:20],
                 }, status=400, headers={'Cache-Control': 'private, no-store'})
             file_hash = sha256(raw).hexdigest()
+            if action == 'approve_roster':
+                from .employee_import_v2_direct import approve_roster
+                return approve_roster(request, mapped_rows, file_hash, sheet_name)
             if action in ('restore_preview', 'restore_commit'):
                 from .employee_import_v2_restore import handle_restore
                 return handle_restore(
@@ -310,7 +313,11 @@ class EmployeeImportV2PreviewView(APIView):
                 preview_commit_info, commit_safe_plan,
             )
             registry_report = registry_match(
-                mapped_rows, review_category=category
+                mapped_rows,
+                review_category=(
+                    'candidate_for_administrative_review'
+                    if action == 'preview' else category
+                ),
             )
             if action == 'review_page':
                 from .employee_import_v2_matching import RESTORATION_REVIEW_PAGE_SIZE
@@ -345,6 +352,11 @@ class EmployeeImportV2PreviewView(APIView):
             preview_details = preview_commit_info(
                 registry_report, file_hash, sheet_name, request.user.pk,
             )
+            from .employee_import_v2_direct import approval_preview
+            direct_approval = approval_preview(
+                registry_report, mapped_rows, file_hash,
+                sheet_name, request.user.pk,
+            )
             # Never return raw employee records or internal operation plans.
             registry_report.pop('_internal_planned_rows', None)
             registry_report.pop('_internal_review_queue', None)
@@ -360,6 +372,7 @@ class EmployeeImportV2PreviewView(APIView):
                 'sample_masked': samples,
                 **registry_report,
                 **preview_details,
+                'direct_approval': direct_approval,
             }, headers={'Cache-Control': 'private, no-store'})
         except Exception:
             return Response({'detail': 'تعذرت قراءة ملف XLSX؛ تحقق من الملف وأسماء الأعمدة.'},
