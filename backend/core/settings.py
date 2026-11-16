@@ -14,6 +14,8 @@ DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
 LEGACY_EMPLOYEE_EXCEL_IMPORTS_ENABLED = os.getenv('LEGACY_EMPLOYEE_EXCEL_IMPORTS_ENABLED', 'false').lower() == 'true'
 # Explicit release gate. Never enable until backup and Staging rehearsal are confirmed.
 EMPLOYEE_IMPORT_V2_COMMIT_ENABLED = os.getenv('EMPLOYEE_IMPORT_V2_COMMIT_ENABLED', 'false').lower() == 'true'
+# Independent restoration gate; requires real Production backup evidence and approval.
+EMPLOYEE_V2_ARCHIVE_RESTORE_ENABLED = os.getenv('EMPLOYEE_V2_ARCHIVE_RESTORE_ENABLED', 'false').lower() == 'true'
 
 ALLOWED_HOSTS = [
     host.strip()
