@@ -222,8 +222,8 @@ export function EmployeeImportV2Page() {
   const [selectedNameColumn, setSelectedNameColumn] = useState<number | ''>('');
   const [selectedIdentityColumn, setSelectedIdentityColumn] = useState<number | ''>('');
   const [accepted, setAccepted] = useState(false);
-  const [verifiedEmployment, setVerifiedEmployment] = useState(false);
-  const [verifiedBackup, setVerifiedBackup] = useState(false);
+  const [directVerifiedEmployment, setDirectVerifiedEmployment] = useState(false);
+  const [directVerifiedBackup, setDirectVerifiedBackup] = useState(false);
   const [hrEvidence, setHrEvidence] = useState('');
   const [backupEvidence, setBackupEvidence] = useState('');
   const [reason, setReason] = useState(
@@ -242,7 +242,7 @@ export function EmployeeImportV2Page() {
     const total = approved.create + approved.fill + approved.restore_original;
     if (total === 0) return;
     if (approved.restore_original > 0 && (
-        !verifiedEmployment || !verifiedBackup ||
+        !directVerifiedEmployment || !directVerifiedBackup ||
         hrEvidence.trim().length < 8 || backupEvidence.trim().length < 8
     )) return;
     if (!window.confirm(
@@ -272,8 +272,8 @@ export function EmployeeImportV2Page() {
       if (approved.restore_original > 0) {
         payload.append('hr_reference', hrEvidence.trim());
         payload.append('backup_reference', backupEvidence.trim());
-        payload.append('verified_current_employment', String(verifiedEmployment));
-        payload.append('verified_backup_restore', String(verifiedBackup));
+        payload.append('verified_current_employment', String(directVerifiedEmployment));
+        payload.append('verified_backup_restore', String(directVerifiedBackup));
       }
       const response = await authFetch(API + '/employee-import-v2/preview/', {
         method: 'POST',
@@ -985,12 +985,12 @@ export function EmployeeImportV2Page() {
               value={backupEvidence}
               onChange={event => setBackupEvidence(event.target.value)} />
             <FormControlLabel
-              control={<Checkbox checked={verifiedEmployment}
-                onChange={(_, value) => setVerifiedEmployment(value)} disabled={busy}/>}
+              control={<Checkbox checked={directVerifiedEmployment}
+                onChange={(_, value) => setDirectVerifiedEmployment(value)} disabled={busy}/>}
               label="تحققت من المستندات الرسمية التي تؤكد استمرار خدمة جميع المرشحين للاستعادة." />
             <FormControlLabel
-              control={<Checkbox checked={verifiedBackup}
-                onChange={(_, value) => setVerifiedBackup(value)} disabled={busy}/>}
+              control={<Checkbox checked={directVerifiedBackup}
+                onChange={(_, value) => setDirectVerifiedBackup(value)} disabled={busy}/>}
               label="تحققت من توفر نسخة احتياطية حقيقية وإتمام اختبار استرجاعها بنجاح." />
           </>}
           <FormControlLabel
@@ -1003,7 +1003,7 @@ export function EmployeeImportV2Page() {
               (preview.direct_approval.create + preview.direct_approval.fill +
                 preview.direct_approval.restore_original === 0) ||
               (preview.direct_approval.restore_original > 0 && (
-                !verifiedEmployment || !verifiedBackup ||
+                !directVerifiedEmployment || !directVerifiedBackup ||
                 hrEvidence.trim().length < 8 || backupEvidence.trim().length < 8
               ))}
             onClick={() => void applyApprovedImport()}>
