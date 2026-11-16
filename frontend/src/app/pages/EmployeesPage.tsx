@@ -375,6 +375,11 @@ export function EmployeesPage() {
   const [dialogMode, setDialogMode] = useState<'view' | 'add' | 'edit'>('view');
   const [openDialog, setOpenDialog] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<ApiEmployee | null>(null);
+  const [completionTarget, setCompletionTarget] = useState<ApiEmployee | null>(null);
+  const [completionValues, setCompletionValues] = useState<Record<string, string>>({});
+  const [completionReason, setCompletionReason] = useState('');
+  const [completionIdentityChecked, setCompletionIdentityChecked] = useState(false);
+  const [completionSaving, setCompletionSaving] = useState(false);
   const [form, setForm] = useState<EmployeeForm>(EMPTY_FORM);
   const [connectionError, setConnectionError] = useState('');
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
@@ -407,7 +412,15 @@ export function EmployeesPage() {
   const canBulkReset = canArchive && user?.isSuperuser === true;
   const archivedFiltersClear = !searchTerm.trim() && centerFilter === 'all' &&
     statusFilter === 'all' && sourceFilter === 'all' && completionFilter === 'all';
-  const canWrite = can(PERMISSIONS.UPDATE_EMPLOYEE) || can(PERMISSIONS.UPDATE_EMPLOYEE_BASIC);
+  // 'employee' is a beneficiary role, not an operator for other staff records.
+  // 'dataEntry' may complete missing demographic fields, but cannot use the
+  // broad administrative PATCH action (which correctly requires Django staff).
+  const canCompleteMissing = user?.role === 'dataEntry';
+  const canWrite = user?.role !== 'employee' && !canCompleteMissing &&
+    (can(PERMISSIONS.UPDATE_EMPLOYEE) || can(PERMISSIONS.UPDATE_EMPLOYEE_BASIC));
+  const canEditRecord = (employee: ApiEmployee) => !employee.is_archived &&
+    (canWrite || (canCompleteMissing &&
+      missingEmployeeOptionalFields(employee).length > 0));
   const ageValue = calculateAgeFromIso(form.date_of_birth);
   const computedAge = ageValue === null ? '' : String(ageValue);
   const computedExperience = calculateExperience(form.appointment_date);
@@ -512,10 +525,82 @@ export function EmployeesPage() {
   }
 
   function openEdit(employee: ApiEmployee) {
+    if (employee.is_archived) return;
+    if (canCompleteMissing) {
+      if (missingEmployeeOptionalFields(employee).length === 0) {
+        toast.info('بيانات هذا الموظف مكتملة؛ التصحيح يتطلب صلاحية وإجراء منفصلًا.');
+        return;
+      }
+      setCompletionTarget(employee);
+      setCompletionValues({});
+      setCompletionReason('');
+      setCompletionIdentityChecked(false);
+      return;
+    }
+    if (!canWrite) return;
     setSelectedEmployee(employee);
     setForm(asForm(employee));
     setDialogMode('edit');
     setOpenDialog(true);
+  }
+
+  async function saveMissingEmployeeFields() {
+    const target = completionTarget;
+    if (!canCompleteMissing || !target || target.is_archived || completionSaving ||
+        !completionIdentityChecked || completionReason.trim().length < 10 ||
+        completionReason.trim().length > 500) return;
+    const missingKeys = new Set(
+      OPTIONAL_EMPLOYEE_FIELDS.filter(([field]) =>
+        !String(target[field] ?? '').trim()
+      ).map(([field]) => String(field))
+    );
+    const fields: Record<string, string | number> = {};
+    for (const [field, raw] of Object.entries(completionValues)) {
+      const value = raw.trim();
+      if (!value) continue;
+      if (!missingKeys.has(field)) {
+        toast.error('لا يجوز تعديل حقل مسجل مسبقًا من نافذة استكمال البيانات.');
+        return;
+      }
+      fields[field] = field === 'health_center' ? Number(value) : value;
+    }
+    if (!Object.keys(fields).length) {
+      toast.error('أدخل قيمة لحقل ناقص واحد على الأقل.');
+      return;
+    }
+    if (fields.email && !isValidEmployeeEmail(String(fields.email))) {
+      toast.error('صيغة البريد الإلكتروني غير صحيحة.');
+      return;
+    }
+    if (fields.date_of_birth && calculateAgeFromIso(String(fields.date_of_birth)) === null) {
+      toast.error('تاريخ الميلاد غير صالح.');
+      return;
+    }
+    setCompletionSaving(true);
+    try {
+      const data = await apiRequest<{ employee: ApiEmployee; completed_fields: string[] }>(
+        `/employees/${target.id}/complete-profile/`, {
+          method: 'POST',
+          body: JSON.stringify({
+            identity_checked: true,
+            reason: completionReason.trim(),
+            fields,
+          }),
+        },
+      );
+      setEmployees(old => old.map(item =>
+        String(item.id) === String(target.id) ? data.employee : item));
+      setCompletionTarget(null);
+      setCompletionValues({});
+      setCompletionReason('');
+      setCompletionIdentityChecked(false);
+      toast.success(`تم استكمال ${data.completed_fields.length} حقلًا وتوثيق العملية.`);
+      await loadData();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'تعذر استكمال بيانات الموظف.');
+    } finally {
+      setCompletionSaving(false);
+    }
   }
 
   function openView(employee: ApiEmployee) {
@@ -1090,7 +1175,7 @@ export function EmployeesPage() {
                     provisional={employee.registration_status === 'provisional'}
                     centerName={getHealthCenterName(employee)}
                     isRtl={isRtl}
-                    canWrite={canWrite && !employee.is_archived}
+                    canWrite={canEditRecord(employee)}
                     canManage={can(PERMISSIONS.MANAGE_USERS)}
                     canArchive={canArchive}
                     onArchive={() => openArchiveDialog(employee, 'archive')}
@@ -1193,9 +1278,11 @@ export function EmployeesPage() {
                     <Button size="small" variant="outlined" startIcon={<VisibilityIcon />} onClick={() => openView(employee)}>
                       {isRtl ? 'عرض' : 'View'}
                     </Button>
-                    {canWrite && !employee.is_archived && (
-                      <Button size="small" variant="outlined" startIcon={<EditIcon />} onClick={() => openEdit(employee)}>
-                        {isRtl ? 'تعديل' : 'Edit'}
+                    {canEditRecord(employee) && (
+                      <Button size="small" variant="outlined" startIcon={<EditIcon />}
+                        onClick={() => openEdit(employee)}>
+                        {canCompleteMissing ? 'استكمال البيانات' :
+                          (isRtl ? 'تعديل' : 'Edit')}
                       </Button>
                     )}
                     {can(PERMISSIONS.MANAGE_USERS) && (
@@ -1529,6 +1616,110 @@ export function EmployeesPage() {
           </Button>
         </DialogActions>
       </Dialog>
+      <Dialog open={Boolean(completionTarget)}
+        onClose={() => !completionSaving && setCompletionTarget(null)}
+        maxWidth="md" fullWidth>
+        <DialogTitle fontWeight={900}>
+          استكمال بيانات الموظف الناقصة
+        </DialogTitle>
+        <DialogContent dividers>
+          {completionTarget && <Stack spacing={2}>
+            <Alert severity="info">
+              هذه المهمة مخصصة لمستخدم «مدخل بيانات». تحقق من هوية الموظف
+              قبل الحفظ. لا يمكن تعديل الاسم أو رقم الهوية أو الحقول المسجلة
+              سابقًا، ولا تُعرض البيانات الطبية في هذه النافذة.
+            </Alert>
+            <Typography fontWeight={800}>
+              {completionTarget.name} — {maskNationalId(completionTarget.national_id)}
+            </Typography>
+            <Grid container spacing={2}>
+              {OPTIONAL_EMPLOYEE_FIELDS.filter(([field]) =>
+                !String(completionTarget[field] ?? '').trim()
+              ).map(([field, label]) => {
+                const key = String(field);
+                const value = completionValues[key] || '';
+                const onChange = (next: string) =>
+                  setCompletionValues(old => ({ ...old, [key]: next }));
+                return <Grid key={key} size={{ xs: 12, md: 6 }}>
+                  {key === 'health_center' ? (
+                    <TextField fullWidth select label={label} value={value}
+                      disabled={completionSaving}
+                      onChange={event => onChange(event.target.value)}>
+                      <MenuItem value="">اختر المركز الصحي</MenuItem>
+                      {healthCenters.filter(center => center.is_active !== false).map(center =>
+                        <MenuItem key={center.id} value={String(center.id)}>
+                          {centerDisplayName(center, isRtl)}
+                        </MenuItem>
+                      )}
+                    </TextField>
+                  ) : key === 'gender' ? (
+                    <TextField fullWidth select label={label} value={value}
+                      disabled={completionSaving}
+                      onChange={event => onChange(event.target.value)}>
+                      <MenuItem value="">غير محدد</MenuItem>
+                      <MenuItem value="male">ذكر</MenuItem>
+                      <MenuItem value="female">أنثى</MenuItem>
+                    </TextField>
+                  ) : key === 'marital_status' ? (
+                    <TextField fullWidth select label={label} value={value}
+                      disabled={completionSaving}
+                      onChange={event => onChange(event.target.value)}>
+                      <MenuItem value="">غير محددة</MenuItem>
+                      <MenuItem value="single">أعزب</MenuItem>
+                      <MenuItem value="married">متزوج</MenuItem>
+                      <MenuItem value="divorced">مطلق</MenuItem>
+                      <MenuItem value="widowed">أرمل</MenuItem>
+                    </TextField>
+                  ) : key === 'nationality' ? (
+                    <Autocomplete options={nationalityOptions}
+                      value={nationalityOptions.find(item => item.code === value) || null}
+                      disabled={completionSaving}
+                      isOptionEqualToValue={(item, selected) => item.code === selected.code}
+                      getOptionLabel={item => isRtl ? item.countryAr : item.countryEn}
+                      onChange={(_, item) => onChange(item?.code || '')}
+                      renderInput={params => <TextField {...params} label={label} />} />
+                  ) : (
+                    <TextField fullWidth label={label} disabled={completionSaving}
+                      type={key === 'date_of_birth' || key === 'appointment_date'
+                        ? 'date' : key === 'email' ? 'email' : 'text'}
+                      slotProps={
+                        key === 'date_of_birth' || key === 'appointment_date'
+                          ? { inputLabel: { shrink: true } } : undefined
+                      }
+                      value={value}
+                      onChange={event => onChange(event.target.value)} />
+                  )}
+                </Grid>;
+              })}
+            </Grid>
+            <TextField fullWidth multiline minRows={2}
+              label="سبب استكمال البيانات والتوثيق"
+              placeholder="مثال: تم التحقق من هوية الموظف ومراجعة بياناته من مستند معتمد"
+              value={completionReason} disabled={completionSaving}
+              onChange={event => setCompletionReason(event.target.value)}
+              inputProps={{ maxLength: 500 }}
+              helperText="يجب كتابة سبب من 10 إلى 500 حرف، دون بيانات طبية."/>
+            <FormControlLabel
+              control={<Checkbox checked={completionIdentityChecked}
+                disabled={completionSaving}
+                onChange={(_, checked) => setCompletionIdentityChecked(checked)}/>}
+              label="تحققت من هوية الموظف وصحة الحقول المضافة، وأقر أن البيانات المثبتة سابقًا لن تتغير." />
+          </Stack>}
+        </DialogContent>
+        <DialogActions sx={{ p: 2, gap: 1 }}>
+          <Button disabled={completionSaving} onClick={() => setCompletionTarget(null)}>
+            إلغاء
+          </Button>
+          <Button variant="contained" color="success"
+            disabled={completionSaving || !completionIdentityChecked ||
+              completionReason.trim().length < 10 ||
+              !Object.values(completionValues).some(value => value.trim())}
+            onClick={() => void saveMissingEmployeeFields()}>
+            {completionSaving ? 'جارٍ الحفظ...' : 'حفظ الحقول الناقصة'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="md" fullWidth>
         <DialogTitle component="div">
           <Typography variant="h6" component="span" fontWeight="bold">
