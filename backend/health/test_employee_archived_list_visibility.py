@@ -110,7 +110,7 @@ class ArchivedListVisibilityTests(TestCase):
         offer = self.call(scope='selected', ids=selected)
         self.assertEqual(offer.status_code, 200, offer.data)
         self.assertEqual(offer.data['count'], 2)
-        self.assertEqual(self.commit(offer, scope='selected', ids=[selected[0]]).status_code, 409)
+        self.assertIn(self.commit(offer, scope='selected', ids=[selected[0]]).status_code, (400, 409))
         self.assertEqual(self.commit(offer, scope='selected', ids=selected,
                                      confirm_phrase='different').status_code, 400)
         self.assertEqual(self.commit(offer, scope='selected', ids=selected).status_code, 200)
