@@ -11,7 +11,6 @@ from rest_framework import permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .employee_import_classification import normalize_person_name
 from .employee_import_v2_matching import norm_text
 from .models import Employee, EmployeeRegistryResetBatch, ProvisionalEmployeeImportBatch
 from .provisional_employee_roster import NO_CACHE, _masked, _unseal
@@ -49,8 +48,8 @@ def _technical_classification(row, source, employee, resets):
     if not employee.is_archived:
         return 'original_not_archived'
     if (row.classification == 'name_review' or
-            normalize_person_name(source.get('name', '')) !=
-            normalize_person_name(employee.name)):
+            norm_text(source.get('name', '')) !=
+            norm_text(employee.name)):
         return 'name_difference'
     if employee.employment_status != Employee.EmploymentStatus.ACTIVE:
         return 'not_active_employment'
@@ -58,7 +57,7 @@ def _technical_classification(row, source, employee, resets):
         reset for reset in resets.get(str(employee.pk), ())
         if employee.archived_at is not None
         and reset.applied_at == employee.archived_at
-        and norm_text(reset.reason) == norm_text(employee.archive_reason)
+        and (reset.reason or '').strip() == employee.archive_reason.strip()
     ]
     if len(eligible_resets) != 1:
         return 'archive_provenance_review'
