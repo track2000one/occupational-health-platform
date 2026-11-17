@@ -310,6 +310,9 @@ class ProvisionalEmployeeRosterView(APIView):
         category = str(request.query_params.get('classification') or '').strip()
         if category and category not in STATUSES:
             return Response({'detail': 'حالة تصنيف غير معروفة.'}, status=400, headers=NO_CACHE)
+        completeness = str(request.query_params.get('completeness') or '').strip()
+        if completeness not in ('', 'missing', 'complete'):
+            return Response({'detail': 'فلتر اكتمال البيانات غير معروف.'}, status=400, headers=NO_CACHE)
         try:
             page = max(1, int(request.query_params.get('page') or 1))
         except (TypeError, ValueError):
@@ -318,6 +321,10 @@ class ProvisionalEmployeeRosterView(APIView):
         rows = batch.rows.all()
         if category:
             rows = rows.filter(classification=category)
+        if completeness == 'missing':
+            rows = rows.exclude(missing_optional=[])
+        elif completeness == 'complete':
+            rows = rows.filter(missing_optional=[])
         if search:
             # Deliberately decrypt only inside authorized server-side work,
             # never expose full IDs in URL/query parameters.
