@@ -33,6 +33,8 @@ type EmployeeHealthCardSummary = {
   mobile?: string | null;
   job_title?: string | null;
   health_center_name?: string | null;
+  organization_unit_name?: string | null;
+  organization_unit_kind?: string | null;
   health_card_exists?: boolean;
   health_card_number?: string | null;
   health_card_updated_at?: string | null;
@@ -138,7 +140,7 @@ export function OccupationalHealthPage() {
     if (!query) return employees;
     return employees.filter(employee => {
       const text = [employee.name, employee.email, employee.employee_number, employee.national_id,
-        employee.mobile, employee.job_title, employee.health_center_name]
+        employee.mobile, employee.job_title, employee.health_center_name, employee.organization_unit_name]
         .map(value => String(value || '').toLowerCase()).join(' ');
       return text.includes(query) || (digits.length >= 3 &&
         [employee.employee_number, employee.national_id, employee.mobile]
@@ -251,7 +253,9 @@ export function OccupationalHealthPage() {
                   {[
                     [isRtl ? 'رقم البطاقة' : 'Card No.', employee.health_card_number || '—'],
                     [isRtl ? 'الهوية' : 'National ID', maskedNationalId(employee.national_id)],
-                    [isRtl ? 'المركز الصحي' : 'Health Center', employee.health_center_name || '—'],
+                    [employee.organization_unit_kind === 'department' && !employee.health_center_name
+                      ? (isRtl ? 'القسم' : 'Department') : (isRtl ? 'المركز الصحي' : 'Health Center'),
+                      employee.health_center_name || (employee.organization_unit_kind === 'department' ? employee.organization_unit_name : '') || '—'],
                     [isRtl ? 'الجوال' : 'Mobile', employee.mobile || '—'],
                     [isRtl ? 'آخر تحديث' : 'Last Update', formatDate(employee.health_card_updated_at)],
                   ].map(([label, fieldValue]) => (
