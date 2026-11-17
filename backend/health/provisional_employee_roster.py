@@ -143,7 +143,7 @@ def _parse(upload):
                 for field in ('date_of_birth', 'appointment_date'):
                     value = source.get(field, '')
                     if value:
-                        if not re.fullmatch(r'\\d{4}-\\d{2}-\\d{2}', value):
+                        if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', value):
                             raise ValueError(f'الصف {number}: تاريخ غير صحيح في «{field}». استخدم YYYY-MM-DD.')
                         try:
                             parsed = date.fromisoformat(value)
