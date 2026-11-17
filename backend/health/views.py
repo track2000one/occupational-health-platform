@@ -1141,6 +1141,11 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                     employee.organization_unit.name if employee.organization_unit and
                     employee.organization_unit.kind == 'department' else ''
                 ),
+                'affiliation': (
+                    employee.health_center.name_ar or employee.health_center.name if employee.health_center
+                    else employee.organization_unit.name if employee.organization_unit and
+                    employee.organization_unit.kind == 'department' else ''
+                ),
                 'health_center': (
                     employee.health_center.name_ar or employee.health_center.name
                     if employee.health_center else ''
