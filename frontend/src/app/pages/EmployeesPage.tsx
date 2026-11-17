@@ -521,10 +521,8 @@ export function EmployeesPage() {
           : null;
         if (!next) break;
       }
-      const firstSelectableCenter = selectableEmployeeCenters(centers)[0];
       setHealthCenters(centers);
-      setForm(prev => prev.health_center || !firstSelectableCenter
-        ? prev : { ...prev, health_center: String(firstSelectableCenter.id) });
+      // Do not silently assign an arbitrary center to a new employee.
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to load centers');
     }
@@ -567,7 +565,7 @@ export function EmployeesPage() {
   function openAdd() {
     setSelectedEmployee(null);
     setAffiliationKind('center');
-    setForm({ ...EMPTY_FORM, health_center: selectableCenters[0] ? String(selectableCenters[0].id) : '' });
+    setForm({ ...EMPTY_FORM });
     setDialogMode('add');
     setOpenDialog(true);
   }
@@ -1879,8 +1877,7 @@ export function EmployeesPage() {
                   const kind = event.target.value as 'center' | 'department';
                   setAffiliationKind(kind);
                   setForm(prev => ({
-                    ...prev, health_center: kind === 'center' ? String(selectableCenters[0]?.id || '') : '',
-                    organization_unit: '',
+                    ...prev, health_center: '', organization_unit: '',
                   }));
                 }}
                 helperText={isRtl ? 'اختر المركز الصحي أو القسم المركزي المعتمد؛ تغيير التبعية المثبتة يتطلب إجراء نقل معتمدًا' :
