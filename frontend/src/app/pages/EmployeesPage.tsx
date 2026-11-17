@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 import {
@@ -25,6 +25,8 @@ import {
   TableHead,
   TableRow,
   TablePagination,
+  Tab,
+  Tabs,
   TextField,
   Typography,
 } from '@mui/material';
@@ -50,6 +52,7 @@ import { PERMISSIONS } from '../data/roles';
 import { CalendarDateField } from '../components/CalendarDateField';
 import { HealthCenterAutocomplete } from '../components/HealthCenterAutocomplete';
 import { EmployeeRegistryCard } from '../components/EmployeeRegistryCard';
+import { ImportedEmployeeCardsTab } from '../components/ImportedEmployeeCardsTab';
 import { JOB_TITLES, getNationalityOptions, normalizeNationalitySearch } from '../data/employeeFormOptions';
 import {
   normalizeNationalId, isValidNationalId, isValidEmployeeEmail,
@@ -395,6 +398,14 @@ export function EmployeesPage() {
   const [registryResetPhrase, setRegistryResetPhrase] = useState('');
   const [registryResetConfirmed, setRegistryResetConfirmed] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
+  const [registryTab, setRegistryTab] = useState<'approved' | 'imported'>(() =>
+    typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('tab') === 'imported'
+      ? 'imported' : 'approved');
+  // Ref avoids a pending initial API fetch overriding a tab explicitly chosen by the user.
+  const registryTabSelected = useRef(
+    typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('tab'),
+  );
+  const [importedTotal, setImportedTotal] = useState<number | null>(null);
   const [archiveTarget, setArchiveTarget] = useState<ApiEmployee | null>(null);
   const [archiveAction, setArchiveAction] = useState<'archive' | 'restore'>('archive');
   const [archiveReason, setArchiveReason] = useState('');
@@ -408,6 +419,9 @@ export function EmployeesPage() {
   const [visibilityTypedPhrase, setVisibilityTypedPhrase] = useState('');
   const [visibilityConfirmed, setVisibilityConfirmed] = useState(false);
 
+  // Keep archived clinical records and the imported administrative roster in separate views.
+  // The backend also enforces superuser/dataEntry access to provisional records.
+  const canViewImported = Boolean(user?.isSuperuser || user?.role === 'dataEntry');
   const canArchive = can(PERMISSIONS.MANAGE_USERS);
   const canBulkReset = canArchive && user?.isSuperuser === true;
   const archivedFiltersClear = !searchTerm.trim() && centerFilter === 'all' &&
@@ -456,7 +470,15 @@ export function EmployeesPage() {
         ? employeesPayload as { count?: number }
         : {};
       setEmployees(results);
-      setTotalCount(typeof payload.count === 'number' ? payload.count : results.length);
+      const activeTotal = typeof payload.count === 'number' ? payload.count : results.length;
+      setTotalCount(activeTotal);
+      // When Production has no active employees, open the already-imported roster
+      // rather than leaving the administrator on an empty screen. Never switch
+      // automatically after an explicit tab choice or during archived searches.
+      if (!IS_STAGING_UI && canViewImported && !registryTabSelected.current && !showArchived &&
+          archivedFiltersClear && activeTotal === 0 && page === 0) {
+        setRegistryTab('imported');
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to load employees';
       setConnectionError(message);
@@ -937,6 +959,30 @@ export function EmployeesPage() {
 
   return (
     <Box>
+      {canViewImported && (
+        <Paper variant="outlined" sx={{ p: 1, mb: 2, borderRadius: 3, borderColor: '#C4D8E7' }}>
+          <Tabs value={registryTab}
+            onChange={(_, next: 'approved' | 'imported') => {
+              setRegistryTab(next);
+              registryTabSelected.current = true;
+            }}
+            variant="scrollable" scrollButtons="auto"
+            aria-label="نوع سجل الموظفين"
+            sx={{ '& .MuiTab-root': { fontWeight: 800, minHeight: 46 } }}>
+            <Tab value="approved"
+              label={isRtl ? `الموظفون في السجل الرئيسي (غير المؤرشفين: ${totalCount})`
+                : `Main registry employees (not archived: ${totalCount})`} />
+            <Tab value="imported"
+              label={isRtl
+                ? `الموظفون المستوردون — بطاقات مؤقتة${importedTotal !== null ? ` (${importedTotal})` : ''}`
+                : `Imported employees — temporary${importedTotal !== null ? ` (${importedTotal})` : ''}`} />
+          </Tabs>
+        </Paper>
+      )}
+      {canViewImported && registryTab === 'imported' ? (
+        <ImportedEmployeeCardsTab onCountChange={setImportedTotal} />
+      ) : (
+        <>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
           <PeopleIcon sx={{ fontSize: 32, color: 'primary.main' }} />
@@ -1891,6 +1937,8 @@ export function EmployeesPage() {
           )}
         </DialogActions>
       </Dialog>
+        </>
+      )}
     </Box>
   );
 }
