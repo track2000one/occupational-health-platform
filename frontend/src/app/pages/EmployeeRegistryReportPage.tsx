@@ -33,6 +33,8 @@ const API_BASE_URL = (import.meta.env.VITE_API_URL ||
 type ReportFilters = {
   search: string;
   health_center_id: string;
+  affiliation_type: string;
+  department_id: string;
   employment_status: string;
   source_category: string;
   job_title: string;
@@ -60,7 +62,7 @@ type ReportPayload = {
 };
 
 const DEFAULT_COLUMNS: Array<keyof FlexibleEmployeeReportRow> = [
-  'name', 'employee_number', 'national_id_masked', 'health_center',
+  'name', 'employee_number', 'national_id_masked', 'affiliation',
   'job_title', 'employment_status',
 ];
 
@@ -76,6 +78,8 @@ function initialFilters(q: URLSearchParams): ReportFilters {
   return {
     search: q.get('search') || '',
     health_center_id: q.get('health_center_id') || '',
+    affiliation_type: q.get('affiliation_type') || '',
+    department_id: q.get('department_id') || '',
     employment_status: q.get('employment_status') || '',
     source_category: q.get('source_category') || '',
     job_title: '',
@@ -124,6 +128,7 @@ export function EmployeeRegistryReportPage() {
   const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('landscape');
   const [identityVisibility, setIdentityVisibility] = useState<'masked' | 'full'>('masked');
   const [centers, setCenters] = useState<CenterItem[]>([]);
+  const [departments, setDepartments] = useState<Array<{ id: number; name: string }>>([]);
   const [centersError, setCentersError] = useState('');
   const [report, setReport] = useState<ReportPayload | null>(null);
   const [loadedQuery, setLoadedQuery] = useState('');
@@ -185,6 +190,14 @@ export function EmployeeRegistryReportPage() {
           if (Array.isArray(payload) || !payload.next) break;
         }
         if (mounted) setCenters(items.filter(center => center.is_active !== false));
+        const directoryResponse = await authFetch(`${API_BASE_URL}/organization-units/?approved=1`);
+        if (directoryResponse.ok) {
+          const directory = await directoryResponse.json();
+          if (mounted) setDepartments((directory.results || []).filter((unit: {
+            kind: string; is_active: boolean; is_approved: boolean; health_center_id: number | null;
+          }) => unit.kind === 'department' && unit.is_active && unit.is_approved &&
+              unit.health_center_id === null));
+        }
       } catch (error) {
         if (mounted) setCentersError(error instanceof Error ? error.message : 'تعذر قراءة المراكز.');
       }
@@ -239,6 +252,9 @@ export function EmployeeRegistryReportPage() {
   const filterSummary = [
     filters.search ? `بحث: ${filters.search}` : '',
     selectedCenter ? `المركز: ${selectedCenter.name_ar || selectedCenter.name}` : '',
+    filters.affiliation_type ? `التبعية: ${filters.affiliation_type === 'department' ? 'قسم' : filters.affiliation_type === 'center' ? 'مركز صحي' : 'غير محددة'}` : '',
+    departments.find(unit => String(unit.id) === filters.department_id)
+      ? `القسم: ${departments.find(unit => String(unit.id) === filters.department_id)?.name}` : '',
     filters.employment_status ? `الحالة: ${STATUS_LABELS[filters.employment_status] || filters.employment_status}` : '',
     filters.source_category ? `حالة المصدر: ${filters.source_category}` : '',
     filters.gender ? `الجنس: ${filters.gender === 'male' ? 'ذكر' : 'أنثى'}` : '',
@@ -320,14 +336,34 @@ export function EmployeeRegistryReportPage() {
             <TextField fullWidth size="small" label="البحث بالاسم أو الرقم الوظيفي أو الهوية"
               value={filters.search} onChange={event => updateFilter('search', event.target.value)} />
           </Grid>
-          <Grid size={{ xs: 12, md: 6 }}>
-            <TextField select fullWidth size="small" label="المركز الصحي"
-              value={filters.health_center_id} onChange={event => updateFilter('health_center_id', event.target.value)}>
-              <MenuItem value="">جميع المراكز</MenuItem>
-              {centers.map(center => <MenuItem key={center.id} value={String(center.id)}>
-                {center.name_ar || center.name}
-              </MenuItem>)}
+          <Grid size={{ xs: 12, md: 3 }}>
+            <TextField select fullWidth size="small" label="نوع التبعية"
+              value={filters.affiliation_type}
+              onChange={event => setFilters(prev => ({ ...prev, affiliation_type: event.target.value,
+                health_center_id: '', department_id: '' }))}>
+              <MenuItem value="">جميع الموظفين</MenuItem>
+              <MenuItem value="center">مركز صحي</MenuItem>
+              <MenuItem value="department">قسم</MenuItem>
+              <MenuItem value="unassigned">غير محددة</MenuItem>
             </TextField>
+          </Grid>
+          <Grid size={{ xs: 12, md: 3 }}>
+            {filters.affiliation_type === 'department' ? (
+              <TextField select fullWidth size="small" label="القسم"
+                value={filters.department_id} onChange={event => updateFilter('department_id', event.target.value)}>
+                <MenuItem value="">جميع الأقسام</MenuItem>
+                {departments.map(unit => <MenuItem key={unit.id} value={String(unit.id)}>{unit.name}</MenuItem>)}
+              </TextField>
+            ) : (
+              <TextField select fullWidth size="small" label="المركز الصحي"
+                disabled={filters.affiliation_type === 'unassigned'}
+                value={filters.health_center_id} onChange={event => updateFilter('health_center_id', event.target.value)}>
+                <MenuItem value="">جميع المراكز</MenuItem>
+                {centers.map(center => <MenuItem key={center.id} value={String(center.id)}>
+                  {center.name_ar || center.name}
+                </MenuItem>)}
+              </TextField>
+            )}
           </Grid>
           <Grid size={{ xs: 12, sm: 6, md: 3 }}>
             <TextField select fullWidth size="small" label="الحالة الوظيفية"
