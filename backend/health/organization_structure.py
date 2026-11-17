@@ -261,6 +261,10 @@ class OrganizationUnitReviewView(APIView):
                 unit.health_center = center
                 unit.save(update_fields=['health_center', 'updated_at'])
             elif action == 'approve':
+                if not unit.is_active:
+                    return Response({'detail': 'لا يمكن اعتماد جهة غير نشطة.'}, status=409)
+                if unit.kind == 'department' and (unit.health_center_id or unit.parent_id):
+                    return Response({'detail': 'القسم المركزي يجب ألا يكون مرتبطًا بمركز صحي أو بجهة أعلى غير معتمدة لهذا التصنيف.'}, status=409)
                 if len(ref) < 3 or len(ref) > 255:
                     return Response({'detail': 'Enter an official approval reference (3–255 characters).'}, status=400)
                 if unit.parent_id and not unit.parent.is_approved:
