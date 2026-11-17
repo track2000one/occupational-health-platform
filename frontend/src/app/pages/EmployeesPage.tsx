@@ -137,6 +137,8 @@ type ApiEmployee = {
   national_id: string;
   employee_number?: string | null;
   organization_unit?: number | null;
+  organization_unit_name?: string;
+  organization_unit_kind?: 'department' | 'sector' | 'center' | 'unit' | '';
   nationality?: string;
   current_job?: string;
   national_address?: string;
@@ -245,10 +247,11 @@ const OPTIONAL_EMPLOYEE_FIELDS: Array<[keyof ApiEmployee, string]> = [
   ['job_title', 'المسمى الوظيفي'],
   ['current_job', 'الوظيفة الحالية'],
   ['appointment_date', 'تاريخ التعيين'],
-  ['health_center', 'المركز الصحي'],
+  ['health_center', 'المركز الصحي أو القسم'],
 ];
 function missingEmployeeOptionalFields(employee: ApiEmployee): string[] {
   return OPTIONAL_EMPLOYEE_FIELDS.filter(([field]) =>
+    (field !== 'health_center' || !employee.organization_unit || employee.organization_unit_kind !== 'department') &&
     !String(employee[field] ?? '').trim()
   ).map(([, label]) => label);
 }
@@ -319,7 +322,7 @@ function buildPayload(form: EmployeeForm) {
     birth_place: form.birth_place.trim(),
     gender: form.gender,
     marital_status: form.marital_status,
-    health_center: Number(form.health_center),
+    health_center: form.health_center ? Number(form.health_center) : null,
     job_title: form.job_title.trim(),
     job_title_en: form.job_title_en.trim(),
     moh_id: form.moh_id.trim(),
@@ -385,6 +388,8 @@ export function EmployeesPage() {
   const [completionIdentityChecked, setCompletionIdentityChecked] = useState(false);
   const [completionSaving, setCompletionSaving] = useState(false);
   const [form, setForm] = useState<EmployeeForm>(EMPTY_FORM);
+  const [affiliationKind, setAffiliationKind] = useState<'center' | 'department'>('center');
+  const [completionAffiliationKind, setCompletionAffiliationKind] = useState<'center' | 'department'>('center');
   const [connectionError, setConnectionError] = useState('');
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [resetScope, setResetScope] = useState<ResetScope>('all_synthetic');
@@ -450,8 +455,11 @@ export function EmployeesPage() {
     ? [...selectableCenters, legacySelectedCenter] : selectableCenters;
   const availableOrgUnits = approvedOrganizations.filter(unit =>
     unit.is_approved && unit.is_active &&
-    (unit.kind === 'center' || unit.kind === 'unit' || unit.kind === 'department') &&
+    (unit.kind === 'center' || unit.kind === 'unit') &&
     unit.health_center_id !== null && String(unit.health_center_id) === form.health_center);
+  const approvedDepartments = approvedOrganizations.filter(unit =>
+    unit.is_approved && unit.is_active && unit.kind === 'department' &&
+    unit.health_center_id === null);
   const selectedOrgUnit = approvedOrganizations.find(item => String(item.id) === form.organization_unit) || null;
   // Preserve a legacy/imported title in edit mode even when it is not in the 116-item reference file.
   const jobTitleOptions = form.job_title && !JOB_TITLES.includes(form.job_title)
@@ -544,12 +552,16 @@ export function EmployeesPage() {
   const filteredEmployees = employees;
 
   function getHealthCenterName(employee: ApiEmployee) {
+    if (!employee.health_center && employee.organization_unit_kind === 'department') {
+      return employee.organization_unit_name || 'قسم معتمد';
+    }
     return centerNameById.get(String(employee.health_center)) || employee.health_center_name ||
-      (employee.source_center_name ? `بانتظار مطابقة: ${employee.source_center_name}` : 'مركز غير محدد');
+      (employee.source_center_name ? `بانتظار مطابقة: ${employee.source_center_name}` : 'تبعية غير محددة');
   }
 
   function openAdd() {
     setSelectedEmployee(null);
+    setAffiliationKind('center');
     setForm({ ...EMPTY_FORM, health_center: selectableCenters[0] ? String(selectableCenters[0].id) : '' });
     setDialogMode('add');
     setOpenDialog(true);
@@ -570,6 +582,7 @@ export function EmployeesPage() {
     }
     if (!canWrite) return;
     setSelectedEmployee(employee);
+    setAffiliationKind(!employee.health_center && employee.organization_unit_kind === 'department' ? 'department' : 'center');
     setForm(asForm(employee));
     setDialogMode('edit');
     setOpenDialog(true);
@@ -636,6 +649,7 @@ export function EmployeesPage() {
 
   function openView(employee: ApiEmployee) {
     setSelectedEmployee(employee);
+    setAffiliationKind(!employee.health_center && employee.organization_unit_kind === 'department' ? 'department' : 'center');
     setForm(asForm(employee));
     setDialogMode('view');
     setOpenDialog(true);
@@ -657,7 +671,9 @@ export function EmployeesPage() {
     const required: Array<[keyof EmployeeForm, string]> = [
       ['name', isRtl ? 'اسم الموظف' : 'Name'],
       ['national_id', isRtl ? 'رقم الهوية الوطنية' : 'National ID'],
-      ['health_center', isRtl ? 'المركز الصحي' : 'Health center'],
+      [affiliationKind === 'center' ? 'health_center' : 'organization_unit',
+       affiliationKind === 'center' ? (isRtl ? 'المركز الصحي' : 'Health center')
+         : (isRtl ? 'القسم' : 'Department')],
     ];
 
     const missing = required.find(([key]) => !String(form[key] || '').trim());
