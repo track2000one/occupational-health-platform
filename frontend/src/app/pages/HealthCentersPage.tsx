@@ -330,6 +330,10 @@ export function HealthCentersPage() {
         <Button variant="outlined" startIcon={<RefreshIcon />} onClick={() => void load()}>
           {isRtl ? 'تحديث' : 'Refresh'}
         </Button>
+        <Button variant="outlined" startIcon={<BusinessIcon />}
+          onClick={() => navigate('/admin/departments')}>
+          إدارة الأقسام
+        </Button>
         {canImport && <Button variant="contained" color="primary"
           startIcon={<FoundationIcon />}
           onClick={() => navigate('/admin/center-directory-match')}>
