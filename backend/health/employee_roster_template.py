@@ -14,35 +14,16 @@ from rest_framework.views import APIView
 
 from .employee_import_countries import COUNTRY_LABEL_TO_CODE
 from .employee_import_job_titles import JOB_TITLES
-from .models import OrganizationUnit
+from .employee_template_contract import (
+    CANONICAL_HEADERS, TEMPLATE_VERSION, NATIONALITY_PRIORITY,
+    GENDER_CHOICES, MARITAL_CHOICES,
+)
+from .models import OrganizationUnit, HealthCenter
 
-COLUMNS = (
-    'المركز الصحي',
-    'اسم الموظف',
-    'رقم الهوية / الإقامة',
-    'الرقم الوظيفي',
-    'البريد الإلكتروني',
-    'رقم الجوال',
-    'تاريخ الميلاد',
-    'مكان الميلاد',
-    'الجنس',
-    'الحالة الاجتماعية',
-    'العنوان الوطني',
-    'المسمى الوظيفي',
-    'تاريخ التعيين',
-    'الجنسية',
-    'الوظيفة الحالية',
-    'المسمى الوظيفي بالإنجليزية',
-    'عدد الأطفال',
-    'رمز الوحدة التنظيمية',
-)
-REQUIRED_COLUMNS = (1, 2, 3)
-ARAB_COUNTRY_ORDER = (
-    'السعودية', 'البحرين', 'الكويت', 'مصر', 'الإمارات', 'قطر', 'عُمان',
-    'اليمن', 'الأردن', 'لبنان', 'سوريا', 'العراق', 'فلسطين',
-    'السودان', 'ليبيا', 'تونس', 'الجزائر', 'المغرب', 'موريتانيا',
-    'الصومال', 'جيبوتي', 'جزر القمر',
-)
+# The source headings come from the same contract used by import tests.
+COLUMNS = CANONICAL_HEADERS
+REQUIRED_COLUMNS = (1, 2)
+ARAB_COUNTRY_ORDER = NATIONALITY_PRIORITY
 
 
 def make_template():
@@ -50,21 +31,18 @@ def make_template():
     sheet = book.active
     sheet.title = 'Employees'
     sheet.sheet_view.rightToLeft = True
-    sheet.freeze_panes = 'D2'
+    sheet.freeze_panes = 'C2'
     sheet.append(list(COLUMNS))
-    # Center names are drawn from the current active master, but no approval
-    # is granted. An optional org code is exposed only when already approved.
-    organizations = list(OrganizationUnit.objects.select_related(
-        'health_center', 'parent',
-    ).filter(kind='center', is_active=True, health_center__is_active=True)
-        .order_by('parent__name', 'health_center__name'))
-    seen = set()
-    centers = []
-    for unit in organizations:
-        center = unit.health_center
-        if center and center.pk not in seen:
-            centers.append((center.name, unit.parent.name if unit.parent_id else '', unit.code))
-            seen.add(center.pk)
+    # Only APPROVED active master records are offered as validated centers.
+    # Draft centers must not appear as approved options in the template.
+    centers = [
+        (center.name or center.name_ar or '', '', center.code or '')
+        for center in HealthCenter.objects.filter(
+            is_active=True, is_archived=False,
+            approval_status=HealthCenter.ApprovalStatus.APPROVED,
+        ).order_by('name').only('name', 'name_ar', 'code')
+        if center.name or center.name_ar
+    ]
     approved_orgs = list(OrganizationUnit.objects.select_related('health_center').filter(
         is_approved=True, is_active=True, health_center__is_active=True,
         kind__in=['center', 'unit'],
@@ -75,7 +53,7 @@ def make_template():
 
     master = book.create_sheet('المراكز والقطاعات')
     master.sheet_view.rightToLeft = True
-    master.append(['المركز الصحي', 'القطاع الاستشاري المقترح', 'رمز المركز في الهيكل'])
+    master.append(['المركز الصحي المعتمد حاليًا', 'قطاع/مجموعة (إن وجدت)', 'رمز المركز'])
     for row in centers:
         master.append(list(row))
 
@@ -90,27 +68,29 @@ def make_template():
             JOB_TITLES[idx] if idx < len(JOB_TITLES) else None,
             nationalities[idx] if idx < len(nationalities) else None,
             COUNTRY_LABEL_TO_CODE[nationalities[idx]] if idx < len(nationalities) else None,
-            ('ذكر', 'أنثى')[idx] if idx < 2 else None,
-            ('أعزب', 'متزوج', 'مطلق', 'أرمل')[idx] if idx < 4 else None,
+            GENDER_CHOICES[idx] if idx < len(GENDER_CHOICES) else None,
+            MARITAL_CHOICES[idx] if idx < len(MARITAL_CHOICES) else None,
             approved_orgs[idx].code if idx < len(approved_orgs) else None,
         ])
     info = book.create_sheet('تعليمات الاستخدام')
     info.sheet_view.rightToLeft = True
     guide = [
-        ['قالب استيراد الموظفين – منصة الصحة المهنية (محدث تلقائيًا)'],
-        ['1', 'يبدأ إدخال الموظفين من الصف 2 في ورقة Employees. لا تغيّر اسم الورقة أو رؤوس الأعمدة.'],
-        ['2', 'الحقول الإلزامية فقط: اسم المركز الصحي، اسم الموظف، رقم الهوية / الإقامة (10 أرقام).'],
-        ['3', 'الرقم الوظيفي والبريد الإلكتروني اختياريان، لكن يجب عدم تكرارهما إن أُدخلا.'],
-        ['4', 'اختر المركز من القائمة؛ أسماء المراكز الحالية في ورقة المراكز والقطاعات.'],
-        ['5', 'الجنسية اسم بلد مثل «السعودية» أو رمز ISO مثل SA؛ السعودية والدول العربية أولًا.'],
-        ['6', 'تاريخا الميلاد والتعيين اختياريان، بصيغة YYYY-MM-DD أو خلية تاريخ Excel صحيحة.'],
-        ['7', 'المسمى الوظيفي من القائمة المرجعية، والوظيفة الحالية حقل يدوي مستقل.'],
-        ['8', 'رمز الوحدة التنظيمية اختياري، ولا يقبل إلا الرمز المعتمد في المنصة.'],
-        ['9', 'لا تُدرج بيانات طبية أو نتائج فحص أو تطعيم أو تشخيص في ملف تأسيس الموظفين.'],
-        ['10', 'ارفع الملف بحساب مسؤول، ثم معاينة وتدقيق، ثم اعتماد الموظفين السليمين.'],
-        ['11', 'التعارضات مثل وجود الهوية مسبقًا تُعلق للمراجعة ولا تنشئ موظفًا مكررًا.'],
-        ['12', 'لا ترفع الملف المعبأ إلى GitHub أو إلى Staging إذا كان يحوي بيانات موظفين فعلية.'],
-        ['تنبيه', 'أسماء القطاعات والمسارات التنظيمية مرجعية حتى اعتمادها رسميًا.'],
+        [f'القالب المعتمد لاستيراد الموظفين — {TEMPLATE_VERSION}'],
+        ['1', 'ورقة Employees فقط مخصصة لإدخال الموظفين. تبدأ البيانات من الصف 2. لا تغيّر اسمها أو رؤوس أعمدتها.'],
+        ['2', 'الحقول الإلزامية: اسم الموظف، ورقم الهوية/الإقامة الكامل المكون من 10 أرقام. المركز والرقم الوظيفي والحقول الأخرى اختيارية.'],
+        ['3', 'أدخل الهوية والرقم الوظيفي والجوال كنص للحفاظ على الأصفار. لا تضع هويات مخفية أو أرقامًا ناقصة.'],
+        ['4', 'لا تكرر الهوية الوطنية أو الإقامة في أكثر من صف. الرقم الوظيفي والبريد لا يجوز ربطهما بهوية مختلفة.'],
+        ['5', 'اختر اسم المركز والوحدة التنظيمية من الخيارات المعتمدة عند توفرها فقط؛ إذا لم تجدها اترك الحقل فارغًا للمراجعة.'],
+        ['6', 'تواريخ الميلاد والتعيين بالتقويم الميلادي وبصيغة YYYY-MM-DD. لا تحول التاريخ الهجري إلى ميلادي دون تحقق.'],
+        ['7', 'اختر المسمى الوظيفي من القائمة المرجعية إن أمكن؛ الوظيفة الحالية حقل إدخال منفصل.'],
+        ['8', 'يجب أن تكون الجنسية والجنس والحالة الاجتماعية من القوائم. عدد الأطفال رقم صحيح غير سالب.'],
+        ['9', 'حقول المعلومات غير المتوفرة تُترك فارغة، ولا تُدخل قيمًا افتراضية أو غير مؤكدة. ستظهر البطاقة بلون تنبيهي عند النقص.'],
+        ['10', 'ورقتا «قوائم الاختيار» و«تعليمات الاستخدام» ليستا للاستيراد؛ لا تضف بيانات أشخاص إليهما.'],
+        ['11', 'استخدم فحص الملف في المنصة قبل الاستيراد، وراجع عدد السجلات والأعمدة والتعارضات.'],
+        ['12', 'الاستيراد ينشئ بطاقات إدارية مؤقتة فقط ولا يفك أرشفة ملفات صحية أو يعتمد الموظفين تلقائيًا.'],
+        ['13', 'إذا كانت دفعة موظفين مستوردة سابقًا، راجع تقرير التداخل قبل رفع دفعة جديدة؛ الاستيراد ليس تحديثًا جماعيًا للسجلات القديمة.'],
+        ['14', 'لا ترفع ملف الموظفين الحقيقي إلى GitHub أو Staging أو خدمات مشاركة عامة.'],
+        ['تنبيه', 'تعكس قوائم المراكز المعتمدة الحالة الحالية فقط، وقد تكون فارغة لحين اعتماد دليل المراكز.'],
     ]
     for row in guide:
         info.append(row)
@@ -132,17 +112,17 @@ def make_template():
         sheet.cell(1, col).fill = green
     for col in range(1, len(COLUMNS)+1):
         letter = sheet.cell(1, col).column_letter
-        sheet.column_dimensions[letter].width = (32 if col in (1, 2, 12, 15, 16) else 24)
+        sheet.column_dimensions[letter].width = (34 if col in (1, 6, 7, 8, 15, 16, 17, 18) else 24)
         for row in range(2, 502):
             cell = sheet.cell(row, col)
             cell.alignment = Alignment(horizontal='right', vertical='center')
             if row % 2 == 0:
                 cell.fill = pale
     # Numeric identifiers must be treated as text by Excel to preserve their digits.
-    for col in ('C', 'D', 'F'):
+    for col in ('B', 'C', 'E'):
         for row in range(2, 502):
             sheet[f'{col}{row}'].number_format = '@'
-    for col in ('G', 'M'):
+    for col in ('J', 'S'):
         for row in range(2, 502):
             sheet[f'{col}{row}'].number_format = 'yyyy-mm-dd'
     info.column_dimensions['A'].width = 17
@@ -173,9 +153,9 @@ def make_template():
         validation.add(f'{target_col}2:{target_col}501')
 
     for col, source_col, length in [
-        ('A', 'A', len(centers)), ('L', 'B', len(JOB_TITLES)),
-        ('N', 'C', len(nationalities)), ('I', 'E', 2),
-        ('J', 'F', 4), ('R', 'G', len(approved_orgs)),
+        ('F', 'A', len(centers)), ('P', 'B', len(JOB_TITLES)),
+        ('I', 'C', len(nationalities)), ('L', 'E', 2),
+        ('M', 'F', 4), ('G', 'G', len(approved_orgs)),
     ]:
         add_dropdown(col, source_col, length)
 
@@ -193,6 +173,6 @@ class EmployeeRosterTemplateView(APIView):
             content,
             content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         )
-        response['Content-Disposition'] = "attachment; filename=employee-roster-current.xlsx"
+        response['Content-Disposition'] = "attachment; filename=OHP_Employee_Approved_Template_V3.xlsx"
         response['Cache-Control'] = 'no-store'
         return response
