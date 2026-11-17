@@ -1377,3 +1377,30 @@ class ProvisionalEmployeeRosterRow(models.Model):
                 name='unique_provisional_roster_identity',
             ),
         ]
+
+
+
+class ProvisionalEmployeeNumberCorrectionEvent(models.Model):
+    """Append-only administrative correction evidence without storing raw identifiers.
+
+    Temporary roster deletion does not delete historical edit event metadata.
+    No original Employee or clinical FK is held.
+    """
+    row = models.ForeignKey(
+        ProvisionalEmployeeRosterRow, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='number_corrections',
+    )
+    batch_sha256 = models.CharField(max_length=64)
+    source_row = models.PositiveIntegerField()
+    old_number_digest = models.CharField(max_length=64)
+    new_number_digest = models.CharField(max_length=64)
+    evidence_reference = models.CharField(max_length=150)
+    reason = models.CharField(max_length=500)
+    performed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name='provisional_employee_number_corrections',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at', '-pk']

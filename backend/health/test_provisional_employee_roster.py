@@ -12,6 +12,7 @@ from rest_framework.test import APIClient
 
 from .models import (
     AuditLog, Employee, EmployeeRegistryResetBatch, HealthCenter, ProvisionalEmployeeImportBatch,
+    ProvisionalEmployeeNumberCorrectionEvent,
     ProvisionalEmployeeRosterRow, UserProfile,
 )
 
@@ -458,3 +459,121 @@ class ProvisionalEmployeeRosterTests(TestCase):
         self.assertEqual(self.api.get('/api/provisional-employees/conflict-diagnostics/').status_code, 403)
         self.api.force_authenticate(self.viewer)
         self.assertEqual(self.api.get('/api/provisional-employees/conflict-diagnostics/').status_code, 403)
+
+
+    def test_edit_conflicting_employee_number_previews_then_commits_only_temporary_row(self):
+        original = self.workbook([
+            ('Center', 'Original Match', '1000000001', 'ORIGINAL-1', '', ''),
+            ('Center', 'Original Different Name', '1000000002', 'ORIGINAL-1', '', ''),
+        ])
+        self.assertEqual(self.upload(original).status_code, 201)
+        from .models import ProvisionalEmployeeRosterRow
+        row = ProvisionalEmployeeRosterRow.objects.get(source_row=3)
+        url = f'/api/provisional-employees/{row.pk}/employee-number-edit/'
+        edit = self.api.get(url)
+        self.assertEqual(edit.status_code, 200, edit.data)
+        self.assertEqual(edit['Cache-Control'], 'private, no-store')
+        self.assertEqual(edit.data['current_employee_number'], 'ORIGINAL-1')
+        preview = self.api.post(url, {'action': 'preview', 'employee_number': 'NEW-002'}, format='json')
+        self.assertEqual(preview.status_code, 200, preview.data)
+        self.assertEqual(preview.data['status'], 'preview_only')
+        self.assertEqual(preview.data['next_classification'], 'name_match')
+        self.assertEqual(ProvisionalEmployeeRosterRow.objects.get(pk=row.pk).classification, 'identifier_review')
+        self.assertEqual(Employee.objects.get(national_id='1000000002').employee_number, None)
+        self.assertEqual(ProvisionalEmployeeNumberCorrectionEvent.objects.count(), 0)
+        no_evidence = self.api.post(url, {
+            'action': 'commit', 'employee_number': 'NEW-002',
+            'preview_token': preview.data['preview_token'], 'confirmed': True,
+            'verified_hr_document': False, 'reason': 'Synthetic HR number correction',
+            'evidence_reference': 'HR-SYNTH-2026',
+        }, format='json')
+        self.assertEqual(no_evidence.status_code, 400)
+        saved = self.api.post(url, {
+            'action': 'commit', 'employee_number': 'NEW-002',
+            'preview_token': preview.data['preview_token'], 'confirmed': True,
+            'verified_hr_document': True, 'reason': 'Synthetic HR number correction',
+            'evidence_reference': 'HR-SYNTH-2026',
+        }, format='json')
+        self.assertEqual(saved.status_code, 200, saved.data)
+        self.assertTrue(saved.data['saved'])
+        self.assertFalse(saved.data['original_employee_modified'])
+        self.assertFalse(saved.data['medical_records_modified'])
+        self.assertNotIn('NEW-002', json.dumps(saved.data))
+        row.refresh_from_db()
+        self.assertEqual(row.classification, 'name_match')
+        self.assertNotIn('NEW-002', row.sealed_payload)
+        self.assertEqual(Employee.objects.get(national_id='1000000001').employee_number, 'ORIGINAL-1')
+        self.assertIsNone(Employee.objects.get(national_id='1000000002').employee_number)
+        self.assertTrue(Employee.objects.get(national_id='1000000002').is_archived)
+        audit = ProvisionalEmployeeNumberCorrectionEvent.objects.get()
+        self.assertEqual(audit.source_row, 3)
+        self.assertEqual(audit.performed_by, self.admin)
+        self.assertNotEqual(audit.old_number_digest, audit.new_number_digest)
+        self.assertNotIn('ORIGINAL-1', str(audit.__dict__))
+        self.assertNotIn('NEW-002', str(audit.__dict__))
+        self.assertTrue(AuditLog.objects.filter(action='provisional_employee_number_corrected').exists())
+        again = self.upload(original)
+        self.assertEqual(again.status_code, 200)
+        self.assertTrue(again.data['already_imported'])
+        row.refresh_from_db()
+        self.assertEqual(row.classification, 'name_match')
+        diagnosed = self.api.get('/api/provisional-employees/conflict-diagnostics/')
+        self.assertEqual(diagnosed.status_code, 200)
+        self.assertEqual(diagnosed.data['flagged_rows'], 0)
+
+    def test_number_editor_refuses_other_employee_or_excel_owners(self):
+        raw = self.workbook([
+            ('Center', 'Original Match', '1000000001', 'ORIGINAL-1', '', ''),
+            ('Center', 'Other Source', '1000000002', 'ORIGINAL-1', '', ''),
+            ('Center', 'Source Three', '1000000003', 'ANOTHER-3', '', ''),
+        ])
+        self.assertEqual(self.upload(raw).status_code, 201)
+        row = ProvisionalEmployeeRosterRow.objects.get(source_row=3)
+        url = f'/api/provisional-employees/{row.pk}/employee-number-edit/'
+        self.assertEqual(self.api.post(url, {
+            'action': 'preview', 'employee_number': 'ORIGINAL-1',
+        }, format='json').status_code, 409)
+        self.assertEqual(self.api.post(url, {
+            'action': 'preview', 'employee_number': 'ANOTHER-3',
+        }, format='json').status_code, 409)
+        self.assertEqual(self.api.post(url, {
+            'action': 'preview', 'employee_number': 'incorrect with spaces',
+        }, format='json').status_code, 400)
+        self.assertEqual(row.classification, 'identifier_review')
+        self.api.force_authenticate(self.data_entry)
+        self.assertEqual(self.api.get(url).status_code, 403)
+        self.assertEqual(self.api.post(url, {
+            'action': 'preview', 'employee_number': 'NEW-3',
+        }, format='json').status_code, 403)
+        self.api.force_authenticate(self.viewer)
+        self.assertEqual(self.api.get(url).status_code, 403)
+        self.assertEqual(Employee.objects.count(), 2)
+        self.assertEqual(ProvisionalEmployeeNumberCorrectionEvent.objects.count(), 0)
+
+    def test_number_editor_rejects_stale_preview_and_preserves_completion(self):
+        self.assertEqual(self.upload(self.workbook([
+            ('Center', 'Original Match', '1000000001', 'ORIGINAL-1', '', ''),
+            ('Center', 'Different source', '1000000002', 'ORIGINAL-1', '', ''),
+        ])).status_code, 201)
+        row = ProvisionalEmployeeRosterRow.objects.get(source_row=3)
+        url = f'/api/provisional-employees/{row.pk}/employee-number-edit/'
+        preview = self.api.post(url, {'action': 'preview', 'employee_number': 'NEW-20'}, format='json')
+        self.assertEqual(preview.status_code, 200, preview.data)
+        completion = self.api.post(f'/api/provisional-employees/{row.pk}/complete/', {
+            'identity_checked': True,
+            'reason': 'Synthetic HR verification to update optional phone',
+            'fields': {'mobile': '0550000200'},
+        }, format='json')
+        self.assertEqual(completion.status_code, 200, completion.data)
+        save = self.api.post(url, {
+            'action': 'commit', 'employee_number': 'NEW-20',
+            'preview_token': preview.data['preview_token'],
+            'confirmed': True, 'verified_hr_document': True,
+            'reason': 'Synthetic corrected staff number',
+            'evidence_reference': 'HR-REF-2026',
+        }, format='json')
+        self.assertEqual(save.status_code, 409, save.data)
+        row.refresh_from_db()
+        self.assertEqual(row.classification, 'identifier_review')
+        self.assertEqual(ProvisionalEmployeeNumberCorrectionEvent.objects.count(), 0)
+        self.assertEqual(Employee.objects.count(), 2)

@@ -112,6 +112,7 @@ def diagnostic_report(batch):
         for code in codes:
             reasons_by_code[code] += 1
         items.append({
+            'roster_row_id': row.pk,
             'source_row': row.source_row,
             'masked_id': _masked(national_id),
             'name': str(source.get('name') or ''),

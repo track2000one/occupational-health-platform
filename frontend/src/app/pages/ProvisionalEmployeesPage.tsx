@@ -115,11 +115,29 @@ type ConflictDiagnostics = {
   flagged_rows: number;
   counts: Partial<Record<ConflictReason, number>>;
   items: Array<{
+    roster_row_id: number;
     source_row: number; masked_id: string; name: string;
     reason_codes: ConflictReason[]; other_excel_rows: number[];
     requires_manual_verification: true; approved: false;
   }>;
   clinical_or_employee_modified: false;
+  notice: string;
+};
+type EmployeeNumberEditSession = {
+  source_row: number;
+  name: string;
+  masked_id: string;
+  current_employee_number: string;
+  revision: string;
+  temporary_only: true;
+};
+type EmployeeNumberPreview = {
+  status: 'preview_only';
+  source_row: number;
+  masked_new_number: string;
+  next_classification: Classification;
+  preview_token: string;
+  temporary_only: true;
   notice: string;
 };
 const CONFLICT_REASON_LABELS: Record<ConflictReason, string> = {
@@ -186,6 +204,16 @@ export function ProvisionalEmployeesPage() {
   const [approvalPlanStatus, setApprovalPlanStatus] = useState('');
   const [conflictDiagnostics, setConflictDiagnostics] = useState<ConflictDiagnostics | null>(null);
   const [conflictDiagnosticsBusy, setConflictDiagnosticsBusy] = useState(false);
+  const [editingConflictId, setEditingConflictId] = useState<number | null>(null);
+  const [editSession, setEditSession] = useState<EmployeeNumberEditSession | null>(null);
+  const [editedEmployeeNumber, setEditedEmployeeNumber] = useState('');
+  const [showEditedNumber, setShowEditedNumber] = useState(false);
+  const [numberEditPreview, setNumberEditPreview] = useState<EmployeeNumberPreview | null>(null);
+  const [numberEditEvidence, setNumberEditEvidence] = useState('');
+  const [numberEditReason, setNumberEditReason] = useState('');
+  const [numberEditVerified, setNumberEditVerified] = useState(false);
+  const [numberEditorBusy, setNumberEditorBusy] = useState(false);
+  const [numberEditorError, setNumberEditorError] = useState('');
 
 
 
@@ -332,6 +360,95 @@ export function ProvisionalEmployeesPage() {
       setConflictDiagnostics(null);
     } finally {
       setConflictDiagnosticsBusy(false);
+    }
+  };
+
+  const closeNumberEditor = () => {
+    setEditingConflictId(null);
+    setEditSession(null);
+    setEditedEmployeeNumber('');
+    setShowEditedNumber(false);
+    setNumberEditPreview(null);
+    setNumberEditEvidence('');
+    setNumberEditReason('');
+    setNumberEditVerified(false);
+    setNumberEditorError('');
+  };
+
+  const openNumberEditor = async (rowId: number) => {
+    if (!isAdmin || numberEditorBusy) return;
+    setNumberEditorBusy(true);
+    setNumberEditorError('');
+    try {
+      const response = await authFetch(API + '/provisional-employees/' + rowId + '/employee-number-edit/');
+      if (!response.ok) throw new Error(await errorMessage(response));
+      const details: EmployeeNumberEditSession = await response.json();
+      setEditSession(details);
+      setEditingConflictId(rowId);
+      setEditedEmployeeNumber(details.current_employee_number || '');
+      setNumberEditPreview(null);
+      setNumberEditEvidence('');
+      setNumberEditReason('');
+      setNumberEditVerified(false);
+      setShowEditedNumber(false);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'تعذر فتح محرر الرقم الوظيفي.');
+    } finally {
+      setNumberEditorBusy(false);
+    }
+  };
+
+  const previewNumberEdit = async () => {
+    if (!editingConflictId || !editSession || numberEditorBusy ||
+        !editedEmployeeNumber.trim()) return;
+    setNumberEditorBusy(true);
+    setNumberEditorError('');
+    setNumberEditPreview(null);
+    try {
+      const response = await authFetch(
+        API + '/provisional-employees/' + editingConflictId + '/employee-number-edit/',
+        { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'preview', employee_number: editedEmployeeNumber.trim() }) },
+      );
+      if (!response.ok) throw new Error(await errorMessage(response));
+      const preview: EmployeeNumberPreview = await response.json();
+      setNumberEditPreview(preview);
+    } catch (caught) {
+      setNumberEditorError(caught instanceof Error ? caught.message : 'تعذر معاينة التصحيح.');
+    } finally {
+      setNumberEditorBusy(false);
+    }
+  };
+
+  const saveNumberEdit = async () => {
+    if (!editingConflictId || !editSession || !numberEditPreview ||
+        !numberEditVerified || numberEditEvidence.trim().length < 8 ||
+        numberEditReason.trim().length < 10 || numberEditorBusy) return;
+    setNumberEditorBusy(true);
+    setNumberEditorError('');
+    try {
+      const response = await authFetch(
+        API + '/provisional-employees/' + editingConflictId + '/employee-number-edit/',
+        { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'commit', employee_number: editedEmployeeNumber.trim(),
+            preview_token: numberEditPreview.preview_token,
+            verified_hr_document: true, confirmed: true,
+            evidence_reference: numberEditEvidence.trim(), reason: numberEditReason.trim(),
+          }) },
+      );
+      if (!response.ok) throw new Error(await errorMessage(response));
+      const saved = await response.json();
+      closeNumberEditor();
+      setMessage(saved.notice || 'تم تعديل الرقم الوظيفي في البطاقة المؤقتة.');
+      setReadiness(null);
+      setApprovalPlan(null);
+      setConflictDiagnostics(null);
+      await load(1, search, category);
+    } catch (caught) {
+      setNumberEditorError(caught instanceof Error ? caught.message : 'تعذر حفظ التصحيح.');
+    } finally {
+      setNumberEditorBusy(false);
     }
   };
 
@@ -611,6 +728,10 @@ export function ProvisionalEmployeesPage() {
                     <Typography variant="caption" color="text.secondary">
                       صفوف أخرى لها القيمة نفسها: {item.other_excel_rows.join('، ')}
                     </Typography>}
+                  <Button variant="contained" size="small"
+                    disabled={numberEditorBusy} onClick={() => void openNumberEditor(item.roster_row_id)}>
+                    تحرير الرقم الوظيفي
+                  </Button>
                 </Stack>
               </Paper>)}
           </Box>
@@ -683,6 +804,69 @@ export function ProvisionalEmployeesPage() {
         يلزم التحقق من الهوية قبل أي ربط سريري.
       </Alert>}
     </Paper>
+
+    <Dialog open={Boolean(editingConflictId)} onClose={() => {
+      if (!numberEditorBusy) closeNumberEditor();
+    }} fullWidth maxWidth="sm">
+      <DialogTitle>تحرير الرقم الوظيفي — بطاقة إدارية مؤقتة</DialogTitle>
+      <DialogContent>
+        <Stack gap={2} sx={{ pt: 1 }}>
+          <Alert severity="warning">
+            هذا التحرير لا يغيّر رقم الهوية أو السجل الأصلي أو الملف الصحي.
+            لا تُدخل رقمًا جديدًا إلا بعد التحقق من مستند رسمي لدى الموارد البشرية.
+          </Alert>
+          <Typography fontWeight={800}>{editSession?.name}</Typography>
+          <Typography variant="body2">
+            صف Excel {editSession?.source_row} — الهوية: <b dir="ltr">{editSession?.masked_id}</b>
+          </Typography>
+          <TextField label="الرقم الوظيفي الصحيح" type={showEditedNumber ? 'text' : 'password'}
+            value={editedEmployeeNumber} inputProps={{ maxLength: 40 }} autoComplete="off"
+            onChange={event => {
+              setEditedEmployeeNumber(event.target.value);
+              setNumberEditPreview(null);
+              setNumberEditorError('');
+            }} />
+          <Button variant="text" size="small" sx={{ alignSelf: 'flex-start' }}
+            onClick={() => setShowEditedNumber(value => !value)}>
+            {showEditedNumber ? 'إخفاء الرقم' : 'إظهار الرقم للتحرير'}
+          </Button>
+          <Button variant="outlined" disabled={numberEditorBusy ||
+            !editedEmployeeNumber.trim() ||
+            editedEmployeeNumber.trim() === (editSession?.current_employee_number || '').trim()}
+            onClick={() => void previewNumberEdit()}>
+            فحص الرقم الجديد قبل الحفظ
+          </Button>
+          {numberEditorError && <Alert severity="error">{numberEditorError}</Alert>}
+          {numberEditPreview && <>
+            <Alert severity="info">
+              لا يوجد تعارض معرّفات جديد للرقم المدخل. الحالة المتوقعة بعد التحرير:
+              {STATUS[numberEditPreview.next_classification].label}.
+              هذه معاينة فقط وليست اعتمادًا نهائيًا.
+            </Alert>
+            <TextField label="مرجع المستند المعتمد لدى الموارد البشرية"
+              placeholder="رقم خطاب أو مستند تحقق" value={numberEditEvidence}
+              onChange={event => setNumberEditEvidence(event.target.value)}
+              inputProps={{ maxLength: 150 }} />
+            <TextField label="سبب تصحيح الرقم الوظيفي (10 أحرف فأكثر)"
+              multiline minRows={2} value={numberEditReason}
+              onChange={event => setNumberEditReason(event.target.value)}
+              inputProps={{ maxLength: 500 }} />
+            <FormControlLabel control={<Checkbox checked={numberEditVerified}
+              onChange={event => setNumberEditVerified(event.target.checked)} />}
+              label="تحققت من الرقم الصحيح في مصدر رسمي لدى الموارد البشرية" />
+          </>}
+        </Stack>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={closeNumberEditor} disabled={numberEditorBusy}>إلغاء</Button>
+        <Button color="primary" variant="contained"
+          disabled={!numberEditPreview || !numberEditVerified ||
+            numberEditEvidence.trim().length < 8 || numberEditReason.trim().length < 10 ||
+            numberEditorBusy} onClick={() => void saveNumberEdit()}>
+          حفظ تصحيح البطاقة المؤقتة
+        </Button>
+      </DialogActions>
+    </Dialog>
 
     <Dialog open={Boolean(editRow)} onClose={() => setEditRow(null)} fullWidth maxWidth="sm">
       <DialogTitle>استكمال بيانات بطاقة مؤقتة</DialogTitle>
