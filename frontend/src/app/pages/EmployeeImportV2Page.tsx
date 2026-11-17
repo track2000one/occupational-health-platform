@@ -447,9 +447,14 @@ export function EmployeeImportV2Page() {
           </Typography>
         </Stack>
       </Box>
-      <Button variant="outlined" startIcon={<BackIcon />} onClick={() => navigate('/employees')}>
-        العودة إلى الموظفين
-      </Button>
+      <Stack direction="row" gap={1} flexWrap="wrap">
+        <Button variant="contained" color="secondary" onClick={() => navigate('/employees/provisional')}>
+          الاستيراد المبسّط — بطاقات مؤقتة
+        </Button>
+        <Button variant="outlined" startIcon={<BackIcon />} onClick={() => navigate('/employees')}>
+          العودة إلى الموظفين
+        </Button>
+      </Stack>
     </Stack>
 
     <Paper sx={{ p: { xs: 2, md: 3 }, mb: 3, borderRadius: 3 }}>
