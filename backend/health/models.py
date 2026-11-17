@@ -1329,3 +1329,51 @@ class TemporaryWorkforceSnapshot(models.Model):
     def __str__(self):
         return f'Temporary roster {self.pk} ({self.summary.get("rows", 0)} records)'
 
+
+
+class ProvisionalEmployeeImportBatch(models.Model):
+    """Isolated Excel roster; never creates, restores or changes Employee records."""
+    file_sha256 = models.CharField(max_length=64, unique=True)
+    file_name = models.CharField(max_length=255)
+    sheet_name = models.CharField(max_length=120, default='Employees')
+    total_rows = models.PositiveIntegerField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name='provisional_employee_import_batches',
+    )
+
+    class Meta:
+        ordering = ['-created_at', '-pk']
+
+
+class ProvisionalEmployeeRosterRow(models.Model):
+    """Source and corrections encrypted at rest; no clinical/Employee foreign key."""
+    batch = models.ForeignKey(
+        ProvisionalEmployeeImportBatch, on_delete=models.CASCADE,
+        related_name='rows',
+    )
+    source_row = models.PositiveIntegerField()
+    identity_digest = models.CharField(max_length=64, db_index=True)
+    sealed_payload = models.TextField()
+    classification = models.CharField(max_length=28, db_index=True)
+    missing_optional = models.JSONField(default=list)
+    last_completed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True,
+        blank=True, related_name='provisional_roster_completions',
+    )
+    last_completion_reason = models.CharField(max_length=500, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['source_row', 'pk']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['batch', 'source_row'],
+                name='unique_provisional_roster_source_row',
+            ),
+            models.UniqueConstraint(
+                fields=['batch', 'identity_digest'],
+                name='unique_provisional_roster_identity',
+            ),
+        ]
