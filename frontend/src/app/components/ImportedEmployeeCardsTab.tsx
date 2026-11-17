@@ -27,6 +27,7 @@ type ImportedRow = {
   name: string;
   masked_id: string;
   center: string;
+  organization_unit?: string;
   job_title: string;
   classification: Classification;
   missing_optional: string[];
@@ -330,7 +331,7 @@ export function ImportedEmployeeCardsTab({ onCountChange }: Props) {
               columnGap: 2, rowGap: 1.5, m: 0, mb: 2,
             }}>
               {[
-                ['المركز الصحي', item.center || 'غير متوفر — يحتاج مطابقة'],
+                ['المركز الصحي / القسم (بيانات مصدر غير معتمدة)', item.center || item.organization_unit || 'غير متوفر — يحتاج مطابقة'],
                 ['المسمى الوظيفي', item.job_title || 'غير متوفر'],
                 ['الهوية (مخفية)', item.masked_id],
                 ['حالة السجل', 'مؤقت — بانتظار المطابقة'],
@@ -369,7 +370,7 @@ export function ImportedEmployeeCardsTab({ onCountChange }: Props) {
       <Table size="small">
         <TableHead><TableRow>
           <TableCell>الموظف</TableCell><TableCell>الهوية (مخفية)</TableCell>
-          <TableCell>المركز الصحي</TableCell><TableCell>المسمى الوظيفي</TableCell>
+          <TableCell>المركز الصحي / القسم (غير معتمد)</TableCell><TableCell>المسمى الوظيفي</TableCell>
           <TableCell>حالة المطابقة</TableCell><TableCell>البيانات الناقصة</TableCell>
           <TableCell>إجراء إداري</TableCell>
         </TableRow></TableHead>
@@ -377,7 +378,7 @@ export function ImportedEmployeeCardsTab({ onCountChange }: Props) {
           sx={{ bgcolor: item.missing_optional.length ? '#FFF9E4' : 'inherit' }}>
           <TableCell>{item.name}</TableCell>
           <TableCell dir="ltr">{item.masked_id}</TableCell>
-          <TableCell>{item.center || '—'}</TableCell>
+          <TableCell>{item.center || item.organization_unit || '—'}</TableCell>
           <TableCell>{item.job_title || '—'}</TableCell>
           <TableCell><Chip size="small" label={CLASSIFICATION[item.classification].ar}
             color={CLASSIFICATION[item.classification].color} /></TableCell>
@@ -409,7 +410,7 @@ export function ImportedEmployeeCardsTab({ onCountChange }: Props) {
           <Typography variant="h6">{selected?.name}</Typography>
           <Typography>رقم الهوية: {selected?.masked_id}</Typography>
           <Typography>الصف في Excel: {selected?.source_row}</Typography>
-          <Typography>المركز الصحي: {selected?.center || 'غير متوفر'}</Typography>
+          <Typography>المركز الصحي / القسم (من ملف المصدر): {selected?.center || selected?.organization_unit || 'غير متوفر'}</Typography>
           <Typography>المسمى الوظيفي: {selected?.job_title || 'غير متوفر'}</Typography>
           <Typography>حالة المطابقة: {selected ? CLASSIFICATION[selected.classification].ar : ''}</Typography>
           <Typography>الحقول الناقصة: {selected?.missing_optional.map(key => FIELDS[key] || key).join('، ') || 'لا يوجد'}</Typography>
