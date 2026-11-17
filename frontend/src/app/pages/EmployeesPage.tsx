@@ -54,6 +54,7 @@ import { HealthCenterAutocomplete } from '../components/HealthCenterAutocomplete
 import { EmployeeRegistryCard } from '../components/EmployeeRegistryCard';
 import { ImportedEmployeeCardsTab } from '../components/ImportedEmployeeCardsTab';
 import { JOB_TITLES, getNationalityOptions, normalizeNationalitySearch } from '../data/employeeFormOptions';
+import { selectableEmployeeCenters } from '../data/employeeCenterOptions';
 import {
   normalizeNationalId, isValidNationalId, isValidEmployeeEmail,
   isValidChildrenCount, toWesternDigits, calculateAgeFromIso,
@@ -440,6 +441,8 @@ export function EmployeesPage() {
   const computedExperience = calculateExperience(form.appointment_date);
   const nationalityOptions = useMemo(() => getNationalityOptions(), []);
   const selectedNationality = nationalityOptions.find(option => option.code === form.nationality) || null;
+  // Keep historical center records available for viewing/editing; exclude these labels only from new selections.
+  const selectableCenters = useMemo(() => selectableEmployeeCenters(healthCenters), [healthCenters]);
   const availableOrgUnits = approvedOrganizations.filter(unit =>
     unit.is_approved && unit.is_active &&
     (unit.kind === 'center' || unit.kind === 'unit' || unit.kind === 'department') &&
@@ -500,9 +503,10 @@ export function EmployeesPage() {
           : null;
         if (!next) break;
       }
+      const firstSelectableCenter = selectableEmployeeCenters(centers)[0];
       setHealthCenters(centers);
-      setForm(prev => prev.health_center || !centers[0]
-        ? prev : { ...prev, health_center: String(centers[0].id) });
+      setForm(prev => prev.health_center || !firstSelectableCenter
+        ? prev : { ...prev, health_center: String(firstSelectableCenter.id) });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to load centers');
     }
@@ -541,7 +545,7 @@ export function EmployeesPage() {
 
   function openAdd() {
     setSelectedEmployee(null);
-    setForm({ ...EMPTY_FORM, health_center: healthCenters[0] ? String(healthCenters[0].id) : '' });
+    setForm({ ...EMPTY_FORM, health_center: selectableCenters[0] ? String(selectableCenters[0].id) : '' });
     setDialogMode('add');
     setOpenDialog(true);
   }
@@ -1705,7 +1709,7 @@ export function EmployeesPage() {
                       disabled={completionSaving}
                       onChange={event => onChange(event.target.value)}>
                       <MenuItem value="">اختر المركز الصحي</MenuItem>
-                      {healthCenters.filter(center => center.is_active !== false).map(center =>
+                      {selectableCenters.filter(center => center.is_active !== false).map(center =>
                         <MenuItem key={center.id} value={String(center.id)}>
                           {centerDisplayName(center, isRtl)}
                         </MenuItem>
@@ -1793,7 +1797,7 @@ export function EmployeesPage() {
           <Grid container spacing={2}>
             <Grid size={{ xs: 12, md: 6 }}>
               <HealthCenterAutocomplete
-                options={healthCenters} value={form.health_center}
+                options={dialogMode === 'add' ? selectableCenters : healthCenters} value={form.health_center}
                 onChange={value => setForm(prev => ({ ...prev, health_center: value, organization_unit: '' }))}
                 label={isRtl ? 'المركز الصحي' : 'Health center'}
                 placeholder={isRtl ? 'اختر أو ابحث عن المركز' : 'Select or search for a center'}
