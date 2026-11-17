@@ -54,7 +54,7 @@ import { HealthCenterAutocomplete } from '../components/HealthCenterAutocomplete
 import { EmployeeRegistryCard } from '../components/EmployeeRegistryCard';
 import { ImportedEmployeeCardsTab } from '../components/ImportedEmployeeCardsTab';
 import { JOB_TITLES, getNationalityOptions, normalizeNationalitySearch } from '../data/employeeFormOptions';
-import { selectableEmployeeCenters } from '../data/employeeCenterOptions';
+import { isExcludedEmployeeCenter, selectableEmployeeCenters } from '../data/employeeCenterOptions';
 import {
   normalizeNationalId, isValidNationalId, isValidEmployeeEmail,
   isValidChildrenCount, toWesternDigits, calculateAgeFromIso,
@@ -443,6 +443,11 @@ export function EmployeesPage() {
   const selectedNationality = nationalityOptions.find(option => option.code === form.nationality) || null;
   // Keep historical center records available for viewing/editing; exclude these labels only from new selections.
   const selectableCenters = useMemo(() => selectableEmployeeCenters(healthCenters), [healthCenters]);
+  // An excluded center already assigned to an employee stays visible only for that existing record.
+  const legacySelectedCenter = healthCenters.find(center =>
+    String(center.id) === form.health_center && isExcludedEmployeeCenter(center));
+  const employeeFormCenters = legacySelectedCenter && dialogMode !== 'add'
+    ? [...selectableCenters, legacySelectedCenter] : selectableCenters;
   const availableOrgUnits = approvedOrganizations.filter(unit =>
     unit.is_approved && unit.is_active &&
     (unit.kind === 'center' || unit.kind === 'unit' || unit.kind === 'department') &&
@@ -1797,7 +1802,7 @@ export function EmployeesPage() {
           <Grid container spacing={2}>
             <Grid size={{ xs: 12, md: 6 }}>
               <HealthCenterAutocomplete
-                options={dialogMode === 'add' ? selectableCenters : healthCenters} value={form.health_center}
+                options={employeeFormCenters} value={form.health_center}
                 onChange={value => setForm(prev => ({ ...prev, health_center: value, organization_unit: '' }))}
                 label={isRtl ? 'المركز الصحي' : 'Health center'}
                 placeholder={isRtl ? 'اختر أو ابحث عن المركز' : 'Select or search for a center'}
