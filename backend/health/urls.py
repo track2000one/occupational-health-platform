@@ -2,6 +2,7 @@ from django.urls import path
 from .organization_structure import OrganizationDirectoryView, OrganizationImportView, OrganizationUnitReviewView
 from .organization_bulk_approval import OrganizationBulkApprovalView
 from .employee_roster_template import EmployeeRosterTemplateView
+from .provisional_employee_template_preflight import ProvisionalEmployeeTemplatePreflightView
 from .employee_import_v2 import EmployeeImportV2PreviewView
 from .provisional_employee_roster import (ProvisionalEmployeeImportView, ProvisionalEmployeeRosterView, ProvisionalEmployeeCompletionView, ProvisionalEmployeeLookupView, ProvisionalEmployeeBatchRemovalView)
 from .provisional_employee_approval_readiness import ProvisionalEmployeeApprovalReadinessView
@@ -44,6 +45,7 @@ router.register('audit-logs', AuditLogViewSet)
 
 urlpatterns = [
     path('provisional-employees/import/', ProvisionalEmployeeImportView.as_view(), name='provisional-employee-import'),
+    path('provisional-employees/template-preflight/', ProvisionalEmployeeTemplatePreflightView.as_view(), name='provisional-employee-template-preflight'),
     path('provisional-employees/readiness/', ProvisionalEmployeeApprovalReadinessView.as_view(), name='provisional-employee-readiness'),
     path('provisional-employees/approval-plan/', ProvisionalEmployeeApprovalPlanView.as_view(), name='provisional-employee-approval-plan'),
     path('provisional-employees/name-review/', ProvisionalEmployeeNameReviewView.as_view(), name='provisional-employee-name-review'),
