@@ -106,6 +106,8 @@ type EmployeeData = {
   gender?: string;
   marital_status?: string;
   health_center_name?: string;
+  organization_unit_name?: string;
+  organization_unit_kind?: string;
   job_title?: string;
   appointment_date?: string;
   years_of_experience?: string | number;
@@ -546,6 +548,10 @@ function Section({ number, title, subtitle, color, icon, children }: { number: s
 function HealthCardSheet({ card, form }: { card: HealthCardData; form: SectionData }) {
   const { formatDate } = useDatePreference();
   const employee = card.employee || {};
+  const affiliationName = employee.health_center_name ||
+    (employee.organization_unit_kind === 'department' ? employee.organization_unit_name : '') || '';
+  const affiliationLabel = employee.organization_unit_kind === 'department' && !employee.health_center_name
+    ? 'القسم / Department' : 'المركز الصحي / Health Center';
   const conditionRows = CONDITION_FIELDS.filter(field => !['surgical_details', 'family_history', 'allergy_history', 'medical_restrictions', 'other_conditions', 'regular_medication'].includes(field.key));
   const vaccineRows = VACCINATION_FIELDS.filter(field => field.key !== 'notes');
 
@@ -569,7 +575,7 @@ function HealthCardSheet({ card, form }: { card: HealthCardData; form: SectionDa
         </div>
         <div className="ohc-brand">
           <img src={logoImg} alt="الشعار" />
-          <b>{value(employee.health_center_name, 'مركز الرعاية الصحية')}</b>
+          <b>{value(affiliationName, 'الصحة المهنية')}</b>
           <small>Occupational Health Management Platform</small>
         </div>
       </header>
@@ -595,7 +601,7 @@ function HealthCardSheet({ card, form }: { card: HealthCardData; form: SectionDa
 
           <Section number="2" title="معلومات العمل" subtitle="Employment Information" color="#0f9189" icon={<BriefcaseBusiness />}>
             <div className="ohc-fields-grid four">
-              <Field label="المركز الصحي / Health Center">{value(employee.health_center_name)}</Field>
+              <Field label={affiliationLabel}>{value(affiliationName)}</Field>
               <Field label="الرقم الوظيفي / Employee ID">{value(employee.employee_number)}</Field>
               <Field label="رقم وزارة الصحة / MOH ID">{value(form.employment.moh_id)}</Field>
               <Field label="تاريخ التعيين / Start Date">{formatDate(employee.appointment_date)}</Field>
@@ -1027,7 +1033,7 @@ export function EmployeeHealthCardPage() {
               {[
                 ['الاسم', card.employee.name], ['رقم الهوية', card.employee.national_id], ['الرقم الوظيفي', card.employee.employee_number],
                 ['تاريخ الميلاد', formatDate(card.employee.date_of_birth)], ['العمر', card.employee.age], ['الجوال', card.employee.mobile],
-                ['المركز الصحي', card.employee.health_center_name], ['المسمى الوظيفي', card.employee.job_title], ['تاريخ التعيين', formatDate(card.employee.appointment_date)],
+                [card.employee.organization_unit_kind === 'department' ? 'القسم' : 'المركز الصحي', card.employee.health_center_name || (card.employee.organization_unit_kind === 'department' ? card.employee.organization_unit_name : '')], ['المسمى الوظيفي', card.employee.job_title], ['تاريخ التعيين', formatDate(card.employee.appointment_date)],
               ].map(([label, fieldValue]) => (
                 <Grid key={String(label)} size={{ xs: 12, sm: 6, lg: 4 }}><Field label={String(label)}>{value(fieldValue)}</Field></Grid>
               ))}

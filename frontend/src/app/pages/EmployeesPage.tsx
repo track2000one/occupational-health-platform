@@ -137,6 +137,8 @@ type ApiEmployee = {
   national_id: string;
   employee_number?: string | null;
   organization_unit?: number | null;
+  organization_unit_name?: string;
+  organization_unit_kind?: 'department' | 'sector' | 'center' | 'unit' | '';
   nationality?: string;
   current_job?: string;
   national_address?: string;
@@ -245,10 +247,11 @@ const OPTIONAL_EMPLOYEE_FIELDS: Array<[keyof ApiEmployee, string]> = [
   ['job_title', 'المسمى الوظيفي'],
   ['current_job', 'الوظيفة الحالية'],
   ['appointment_date', 'تاريخ التعيين'],
-  ['health_center', 'المركز الصحي'],
+  ['health_center', 'المركز الصحي أو القسم'],
 ];
 function missingEmployeeOptionalFields(employee: ApiEmployee): string[] {
   return OPTIONAL_EMPLOYEE_FIELDS.filter(([field]) =>
+    (field !== 'health_center' || !employee.organization_unit || employee.organization_unit_kind !== 'department') &&
     !String(employee[field] ?? '').trim()
   ).map(([, label]) => label);
 }
@@ -319,7 +322,7 @@ function buildPayload(form: EmployeeForm) {
     birth_place: form.birth_place.trim(),
     gender: form.gender,
     marital_status: form.marital_status,
-    health_center: Number(form.health_center),
+    health_center: form.health_center ? Number(form.health_center) : null,
     job_title: form.job_title.trim(),
     job_title_en: form.job_title_en.trim(),
     moh_id: form.moh_id.trim(),
@@ -371,6 +374,8 @@ export function EmployeesPage() {
   const [saving, setSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [centerFilter, setCenterFilter] = useState('all');
+  const [affiliationFilter, setAffiliationFilter] = useState('all');
+  const [departmentFilter, setDepartmentFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [sourceFilter, setSourceFilter] = useState('all');
   const [completionFilter, setCompletionFilter] = useState('all');
@@ -385,6 +390,8 @@ export function EmployeesPage() {
   const [completionIdentityChecked, setCompletionIdentityChecked] = useState(false);
   const [completionSaving, setCompletionSaving] = useState(false);
   const [form, setForm] = useState<EmployeeForm>(EMPTY_FORM);
+  const [affiliationKind, setAffiliationKind] = useState<'center' | 'department'>('center');
+  const [completionAffiliationKind, setCompletionAffiliationKind] = useState<'center' | 'department'>('center');
   const [connectionError, setConnectionError] = useState('');
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [resetScope, setResetScope] = useState<ResetScope>('all_synthetic');
@@ -426,6 +433,7 @@ export function EmployeesPage() {
   const canArchive = can(PERMISSIONS.MANAGE_USERS);
   const canBulkReset = canArchive && user?.isSuperuser === true;
   const archivedFiltersClear = !searchTerm.trim() && centerFilter === 'all' &&
+    affiliationFilter === 'all' && departmentFilter === 'all' &&
     statusFilter === 'all' && sourceFilter === 'all' && completionFilter === 'all';
   // 'employee' is a beneficiary role, not an operator for other staff records.
   // 'dataEntry' may complete missing demographic fields, but cannot use the
@@ -450,8 +458,11 @@ export function EmployeesPage() {
     ? [...selectableCenters, legacySelectedCenter] : selectableCenters;
   const availableOrgUnits = approvedOrganizations.filter(unit =>
     unit.is_approved && unit.is_active &&
-    (unit.kind === 'center' || unit.kind === 'unit' || unit.kind === 'department') &&
+    (unit.kind === 'center' || unit.kind === 'unit') &&
     unit.health_center_id !== null && String(unit.health_center_id) === form.health_center);
+  const approvedDepartments = approvedOrganizations.filter(unit =>
+    unit.is_approved && unit.is_active && unit.kind === 'department' &&
+    unit.health_center_id === null);
   const selectedOrgUnit = approvedOrganizations.find(item => String(item.id) === form.organization_unit) || null;
   // Preserve a legacy/imported title in edit mode even when it is not in the 116-item reference file.
   const jobTitleOptions = form.job_title && !JOB_TITLES.includes(form.job_title)
@@ -467,7 +478,9 @@ export function EmployeesPage() {
         if (showHiddenArchived && canBulkReset) query.set('hidden', 'true');
       }
       if (searchTerm.trim()) query.set('search', searchTerm.trim());
-      if (centerFilter !== 'all') query.set('health_center_id', centerFilter);
+      if (centerFilter !== 'all' && affiliationFilter !== 'department') query.set('health_center_id', centerFilter);
+      if (affiliationFilter !== 'all') query.set('affiliation_type', affiliationFilter);
+      if (departmentFilter !== 'all' && affiliationFilter === 'department') query.set('department_id', departmentFilter);
       if (statusFilter !== 'all') query.set('employment_status', statusFilter);
       if (sourceFilter !== 'all') query.set('source_category', sourceFilter);
       if (completionFilter !== 'all') query.set('completion', completionFilter);
@@ -508,10 +521,8 @@ export function EmployeesPage() {
           : null;
         if (!next) break;
       }
-      const firstSelectableCenter = selectableEmployeeCenters(centers)[0];
       setHealthCenters(centers);
-      setForm(prev => prev.health_center || !firstSelectableCenter
-        ? prev : { ...prev, health_center: String(firstSelectableCenter.id) });
+      // Do not silently assign an arbitrary center to a new employee.
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to load centers');
     }
@@ -521,7 +532,7 @@ export function EmployeesPage() {
     const timer = setTimeout(() => { void loadData(); }, searchTerm ? 350 : 0);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, searchTerm, centerFilter, statusFilter, sourceFilter, completionFilter,
+  }, [page, searchTerm, centerFilter, affiliationFilter, departmentFilter, statusFilter, sourceFilter, completionFilter,
       sortMode, showArchived, showHiddenArchived, canArchive, canBulkReset]);
 
   useEffect(() => { void loadCenters(); }, []);
@@ -544,13 +555,17 @@ export function EmployeesPage() {
   const filteredEmployees = employees;
 
   function getHealthCenterName(employee: ApiEmployee) {
+    if (!employee.health_center && employee.organization_unit_kind === 'department') {
+      return employee.organization_unit_name || 'قسم معتمد';
+    }
     return centerNameById.get(String(employee.health_center)) || employee.health_center_name ||
-      (employee.source_center_name ? `بانتظار مطابقة: ${employee.source_center_name}` : 'مركز غير محدد');
+      (employee.source_center_name ? `بانتظار مطابقة: ${employee.source_center_name}` : 'تبعية غير محددة');
   }
 
   function openAdd() {
     setSelectedEmployee(null);
-    setForm({ ...EMPTY_FORM, health_center: selectableCenters[0] ? String(selectableCenters[0].id) : '' });
+    setAffiliationKind('center');
+    setForm({ ...EMPTY_FORM });
     setDialogMode('add');
     setOpenDialog(true);
   }
@@ -563,6 +578,7 @@ export function EmployeesPage() {
         return;
       }
       setCompletionTarget(employee);
+      setCompletionAffiliationKind('center');
       setCompletionValues({});
       setCompletionReason('');
       setCompletionIdentityChecked(false);
@@ -570,6 +586,7 @@ export function EmployeesPage() {
     }
     if (!canWrite) return;
     setSelectedEmployee(employee);
+    setAffiliationKind(!employee.health_center && employee.organization_unit_kind === 'department' ? 'department' : 'center');
     setForm(asForm(employee));
     setDialogMode('edit');
     setOpenDialog(true);
@@ -582,9 +599,13 @@ export function EmployeesPage() {
         completionReason.trim().length > 500) return;
     const missingKeys = new Set(
       OPTIONAL_EMPLOYEE_FIELDS.filter(([field]) =>
+        (field !== 'health_center' || !target.organization_unit) &&
         !String(target[field] ?? '').trim()
       ).map(([field]) => String(field))
     );
+    if (!target.health_center && !target.organization_unit) {
+      missingKeys.add('organization_unit');
+    }
     const fields: Record<string, string | number> = {};
     for (const [field, raw] of Object.entries(completionValues)) {
       const value = raw.trim();
@@ -593,7 +614,8 @@ export function EmployeesPage() {
         toast.error('لا يجوز تعديل حقل مسجل مسبقًا من نافذة استكمال البيانات.');
         return;
       }
-      fields[field] = field === 'health_center' ? Number(value) : value;
+      fields[field] = field === 'health_center' || field === 'organization_unit'
+        ? Number(value) : value;
     }
     if (!Object.keys(fields).length) {
       toast.error('أدخل قيمة لحقل ناقص واحد على الأقل.');
@@ -636,6 +658,7 @@ export function EmployeesPage() {
 
   function openView(employee: ApiEmployee) {
     setSelectedEmployee(employee);
+    setAffiliationKind(!employee.health_center && employee.organization_unit_kind === 'department' ? 'department' : 'center');
     setForm(asForm(employee));
     setDialogMode('view');
     setOpenDialog(true);
@@ -657,7 +680,9 @@ export function EmployeesPage() {
     const required: Array<[keyof EmployeeForm, string]> = [
       ['name', isRtl ? 'اسم الموظف' : 'Name'],
       ['national_id', isRtl ? 'رقم الهوية الوطنية' : 'National ID'],
-      ['health_center', isRtl ? 'المركز الصحي' : 'Health center'],
+      [affiliationKind === 'center' ? 'health_center' : 'organization_unit',
+       affiliationKind === 'center' ? (isRtl ? 'المركز الصحي' : 'Health center')
+         : (isRtl ? 'القسم' : 'Department')],
     ];
 
     const missing = required.find(([key]) => !String(form[key] || '').trim());
@@ -1013,7 +1038,9 @@ export function EmployeesPage() {
               onClick={() => {
                 const filters = new URLSearchParams();
                 if (searchTerm.trim()) filters.set('search', searchTerm.trim());
-                if (centerFilter !== 'all') filters.set('health_center_id', centerFilter);
+                if (centerFilter !== 'all' && affiliationFilter !== 'department') filters.set('health_center_id', centerFilter);
+                if (affiliationFilter !== 'all') filters.set('affiliation_type', affiliationFilter);
+                if (departmentFilter !== 'all' && affiliationFilter === 'department') filters.set('department_id', departmentFilter);
                 if (statusFilter !== 'all') filters.set('employment_status', statusFilter);
                 if (sourceFilter !== 'all') filters.set('source_category', sourceFilter);
                 if (sortMode) filters.set('sort', sortMode);
@@ -1099,12 +1126,31 @@ export function EmployeesPage() {
               slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchIcon /></InputAdornment> } }}
             />
           </Grid>
-          <Grid size={{ xs: 12, md: 5 }}>
-            <TextField fullWidth select label={isRtl ? 'المركز الصحي' : 'Health Center'} value={centerFilter}
-              onChange={event => { setCenterFilter(event.target.value); setPage(0); }}>
-              <MenuItem value="all">{isRtl ? 'جميع المراكز' : 'All Centers'}</MenuItem>
-              {healthCenters.map(center => <MenuItem key={center.id} value={String(center.id)}>{centerDisplayName(center, isRtl)}</MenuItem>)}
+          <Grid size={{ xs: 12, md: 2 }}>
+            <TextField fullWidth select label={isRtl ? 'نوع التبعية' : 'Affiliation'} value={affiliationFilter}
+              onChange={event => { setAffiliationFilter(event.target.value); setCenterFilter('all'); setDepartmentFilter('all'); setPage(0); }}>
+              <MenuItem value="all">{isRtl ? 'الجميع' : 'All'}</MenuItem>
+              <MenuItem value="center">{isRtl ? 'مركز صحي' : 'Center'}</MenuItem>
+              <MenuItem value="department">{isRtl ? 'قسم' : 'Department'}</MenuItem>
+              <MenuItem value="unassigned">{isRtl ? 'لم تحدد التبعية' : 'Unassigned'}</MenuItem>
             </TextField>
+          </Grid>
+          <Grid size={{ xs: 12, md: 3 }}>
+            {affiliationFilter === 'department' ? (
+              <TextField fullWidth select label={isRtl ? 'القسم' : 'Department'} value={departmentFilter}
+                onChange={event => { setDepartmentFilter(event.target.value); setPage(0); }}>
+                <MenuItem value="all">{isRtl ? 'جميع الأقسام' : 'All departments'}</MenuItem>
+                {approvedDepartments.map(unit =>
+                  <MenuItem key={unit.id} value={String(unit.id)}>{unit.name}</MenuItem>)}
+              </TextField>
+            ) : (
+              <TextField fullWidth select label={isRtl ? 'المركز الصحي' : 'Health Center'} value={centerFilter}
+                disabled={affiliationFilter === 'unassigned'}
+                onChange={event => { setCenterFilter(event.target.value); setPage(0); }}>
+                <MenuItem value="all">{isRtl ? 'جميع المراكز' : 'All Centers'}</MenuItem>
+                {healthCenters.map(center => <MenuItem key={center.id} value={String(center.id)}>{centerDisplayName(center, isRtl)}</MenuItem>)}
+              </TextField>
+            )}
           </Grid>
           <Grid size={{ xs: 12, sm: 4 }}>
             <TextField fullWidth select label={isRtl ? 'الحالة الوظيفية' : 'Employment status'} value={statusFilter}
@@ -1242,6 +1288,8 @@ export function EmployeesPage() {
                     missingFields={missingEmployeeOptionalFields(employee)}
                     provisional={employee.registration_status === 'provisional'}
                     centerName={getHealthCenterName(employee)}
+                    affiliationLabel={employee.organization_unit_kind === 'department' && !employee.health_center
+                      ? (isRtl ? 'القسم' : 'Department') : (isRtl ? 'المركز الصحي' : 'Health center')}
                     isRtl={isRtl}
                     canWrite={canEditRecord(employee)}
                     canManage={can(PERMISSIONS.MANAGE_USERS)}
@@ -1270,7 +1318,7 @@ export function EmployeesPage() {
                 <TableCell>{isRtl ? 'الاسم الكامل' : 'Full Name'}</TableCell>
                 <TableCell>{isRtl ? 'الهوية الوطنية' : 'National ID'}</TableCell>
                 <TableCell>{isRtl ? 'البريد الإلكتروني' : 'Email'}</TableCell>
-                <TableCell>{isRtl ? 'المركز / المسمى' : 'Center / Job'}</TableCell>
+                <TableCell>{isRtl ? 'التبعية / المسمى' : 'Affiliation / Job'}</TableCell>
                 <TableCell>{isRtl ? 'الحالة الوظيفية' : 'Employment Status'}</TableCell>
                 <TableCell>{isRtl ? 'حالة ملف المصدر' : 'Roster source condition'}</TableCell>
                 <TableCell>{isRtl ? 'العمر / الخبرة' : 'Age / Experience'}</TableCell>
@@ -1702,6 +1750,7 @@ export function EmployeesPage() {
             </Typography>
             <Grid container spacing={2}>
               {OPTIONAL_EMPLOYEE_FIELDS.filter(([field]) =>
+                (field !== 'health_center' || !completionTarget.organization_unit) &&
                 !String(completionTarget[field] ?? '').trim()
               ).map(([field, label]) => {
                 const key = String(field);
@@ -1710,16 +1759,36 @@ export function EmployeesPage() {
                   setCompletionValues(old => ({ ...old, [key]: next }));
                 return <Grid key={key} size={{ xs: 12, md: 6 }}>
                   {key === 'health_center' ? (
-                    <TextField fullWidth select label={label} value={value}
-                      disabled={completionSaving}
-                      onChange={event => onChange(event.target.value)}>
-                      <MenuItem value="">اختر المركز الصحي</MenuItem>
-                      {selectableCenters.filter(center => center.is_active !== false).map(center =>
-                        <MenuItem key={center.id} value={String(center.id)}>
-                          {centerDisplayName(center, isRtl)}
-                        </MenuItem>
+                    <Stack spacing={1}>
+                      <TextField fullWidth select label="نوع التبعية" value={completionAffiliationKind}
+                        disabled={completionSaving}
+                        onChange={event => {
+                          setCompletionAffiliationKind(event.target.value as 'center' | 'department');
+                          setCompletionValues(old => {
+                            const next = { ...old }; delete next.health_center; delete next.organization_unit;
+                            return next;
+                          });
+                        }}>
+                        <MenuItem value="center">مركز صحي</MenuItem>
+                        <MenuItem value="department">قسم</MenuItem>
+                      </TextField>
+                      {completionAffiliationKind === 'center' ? (
+                        <TextField fullWidth select label="المركز الصحي" value={value}
+                          disabled={completionSaving} onChange={event => onChange(event.target.value)}>
+                          <MenuItem value="">اختر المركز الصحي</MenuItem>
+                          {selectableCenters.filter(center => center.is_active !== false).map(center =>
+                            <MenuItem key={center.id} value={String(center.id)}>{centerDisplayName(center, isRtl)}</MenuItem>)}
+                        </TextField>
+                      ) : (
+                        <TextField fullWidth select label="القسم" value={completionValues.organization_unit || ''}
+                          disabled={completionSaving || !approvedDepartments.length}
+                          onChange={event => setCompletionValues(old => ({ ...old, organization_unit: event.target.value }))}>
+                          <MenuItem value="">اختر القسم المعتمد</MenuItem>
+                          {approvedDepartments.map(unit =>
+                            <MenuItem key={unit.id} value={String(unit.id)}>{unit.name}</MenuItem>)}
+                        </TextField>
                       )}
-                    </TextField>
+                    </Stack>
                   ) : key === 'gender' ? (
                     <TextField fullWidth select label={label} value={value}
                       disabled={completionSaving}
@@ -1800,35 +1869,71 @@ export function EmployeesPage() {
         </DialogTitle>
         <DialogContent dividers>
           <Grid container spacing={2}>
-            <Grid size={{ xs: 12, md: 6 }}>
-              <HealthCenterAutocomplete
-                options={employeeFormCenters} value={form.health_center}
-                onChange={value => setForm(prev => ({ ...prev, health_center: value, organization_unit: '' }))}
-                label={isRtl ? 'المركز الصحي' : 'Health center'}
-                placeholder={isRtl ? 'اختر أو ابحث عن المركز' : 'Select or search for a center'}
-                required disabled={isReadOnly}
-              />
+            <Grid size={{ xs: 12 }}>
+              <TextField fullWidth select label={isRtl ? 'نوع التبعية الوظيفية *' : 'Employee affiliation *'}
+                value={affiliationKind} disabled={isReadOnly || (dialogMode === 'edit' &&
+                  Boolean(selectedEmployee?.health_center || selectedEmployee?.organization_unit))}
+                onChange={event => {
+                  const kind = event.target.value as 'center' | 'department';
+                  setAffiliationKind(kind);
+                  setForm(prev => ({
+                    ...prev, health_center: '', organization_unit: '',
+                  }));
+                }}
+                helperText={isRtl ? 'اختر المركز الصحي أو القسم المركزي المعتمد؛ تغيير التبعية المثبتة يتطلب إجراء نقل معتمدًا' :
+                  'Choose a health center or approved department. Existing assignments require a transfer workflow.'}>
+                <MenuItem value="center">{isRtl ? 'مركز صحي' : 'Health center'}</MenuItem>
+                <MenuItem value="department">{isRtl ? 'قسم' : 'Department'}</MenuItem>
+              </TextField>
             </Grid>
-            <Grid size={{ xs: 12, md: 6 }}>
-              <Autocomplete
-                options={availableOrgUnits}
-                value={selectedOrgUnit}
-                disabled={isReadOnly || availableOrgUnits.length === 0}
-                onChange={(_, unit) => updateForm('organization_unit', unit ? String(unit.id) : '')}
-                isOptionEqualToValue={(option, value) => option.id === value.id}
-                getOptionLabel={option => option.source_path || option.parent_name
-                  ? `${option.name} — ${option.parent_name || option.source_path}`
-                  : option.name}
-                renderInput={params => <TextField {...params}
-                  label={isRtl ? 'الجهة / الوحدة التنظيمية المعتمدة' : 'Approved organization unit'}
-                  placeholder={isRtl ? 'ابحث عن الجهة أو الوحدة' : 'Search approved organization'}
-                  helperText={isRtl
-                    ? (approvedOrganizations.length
-                      ? 'تُعرض الجهات المعتمدة والمتوافقة مع المركز فقط'
-                      : 'بانتظار اعتماد الهيكل التنظيمي')
-                    : 'Only officially approved organizational links are available'} />}
-              />
-            </Grid>
+            {affiliationKind === 'center' ? <>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <HealthCenterAutocomplete
+                  options={employeeFormCenters} value={form.health_center}
+                  onChange={value => setForm(prev => ({ ...prev, health_center: value, organization_unit: '' }))}
+                  label={isRtl ? 'المركز الصحي' : 'Health center'}
+                  placeholder={isRtl ? 'اختر أو ابحث عن المركز' : 'Select or search for a center'}
+                  required disabled={isReadOnly}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <Autocomplete
+                  options={availableOrgUnits}
+                  value={selectedOrgUnit}
+                  disabled={isReadOnly || availableOrgUnits.length === 0}
+                  onChange={(_, unit) => updateForm('organization_unit', unit ? String(unit.id) : '')}
+                  isOptionEqualToValue={(option, value) => option.id === value.id}
+                  getOptionLabel={option => option.source_path || option.parent_name
+                    ? `${option.name} — ${option.parent_name || option.source_path}`
+                    : option.name}
+                  renderInput={params => <TextField {...params}
+                    label={isRtl ? 'الوحدة التابعة للمركز (اختياري)' : 'Center unit (optional)'}
+                    placeholder={isRtl ? 'ابحث عن الوحدة' : 'Search for a unit'}
+                    helperText={isRtl ? 'تظهر الوحدات المعتمدة التابعة للمركز المختار' : 'Approved units linked to this center'} />}
+                />
+              </Grid>
+            </> : <>
+              <Grid size={{ xs: 12 }}>
+                <Autocomplete
+                  options={approvedDepartments}
+                  value={selectedOrgUnit}
+                  disabled={isReadOnly || approvedDepartments.length === 0}
+                  onChange={(_, unit) => setForm(prev => ({
+                    ...prev, organization_unit: unit ? String(unit.id) : '', health_center: '',
+                  }))}
+                  isOptionEqualToValue={(option, value) => option.id === value.id}
+                  getOptionLabel={option => option.source_path || option.parent_name
+                    ? `${option.name} — ${option.parent_name || option.source_path}` : option.name}
+                  renderInput={params => <TextField {...params}
+                    required label={isRtl ? 'القسم *' : 'Department *'}
+                    placeholder={isRtl ? 'اختر القسم المعتمد' : 'Select approved department'}
+                    helperText={isRtl ? (approvedDepartments.length
+                      ? 'الأقسام المعتمدة فقط؛ لا يلزم اختيار مركز صحي'
+                      : 'لا توجد أقسام معتمدة حاليًا؛ اعتمدها من صفحة الهيكل التنظيمي أولًا')
+                      : 'Only approved departments are available'} />}
+                />
+              </Grid>
+            </>}
             <Grid size={{ xs: 12, md: 6 }}>
               <TextField fullWidth required label={isRtl ? 'اسم الموظف' : 'Name'} value={form.name}
                 onChange={event => updateForm('name', event.target.value)} disabled={isReadOnly} />

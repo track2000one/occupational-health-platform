@@ -411,6 +411,9 @@ export type FlexibleEmployeeReportRow = {
   /** Returned only for users explicitly authorized to print full identifiers. */
   national_id_full?: string;
   health_center: string;
+  department: string;
+  affiliation: string;
+  affiliation_type: string;
   job_title: string;
   current_job: string;
   gender: string;
@@ -430,7 +433,10 @@ export const FLEXIBLE_EMPLOYEE_COLUMNS: Array<{
 }> = [
   { key: 'name', ar: 'اسم الموظف', en: 'Employee' },
   { key: 'employee_number', ar: 'الرقم الوظيفي', en: 'Employee No.' },
+  { key: 'affiliation', ar: 'المركز الصحي / القسم', en: 'Center / Department' },
+  { key: 'affiliation_type', ar: 'نوع التبعية', en: 'Affiliation type' },
   { key: 'health_center', ar: 'المركز الصحي', en: 'Health Center' },
+  { key: 'department', ar: 'القسم', en: 'Department' },
   { key: 'job_title', ar: 'المسمى الوظيفي', en: 'Job Title' },
   { key: 'employment_status', ar: 'الحالة الوظيفية', en: 'Employment Status' },
   { key: 'roster_source_status', ar: 'حالة ملف المصدر', en: 'Source Condition' },

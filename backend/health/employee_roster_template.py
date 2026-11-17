@@ -5,6 +5,7 @@ from linked organizational centers, not QA/load-test centers.
 """
 from io import BytesIO
 
+from django.db.models import Q
 from django.http import HttpResponse
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -53,9 +54,12 @@ def make_template():
         if center.name or center.name_ar
     ]
     approved_orgs = list(OrganizationUnit.objects.select_related('health_center').filter(
-        is_approved=True, is_active=True, health_center__is_active=True,
-        kind__in=['center', 'unit'],
+        is_approved=True, is_active=True,
+    ).filter(
+        Q(kind='department', health_center__isnull=True) |
+        Q(kind__in=['center', 'unit'], health_center__is_active=True)
     ).order_by('name'))
+    departments = [unit for unit in approved_orgs if unit.kind == 'department']
     nationalities = [name for name in ARAB_COUNTRY_ORDER if name in COUNTRY_LABEL_TO_CODE]
     nationalities += sorted((name for name in COUNTRY_LABEL_TO_CODE if name not in nationalities),
                             key=lambda name: name.casefold())
@@ -69,8 +73,8 @@ def make_template():
     choices = book.create_sheet('قوائم الاختيار')
     choices.sheet_view.rightToLeft = True
     choices.append(['المراكز الصحية', 'المسميات الوظيفية', 'الجنسية', 'رمز الدولة', 'الجنس',
-                    'الحالة الاجتماعية', 'رموز الوحدات المعتمدة'])
-    rows = max(len(centers), len(JOB_TITLES), len(nationalities), len(approved_orgs))
+                    'الحالة الاجتماعية', 'رموز الوحدات/الأقسام المعتمدة', 'الأقسام الإدارية المعتمدة'])
+    rows = max(len(centers), len(JOB_TITLES), len(nationalities), len(approved_orgs), len(departments))
     for idx in range(rows):
         choices.append([
             centers[idx][0] if idx < len(centers) else None,
@@ -80,6 +84,7 @@ def make_template():
             GENDER_CHOICES[idx] if idx < len(GENDER_CHOICES) else None,
             MARITAL_CHOICES[idx] if idx < len(MARITAL_CHOICES) else None,
             approved_orgs[idx].code if idx < len(approved_orgs) else None,
+            departments[idx].name if idx < len(departments) else None,
         ])
     info = book.create_sheet('تعليمات الاستخدام')
     info.sheet_view.rightToLeft = True
@@ -89,7 +94,7 @@ def make_template():
         ['2', 'الحقول الإلزامية: اسم الموظف، ورقم الهوية/الإقامة الكامل المكون من 10 أرقام. المركز والرقم الوظيفي والحقول الأخرى اختيارية.'],
         ['3', 'أدخل الهوية والرقم الوظيفي والجوال كنص للحفاظ على الأصفار. لا تضع هويات مخفية أو أرقامًا ناقصة.'],
         ['4', 'لا تكرر الهوية الوطنية أو الإقامة في أكثر من صف. الرقم الوظيفي والبريد لا يجوز ربطهما بهوية مختلفة.'],
-        ['5', 'اختر اسم المركز والوحدة التنظيمية من الخيارات المعتمدة عند توفرها فقط؛ إذا لم تجدها اترك الحقل فارغًا للمراجعة.'],
+        ['5', 'اختر تبعية واحدة فقط: اكتب المركز الصحي في عمود المركز، أو رمز القسم المركزي المعتمد في عمود الوحدة التنظيمية واترك المركز فارغًا. لا تعتمد مسميات غير معتمدة تلقائيًا.'],
         ['6', 'تواريخ الميلاد والتعيين بالتقويم الميلادي وبصيغة YYYY-MM-DD. لا تحول التاريخ الهجري إلى ميلادي دون تحقق.'],
         ['7', 'اختر المسمى الوظيفي من القائمة المرجعية إن أمكن؛ الوظيفة الحالية حقل إدخال منفصل.'],
         ['8', 'يجب أن تكون الجنسية والجنس والحالة الاجتماعية من القوائم. عدد الأطفال رقم صحيح غير سالب.'],
@@ -99,7 +104,7 @@ def make_template():
         ['12', 'الاستيراد ينشئ بطاقات إدارية مؤقتة فقط ولا يفك أرشفة ملفات صحية أو يعتمد الموظفين تلقائيًا.'],
         ['13', 'إذا كانت دفعة موظفين مستوردة سابقًا، راجع تقرير التداخل قبل رفع دفعة جديدة؛ الاستيراد ليس تحديثًا جماعيًا للسجلات القديمة.'],
         ['14', 'لا ترفع ملف الموظفين الحقيقي إلى GitHub أو Staging أو خدمات مشاركة عامة.'],
-        ['تنبيه', 'تعكس قوائم المراكز المعتمدة الحالة الحالية فقط، وقد تكون فارغة لحين اعتماد دليل المراكز.'],
+        ['تنبيه', 'تعكس قوائم المراكز والأقسام المعتمدة الحالة الحالية فقط، وقد تكون فارغة لحين اعتماد أدلة الجهات.'],
     ]
     for row in guide:
         info.append(row)
@@ -146,7 +151,7 @@ def make_template():
     master.column_dimensions['A'].width = 31
     master.column_dimensions['B'].width = 36
     master.column_dimensions['C'].width = 23
-    for letter, width in [('A', 34), ('B', 45), ('C', 32), ('D', 18), ('E', 21), ('F', 26), ('G', 29)]:
+    for letter, width in [('A', 34), ('B', 45), ('C', 32), ('D', 18), ('E', 21), ('F', 26), ('G', 29), ('H', 35)]:
         choices.column_dimensions[letter].width = width
 
     def add_dropdown(target_col, source_col, count):

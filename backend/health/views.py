@@ -483,17 +483,30 @@ class EmployeeImportReviewViewSet(viewsets.ReadOnlyModelViewSet):
                 'confirm_basic_only': 'يجب تأكيد إدراج البيانات الأساسية فقط، دون نقل الحقول الاختيارية.'
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        # The center is the mandatory, verified master foreign key. Sending
-        # PK=0, an inactive center, or a text label cannot create an employee.
+        # Activation must name one *approved* placement: center or central department.
         raw_center_id = request.data.get('health_center')
+        raw_department_id = request.data.get('organization_unit')
         try:
             center_id = int(raw_center_id)
         except (TypeError, ValueError):
             center_id = 0
-        if center_id <= 0 or not HealthCenter.objects.filter(pk=center_id, is_active=True).exists():
+        try:
+            unit_id = int(raw_department_id)
+        except (TypeError, ValueError):
+            unit_id = 0
+        is_valid_center = center_id > 0 and HealthCenter.objects.filter(
+            pk=center_id, is_active=True, is_archived=False,
+        ).exists()
+        is_approved_department = unit_id > 0 and OrganizationUnit.objects.filter(
+            pk=unit_id, kind='department', is_active=True, is_approved=True,
+            health_center__isnull=True,
+        ).exists()
+        if not is_valid_center and not is_approved_department:
             return Response({
-                'health_center': 'يرجى اختيار مركز صحي مسجل ونشط من القائمة قبل تفعيل البطاقة.'
+                'health_center': 'اختر مركزًا صحيًا نشطًا أو قسمًا مركزيًا معتمدًا قبل تفعيل البطاقة.',
             }, status=status.HTTP_400_BAD_REQUEST)
+        if is_valid_center and is_approved_department:
+            return Response({'organization_unit': 'اختر مركزًا أو قسمًا، وليس الاثنين معًا.'}, status=400)
 
         skipped_optional = []
         if basic_only:
@@ -503,7 +516,7 @@ class EmployeeImportReviewViewSet(viewsets.ReadOnlyModelViewSet):
             # clinical assessments or assign an unapproved organizational unit.
             submitted = {
                 key: request.data.get(key)
-                for key in ('name', 'national_id', 'health_center')
+                for key in ('name', 'national_id', 'health_center', 'organization_unit')
             }
             optional_fields = (
                 'employee_number', 'email', 'mobile', 'national_address',
@@ -525,7 +538,12 @@ class EmployeeImportReviewViewSet(viewsets.ReadOnlyModelViewSet):
                 else:
                     skipped_optional.append(field)
         else:
-            submitted = request.data
+            submitted = request.data.copy()
+
+        # The department branch has intentionally no health center. Normalize
+        # form-style blank input to NULL before DRF FK validation.
+        if is_approved_department and not is_valid_center and submitted.get('health_center') in ('', None, 0, '0'):
+            submitted['health_center'] = None
 
         try:
             with transaction.atomic():
@@ -850,7 +868,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             return Response({'reason': 'يلزم سبب توثيقي من 10 إلى 500 حرف.'}, status=400)
         supplied = request.data.get('fields', {})
         allowed_fields = {
-            'health_center', 'employee_number', 'email', 'mobile',
+            'health_center', 'organization_unit', 'employee_number', 'email', 'mobile',
             'national_address', 'date_of_birth', 'birth_place',
             'gender', 'marital_status', 'nationality', 'job_title',
             'current_job', 'appointment_date', 'job_title_en',
@@ -870,7 +888,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             # Existing values can only be corrected by a separate authorized
             # workflow. Here we complete empty fields and first center linkage.
             for field, new_value in changes.items():
-                current = getattr(employee, field + '_id' if field == 'health_center' else field)
+                current = getattr(employee, field + '_id' if field in ('health_center', 'organization_unit') else field)
                 if current not in (None, ''):
                     return Response({
                         'detail': f'الحقل {field} مسجل مسبقًا؛ التعديل يتطلب إجراء تصحيح منفصل.'
@@ -883,13 +901,24 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                         return Response({'health_center': 'المركز المختار غير موجود أو غير نشط.'},
                                         status=400)
                     changes[field] = center.pk
+                if field == 'organization_unit':
+                    try:
+                        department = OrganizationUnit.objects.get(
+                            pk=int(new_value), kind='department', is_active=True,
+                            is_approved=True, health_center__isnull=True,
+                        )
+                    except (TypeError, ValueError, OrganizationUnit.DoesNotExist):
+                        return Response({'organization_unit': 'اختر قسمًا مركزيًا معتمدًا.'}, status=400)
+                    changes[field] = department.pk
             serializer = EmployeeSerializer(
                 employee, data=changes, partial=True, context={'request': request},
             )
             serializer.is_valid(raise_exception=True)
             old_center_id = employee.health_center_id
             updated = serializer.save()
-            if updated.health_center_id:
+            if updated.health_center_id or (
+                updated.organization_unit and updated.organization_unit.kind == 'department'
+            ):
                 updated.registration_status = 'verified'
                 updated.save(update_fields=['registration_status', 'updated_at'])
             EmployeeProfileCompletionEvent.objects.create(
@@ -952,6 +981,18 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         center_id = str(self.request.query_params.get('health_center_id') or '').strip()
         if center_id.isdigit():
             queryset = queryset.filter(health_center_id=int(center_id))
+        affiliation_type = str(self.request.query_params.get('affiliation_type') or '').strip()
+        if affiliation_type == 'center':
+            queryset = queryset.filter(health_center__isnull=False)
+        elif affiliation_type == 'department':
+            queryset = queryset.filter(health_center__isnull=True, organization_unit__kind='department')
+        elif affiliation_type == 'unassigned':
+            queryset = queryset.filter(health_center__isnull=True, organization_unit__isnull=True)
+        department_id = str(self.request.query_params.get('department_id') or '').strip()
+        if department_id.isdigit():
+            queryset = queryset.filter(health_center__isnull=True,
+                                       organization_unit_id=int(department_id),
+                                       organization_unit__kind='department')
         query = str(self.request.query_params.get('search') or '').strip()
         if query:
             queryset = queryset.filter(
@@ -971,7 +1012,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             incomplete = (
                 Q(date_of_birth__isnull=True) |
                 Q(appointment_date__isnull=True) |
-                Q(health_center__isnull=True) |
+                (Q(health_center__isnull=True) & ~Q(organization_unit__kind='department')) |
                 Q(registration_status='provisional')
             )
             for field in fields:
@@ -1085,7 +1126,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         records = []
-        for employee in queryset.select_related('health_center').iterator(chunk_size=200):
+        for employee in queryset.select_related('health_center', 'organization_unit').iterator(chunk_size=200):
             nid = ''.join(char for char in str(employee.national_id or '') if char.isdigit())
             masked_nid = (
                 f'{nid[:2]}••••{nid[-4:]}' if len(nid) >= 6 else '—'
@@ -1096,6 +1137,20 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 'employee_number': employee.employee_number or '',
                 'national_id_masked': masked_nid,
                 'health_center_id': employee.health_center_id,
+                'affiliation_type': (
+                    'center' if employee.health_center_id else
+                    'department' if employee.organization_unit and employee.organization_unit.kind == 'department'
+                    else 'unassigned'
+                ),
+                'department': (
+                    employee.organization_unit.name if employee.organization_unit and
+                    employee.organization_unit.kind == 'department' else ''
+                ),
+                'affiliation': (
+                    employee.health_center.name_ar or employee.health_center.name if employee.health_center
+                    else employee.organization_unit.name if employee.organization_unit and
+                    employee.organization_unit.kind == 'department' else ''
+                ),
                 'health_center': (
                     employee.health_center.name_ar or employee.health_center.name
                     if employee.health_center else ''
@@ -1259,6 +1314,8 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             if employee.employment_status != Employee.EmploymentStatus.ACTIVE:
                 return Response({'status': 'Only active employees may transfer internally.'},
                                 status=status.HTTP_400_BAD_REQUEST)
+            if employee.organization_unit and employee.organization_unit.kind == 'department':
+                return Response({'organization_unit': 'Department-to-center transfer requires an approved department reassignment workflow.'}, status=409)
             if employee.health_center_id == center.pk:
                 return Response({'new_health_center_id': 'Employee already belongs to this center.'},
                                 status=status.HTTP_400_BAD_REQUEST)
@@ -1358,6 +1415,8 @@ class EmployeeViewSet(viewsets.ModelViewSet):
 
         with transaction.atomic():
             employee = Employee.objects.select_for_update().get(pk=employee.pk)
+            if requested_center and employee.organization_unit and employee.organization_unit.kind == 'department':
+                return Response({'organization_unit': 'Department-to-center transfer requires a separate approved reassignment workflow.'}, status=409)
             if employee.employment_status == target:
                 return Response({'status': 'This employee already has the requested status.'},
                                 status=status.HTTP_400_BAD_REQUEST)

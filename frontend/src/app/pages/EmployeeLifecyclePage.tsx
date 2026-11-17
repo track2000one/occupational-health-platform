@@ -29,8 +29,10 @@ type Employee = {
   name: string;
   employee_number: string | null;
   national_id: string;
-  health_center: number;
+  health_center: number | null;
   health_center_name?: string;
+  organization_unit_name?: string;
+  organization_unit_kind?: string;
   job_title?: string;
   employment_status?: Status;
 };
@@ -163,6 +165,8 @@ export function EmployeeLifecyclePage() {
   }, [page, statusFilter, centerFilter, debouncedSearch, revision]);
 
   const centerName = (employee: Employee) =>
+    (!employee.health_center && employee.organization_unit_kind === 'department'
+      ? employee.organization_unit_name : '') ||
     centers.find(c => c.id === employee.health_center)?.name_ar ||
     employee.health_center_name || centers.find(c => c.id === employee.health_center)?.name || 'غير محدد';
 
@@ -285,7 +289,7 @@ export function EmployeeLifecyclePage() {
               <TableCell>الموظف</TableCell>
               <TableCell>الرقم الوظيفي</TableCell>
               <TableCell>رقم الهوية</TableCell>
-              <TableCell>المركز الصحي</TableCell>
+              <TableCell>المركز الصحي / القسم</TableCell>
               <TableCell>الحالة الوظيفية</TableCell>
               <TableCell align="center">الإجراءات</TableCell>
             </TableRow>
@@ -311,7 +315,7 @@ export function EmployeeLifecyclePage() {
                           onClick={() => void openDialog(emp, 'history')}>السجل</Button>
                         <Button size="small" startIcon={<ApprovalIcon />}
                           onClick={() => void openDialog(emp, 'status')}>تحديث الحالة</Button>
-                        {currentStatus === 'active' && <Button size="small" startIcon={<TransferIcon />}
+                        {currentStatus === 'active' && emp.organization_unit_kind !== 'department' && <Button size="small" startIcon={<TransferIcon />}
                           onClick={() => void openDialog(emp, 'transfer')}>نقل داخلي</Button>}
                       </Stack>
                     </TableCell>

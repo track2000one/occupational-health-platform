@@ -27,6 +27,7 @@ type EmployeeCardRecord = {
 type Props = {
   employee: EmployeeCardRecord;
   centerName: string;
+  affiliationLabel?: string;
   missingFields?: string[];
   provisional?: boolean;
   isRtl: boolean;
@@ -71,7 +72,7 @@ function Info({ label, value }: { label: string; value: string }) {
 }
 
 export function EmployeeRegistryCard({
-  employee, centerName, missingFields = [], provisional = false, isRtl, canWrite, canManage, canArchive,
+  employee, centerName, affiliationLabel, missingFields = [], provisional = false, isRtl, canWrite, canManage, canArchive,
   onArchive, onRestore, onView, onEdit, onHealthCard, onEmploymentHistory,
 }: Props) {
   const status = STATUS[employee.employment_status || 'active'] || STATUS.under_review;
@@ -142,7 +143,7 @@ export function EmployeeRegistryCard({
         m: 0, display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
         columnGap: 2, rowGap: 1.7, mb: 1.8,
       }}>
-        <Info label={isRtl ? 'المركز الصحي' : 'Health center'} value={centerName} />
+        <Info label={affiliationLabel || (isRtl ? 'المركز الصحي' : 'Health center')} value={centerName} />
         <Info label={isRtl ? 'المسمى الوظيفي' : 'Job title'} value={employee.job_title || '—'} />
         <Info label={isRtl ? 'رقم الهوية (مخفي)' : 'National ID (masked)'} value={maskedId(employee.national_id)} />
         <Info label={isRtl ? 'البريد الإلكتروني' : 'Email'} value={employee.email || '—'} />
