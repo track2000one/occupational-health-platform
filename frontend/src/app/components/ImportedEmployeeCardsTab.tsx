@@ -12,10 +12,13 @@ import {
 } from '@mui/icons-material';
 import { authFetch, useAuth } from '../context/AuthContext';
 
+// Never fall back from the staging hostname to Production employee data.
 const API = (import.meta.env.VITE_API_URL ||
   (typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
     ? 'http://localhost:8000/api'
-    : 'https://occupational-health-platform-production.up.railway.app/api')).replace(/\/$/, '');
+    : typeof window !== 'undefined' && /staging/i.test(window.location.hostname)
+      ? ''
+      : 'https://occupational-health-platform-production.up.railway.app/api')).replace(/\/$/, '');
 
 type Classification = 'name_match' | 'name_review' | 'identifier_review' | 'not_in_registry';
 type ImportedRow = {
@@ -99,6 +102,10 @@ export function ImportedEmployeeCardsTab({ onCountChange }: Props) {
     nextClassification = classification, nextCompleteness = completeness,
   ) => {
     if (!permitted) return;
+    if (!API) {
+      setError('إعداد اتصال API لبيئة Staging غير متوفر. لن تُستخدم قاعدة Production كبديل.');
+      return;
+    }
     setLoading(true);
     setError('');
     try {
