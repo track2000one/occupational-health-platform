@@ -84,7 +84,7 @@ def approved_organization_map():
     units = {}
     for unit in OrganizationUnit.objects.filter(
         is_active=True, is_approved=True,
-    ).only('id', 'name', 'code', 'health_center_id'):
+    ).only('id', 'name', 'code', 'health_center_id', 'kind'):
         units[unit.pk] = unit
         for label in (unit.name, unit.code):
             if label:
@@ -308,13 +308,18 @@ def registry_match(sheet_rows, *, review_category=None):
             kind = 'archived_review'
         elif source_center and approved_center_id is None:
             kind = 'center_review' if employee else 'new_provisional'
-        elif (employee and approved_center_id and employee.health_center_id and
-              approved_center_id != employee.health_center_id):
+        elif (employee and approved_center_id and (
+              (employee.health_center_id and approved_center_id != employee.health_center_id)
+              or (employee.organization_unit and employee.organization_unit.kind == 'department')
+        )):
             kind = 'center_review'
         elif source_unit and (
             not approved_unit_id or
-            (approved_unit and approved_unit.health_center_id and approved_center_id
-             and approved_unit.health_center_id != approved_center_id) or
+            (approved_unit and approved_unit.kind == 'department' and
+             (approved_center_id or (employee and employee.health_center_id))) or
+            (approved_unit and approved_unit.kind in ('center', 'unit') and
+             (not approved_center_id or
+              approved_unit.health_center_id != approved_center_id)) or
             (employee and employee.organization_unit_id and
              employee.organization_unit_id != approved_unit_id)
         ):
@@ -327,7 +332,9 @@ def registry_match(sheet_rows, *, review_category=None):
                 approved_unit_id and not employee.organization_unit_id
             )
             kind = 'existing_fill_only' if has_fill else 'existing_no_change'
-        elif source_center and approved_center_id:
+        elif (source_center and approved_center_id) or (
+            approved_unit and approved_unit.kind == 'department' and not source_center
+        ):
             kind = 'new_candidate'
         else:
             kind = 'new_incomplete'
@@ -336,7 +343,11 @@ def registry_match(sheet_rows, *, review_category=None):
         # a legally valid identity. Existing verified fields count as present.
         missing = [
             key for key in REQUIRED_PROFILE_FIELDS
-            if (not row.get(key) and not (
+            if (not (key == 'health_center' and (
+                (approved_unit and approved_unit.kind == 'department' and not source_center)
+                or (employee and employee.organization_unit and
+                    employee.organization_unit.kind == 'department')
+            )) and not row.get(key) and not (
                 employee and ((employee.health_center_id if key == 'health_center'
                                else getattr(employee, key, None)))
             ))
@@ -364,8 +375,10 @@ def registry_match(sheet_rows, *, review_category=None):
                 'approved_center_id': approved_center_id,
                 'approved_unit_id': (
                     approved_unit_id if approved_unit and (
-                        not approved_unit.health_center_id or not approved_center_id
-                        or approved_unit.health_center_id == approved_center_id
+                        (approved_unit.kind == 'department' and not approved_center_id and
+                         not (employee and employee.health_center_id)) or
+                        (approved_unit.kind in ('center', 'unit') and approved_center_id and
+                         approved_unit.health_center_id == approved_center_id)
                     ) else None
                 ),
                 'missing_fields': missing,
