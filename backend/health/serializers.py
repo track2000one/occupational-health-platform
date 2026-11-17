@@ -380,6 +380,8 @@ class HealthCenterSerializer(serializers.ModelSerializer):
 
 class EmployeeSerializer(serializers.ModelSerializer):
     health_center_name = serializers.CharField(source='health_center.name', read_only=True, default='')
+    organization_unit_name = serializers.CharField(source='organization_unit.name', read_only=True, default='')
+    organization_unit_kind = serializers.CharField(source='organization_unit.kind', read_only=True, default='')
     moh_id = serializers.CharField(source='detailed_health_profile.moh_id', required=False, allow_blank=True)
     children_count = serializers.IntegerField(source='detailed_health_profile.children_count', required=False, allow_null=True, min_value=0, max_value=100)
     employment_start_date = serializers.DateField(source='detailed_health_profile.employment_start_date', required=False, allow_null=True)
@@ -396,7 +398,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             'name': {'required': True, 'allow_blank': False},
             'national_id': {'required': True, 'allow_blank': False},
-            'health_center': {'required': True},
+            'health_center': {'required': False, 'allow_null': True},
             'email': {'required': False, 'allow_blank': True, 'allow_null': True},
             'employee_number': {'required': False, 'allow_blank': True, 'allow_null': True},
             'date_of_birth': {'required': False, 'allow_null': True},
@@ -429,10 +431,8 @@ class EmployeeSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('Choose an approved active organizational unit.')
         if value.kind == 'sector':
             raise serializers.ValidationError('Choose a center or an approved unit instead.')
-        if value.kind == 'department' and not value.health_center_id:
-            raise serializers.ValidationError(
-                'Central departments require a separate approved assignment workflow.'
-            )
+        if value.kind == 'department' and value.health_center_id:
+            raise serializers.ValidationError('Central departments cannot be mapped to a health center.')
         return value
 
     def validate_nationality(self, value):
@@ -480,19 +480,33 @@ class EmployeeSerializer(serializers.ModelSerializer):
             # administrative employee update endpoint is audited separately.
 
         org = attrs.get('organization_unit', self.instance.organization_unit if self.instance else None)
+        center = attrs.get('health_center', self.instance.health_center if self.instance else None)
+        if self.instance and self.instance.organization_unit_id and self.instance.organization_unit.kind == 'department':
+            # Never silently transfer an employee out of an approved central department.
+            if ('organization_unit' in attrs and attrs['organization_unit'] != self.instance.organization_unit) or center:
+                raise serializers.ValidationError({
+                    'organization_unit': 'Changing an existing department assignment requires an approved transfer workflow.',
+                })
         if org:
-            center = attrs.get('health_center', self.instance.health_center if self.instance else None)
-            if org.health_center_id and center and org.health_center_id != center.pk:
-                raise serializers.ValidationError({
-                    'organization_unit': 'The selected unit belongs to a different health center.',
-                })
-            if org.kind in ('center', 'unit') and not org.health_center_id:
-                raise serializers.ValidationError({
-                    'organization_unit': 'Center mapping must be approved before employee assignment.',
-                })
+            if org.kind == 'department':
+                if center:
+                    raise serializers.ValidationError({
+                        'health_center': 'A central department assignment must not include a health center.',
+                    })
+            elif org.kind in ('center', 'unit'):
+                if not org.health_center_id or not center or org.health_center_id != center.pk:
+                    raise serializers.ValidationError({
+                        'organization_unit': 'Select the approved health center that this unit belongs to.',
+                    })
+        if self.instance is None and not center and not (org and org.kind == 'department'):
+            raise serializers.ValidationError({
+                'health_center': 'Choose either an active health center or an approved central department.',
+                'organization_unit': 'Choose either an active health center or an approved central department.',
+            })
+        if center and (not center.is_active or center.is_archived):
+            raise serializers.ValidationError({'health_center': 'Choose an active health center.'})
         self._require_for_create(attrs, 'national_id', 'National ID is required and must be unique.')
         self._require_for_create(attrs, 'name', 'Name is required.')
-        self._require_for_create(attrs, 'health_center', 'Health center is required.')
         if attrs.get('national_id') and len(attrs['national_id']) != 10:
             raise serializers.ValidationError({'national_id': 'National ID must contain exactly 10 digits.'})
         self._check_unique_employee_field('email', attrs.get('email'), 'Email already exists for another employee.')
