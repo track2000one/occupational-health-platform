@@ -20,8 +20,17 @@ from .employee_template_contract import (
 )
 from .models import OrganizationUnit, HealthCenter
 
-# The source headings come from the same contract used by import tests.
-COLUMNS = CANONICAL_HEADERS
+# Legacy modules still import COLUMNS and rely on its historical positions.
+# Preserve the old layout for backward compatibility; DO NOT use it for V3 generation.
+COLUMNS = (
+    'المركز الصحي', 'اسم الموظف', 'رقم الهوية / الإقامة',
+    'الرقم الوظيفي', 'البريد الإلكتروني', 'رقم الجوال',
+    'تاريخ الميلاد', 'مكان الميلاد', 'الجنس', 'الحالة الاجتماعية',
+    'العنوان الوطني', 'المسمى الوظيفي', 'تاريخ التعيين', 'الجنسية',
+    'الوظيفة الحالية', 'المسمى الوظيفي بالإنجليزية',
+    'عدد الأطفال', 'رمز الوحدة التنظيمية',
+)
+TEMPLATE_COLUMNS = CANONICAL_HEADERS
 REQUIRED_COLUMNS = (1, 2)
 ARAB_COUNTRY_ORDER = NATIONALITY_PRIORITY
 
