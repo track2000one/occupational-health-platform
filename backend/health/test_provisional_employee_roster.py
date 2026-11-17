@@ -6,11 +6,12 @@ import json
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
+from django.utils import timezone
 from openpyxl import Workbook
 from rest_framework.test import APIClient
 
 from .models import (
-    AuditLog, Employee, HealthCenter, ProvisionalEmployeeImportBatch,
+    AuditLog, Employee, EmployeeRegistryResetBatch, HealthCenter, ProvisionalEmployeeImportBatch,
     ProvisionalEmployeeRosterRow, UserProfile,
 )
 
@@ -305,3 +306,90 @@ class ProvisionalEmployeeRosterTests(TestCase):
         self.assertEqual(before, list(Employee.objects.order_by('national_id').values(
             'national_id', 'is_archived', 'birth_place', 'health_center_id',
         )))
+
+
+    def test_approval_plan_only_classifies_restore_candidates_without_mutations(self):
+        """Existing bulk reset provenance is a technical screen, NOT final HR approval."""
+        original = Employee.objects.get(national_id='1000000001')
+        archived_at = timezone.now()
+        original.archived_at = archived_at
+        original.archive_reason = 'Verified synthetic bulk reset provenance'
+        original.save(update_fields=['archived_at', 'archive_reason'])
+        EmployeeRegistryResetBatch.objects.create(
+            employee_ids=[str(original.pk)],
+            reason='Verified synthetic bulk reset provenance',
+            applied_at=archived_at,
+            created_by=self.admin,
+        )
+        self.assertEqual(self.upload().status_code, 201)
+        original_snapshot = list(Employee.objects.order_by('national_id').values(
+            'pk', 'name', 'is_archived', 'employment_status', 'archive_reason', 'archived_at',
+        ))
+        result = self.api.get('/api/provisional-employees/approval-plan/')
+        self.assertEqual(result.status_code, 200, result.data)
+        self.assertEqual(result['Cache-Control'], 'private, no-store')
+        self.assertEqual(result.data['total_source_rows'], 3)
+        self.assertEqual(result.data['total_scanned'], 3)
+        self.assertEqual(result.data['counts']['technical_review_candidate'], 1)
+        self.assertEqual(result.data['counts']['name_difference'], 1)
+        self.assertEqual(result.data['counts']['missing_original'], 1)
+        self.assertEqual(result.data['approved_employee_count'], 0)
+        self.assertTrue(result.data['requires_tested_backup_before_archive_restore'])
+        self.assertTrue(result.data['needs_independent_hr_verification'])
+        self.assertEqual(result.data['original_records_modified'], 0)
+        self.assertEqual(result.data['clinical_records_modified'], 0)
+        self.assertEqual(result.data['items'][0]['masked_id'], '10••••0001')
+        for secret in ('1000000001', '1000000002', '1000000003'):
+            self.assertNotIn(secret, json.dumps(result.data))
+
+        qualified = self.api.get(
+            '/api/provisional-employees/approval-plan/?status=technical_review_candidate'
+        )
+        self.assertEqual(qualified.status_code, 200)
+        self.assertEqual(qualified.data['filtered_count'], 1)
+        self.assertEqual(len(qualified.data['items']), 1)
+        self.assertFalse(qualified.data['items'][0]['is_approved_employee'])
+        self.assertEqual(qualified.data['items'][0]['source_row'], 2)
+        self.assertEqual(original_snapshot, list(Employee.objects.order_by('national_id').values(
+            'pk', 'name', 'is_archived', 'employment_status', 'archive_reason', 'archived_at',
+        )))
+
+    def test_approval_plan_is_admin_only_validates_filters_and_never_restores(self):
+        self.assertEqual(self.upload().status_code, 201)
+        response = self.api.get('/api/provisional-employees/approval-plan/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['counts']['archive_provenance_review'], 1)
+        self.assertEqual(response.data['counts']['name_difference'], 1)
+        self.assertEqual(response.data['counts']['missing_original'], 1)
+        self.assertEqual(response.data['approved_employee_count'], 0)
+        self.assertEqual(self.api.get('/api/provisional-employees/approval-plan/?page=abc').status_code, 400)
+        self.assertEqual(self.api.get('/api/provisional-employees/approval-plan/?page=101').status_code, 400)
+        self.assertEqual(self.api.get('/api/provisional-employees/approval-plan/?status=not-a-status').status_code, 400)
+        self.api.force_authenticate(self.data_entry)
+        self.assertEqual(self.api.get('/api/provisional-employees/approval-plan/').status_code, 403)
+        self.api.force_authenticate(self.viewer)
+        self.assertEqual(self.api.get('/api/provisional-employees/approval-plan/').status_code, 403)
+        self.assertEqual(Employee.objects.filter(is_archived=True).count(), 2)
+
+    def test_approval_plan_rechecks_modified_archive_state(self):
+        """Stale imported class labels never determine approval eligibility alone."""
+        archived_at = timezone.now()
+        original = Employee.objects.get(national_id='1000000001')
+        original.archived_at = archived_at
+        original.archive_reason = 'Synthetic bulk reason'
+        original.save(update_fields=['archive_reason', 'archived_at'])
+        EmployeeRegistryResetBatch.objects.create(
+            employee_ids=[str(original.pk)],
+            reason='Synthetic bulk reason',
+            applied_at=archived_at,
+            created_by=self.admin,
+        )
+        self.assertEqual(self.upload().status_code, 201)
+        start = self.api.get('/api/provisional-employees/approval-plan/')
+        self.assertEqual(start.data['counts']['technical_review_candidate'], 1)
+        original.employment_status = Employee.EmploymentStatus.RETIRED
+        original.save(update_fields=['employment_status'])
+        rechecked = self.api.get('/api/provisional-employees/approval-plan/')
+        self.assertEqual(rechecked.data['counts']['technical_review_candidate'], 0)
+        self.assertEqual(rechecked.data['counts']['not_active_employment'], 1)
+        self.assertEqual(Employee.objects.get(pk=original.pk).is_archived, True)
