@@ -316,7 +316,8 @@ def registry_match(sheet_rows, *, review_category=None):
         elif source_unit and (
             not approved_unit_id or
             (approved_unit and approved_unit.kind == 'department' and
-             (approved_center_id or (employee and employee.health_center_id))) or
+             (approved_unit.health_center_id is not None or approved_center_id or
+              (employee and employee.health_center_id))) or
             (approved_unit and approved_unit.kind in ('center', 'unit') and
              (not approved_center_id or
               approved_unit.health_center_id != approved_center_id)) or
@@ -333,7 +334,8 @@ def registry_match(sheet_rows, *, review_category=None):
             )
             kind = 'existing_fill_only' if has_fill else 'existing_no_change'
         elif (source_center and approved_center_id) or (
-            approved_unit and approved_unit.kind == 'department' and not source_center
+            approved_unit and approved_unit.kind == 'department' and
+            approved_unit.health_center_id is None and not source_center
         ):
             kind = 'new_candidate'
         else:
@@ -344,7 +346,8 @@ def registry_match(sheet_rows, *, review_category=None):
         missing = [
             key for key in REQUIRED_PROFILE_FIELDS
             if (not (key == 'health_center' and (
-                (approved_unit and approved_unit.kind == 'department' and not source_center)
+                (approved_unit and approved_unit.kind == 'department' and
+            approved_unit.health_center_id is None and not source_center)
                 or (employee and employee.organization_unit and
                     employee.organization_unit.kind == 'department')
             )) and not row.get(key) and not (
@@ -375,8 +378,8 @@ def registry_match(sheet_rows, *, review_category=None):
                 'approved_center_id': approved_center_id,
                 'approved_unit_id': (
                     approved_unit_id if approved_unit and (
-                        (approved_unit.kind == 'department' and not approved_center_id and
-                         not (employee and employee.health_center_id)) or
+                        (approved_unit.kind == 'department' and approved_unit.health_center_id is None and
+                         not approved_center_id and not (employee and employee.health_center_id)) or
                         (approved_unit.kind in ('center', 'unit') and approved_center_id and
                          approved_unit.health_center_id == approved_center_id)
                     ) else None
