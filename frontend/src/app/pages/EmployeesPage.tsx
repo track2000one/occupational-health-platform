@@ -374,6 +374,8 @@ export function EmployeesPage() {
   const [saving, setSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [centerFilter, setCenterFilter] = useState('all');
+  const [affiliationFilter, setAffiliationFilter] = useState('all');
+  const [departmentFilter, setDepartmentFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [sourceFilter, setSourceFilter] = useState('all');
   const [completionFilter, setCompletionFilter] = useState('all');
@@ -431,6 +433,7 @@ export function EmployeesPage() {
   const canArchive = can(PERMISSIONS.MANAGE_USERS);
   const canBulkReset = canArchive && user?.isSuperuser === true;
   const archivedFiltersClear = !searchTerm.trim() && centerFilter === 'all' &&
+    affiliationFilter === 'all' && departmentFilter === 'all' &&
     statusFilter === 'all' && sourceFilter === 'all' && completionFilter === 'all';
   // 'employee' is a beneficiary role, not an operator for other staff records.
   // 'dataEntry' may complete missing demographic fields, but cannot use the
@@ -475,7 +478,9 @@ export function EmployeesPage() {
         if (showHiddenArchived && canBulkReset) query.set('hidden', 'true');
       }
       if (searchTerm.trim()) query.set('search', searchTerm.trim());
-      if (centerFilter !== 'all') query.set('health_center_id', centerFilter);
+      if (centerFilter !== 'all' && affiliationFilter !== 'department') query.set('health_center_id', centerFilter);
+      if (affiliationFilter !== 'all') query.set('affiliation_type', affiliationFilter);
+      if (departmentFilter !== 'all' && affiliationFilter === 'department') query.set('department_id', departmentFilter);
       if (statusFilter !== 'all') query.set('employment_status', statusFilter);
       if (sourceFilter !== 'all') query.set('source_category', sourceFilter);
       if (completionFilter !== 'all') query.set('completion', completionFilter);
@@ -529,7 +534,7 @@ export function EmployeesPage() {
     const timer = setTimeout(() => { void loadData(); }, searchTerm ? 350 : 0);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, searchTerm, centerFilter, statusFilter, sourceFilter, completionFilter,
+  }, [page, searchTerm, centerFilter, affiliationFilter, departmentFilter, statusFilter, sourceFilter, completionFilter,
       sortMode, showArchived, showHiddenArchived, canArchive, canBulkReset]);
 
   useEffect(() => { void loadCenters(); }, []);
@@ -575,6 +580,7 @@ export function EmployeesPage() {
         return;
       }
       setCompletionTarget(employee);
+      setCompletionAffiliationKind('center');
       setCompletionValues({});
       setCompletionReason('');
       setCompletionIdentityChecked(false);
@@ -595,9 +601,13 @@ export function EmployeesPage() {
         completionReason.trim().length > 500) return;
     const missingKeys = new Set(
       OPTIONAL_EMPLOYEE_FIELDS.filter(([field]) =>
+        (field !== 'health_center' || !target.organization_unit) &&
         !String(target[field] ?? '').trim()
       ).map(([field]) => String(field))
     );
+    if (!target.health_center && !target.organization_unit) {
+      missingKeys.add('organization_unit');
+    }
     const fields: Record<string, string | number> = {};
     for (const [field, raw] of Object.entries(completionValues)) {
       const value = raw.trim();
@@ -606,7 +616,8 @@ export function EmployeesPage() {
         toast.error('لا يجوز تعديل حقل مسجل مسبقًا من نافذة استكمال البيانات.');
         return;
       }
-      fields[field] = field === 'health_center' ? Number(value) : value;
+      fields[field] = field === 'health_center' || field === 'organization_unit'
+        ? Number(value) : value;
     }
     if (!Object.keys(fields).length) {
       toast.error('أدخل قيمة لحقل ناقص واحد على الأقل.');
@@ -1029,7 +1040,9 @@ export function EmployeesPage() {
               onClick={() => {
                 const filters = new URLSearchParams();
                 if (searchTerm.trim()) filters.set('search', searchTerm.trim());
-                if (centerFilter !== 'all') filters.set('health_center_id', centerFilter);
+                if (centerFilter !== 'all' && affiliationFilter !== 'department') filters.set('health_center_id', centerFilter);
+                if (affiliationFilter !== 'all') filters.set('affiliation_type', affiliationFilter);
+                if (departmentFilter !== 'all' && affiliationFilter === 'department') filters.set('department_id', departmentFilter);
                 if (statusFilter !== 'all') filters.set('employment_status', statusFilter);
                 if (sourceFilter !== 'all') filters.set('source_category', sourceFilter);
                 if (sortMode) filters.set('sort', sortMode);
@@ -1115,12 +1128,31 @@ export function EmployeesPage() {
               slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchIcon /></InputAdornment> } }}
             />
           </Grid>
-          <Grid size={{ xs: 12, md: 5 }}>
-            <TextField fullWidth select label={isRtl ? 'المركز الصحي' : 'Health Center'} value={centerFilter}
-              onChange={event => { setCenterFilter(event.target.value); setPage(0); }}>
-              <MenuItem value="all">{isRtl ? 'جميع المراكز' : 'All Centers'}</MenuItem>
-              {healthCenters.map(center => <MenuItem key={center.id} value={String(center.id)}>{centerDisplayName(center, isRtl)}</MenuItem>)}
+          <Grid size={{ xs: 12, md: 2 }}>
+            <TextField fullWidth select label={isRtl ? 'نوع التبعية' : 'Affiliation'} value={affiliationFilter}
+              onChange={event => { setAffiliationFilter(event.target.value); setCenterFilter('all'); setDepartmentFilter('all'); setPage(0); }}>
+              <MenuItem value="all">{isRtl ? 'الجميع' : 'All'}</MenuItem>
+              <MenuItem value="center">{isRtl ? 'مركز صحي' : 'Center'}</MenuItem>
+              <MenuItem value="department">{isRtl ? 'قسم' : 'Department'}</MenuItem>
+              <MenuItem value="unassigned">{isRtl ? 'لم تحدد التبعية' : 'Unassigned'}</MenuItem>
             </TextField>
+          </Grid>
+          <Grid size={{ xs: 12, md: 3 }}>
+            {affiliationFilter === 'department' ? (
+              <TextField fullWidth select label={isRtl ? 'القسم' : 'Department'} value={departmentFilter}
+                onChange={event => { setDepartmentFilter(event.target.value); setPage(0); }}>
+                <MenuItem value="all">{isRtl ? 'جميع الأقسام' : 'All departments'}</MenuItem>
+                {approvedDepartments.map(unit =>
+                  <MenuItem key={unit.id} value={String(unit.id)}>{unit.name}</MenuItem>)}
+              </TextField>
+            ) : (
+              <TextField fullWidth select label={isRtl ? 'المركز الصحي' : 'Health Center'} value={centerFilter}
+                disabled={affiliationFilter === 'unassigned'}
+                onChange={event => { setCenterFilter(event.target.value); setPage(0); }}>
+                <MenuItem value="all">{isRtl ? 'جميع المراكز' : 'All Centers'}</MenuItem>
+                {healthCenters.map(center => <MenuItem key={center.id} value={String(center.id)}>{centerDisplayName(center, isRtl)}</MenuItem>)}
+              </TextField>
+            )}
           </Grid>
           <Grid size={{ xs: 12, sm: 4 }}>
             <TextField fullWidth select label={isRtl ? 'الحالة الوظيفية' : 'Employment status'} value={statusFilter}
@@ -1286,7 +1318,7 @@ export function EmployeesPage() {
                 <TableCell>{isRtl ? 'الاسم الكامل' : 'Full Name'}</TableCell>
                 <TableCell>{isRtl ? 'الهوية الوطنية' : 'National ID'}</TableCell>
                 <TableCell>{isRtl ? 'البريد الإلكتروني' : 'Email'}</TableCell>
-                <TableCell>{isRtl ? 'المركز / المسمى' : 'Center / Job'}</TableCell>
+                <TableCell>{isRtl ? 'التبعية / المسمى' : 'Affiliation / Job'}</TableCell>
                 <TableCell>{isRtl ? 'الحالة الوظيفية' : 'Employment Status'}</TableCell>
                 <TableCell>{isRtl ? 'حالة ملف المصدر' : 'Roster source condition'}</TableCell>
                 <TableCell>{isRtl ? 'العمر / الخبرة' : 'Age / Experience'}</TableCell>
@@ -1718,6 +1750,7 @@ export function EmployeesPage() {
             </Typography>
             <Grid container spacing={2}>
               {OPTIONAL_EMPLOYEE_FIELDS.filter(([field]) =>
+                (field !== 'health_center' || !completionTarget.organization_unit) &&
                 !String(completionTarget[field] ?? '').trim()
               ).map(([field, label]) => {
                 const key = String(field);
@@ -1726,16 +1759,36 @@ export function EmployeesPage() {
                   setCompletionValues(old => ({ ...old, [key]: next }));
                 return <Grid key={key} size={{ xs: 12, md: 6 }}>
                   {key === 'health_center' ? (
-                    <TextField fullWidth select label={label} value={value}
-                      disabled={completionSaving}
-                      onChange={event => onChange(event.target.value)}>
-                      <MenuItem value="">اختر المركز الصحي</MenuItem>
-                      {selectableCenters.filter(center => center.is_active !== false).map(center =>
-                        <MenuItem key={center.id} value={String(center.id)}>
-                          {centerDisplayName(center, isRtl)}
-                        </MenuItem>
+                    <Stack spacing={1}>
+                      <TextField fullWidth select label="نوع التبعية" value={completionAffiliationKind}
+                        disabled={completionSaving}
+                        onChange={event => {
+                          setCompletionAffiliationKind(event.target.value as 'center' | 'department');
+                          setCompletionValues(old => {
+                            const next = { ...old }; delete next.health_center; delete next.organization_unit;
+                            return next;
+                          });
+                        }}>
+                        <MenuItem value="center">مركز صحي</MenuItem>
+                        <MenuItem value="department">قسم</MenuItem>
+                      </TextField>
+                      {completionAffiliationKind === 'center' ? (
+                        <TextField fullWidth select label="المركز الصحي" value={value}
+                          disabled={completionSaving} onChange={event => onChange(event.target.value)}>
+                          <MenuItem value="">اختر المركز الصحي</MenuItem>
+                          {selectableCenters.filter(center => center.is_active !== false).map(center =>
+                            <MenuItem key={center.id} value={String(center.id)}>{centerDisplayName(center, isRtl)}</MenuItem>)}
+                        </TextField>
+                      ) : (
+                        <TextField fullWidth select label="القسم" value={completionValues.organization_unit || ''}
+                          disabled={completionSaving || !approvedDepartments.length}
+                          onChange={event => setCompletionValues(old => ({ ...old, organization_unit: event.target.value }))}>
+                          <MenuItem value="">اختر القسم المعتمد</MenuItem>
+                          {approvedDepartments.map(unit =>
+                            <MenuItem key={unit.id} value={String(unit.id)}>{unit.name}</MenuItem>)}
+                        </TextField>
                       )}
-                    </TextField>
+                    </Stack>
                   ) : key === 'gender' ? (
                     <TextField fullWidth select label={label} value={value}
                       disabled={completionSaving}
