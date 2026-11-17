@@ -52,6 +52,7 @@ HEADERS = {
                           'الجهة التنظيمية', 'organizational unit',
                           'الجهة أو الوحدة المعتمدة في المنصة (بعد التحقق)'},
     'sector': {'القطاع المقترح', 'القطاع', 'sector'},
+    'children_count': {'عدد الأطفال', 'عدد الاطفال', 'عدد الأبناء', 'عدد الابناء', 'children count', 'number of children'},
 
 }
 REQUIRED = ('name', 'national_id')
