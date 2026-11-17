@@ -975,8 +975,12 @@ export function EmployeesPage() {
           )}
           {can(PERMISSIONS.MANAGE_USERS) && (
             <Button variant="contained" color="primary" startIcon={<UploadFileIcon />}
+              onClick={() => navigate('/employees/provisional')}>
+              {isRtl ? 'استيراد Excel المبسّط' : 'Simple Excel Import'}
+            </Button>
+            <Button variant="outlined" color="inherit"
               onClick={() => navigate('/employees/import')}>
-              {isRtl ? 'استيراد بيانات الموظفين' : 'Import Employees'}
+              {isRtl ? 'المراجعة والمطابقة V2' : 'Advanced V2 Review'}
             </Button>
           )}
           {canArchive && (
@@ -1003,6 +1007,13 @@ export function EmployeesPage() {
       </Box>
 
       {connectionError && <Alert severity="warning" sx={{ mb: 2 }}>{connectionError}</Alert>}
+      {can(PERMISSIONS.MANAGE_USERS) && (
+        <Alert severity="info" sx={{ mb: 2 }}>
+          {isRtl
+            ? 'الاستيراد المبسّط يعرض البيانات المستوردة كبطاقات إدارية مؤقتة مستقلة عن السجلات الطبية. يمكنك استكمال النواقص دون إعادة إضافة هوية موجودة؛ للمطابقة النهائية استخدم المراجعة V2.'
+            : 'Simple Excel import creates a separate temporary administrative roster, not medical employee records. Complete missing fields there; use V2 review for final reconciliation.'}
+        </Alert>
+      )}
 
       <Grid container spacing={2} sx={{ mb: 3 }}>
         {[
