@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import {
   Alert, Box, Button, Card, CardContent, Checkbox, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Divider, FormControl, FormControlLabel,
@@ -79,6 +80,7 @@ function localizedError(err: unknown) {
 }
 export function OrganizationStructurePage() {
   const { i18n } = useTranslation();
+  const navigate = useNavigate();
   const isRtl = i18n.language === 'ar';
   const [items, setItems] = useState<OrgUnit[]>([]);
   const [stats, setStats] = useState<OrgSummary>({ total: 0, approved: 0, pending: 0, by_kind: {} });
@@ -269,9 +271,14 @@ export function OrganizationStructurePage() {
               : 'Approve the hierarchy before linking employees or centers'}
           </Typography>
         </Box>
+        <Stack direction="row" gap={1} flexWrap="wrap">
+        <Button startIcon={<DepartmentIcon />} variant="contained" onClick={() => navigate('/admin/departments')}>
+          إدارة الأقسام
+        </Button>
         <Button startIcon={<RefreshIcon />} onClick={() => void reload().catch(e => toast.error(localizedError(e)))} disabled={busy} variant="outlined">
           {isRtl ? 'تحديث البيانات' : 'Refresh'}
         </Button>
+        </Stack>
       </Stack>
 
       <Alert severity="warning" sx={{ mb: 3 }}>
