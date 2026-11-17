@@ -156,6 +156,37 @@ const PLAN_LABELS: Record<ApprovalPlanStatus, string> = {
   not_active_employment: 'حالة وظيفية غير نشطة',
   archive_provenance_review: 'دليل الأرشفة يحتاج مراجعة',
 };
+type NameReviewCategory =
+  | 'format_variation' | 'token_order_variation' | 'genealogy_particle_variation'
+  | 'incomplete_name' | 'minor_spelling_variation'
+  | 'substantial_difference' | 'missing_original';
+type NameReviewResponse = {
+  mode: 'provisional_employee_name_review_read_only';
+  batch_id: number | null;
+  total_name_review_rows: number;
+  category_counts: Record<NameReviewCategory, number>;
+  filtered_count: number;
+  page: number;
+  page_size: number;
+  items: Array<{
+    source_row: number; masked_id: string; excel_name: string; original_name: string;
+    category: NameReviewCategory;
+    requires_human_verification: true; is_approved: false;
+    original_employee_modified: false;
+  }>;
+  auto_approved: 0;
+  original_employee_modified: false; clinical_records_modified: false;
+  notice: string;
+};
+const NAME_REVIEW_LABELS: Record<NameReviewCategory, string> = {
+  format_variation: 'اختلاف تنسيق أو مسافات',
+  token_order_variation: 'اختلاف ترتيب أجزاء الاسم',
+  genealogy_particle_variation: 'اختلاف بن / ابن / بنت',
+  incomplete_name: 'اسم ناقص أو مختصر',
+  minor_spelling_variation: 'اختلاف إملائي بسيط محتمل',
+  substantial_difference: 'اختلاف جوهري يحتاج تدقيقًا',
+  missing_original: 'الاسم الأصلي غير متاح',
+};
 const STATUS: Record<Classification, { label: string; color: 'warning' | 'error' | 'info' | 'default' }> = {
   name_match: { label: 'مطابقة أولية — ليست اعتمادًا', color: 'info' },
   name_review: { label: 'اسم مختلف — يحتاج مراجعة', color: 'warning' },
@@ -202,6 +233,9 @@ export function ProvisionalEmployeesPage() {
   const [approvalPlan, setApprovalPlan] = useState<ApprovalPlan | null>(null);
   const [approvalPlanBusy, setApprovalPlanBusy] = useState(false);
   const [approvalPlanStatus, setApprovalPlanStatus] = useState('');
+  const [nameReview, setNameReview] = useState<NameReviewResponse | null>(null);
+  const [nameReviewCategory, setNameReviewCategory] = useState('');
+  const [nameReviewBusy, setNameReviewBusy] = useState(false);
   const [conflictDiagnostics, setConflictDiagnostics] = useState<ConflictDiagnostics | null>(null);
   const [conflictDiagnosticsBusy, setConflictDiagnosticsBusy] = useState(false);
   const [editingConflictId, setEditingConflictId] = useState<number | null>(null);
@@ -233,6 +267,7 @@ export function ProvisionalEmployeesPage() {
       if (readiness && readiness.batch_id !== data.batch?.batch_id) setReadiness(null);
       if (approvalPlan && approvalPlan.batch_id !== data.batch?.batch_id) setApprovalPlan(null);
       if (conflictDiagnostics && conflictDiagnostics.batch_id !== data.batch?.batch_id) setConflictDiagnostics(null);
+      if (nameReview && nameReview.batch_id !== data.batch?.batch_id) setNameReview(null);
       setBatch(data.batch);
       setError('');
     } catch (caught) {
@@ -340,6 +375,30 @@ export function ProvisionalEmployeesPage() {
       setApprovalPlan(null);
     } finally {
       setApprovalPlanBusy(false);
+    }
+  };
+
+  const loadNameReview = async (nextPage = 1, nextCategory = nameReviewCategory) => {
+    if (!isAdmin || nameReviewBusy) return;
+    setNameReviewBusy(true);
+    setError('');
+    try {
+      const params = new URLSearchParams({ page: String(nextPage) });
+      if (nextCategory) params.set('category', nextCategory);
+      const response = await authFetch(API + '/provisional-employees/name-review/?' + params.toString());
+      if (!response.ok) throw new Error(await errorMessage(response));
+      const result: NameReviewResponse = await response.json();
+      setNameReview(result);
+      setNameReviewCategory(nextCategory);
+      if (batch && result.batch_id !== batch.batch_id) {
+        setNameReview(null);
+        setError('تغيرت دفعة الموظفين الحالية؛ حدّث الصفحة قبل مقارنة الأسماء.');
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'تعذر مقارنة الأسماء.');
+      setNameReview(null);
+    } finally {
+      setNameReviewBusy(false);
     }
   };
 
@@ -683,6 +742,75 @@ export function ProvisionalEmployeesPage() {
             هذا كشف تحضيري للمتابعة والمراجعة. لا يُنقل أي موظف إلى السجل الرئيسي بهذه الخطوة،
             ولا تُفتح السجلات الصحية حتى اكتمال الاعتماد وفق الإجراءات المعتمدة.
           </Typography>
+        </Stack>}
+      </Stack>
+    </Paper>}
+
+    {isAdmin && batch && <Paper sx={{ p: 2, mb: 2, borderRadius: 3 }}>
+      <Stack gap={1.5}>
+        <Stack direction={{ xs: 'column', md: 'row' }} alignItems={{ md: 'center' }}
+          justifyContent="space-between" gap={1}>
+          <Box>
+            <Typography variant="h6" fontWeight={800}>مطابقة أسماء الموظفين الذكية</Typography>
+            <Typography variant="body2" color="text.secondary">
+              قارن الاسم الوارد في Excel بالاسم في السجل الأصلي بالهوية نفسها، وصنّف الاختلافات
+              دفعةً واحدة دون استعادة السجلات أو تعديل الأسماء.
+            </Typography>
+          </Box>
+          <Button variant="contained" color="secondary" disabled={nameReviewBusy}
+            onClick={() => void loadNameReview(1, '')}>
+            {nameReviewBusy ? 'جارٍ تحليل الأسماء...' : 'تحليل اختلافات الأسماء'}
+          </Button>
+        </Stack>
+        {nameReview && <Stack gap={1.5}>
+          <Alert severity="warning">
+            {nameReview.notice} لا يعني التشابه الإملائي أو ترتيب الاسم أن الموظف قد اعتُمد
+            أو أن البيانات الصحية يمكن ربطها أو تفعيلها.
+          </Alert>
+          <Stack direction="row" flexWrap="wrap" gap={1}>
+            <Chip color="primary" label={'أسماء مختلفة مفحوصة: ' + nameReview.total_name_review_rows} />
+            {Object.entries(NAME_REVIEW_LABELS).map(([key, label]) =>
+              <Chip key={key} variant="outlined"
+                color={key === 'substantial_difference' ? 'warning' : 'default'}
+                label={label + ': ' + (nameReview.category_counts[key as NameReviewCategory] ?? 0)} />)}
+            <Chip label="المعتمدون آليًا: صفر" />
+          </Stack>
+          <TextField select label="تصفية حسب نوع اختلاف الاسم" size="small"
+            value={nameReviewCategory} disabled={nameReviewBusy} sx={{ maxWidth: 390 }}
+            onChange={event => void loadNameReview(1, event.target.value)}>
+            <MenuItem value="">جميع اختلافات الأسماء</MenuItem>
+            {Object.entries(NAME_REVIEW_LABELS).map(([key, label]) =>
+              <MenuItem key={key} value={key}>{label}</MenuItem>)}
+          </TextField>
+          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(290px,1fr))', gap: 2 }}>
+            {nameReview.items.map(item =>
+              <Paper key={item.source_row} variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
+                <Stack gap={1}>
+                  <Typography variant="caption" color="text.secondary">
+                    صف Excel: {item.source_row} — الهوية: <b dir="ltr">{item.masked_id}</b>
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">الاسم في Excel</Typography>
+                  <Typography fontWeight={700}>{item.excel_name}</Typography>
+                  <Typography variant="caption" color="text.secondary">الاسم في السجل الأصلي</Typography>
+                  <Typography fontWeight={700}>{item.original_name || 'غير متوفر'}</Typography>
+                  <Chip sx={{ alignSelf: 'flex-start', height: 'auto',
+                    '& .MuiChip-label': { whiteSpace: 'normal', py: 0.5 } }}
+                    size="small" color={item.category === 'substantial_difference' ? 'warning' : 'info'}
+                    label={NAME_REVIEW_LABELS[item.category]} />
+                  <Typography variant="caption" color="text.secondary">
+                    للمراجعة فقط — لم يُعتمد الاسم أو يُعدّل السجل الأصلي.
+                  </Typography>
+                </Stack>
+              </Paper>)}
+          </Box>
+          {nameReview.filtered_count > nameReview.page_size &&
+            <Stack alignItems="center">
+              <Pagination count={Math.ceil(nameReview.filtered_count / nameReview.page_size)}
+                page={nameReview.page} disabled={nameReviewBusy}
+                onChange={(_, newPage) => void loadNameReview(newPage, nameReviewCategory)} />
+            </Stack>}
+          {nameReview.filtered_count === 0 &&
+            <Alert severity="info">لا توجد حالات في التصنيف المحدد.</Alert>}
         </Stack>}
       </Stack>
     </Paper>}
