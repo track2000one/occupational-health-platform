@@ -188,6 +188,22 @@ const NAME_REVIEW_LABELS: Record<NameReviewCategory, string> = {
   substantial_difference: 'اختلاف جوهري يحتاج تدقيقًا',
   missing_original: 'الاسم الأصلي غير متاح',
 };
+type EmployeeTemplatePreflight = {
+  mode: 'canonical_employee_excel_preflight_read_only';
+  ready: true;
+  schema_version: string;
+  valid_rows: number;
+  recognized_count: number;
+  unrecognized_column_count: number;
+  missing_known_headers: string[];
+  classification_counts: Partial<Record<Classification, number>>;
+  optional_missing_counts: Record<string, number>;
+  same_file_already_imported: boolean;
+  overlap_with_latest_import: number;
+  requires_explicit_new_batch_confirmation: boolean;
+  will_create_separate_batch: boolean;
+  note: string;
+};
 const STATUS: Record<Classification, { label: string; color: 'warning' | 'error' | 'info' | 'default' }> = {
   name_match: { label: 'مطابقة أولية — ليست اعتمادًا', color: 'info' },
   name_review: { label: 'اسم مختلف — يحتاج مراجعة', color: 'warning' },
@@ -213,6 +229,10 @@ export function ProvisionalEmployeesPage() {
   const canUse = Boolean(user?.isSuperuser || user?.role === 'dataEntry');
   const isAdmin = Boolean(user?.isSuperuser);
   const [file, setFile] = useState<File | null>(null);
+  const [templatePreview, setTemplatePreview] = useState<EmployeeTemplatePreflight | null>(null);
+  const [previewBusy, setPreviewBusy] = useState(false);
+  const [templateDownloadBusy, setTemplateDownloadBusy] = useState(false);
+  const [confirmSeparateBatch, setConfirmSeparateBatch] = useState(false);
   const [batch, setBatch] = useState<BatchInfo | null>(null);
   const [items, setItems] = useState<EmployeeCard[]>([]);
   const [total, setTotal] = useState(0);
@@ -280,19 +300,76 @@ export function ProvisionalEmployeesPage() {
 
   useEffect(() => { void load(1, '', ''); }, [canUse]);
 
+  const downloadApprovedTemplate = async () => {
+    if (!isAdmin || templateDownloadBusy) return;
+    setTemplateDownloadBusy(true);
+    setError('');
+    try {
+      const response = await authFetch(API + '/employee-roster-template/');
+      if (!response.ok) throw new Error(await errorMessage(response));
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      try {
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'OHP_Employee_Approved_Template_V3.xlsx';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'تعذر تنزيل القالب المعتمد.');
+    } finally {
+      setTemplateDownloadBusy(false);
+    }
+  };
+
+  const previewApprovedWorkbook = async () => {
+    if (!file || !isAdmin || previewBusy || busy) return;
+    setPreviewBusy(true);
+    setError('');
+    setTemplatePreview(null);
+    setConfirmSeparateBatch(false);
+    try {
+      const body = new FormData();
+      body.append('file', file);
+      const response = await authFetch(
+        API + '/provisional-employees/template-preflight/',
+        { method: 'POST', body },
+      );
+      if (!response.ok) throw new Error(await errorMessage(response));
+      const result: EmployeeTemplatePreflight = await response.json();
+      if (!result.ready) throw new Error('الملف غير جاهز للاستيراد.');
+      setTemplatePreview(result);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'تعذر فحص ملف Excel.');
+    } finally {
+      setPreviewBusy(false);
+    }
+  };
+
   const importFile = async () => {
-    if (!file || !isAdmin || busy) return;
+    if (!file || !isAdmin || busy || !templatePreview?.ready ||
+        templatePreview.same_file_already_imported ||
+        (templatePreview.requires_explicit_new_batch_confirmation && !confirmSeparateBatch)) return;
     setBusy(true);
     setError('');
     setMessage('');
     try {
       const body = new FormData();
       body.append('file', file);
+      if (templatePreview.requires_explicit_new_batch_confirmation && confirmSeparateBatch) {
+        body.append('confirm_new_batch', 'true');
+      }
       const response = await authFetch(API + '/provisional-employees/import/', { method: 'POST', body });
       if (!response.ok) throw new Error(await errorMessage(response));
       const result = await response.json();
       setMessage(result.message || 'تم استيراد القائمة الإدارية المؤقتة.');
       setFile(null);
+      setTemplatePreview(null);
+      setConfirmSeparateBatch(false);
       setPage(1);
       setSearch('');
       setCategory('');
@@ -565,16 +642,66 @@ export function ProvisionalEmployeesPage() {
     </Alert>
 
     {isAdmin && <Paper sx={{ p: 3, mb: 2, borderRadius: 3 }}>
-      <Typography variant="h6" fontWeight={800} sx={{ mb: 1 }}>رفع ملف الموظفين مرة واحدة</Typography>
+      <Stack direction={{ xs: 'column', md: 'row' }}
+        gap={1} alignItems={{ md: 'center' }} justifyContent="space-between" sx={{ mb: 1.5 }}>
+        <Typography variant="h6" fontWeight={800}>استيراد موظفين باستخدام القالب المعتمد V3</Typography>
+        <Button variant="outlined" color="success" disabled={templateDownloadBusy}
+          onClick={() => void downloadApprovedTemplate()}>
+          {templateDownloadBusy ? 'جارٍ تنزيل القالب...' : 'تنزيل قالب الموظفين المعتمد V3'}
+        </Button>
+      </Stack>
       <Stack direction={{ xs: 'column', md: 'row' }} gap={2} alignItems={{ md: 'center' }}>
         <Button component="label" variant="outlined">
           {file ? file.name : 'اختيار ملف Excel'}
-          <input type="file" hidden accept=".xlsx" onChange={event => setFile(event.target.files?.[0] || null)} />
+          <input type="file" hidden accept=".xlsx" onChange={event => {
+            setFile(event.target.files?.[0] || null);
+            setTemplatePreview(null);
+            setConfirmSeparateBatch(false);
+          }} />
         </Button>
-        <Button variant="contained" disabled={!file || busy} onClick={importFile}>
-          استيراد بيانات الموظفين مؤقتًا
+        <Button variant="outlined" disabled={!file || busy || previewBusy}
+          onClick={() => void previewApprovedWorkbook()}>
+          {previewBusy ? 'جارٍ فحص الملف...' : 'فحص الملف قبل الاستيراد'}
+        </Button>
+        <Button variant="contained" disabled={!file || busy || previewBusy ||
+          !templatePreview?.ready || templatePreview.same_file_already_imported ||
+          (templatePreview.requires_explicit_new_batch_confirmation && !confirmSeparateBatch)}
+          onClick={importFile}>
+          استيراد البطاقات الإدارية
         </Button>
       </Stack>
+      {templatePreview && <Stack gap={1.2} sx={{ mt: 2 }}>
+        <Alert severity={templatePreview.unrecognized_column_count ? 'warning' : 'success'}>
+          تمت قراءة {templatePreview.valid_rows} موظفًا، والتعرف على {templatePreview.recognized_count} عمودًا.
+          {templatePreview.schema_version === 'OHP-EMPLOYEE-TEMPLATE-V3'
+            ? ' الملف مطابق للقالب المعتمد V3.'
+            : ' الملف بتنسيق سابق متوافق؛ يفضل استعمال القالب المعتمد V3.'}
+          {templatePreview.unrecognized_column_count > 0
+            ? ' توجد أعمدة غير معروفة لن تُستورد: ' + templatePreview.unrecognized_column_count + '.'
+            : ''}
+        </Alert>
+        <Stack direction="row" gap={1} flexWrap="wrap">
+          <Chip size="small" color="info"
+            label={'مطابقة أولية: ' + (templatePreview.classification_counts.name_match || 0)} />
+          <Chip size="small" color="warning"
+            label={'اختلاف أسماء: ' + (templatePreview.classification_counts.name_review || 0)} />
+          <Chip size="small" color="error"
+            label={'تعارض معرّفات: ' + (templatePreview.classification_counts.identifier_review || 0)} />
+          <Chip size="small" variant="outlined"
+            label={'حقول معروفة لكنها غير موجودة في الملف: ' + templatePreview.missing_known_headers.length} />
+        </Stack>
+        {templatePreview.same_file_already_imported && <Alert severity="info">
+          سبق استيراد الملف نفسه. لن ننشئ نسخة مكررة منه.
+        </Alert>}
+        {templatePreview.requires_explicit_new_batch_confirmation && <Alert severity="warning">
+          يوجد {templatePreview.overlap_with_latest_import} رقم هوية من الملف موجودًا في
+          الدفعة المؤقتة الحالية. الرفع الجديد ينشئ دفعة مستقلة ولا يدمج تصحيحات
+          البطاقات القديمة تلقائيًا. تأكد أن هذا الإجراء مقصود.
+          <FormControlLabel control={<Checkbox checked={confirmSeparateBatch}
+            onChange={(_, checked) => setConfirmSeparateBatch(checked)} />}
+            label="أُقر بأنني أرفع دفعة جديدة مستقلة، وأن بيانات الدفعة الحالية ستبقى محفوظة دون دمج تلقائي." />
+        </Alert>}
+      </Stack>}
       <Typography variant="caption" color="text.secondary">
         قد تظهر البطاقات المؤقتة هنا دون ظهورها في جدول السجل الطبي المعتمد.
         لا ينشئ هذا الإجراء موظفين جددًا ولا يستعيد السجلات المؤرشفة؛ الملف الأصلي لا يُستبدل.
