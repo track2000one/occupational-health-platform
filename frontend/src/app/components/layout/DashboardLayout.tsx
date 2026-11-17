@@ -92,7 +92,7 @@ export function DashboardLayout() {
     { key: 'periodicStatistics', label: isRtl ? 'الإحصائيات والمؤشرات' : 'Statistics & Indicators', icon: <AssessmentIcon />, path: '/periodic-statistics', group: 'followup', permission: PERMISSIONS.VIEW_REPORTS },
     { key: 'reports',            label: t('reports'),            icon: <AssessmentIcon />,          path: '/reports',               group: 'followup', permission: PERMISSIONS.VIEW_REPORTS },
     { key: 'dataQuality',        label: isRtl ? 'جودة البيانات' : 'Data Quality',              icon: <FactCheckIcon />,      path: '/data-quality',  group: 'followup', permission: PERMISSIONS.VIEW_DATA_QUALITY },
-    { key: 'dataImport',         label: isRtl ? 'استيراد بيانات الموظفين' : 'Import Employees', icon: <CloudUploadIcon />, path: '/employees/import', group: 'followup', permission: PERMISSIONS.MANAGE_USERS },
+    { key: 'dataImport',         label: isRtl ? 'استيراد بيانات الموظفين' : 'Import Employees', icon: <CloudUploadIcon />, path: '/employees/provisional', group: 'followup', permission: PERMISSIONS.MANAGE_USERS },
     { key: 'appointments',       label: isRtl ? 'المواعيد' : 'Appointments',                   icon: <CalendarIcon />,      path: '/appointments',  group: 'followup', permission: PERMISSIONS.VIEW_DASHBOARD },
     { key: 'notifications',      label: isRtl ? 'الإشعارات' : 'Notifications',                 icon: <NotificationsIcon />, path: '/notifications', group: 'followup', permission: PERMISSIONS.VIEW_DASHBOARD },
     { key: 'admin',              label: isRtl ? 'لوحة المسؤول' : 'Admin Console',              icon: <AdminPanelSettingsIcon />, path: '/admin',  group: 'admin', permission: PERMISSIONS.MANAGE_USERS },

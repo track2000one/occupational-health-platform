@@ -159,3 +159,38 @@ class ProvisionalEmployeeRosterTests(TestCase):
         self.assertEqual(ProvisionalEmployeeRosterRow.objects.count(), 0)
         self.assertEqual(Employee.objects.count(), 2)
         self.assertEqual(Employee.objects.filter(is_archived=True).count(), 2)
+
+
+    def test_full_1423_row_roster_import_and_repeat_are_safe(self):
+        """Large synthetic workbook covers the real expected batch size, never real PII."""
+        rows = []
+        for n in range(1, 1424):
+            label = ('Original Match' if n == 1
+                     else 'Source Mismatched' if n == 2
+                     else f'Synthetic Workforce Person {n:04d}')
+            number = 'ORIGINAL-1' if n == 1 else ''
+            rows.append((
+                'Synthetic Center', label, str(1000000000 + n),
+                number, '', '',
+            ))
+        original_count = Employee.objects.count()
+        raw = self.workbook(rows)
+        response = self.upload(raw)
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data['total'], 1423)
+        self.assertEqual(response.data['counts']['name_match'], 1)
+        self.assertEqual(response.data['counts']['name_review'], 1)
+        self.assertEqual(response.data['counts']['not_in_registry'], 1421)
+        self.assertEqual(Employee.objects.count(), original_count)
+        self.assertEqual(Employee.objects.filter(is_archived=True).count(), original_count)
+        self.assertEqual(ProvisionalEmployeeRosterRow.objects.count(), 1423)
+        page = self.api.get('/api/provisional-employees/')
+        self.assertEqual(page.status_code, 200)
+        self.assertEqual(page.data['total'], 1423)
+        self.assertEqual(len(page.data['items']), 24)
+        self.assertNotIn('1000000001', json.dumps(page.data))
+        repeated = self.upload(raw)
+        self.assertEqual(repeated.status_code, 200)
+        self.assertTrue(repeated.data['already_imported'])
+        self.assertEqual(ProvisionalEmployeeImportBatch.objects.count(), 1)
+        self.assertEqual(ProvisionalEmployeeRosterRow.objects.count(), 1423)
