@@ -6,6 +6,7 @@ from .employee_import_v2 import EmployeeImportV2PreviewView
 from .provisional_employee_roster import (ProvisionalEmployeeImportView, ProvisionalEmployeeRosterView, ProvisionalEmployeeCompletionView, ProvisionalEmployeeLookupView, ProvisionalEmployeeBatchRemovalView)
 from .provisional_employee_approval_readiness import ProvisionalEmployeeApprovalReadinessView
 from .provisional_employee_approval_plan import ProvisionalEmployeeApprovalPlanView
+from .provisional_employee_conflict_diagnostics import ProvisionalEmployeeConflictDiagnosticsView
 from .employee_archived_list_visibility import ArchivedEmployeeListVisibilityView
 from .employee_review_bulk_activation import StagingEmployeeReviewBulkActivationView
 from .employee_review_bulk_discard import StagingEmployeeReviewBulkDiscardView
@@ -43,6 +44,7 @@ urlpatterns = [
     path('provisional-employees/import/', ProvisionalEmployeeImportView.as_view(), name='provisional-employee-import'),
     path('provisional-employees/readiness/', ProvisionalEmployeeApprovalReadinessView.as_view(), name='provisional-employee-readiness'),
     path('provisional-employees/approval-plan/', ProvisionalEmployeeApprovalPlanView.as_view(), name='provisional-employee-approval-plan'),
+    path('provisional-employees/conflict-diagnostics/', ProvisionalEmployeeConflictDiagnosticsView.as_view(), name='provisional-employee-conflict-diagnostics'),
     path('provisional-employees/', ProvisionalEmployeeRosterView.as_view(), name='provisional-employee-list'),
     path('provisional-employees/lookup/', ProvisionalEmployeeLookupView.as_view(), name='provisional-employee-lookup'),
     path('provisional-employees/<int:pk>/complete/', ProvisionalEmployeeCompletionView.as_view(), name='provisional-employee-complete'),

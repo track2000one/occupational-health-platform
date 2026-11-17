@@ -393,3 +393,68 @@ class ProvisionalEmployeeRosterTests(TestCase):
         self.assertEqual(rechecked.data['counts']['technical_review_candidate'], 0)
         self.assertEqual(rechecked.data['counts']['not_active_employment'], 1)
         self.assertEqual(Employee.objects.get(pk=original.pk).is_archived, True)
+
+
+    def test_conflict_diagnostics_reveals_field_not_other_identity(self):
+        """Existing registry owner clashes and in-file duplicate fields remain private."""
+        Employee.objects.filter(national_id='1000000001').update(
+            email='private-owner@example.invalid',
+        )
+        raw = self.workbook([
+            ('Center', 'Original Match', '1000000001', 'ORIGINAL-1', '', ''),
+            ('Center', 'Other Source', '1000000002', 'ORIGINAL-1', 'SAME@EXAMPLE.INVALID', ''),
+            ('Center', 'Third Source', '1000000003', '', 'same@example.invalid', ''),
+            ('Center', 'Fourth Source', '1000000004', '', 'private-owner@example.invalid', ''),
+        ])
+        original_count = Employee.objects.count()
+        result = self.upload(raw)
+        self.assertEqual(result.status_code, 201, result.data)
+        diagnosis = self.api.get('/api/provisional-employees/conflict-diagnostics/')
+        self.assertEqual(diagnosis.status_code, 200, diagnosis.data)
+        self.assertEqual(diagnosis['Cache-Control'], 'private, no-store')
+        self.assertEqual(diagnosis.data['flagged_rows'], 3)
+        self.assertEqual(diagnosis.data['clinical_or_employee_modified'], False)
+        items = {item['source_row']: item for item in diagnosis.data['items']}
+        self.assertEqual(set(items), {3, 4, 5})
+        self.assertIn(
+            'employee_number_used_by_different_registry_identity', items[3]['reason_codes']
+        )
+        self.assertIn('employee_number_repeated_in_excel', items[3]['reason_codes'])
+        self.assertIn('email_repeated_in_excel', items[4]['reason_codes'])
+        self.assertEqual(items[4]['other_excel_rows'], [3])
+        self.assertIn(
+            'email_used_by_different_registry_identity', items[5]['reason_codes']
+        )
+        content = json.dumps(diagnosis.data, ensure_ascii=False)
+        for secret in (
+            '1000000001', '1000000002', '1000000003', '1000000004',
+            'private-owner@example.invalid', 'SAME@EXAMPLE.INVALID', 'ORIGINAL-1',
+        ):
+            self.assertNotIn(secret, content)
+        self.assertEqual(Employee.objects.count(), original_count)
+        self.assertEqual(Employee.objects.get(national_id='1000000001').email,
+                         'private-owner@example.invalid')
+
+    def test_conflict_diagnostics_access_and_stale_classification(self):
+        self.assertEqual(self.upload(self.workbook([
+            ('Center', 'Original Match', '1000000001', 'ORIGINAL-1', '', ''),
+            ('Center', 'Other Source', '1000000002', 'ORIGINAL-1', '', ''),
+        ])).status_code, 201)
+        response = self.api.get('/api/provisional-employees/conflict-diagnostics/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['flagged_rows'], 1)
+        self.assertIn('employee_number_repeated_in_excel',
+                      response.data['items'][0]['reason_codes'])
+        # Source rows are frozen at import time. Removing registry ownership
+        # cannot clear a conflict between source rows from that snapshot.
+        Employee.objects.filter(national_id='1000000001').update(employee_number=None)
+        again = self.api.get('/api/provisional-employees/conflict-diagnostics/')
+        self.assertEqual(again.data['flagged_rows'], 1)
+        self.assertNotIn('employee_number_used_by_different_registry_identity',
+                         again.data['items'][0]['reason_codes'])
+        self.assertIn('employee_number_repeated_in_excel',
+                      again.data['items'][0]['reason_codes'])
+        self.api.force_authenticate(self.data_entry)
+        self.assertEqual(self.api.get('/api/provisional-employees/conflict-diagnostics/').status_code, 403)
+        self.api.force_authenticate(self.viewer)
+        self.assertEqual(self.api.get('/api/provisional-employees/conflict-diagnostics/').status_code, 403)
