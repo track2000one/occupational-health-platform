@@ -1,5 +1,6 @@
 """Synthetic-only regression tests: temporary employee roster never mutates clinical data."""
 from io import BytesIO
+from datetime import date
 import json
 
 from django.contrib.auth import get_user_model
@@ -257,3 +258,50 @@ class ProvisionalEmployeeRosterTests(TestCase):
         self.assertIsNone(report.data['batch_id'])
         self.assertEqual(report.data['approved_count'], 0)
         self.assertFalse(ProvisionalEmployeeImportBatch.objects.exists())
+
+
+    def test_readiness_distinguishes_blank_imported_snapshot_from_original_registry(self):
+        """Historical fields are counted, never copied, approved or returned as PII."""
+        approved_center = HealthCenter.objects.create(
+            name='Test Center', approval_status=HealthCenter.ApprovalStatus.APPROVED,
+            is_active=True, is_archived=False,
+        )
+        Employee.objects.filter(national_id='1000000001').update(
+            birth_place='Private Historical City',
+            national_address='Private Historical Street',
+            date_of_birth=date(1987, 1, 2),
+            appointment_date=date(2010, 7, 1),
+            health_center=approved_center,
+            source_center_name='Historical label',
+        )
+        Employee.objects.filter(national_id='1000000002').update(
+            birth_place='Unverified Private City',
+        )
+        self.assertEqual(self.upload().status_code, 201)
+        before = list(Employee.objects.order_by('national_id').values(
+            'national_id', 'is_archived', 'birth_place', 'health_center_id',
+        ))
+        result = self.api.get('/api/provisional-employees/readiness/')
+        self.assertEqual(result.status_code, 200, result.data)
+        self.assertEqual(result['Cache-Control'], 'private, no-store')
+        report = result.data
+        historical = report['historical_values_for_missing_source']
+        self.assertEqual(historical['same_name_review_only']['birth_place'], 1)
+        self.assertEqual(historical['different_name_unverified']['birth_place'], 1)
+        self.assertEqual(historical['blank_in_both_for_matching_name']['mobile'], 1)
+        self.assertEqual(historical['same_name_review_only']['national_address'], 1)
+        self.assertEqual(historical['same_name_review_only']['appointment_date'], 1)
+        centers = report['official_center_directory']
+        self.assertEqual(centers['active_approved_count'], 1)
+        self.assertEqual(centers['original_linked_center'], 1)
+        self.assertEqual(centers['original_linked_to_currently_approved_center'], 1)
+        self.assertEqual(centers['original_source_center_text_available'], 1)
+        self.assertTrue(report['source_headers_not_preserved'])
+        self.assertEqual(report['approved_count'], 0)
+        self.assertEqual(report['clinical_activation_enabled_from_this_report'], False)
+        for secret in ('Private Historical City', 'Private Historical Street', '1000000001',
+                       'Unverified Private City', 'Historical label'):
+            self.assertNotIn(secret, json.dumps(report, ensure_ascii=False))
+        self.assertEqual(before, list(Employee.objects.order_by('national_id').values(
+            'national_id', 'is_archived', 'birth_place', 'health_center_id',
+        )))
