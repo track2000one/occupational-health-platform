@@ -41,7 +41,7 @@ def make_template():
     sheet.title = 'Employees'
     sheet.sheet_view.rightToLeft = True
     sheet.freeze_panes = 'C2'
-    sheet.append(list(COLUMNS))
+    sheet.append(list(TEMPLATE_COLUMNS))
     # Only APPROVED active master records are offered as validated centers.
     # Draft centers must not appear as approved options in the template.
     centers = [
@@ -119,7 +119,7 @@ def make_template():
         ws.auto_filter.ref = f'A1:{ws.cell(row=1, column=ws.max_column).column_letter}{max(ws.max_row,2)}'
     for col in REQUIRED_COLUMNS:
         sheet.cell(1, col).fill = green
-    for col in range(1, len(COLUMNS)+1):
+    for col in range(1, len(TEMPLATE_COLUMNS)+1):
         letter = sheet.cell(1, col).column_letter
         sheet.column_dimensions[letter].width = (34 if col in (1, 6, 7, 8, 15, 16, 17, 18) else 24)
         for row in range(2, 502):
