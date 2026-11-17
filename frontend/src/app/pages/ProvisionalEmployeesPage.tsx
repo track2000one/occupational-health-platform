@@ -62,6 +62,18 @@ type ApprovalReadiness = {
   };
   cards_missing_any_optional_field?: number;
   optional_fields_missing?: Record<string, number>;
+  historical_values_for_missing_source?: {
+    same_name_review_only: Record<string, number>;
+    different_name_unverified: Record<string, number>;
+    blank_in_both_for_matching_name: Record<string, number>;
+  };
+  official_center_directory?: {
+    active_approved_count: number;
+    original_linked_center: number;
+    original_linked_to_currently_approved_center: number;
+    original_source_center_text_available: number;
+  };
+  source_headers_not_preserved?: boolean;
   approved_count: number;
   clinical_activation_enabled_from_this_report?: false;
   notice: string;
@@ -326,6 +338,41 @@ export function ProvisionalEmployeesPage() {
             <Chip label={'غير مطابق للدليل: ' + (readiness.approved_center_name_check?.not_matched_to_approved ?? 0)} />
             <Chip color="error" label={'أسماء ملتبسة: ' + (readiness.approved_center_name_check?.ambiguous ?? 0)} />
           </Stack>
+          <Typography variant="subtitle2" fontWeight={800}>التغطية في دليل المراكز والسجلات الأصلية</Typography>
+          <Stack direction="row" gap={1} flexWrap="wrap">
+            <Chip color={(readiness.official_center_directory?.active_approved_count ?? 0) ? 'info' : 'warning'}
+              label={'مراكز معتمدة في الدليل: ' + (readiness.official_center_directory?.active_approved_count ?? 0)} />
+            <Chip variant="outlined" label={'ارتباط مركز في الأصل المؤرشف: ' + (readiness.official_center_directory?.original_linked_center ?? 0)} />
+            <Chip variant="outlined" label={'ارتباط أصلي بمركز معتمد حاليًا: ' + (readiness.official_center_directory?.original_linked_to_currently_approved_center ?? 0)} />
+            <Chip variant="outlined" label={'مسمى مركز تاريخي في الأصل: ' + (readiness.official_center_directory?.original_source_center_text_available ?? 0)} />
+          </Stack>
+          <Typography variant="caption" color="text.secondary">
+            ارتباط المركز بالسجل الأصلي معلومة تاريخية للمقارنة، وليس تصريحًا بإسناد الموظف إليه حاليًا.
+          </Typography>
+          <Typography variant="subtitle2" fontWeight={800}>قيم محفوظة في الأصل مقابل نواقص القائمة المؤقتة</Typography>
+          <Stack direction="row" gap={1} flexWrap="wrap">
+            {Object.entries(readiness.historical_values_for_missing_source?.same_name_review_only || {})
+              .filter(([, count]) => count > 0).sort((a, b) => b[1] - a[1])
+              .slice(0, 8).map(([key, count]) =>
+                <Chip key={key} color="info" variant="outlined"
+                  label={(FIELD_LABELS[key] || key) + ' — متاح بالأصل عند تطابق الاسم: ' + count} />)}
+          </Stack>
+          <Typography variant="caption" color="text.secondary">
+            وجود قيمة بالسجل الأصلي لا يعني صلاحيتها للنقل أو الاعتماد. اختلافات الأسماء لا تستفيد
+            من القيم القديمة إلا بعد إثبات تطابق الهوية بصورة مستقلة.
+          </Typography>
+          <Stack direction="row" gap={1} flexWrap="wrap">
+            {Object.entries(readiness.historical_values_for_missing_source?.different_name_unverified || {})
+              .filter(([, count]) => count > 0).sort((a, b) => b[1] - a[1])
+              .slice(0, 5).map(([key, count]) =>
+                <Chip key={key} color="warning" variant="outlined"
+                  label={(FIELD_LABELS[key] || key) + ' — أصل باسم مختلف: ' + count} />)}
+          </Stack>
+          {readiness.source_headers_not_preserved && <Alert severity="info">
+            الأرقام الخاصة بالنواقص مأخوذة من الحقول التي حُفظت أثناء الاستيراد المؤقت،
+            وليست دليلًا على أن أعمدة ملف Excel الأصلي كانت خالية. أسماء أعمدة المصدر
+            لم تُحفظ مع الدفعة الحالية؛ يلزم فحص الملف المرجعي الأصلي قبل تصحيح الربط.
+          </Alert>}
           <Typography variant="subtitle2" fontWeight={800}>أكثر الحقول الاختيارية نقصًا</Typography>
           <Stack direction="row" gap={1} flexWrap="wrap">
             {Object.entries(readiness.optional_fields_missing || {})
