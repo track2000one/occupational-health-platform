@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 import {
@@ -401,7 +401,8 @@ export function EmployeesPage() {
   const [registryTab, setRegistryTab] = useState<'approved' | 'imported'>(() =>
     typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('tab') === 'imported'
       ? 'imported' : 'approved');
-  const [registryTabSelected, setRegistryTabSelected] = useState(
+  // Ref avoids a pending initial API fetch overriding a tab explicitly chosen by the user.
+  const registryTabSelected = useRef(
     typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('tab'),
   );
   const [importedTotal, setImportedTotal] = useState<number | null>(null);
@@ -474,7 +475,7 @@ export function EmployeesPage() {
       // When Production has no active employees, open the already-imported roster
       // rather than leaving the administrator on an empty screen. Never switch
       // automatically after an explicit tab choice or during archived searches.
-      if (!IS_STAGING_UI && canViewImported && !registryTabSelected && !showArchived &&
+      if (!IS_STAGING_UI && canViewImported && !registryTabSelected.current && !showArchived &&
           archivedFiltersClear && activeTotal === 0 && page === 0) {
         setRegistryTab('imported');
       }
@@ -963,7 +964,7 @@ export function EmployeesPage() {
           <Tabs value={registryTab}
             onChange={(_, next: 'approved' | 'imported') => {
               setRegistryTab(next);
-              setRegistryTabSelected(true);
+              registryTabSelected.current = true;
             }}
             variant="scrollable" scrollButtons="auto"
             aria-label="نوع سجل الموظفين"
