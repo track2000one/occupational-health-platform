@@ -207,7 +207,10 @@ export function ProvisionalEmployeesPage() {
         <Typography variant="h4" fontWeight={900}>استيراد مبسّط للموظفين</Typography>
         <Typography color="text.secondary" variant="body2">قائمة إدارية مؤقتة مستقلة عن ملفات المرضى والسجل الأصلي</Typography>
       </Box>
-      <Button variant="outlined" onClick={() => navigate('/employees/import')}>العودة إلى الاستيراد الرئيسي</Button>
+      <Stack direction="row" spacing={1} flexWrap="wrap">
+        <Button variant="outlined" onClick={() => navigate('/employees')}>العودة إلى الموظفين</Button>
+        <Button variant="text" onClick={() => navigate('/employees/import')}>مراجعة ومطابقة V2</Button>
+      </Stack>
     </Stack>
 
     <Alert severity="warning" sx={{ mb: 2 }}>
@@ -227,7 +230,8 @@ export function ProvisionalEmployeesPage() {
         </Button>
       </Stack>
       <Typography variant="caption" color="text.secondary">
-        لا يتطلب نسخة احتياطية لاستعراض البيانات مؤقتًا؛ ملف الموظفين الأصلي لا يُستبدل ولا تُنسخ السجلات الطبية.
+        قد تظهر البطاقات المؤقتة هنا دون ظهورها في جدول السجل الطبي المعتمد.
+        لا ينشئ هذا الإجراء موظفين جددًا ولا يستعيد السجلات المؤرشفة؛ الملف الأصلي لا يُستبدل.
       </Typography>
     </Paper>}
 
