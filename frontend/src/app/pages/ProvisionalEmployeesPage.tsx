@@ -45,6 +45,27 @@ type LookupResponse = {
   temporary_match: boolean;
   verification_required: boolean;
 };
+type ApprovalReadiness = {
+  mode: 'provisional_final_approval_readiness_read_only';
+  batch_id: number | null;
+  rows_total: number;
+  rows_scanned?: number;
+  source_classification?: Partial<Record<Classification, number>>;
+  original_registry?: {
+    archived: number; active: number; no_original_record: number;
+    non_active_employment_status: number;
+  };
+  archived_active_name_match_for_review?: number;
+  approved_center_name_check?: {
+    approved_exact_unique: number; missing_in_file: number;
+    not_matched_to_approved: number; ambiguous: number;
+  };
+  cards_missing_any_optional_field?: number;
+  optional_fields_missing?: Record<string, number>;
+  approved_count: number;
+  clinical_activation_enabled_from_this_report?: false;
+  notice: string;
+};
 const STATUS: Record<Classification, { label: string; color: 'warning' | 'error' | 'info' | 'default' }> = {
   name_match: { label: 'مطابقة أولية — ليست اعتمادًا', color: 'info' },
   name_review: { label: 'اسم مختلف — يحتاج مراجعة', color: 'warning' },
@@ -86,6 +107,9 @@ export function ProvisionalEmployeesPage() {
   const [identityChecked, setIdentityChecked] = useState(false);
   const [lookupId, setLookupId] = useState('');
   const [lookupResult, setLookupResult] = useState<LookupResponse | null>(null);
+  const [readiness, setReadiness] = useState<ApprovalReadiness | null>(null);
+  const [readinessBusy, setReadinessBusy] = useState(false);
+
 
   const load = async (current = page, query = search, status = category) => {
     if (!canUse) return;
@@ -99,6 +123,7 @@ export function ProvisionalEmployeesPage() {
       const data: ListResponse = await response.json();
       setItems(data.items);
       setTotal(data.total);
+      if (readiness && readiness.batch_id !== data.batch?.batch_id) setReadiness(null);
       setBatch(data.batch);
       setError('');
     } catch (caught) {
@@ -163,6 +188,26 @@ export function ProvisionalEmployeesPage() {
       setError(caught instanceof Error ? caught.message : 'تعذر الاستعلام.');
     } finally {
       setBusy(false);
+    }
+  };
+
+  const checkReadiness = async () => {
+    if (!isAdmin || readinessBusy) return;
+    setReadinessBusy(true);
+    setError('');
+    try {
+      const response = await authFetch(API + '/provisional-employees/readiness/');
+      if (!response.ok) throw new Error(await errorMessage(response));
+      const result: ApprovalReadiness = await response.json();
+      setReadiness(result);
+      if (batch && result.batch_id !== batch.batch_id) {
+        setError('تم تغيير الدفعة الحالية؛ أعد فتح القائمة للتحقق من نتائج الفحص.');
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'تعذر إجراء فحص الجاهزية.');
+      setReadiness(null);
+    } finally {
+      setReadinessBusy(false);
     }
   };
 
@@ -245,6 +290,56 @@ export function ProvisionalEmployeesPage() {
         <Chip color="error" label={'تعارض معرّفات: ' + (batch.counts.identifier_review || 0)} />
         <Chip label={'غير موجود: ' + (batch.counts.not_in_registry || 0)} />
         <Chip variant="outlined" label="مؤقت — بانتظار المطابقة" />
+      </Stack>
+    </Paper>}
+
+    {isAdmin && batch && <Paper sx={{ p: 2, mb: 2, borderRadius: 3 }}>
+      <Stack gap={1.5}>
+        <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} gap={1}>
+          <Box>
+            <Typography variant="h6" fontWeight={800}>فحص جاهزية الاعتماد النهائي</Typography>
+            <Typography variant="body2" color="text.secondary">
+              قراءة السجلات المؤقتة ومقارنتها بالدليل المعتمد دون إعادة رفع Excel أو تغيير سجلات الموظفين.
+            </Typography>
+          </Box>
+          <Button variant="contained" color="secondary" disabled={readinessBusy} onClick={checkReadiness}>
+            {readinessBusy ? 'جارٍ فحص الجاهزية...' : 'فحص الجاهزية الآن'}
+          </Button>
+        </Stack>
+        {readiness && <Stack gap={1.5}>
+          <Alert severity="warning">
+            {readiness.notice} المطابقة الأولية ليست تحققًا من هوية الموظف أو حالته الوظيفية.
+            لا يمكن الاعتماد النهائي أو استعادة الأرشيف قبل إثبات الهوية والحالة الوظيفية
+            والتحقق من نسخة احتياطية قابلة للاسترجاع.
+          </Alert>
+          <Stack direction="row" gap={1} flexWrap="wrap">
+            <Chip color="primary" label={'سجلات مفحوصة: ' + (readiness.rows_scanned ?? 0)} />
+            <Chip color="info" label={'الأصل المؤرشف: ' + (readiness.original_registry?.archived ?? 0)} />
+            <Chip label={'الأصل النشط: ' + (readiness.original_registry?.active ?? 0)} />
+            <Chip color="warning" label={'حالة وظيفية غير نشطة: ' + (readiness.original_registry?.non_active_employment_status ?? 0)} />
+            <Chip color="error" label={'بطاقات ناقصة: ' + (readiness.cards_missing_any_optional_field ?? 0)} />
+          </Stack>
+          <Typography variant="subtitle2" fontWeight={800}>مطابقة مسميات المراكز الصحية المعتمدة</Typography>
+          <Stack direction="row" gap={1} flexWrap="wrap">
+            <Chip color="success" variant="outlined" label={'تطابق فريد: ' + (readiness.approved_center_name_check?.approved_exact_unique ?? 0)} />
+            <Chip color="warning" label={'اسم المركز مفقود في الملف: ' + (readiness.approved_center_name_check?.missing_in_file ?? 0)} />
+            <Chip label={'غير مطابق للدليل: ' + (readiness.approved_center_name_check?.not_matched_to_approved ?? 0)} />
+            <Chip color="error" label={'أسماء ملتبسة: ' + (readiness.approved_center_name_check?.ambiguous ?? 0)} />
+          </Stack>
+          <Typography variant="subtitle2" fontWeight={800}>أكثر الحقول الاختيارية نقصًا</Typography>
+          <Stack direction="row" gap={1} flexWrap="wrap">
+            {Object.entries(readiness.optional_fields_missing || {})
+              .filter(([, count]) => count > 0)
+              .sort((a, b) => b[1] - a[1])
+              .slice(0, 8).map(([key, count]) =>
+                <Chip key={key} color="warning" variant="outlined"
+                  label={(FIELD_LABELS[key] || key) + ': ' + count} />)}
+          </Stack>
+          <Typography variant="caption" color="text.secondary">
+            هذا تقرير قراءة فقط ولا يحتوي زر اعتماد فعلي. تُعالَج المطابقة
+            والمستندات المطلوبة قبل أي إجراء على بيانات الموظفين الأصلية.
+          </Typography>
+        </Stack>}
       </Stack>
     </Paper>}
 

@@ -9,7 +9,7 @@ from openpyxl import Workbook
 from rest_framework.test import APIClient
 
 from .models import (
-    AuditLog, Employee, ProvisionalEmployeeImportBatch,
+    AuditLog, Employee, HealthCenter, ProvisionalEmployeeImportBatch,
     ProvisionalEmployeeRosterRow, UserProfile,
 )
 
@@ -194,3 +194,66 @@ class ProvisionalEmployeeRosterTests(TestCase):
         self.assertTrue(repeated.data['already_imported'])
         self.assertEqual(ProvisionalEmployeeImportBatch.objects.count(), 1)
         self.assertEqual(ProvisionalEmployeeRosterRow.objects.count(), 1423)
+
+
+    def test_approval_readiness_is_privacy_safe_and_read_only(self):
+        """Aggregate only; technical agreement must not cause restore/activation."""
+        HealthCenter.objects.create(
+            name='Test Center', name_ar='مركز اختباري',
+            approval_status=HealthCenter.ApprovalStatus.APPROVED,
+            is_active=True, is_archived=False,
+        )
+        upload = self.upload()
+        self.assertEqual(upload.status_code, 201, upload.data)
+        before_employee_count = Employee.objects.count()
+        before_audit_count = AuditLog.objects.count()
+
+        readiness = self.api.get('/api/provisional-employees/readiness/')
+        self.assertEqual(readiness.status_code, 200, readiness.data)
+        self.assertEqual(readiness['Cache-Control'], 'private, no-store')
+        report = readiness.data
+        self.assertEqual(report['mode'], 'provisional_final_approval_readiness_read_only')
+        self.assertEqual(report['rows_scanned'], 3)
+        self.assertEqual(report['rows_total'], 3)
+        self.assertEqual(report['original_registry']['archived'], 2)
+        self.assertEqual(report['original_registry']['no_original_record'], 1)
+        self.assertEqual(report['original_registry']['active'], 0)
+        self.assertEqual(report['source_name_matches_original'], 1)
+        self.assertEqual(report['archived_active_name_match_for_review'], 1)
+        self.assertEqual(report['approved_center_name_check']['approved_exact_unique'], 3)
+        self.assertEqual(report['approved_center_name_check']['missing_in_file'], 0)
+        self.assertEqual(report['source_classification']['name_match'], 1)
+        self.assertEqual(report['source_classification']['name_review'], 1)
+        self.assertEqual(report['source_classification']['not_in_registry'], 1)
+        self.assertEqual(report['approved_count'], 0)
+        self.assertFalse(report['clinical_activation_enabled_from_this_report'])
+        self.assertFalse(report['modifies_employee_records'])
+        self.assertFalse(report['modifies_clinical_records'])
+        safe_json = json.dumps(report, ensure_ascii=False)
+        for secret in ('1000000001', '1000000002', 'Original Match', 'Source Mismatched'):
+            self.assertNotIn(secret, safe_json)
+        self.assertEqual(Employee.objects.count(), before_employee_count)
+        self.assertEqual(Employee.objects.filter(is_archived=True).count(), 2)
+        self.assertEqual(AuditLog.objects.count(), before_audit_count)
+        self.assertEqual(ProvisionalEmployeeRosterRow.objects.count(), 3)
+
+    def test_readiness_reports_missing_centers_without_auto_guessing(self):
+        self.assertEqual(self.upload().status_code, 201)
+        response = self.api.get('/api/provisional-employees/readiness/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['approved_center_name_check']['approved_exact_unique'], 0)
+        self.assertEqual(response.data['approved_center_name_check']['not_matched_to_approved'], 3)
+        self.assertEqual(response.data['approved_count'], 0)
+        self.api.force_authenticate(self.data_entry)
+        denied = self.api.get('/api/provisional-employees/readiness/')
+        self.assertEqual(denied.status_code, 403)
+        self.assertEqual(denied['Cache-Control'], 'private, no-store')
+        self.api.force_authenticate(self.viewer)
+        self.assertEqual(self.api.get('/api/provisional-employees/readiness/').status_code, 403)
+
+    def test_readiness_without_import_is_read_only(self):
+        report = self.api.get('/api/provisional-employees/readiness/')
+        self.assertEqual(report.status_code, 200)
+        self.assertIsNone(report.data['batch_id'])
+        self.assertEqual(report.data['approved_count'], 0)
+        self.assertFalse(ProvisionalEmployeeImportBatch.objects.exists())
