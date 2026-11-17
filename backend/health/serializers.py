@@ -605,13 +605,14 @@ class OccupationalHealthAssessmentSerializer(serializers.ModelSerializer):
     employee_name = serializers.CharField(source='employee.name', read_only=True)
     employee_number = serializers.CharField(source='employee.employee_number', read_only=True)
     health_center_name = serializers.CharField(source='employee.health_center.name', read_only=True, default='')
+    affiliation_name = serializers.SerializerMethodField()
     created_by_name = serializers.SerializerMethodField()
 
     class Meta:
         model = OccupationalHealthAssessment
         fields = [
             'id', 'employee', 'employee_name', 'employee_number', 'health_center_name',
-            'assessment_date', 'assessment_type', 'fitness_decision', 'restrictions',
+            'affiliation_name', 'assessment_date', 'assessment_type', 'fitness_decision', 'restrictions',
             'next_assessment_date', 'assessor_name', 'notes', 'created_by_name',
             'created_at', 'updated_at',
         ]
@@ -621,6 +622,14 @@ class OccupationalHealthAssessmentSerializer(serializers.ModelSerializer):
         if not obj.created_by_id:
             return ''
         return obj.created_by.get_full_name() or obj.created_by.username
+
+    def get_affiliation_name(self, obj):
+        employee = obj.employee
+        if employee.health_center_id:
+            return employee.health_center.name_ar or employee.health_center.name
+        if employee.organization_unit and employee.organization_unit.kind == 'department':
+            return employee.organization_unit.name
+        return ''
 
     def validate(self, attrs):
         assessment_date = attrs.get('assessment_date') or getattr(self.instance, 'assessment_date', None)
@@ -645,6 +654,7 @@ class ClinicVisitSerializer(serializers.ModelSerializer):
     employee_number = serializers.CharField(source='employee.employee_number', read_only=True)
     national_id_masked = serializers.SerializerMethodField()
     health_center_name = serializers.CharField(source='employee.health_center.name', read_only=True, default='')
+    affiliation_name = serializers.SerializerMethodField()
     job_title = serializers.CharField(source='employee.job_title', read_only=True, default='')
     created_by_name = serializers.SerializerMethodField()
 
@@ -652,14 +662,14 @@ class ClinicVisitSerializer(serializers.ModelSerializer):
         model = ClinicVisit
         fields = [
             'id', 'visit_number', 'employee', 'identity_checked', 'employee_name', 'employee_number',
-            'national_id_masked', 'health_center_name', 'job_title', 'visit_date',
+            'national_id_masked', 'health_center_name', 'affiliation_name', 'job_title', 'visit_date',
             'visit_time', 'clinic_type', 'diagnosis', 'action_taken',
             'sick_leave_days', 'follow_up_date', 'doctor_name', 'status', 'notes',
             'created_by_name', 'created_at', 'updated_at',
         ]
         read_only_fields = [
             'id', 'visit_number', 'employee_name', 'employee_number',
-            'national_id_masked', 'health_center_name', 'job_title',
+            'national_id_masked', 'health_center_name', 'affiliation_name', 'job_title',
             'created_by_name', 'created_at', 'updated_at',
         ]
 
@@ -678,6 +688,14 @@ class ClinicVisitSerializer(serializers.ModelSerializer):
         if not obj.created_by_id:
             return ''
         return obj.created_by.get_full_name() or obj.created_by.username
+
+    def get_affiliation_name(self, obj):
+        employee = obj.employee
+        if employee.health_center_id:
+            return employee.health_center.name_ar or employee.health_center.name
+        if employee.organization_unit and employee.organization_unit.kind == 'department':
+            return employee.organization_unit.name
+        return ''
 
     def validate(self, attrs):
         # A centerless initial registration is usable for care, but it must
