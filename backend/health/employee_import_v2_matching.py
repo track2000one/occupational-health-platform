@@ -6,6 +6,7 @@ Names and identifiers are diagnostic safety checks, never identity proof.
 from collections import Counter, defaultdict
 import re
 import unicodedata
+from datetime import date, datetime
 
 from django.db.models import Q
 from django.db.models.functions import Lower, Trim
@@ -48,6 +49,10 @@ def cell_at(cells, mapping, key):
     value = cells[idx]
     if value is None:
         return ''
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
     if isinstance(value, float) and value.is_integer():
         return str(int(value))
     return str(value).strip()
@@ -56,8 +61,8 @@ def cell_at(cells, mapping, key):
 def source_profile(cells, mapping):
     return {field: cell_at(cells, mapping, field)
             for field in ('name', 'national_id', *REQUIRED_PROFILE_FIELDS, 'email', 'organization_unit',
-                          'gender', 'marital_status', 'national_address', 'birth_place',
-                          'current_job', 'job_title_en')}
+                          'sector', 'children_count', 'gender', 'marital_status',
+                          'national_address', 'birth_place', 'current_job', 'job_title_en')}
 
 
 def matched_center_map():
