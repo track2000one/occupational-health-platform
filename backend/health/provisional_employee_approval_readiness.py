@@ -28,15 +28,18 @@ def calculate_readiness(batch):
         for employee in Employee.objects.filter(national_id__in=source_ids).only(
             'id', 'national_id', 'name', 'is_archived', 'employment_status',
             'health_center_id', 'source_center_name',
+            *OPTIONAL_COMPLETENESS_FIELDS,
         )
     }
 
     # ONLY approved and active official center references can count as a match.
     indexed_centers = defaultdict(set)
-    for center in HealthCenter.objects.filter(
+    approved_centers = list(HealthCenter.objects.filter(
         is_active=True, is_archived=False,
         approval_status=HealthCenter.ApprovalStatus.APPROVED,
-    ).only('id', 'name', 'name_ar', 'name_en', 'code'):
+    ).only('id', 'name', 'name_ar', 'name_en', 'code'))
+    approved_center_ids = {center.pk for center in approved_centers}
+    for center in approved_centers:
         for label in (center.name, center.name_ar, center.name_en, center.code):
             if label:
                 indexed_centers[norm_text(label)].add(center.pk)
@@ -45,15 +48,23 @@ def calculate_readiness(batch):
     center_counts = Counter()
     original_counts = Counter()
     missing_fields = Counter()
+    # Distinguish empty imported snapshots from available historical values.
+    # Historical values are diagnostic only, not approved import data.
+    missing_source_original_same_name = Counter()
+    missing_source_original_different_name = Counter()
+    missing_both_for_matched_name = Counter()
+    historic_center_counts = Counter()
     missing_any = 0
     original_same_name = 0
     archived_active = 0
     for row, src in zip(rows, decrypted):
         class_counts[row.classification] += 1
-        for field in OPTIONAL_COMPLETENESS_FIELDS:
-            if not str(src.get(field) or '').strip():
-                missing_fields[field] += 1
-        if any(not str(src.get(field) or '').strip() for field in OPTIONAL_COMPLETENESS_FIELDS):
+        blank_fields = [
+            field for field in OPTIONAL_COMPLETENESS_FIELDS
+            if not str(src.get(field) or '').strip()
+        ]
+        missing_fields.update(blank_fields)
+        if blank_fields:
             missing_any += 1
 
         source_center = str(src.get('health_center') or '').strip()
@@ -75,10 +86,29 @@ def calculate_readiness(batch):
             original_counts['archived' if original.is_archived else 'active'] += 1
             if original.employment_status != Employee.EmploymentStatus.ACTIVE:
                 original_counts['non_active_employment_status'] += 1
-            if normalize_person_name(original.name) == normalize_person_name(src.get('name')):
+            same_name = (
+                normalize_person_name(original.name)
+                == normalize_person_name(src.get('name'))
+            )
+            if same_name:
                 original_same_name += 1
                 if original.is_archived and original.employment_status == Employee.EmploymentStatus.ACTIVE:
                     archived_active += 1
+            if original.health_center_id:
+                historic_center_counts['original_linked_center'] += 1
+                if original.health_center_id in approved_center_ids:
+                    historic_center_counts['original_linked_to_currently_approved_center'] += 1
+            if original.source_center_name.strip():
+                historic_center_counts['original_source_center_text_available'] += 1
+            for field in blank_fields:
+                original_present = bool(str(getattr(original, field, None) or '').strip())
+                if same_name:
+                    if original_present:
+                        missing_source_original_same_name[field] += 1
+                    else:
+                        missing_both_for_matched_name[field] += 1
+                elif original_present:
+                    missing_source_original_different_name[field] += 1
 
     # Deliberately do not transform technical matches into "approved".
     return {
@@ -108,6 +138,32 @@ def calculate_readiness(batch):
             key: missing_fields.get(key, 0)
             for key in OPTIONAL_COMPLETENESS_FIELDS
         },
+        'historical_values_for_missing_source': {
+            'same_name_review_only': {
+                key: missing_source_original_same_name.get(key, 0)
+                for key in OPTIONAL_COMPLETENESS_FIELDS
+            },
+            'different_name_unverified': {
+                key: missing_source_original_different_name.get(key, 0)
+                for key in OPTIONAL_COMPLETENESS_FIELDS
+            },
+            'blank_in_both_for_matching_name': {
+                key: missing_both_for_matched_name.get(key, 0)
+                for key in OPTIONAL_COMPLETENESS_FIELDS
+            },
+        },
+        'official_center_directory': {
+            'active_approved_count': len(approved_center_ids),
+            'original_linked_center': historic_center_counts['original_linked_center'],
+            'original_linked_to_currently_approved_center': historic_center_counts[
+                'original_linked_to_currently_approved_center'
+            ],
+            'original_source_center_text_available': historic_center_counts[
+                'original_source_center_text_available'
+            ],
+        },
+        'source_completeness_basis': 'decrypted_stored_provisional_profile_not_original_excel',
+        'source_headers_not_preserved': True,
         'cards_missing_any_optional_field': missing_any,
         'blocking_conditions': [
             'technical_identity_match_is_not_independent_identity_verification',
