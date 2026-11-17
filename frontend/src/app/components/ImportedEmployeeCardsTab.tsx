@@ -96,6 +96,7 @@ export function ImportedEmployeeCardsTab({ onCountChange }: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [templateBusy, setTemplateBusy] = useState(false);
 
   const fetchRoster = async (
     nextPage = page, nextSearch = search,
@@ -134,6 +135,32 @@ export function ImportedEmployeeCardsTab({ onCountChange }: Props) {
 
   // On first open, load the *existing* provisional batch. No upload or auto-approval.
   useEffect(() => { if (permitted) void fetchRoster(1, '', '', ''); }, [permitted]);
+
+  const downloadApprovedTemplate = async () => {
+    if (!user?.isSuperuser || templateBusy || !API) return;
+    setTemplateBusy(true);
+    setError('');
+    try {
+      const response = await authFetch(API + '/employee-roster-template/');
+      if (!response.ok) throw new Error(await responseError(response));
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      try {
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'OHP_Employee_Approved_Template_V3.xlsx';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'تعذر تنزيل القالب المعتمد.');
+    } finally {
+      setTemplateBusy(false);
+    }
+  };
 
   const runSearch = () => {
     if (/\p{Nd}/u.test(searchDraft)) {
@@ -211,6 +238,10 @@ export function ImportedEmployeeCardsTab({ onCountChange }: Props) {
         </Typography>
       </Box>
       <Stack direction="row" gap={1} flexWrap="wrap">
+        {user?.isSuperuser && <Button color="success" variant="outlined"
+          disabled={templateBusy} onClick={() => void downloadApprovedTemplate()}>
+          {templateBusy ? 'جارٍ تنزيل القالب...' : 'تنزيل القالب المعتمد V3'}
+        </Button>}
         <Button variant="outlined" onClick={() => void fetchRoster()} disabled={loading}>تحديث البطاقات</Button>
         <Button variant="contained" onClick={() => navigate('/employees/provisional')}
           startIcon={<ReviewIcon />}>المراجعة والتصحيح المتقدم</Button>

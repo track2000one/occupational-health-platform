@@ -718,3 +718,159 @@ class ProvisionalEmployeeRosterTests(TestCase):
         )
         self.assertEqual(Employee.objects.filter(is_archived=True).count(), 2)
         self.assertEqual(Employee.objects.count(), 2)
+
+
+    def v3_workbook(self, overrides=None, *, extra_header=False):
+        """Synthetic complete canonical workbook, never a real employee profile."""
+        from .employee_template_contract import CANONICAL_HEADERS
+        from datetime import datetime
+        book = Workbook()
+        sheet = book.active
+        sheet.title = 'Employees'
+        sheet.append(CANONICAL_HEADERS + (('ملاحظات غير معروفة',) if extra_header else ()))
+        profile = {
+            'اسم الموظف': 'Original Match',
+            'رقم الهوية / الإقامة': '1000000001',
+            'الرقم الوظيفي': 'ORIGINAL-1',
+            'البريد الإلكتروني': 'synthetic@example.invalid',
+            'رقم الجوال': '0500000200',
+            'المركز الصحي': '',
+            'الوحدة التنظيمية': '',
+            'القطاع': 'Synthetic Division',
+            'الجنسية': 'السعودية',
+            'تاريخ الميلاد': datetime(1987, 5, 23),
+            'مكان الميلاد': 'Synthetic City',
+            'الجنس': 'ذكر',
+            'الحالة الاجتماعية': 'متزوج',
+            'عدد الأطفال': 2,
+            'العنوان الوطني': '',
+            'المسمى الوظيفي': 'طبيب عام',
+            'المسمى الوظيفي بالإنجليزية': 'General Physician',
+            'الوظيفة الحالية': 'Synthetic Role',
+            'تاريخ التعيين': datetime(2012, 8, 20),
+        }
+        profile.update(overrides or {})
+        sheet.append([profile.get(key) for key in CANONICAL_HEADERS] +
+                     (['DO NOT IMPORT'] if extra_header else []))
+        guide = book.create_sheet('تعليمات الاستخدام')
+        guide['A1'] = 'القالب المعتمد للاستيراد - OHP-EMPLOYEE-TEMPLATE-V3'
+        output = BytesIO()
+        book.save(output)
+        book.close()
+        return output.getvalue()
+
+    def test_approved_v3_template_download_matches_all_parser_headers(self):
+        from openpyxl import load_workbook
+        from .employee_template_contract import CANONICAL_FIELDS, CANONICAL_HEADERS
+        from .employee_import_v2 import detect_header
+        import io
+        response = self.api.get('/api/employee-roster-template/')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('OHP_Employee_Approved_Template_V3.xlsx',
+                      response['Content-Disposition'])
+        self.assertEqual(response['Cache-Control'], 'no-store')
+        book = load_workbook(io.BytesIO(response.content), read_only=True, data_only=True)
+        try:
+            self.assertEqual(book.sheetnames[0], 'Employees')
+            sheet = book['Employees']
+            self.assertEqual(tuple(x.value for x in next(sheet.iter_rows(max_row=1))),
+                             CANONICAL_HEADERS)
+            header_row, headers, mapping = detect_header(sheet)
+            self.assertEqual(header_row, 1)
+            self.assertEqual(set(mapping), {key for key, _ in CANONICAL_FIELDS})
+            self.assertEqual(len(set(mapping.values())), len(CANONICAL_HEADERS))
+            self.assertIn('OHP-EMPLOYEE-TEMPLATE-V3',
+                          book['تعليمات الاستخدام']['A1'].value)
+        finally:
+            book.close()
+        self.assertNotIn('1000000001', response.content.decode('latin1', errors='ignore'))
+
+    def test_canonical_v3_preflight_reads_all_19_fields_without_writes(self):
+        from .provisional_employee_roster import _unseal
+        content = self.v3_workbook(extra_header=True)
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        file_data = lambda: SimpleUploadedFile(
+            'synthetic-v3.xlsx', content,
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+        original_count = Employee.objects.count()
+        response = self.api.post('/api/provisional-employees/template-preflight/',
+                                 {'file': file_data()}, format='multipart')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(response.data['ready'])
+        self.assertEqual(response.data['schema_version'], 'OHP-EMPLOYEE-TEMPLATE-V3')
+        self.assertEqual(response.data['recognized_count'], 19)
+        self.assertEqual(response.data['unrecognized_column_count'], 1)
+        self.assertEqual(response.data['valid_rows'], 1)
+        self.assertFalse(response.data['same_file_already_imported'])
+        self.assertEqual(response.data['overlap_with_latest_import'], 0)
+        self.assertFalse(response.data['medical_or_original_records_modified'])
+        self.assertEqual(ProvisionalEmployeeRosterRow.objects.count(), 0)
+        self.assertEqual(Employee.objects.count(), original_count)
+        for private in ('1000000001', '0500000200', 'synthetic@example.invalid'):
+            self.assertNotIn(private, json.dumps(response.data, ensure_ascii=False))
+
+        imported = self.api.post('/api/provisional-employees/import/',
+                                 {'file': file_data()}, format='multipart')
+        self.assertEqual(imported.status_code, 201, imported.data)
+        row = ProvisionalEmployeeRosterRow.objects.get()
+        payload = _unseal(row.sealed_payload)
+        self.assertEqual(payload['children_count'], '2')
+        self.assertEqual(payload['sector'], 'Synthetic Division')
+        self.assertEqual(payload['date_of_birth'], '1987-05-23')
+        self.assertEqual(payload['appointment_date'], '2012-08-20')
+        self.assertEqual(payload['job_title_en'], 'General Physician')
+        self.assertEqual(payload['national_id'], '1000000001')
+        self.assertEqual(Employee.objects.count(), original_count)
+        self.assertTrue(Employee.objects.get(national_id='1000000001').is_archived)
+
+    def test_v3_invalid_values_are_detected_before_import(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        for overrides in (
+            {'تاريخ الميلاد': '1447-07-12'},
+            {'تاريخ الميلاد': '2026-99-99'},
+            {'الجنس': 'مجهول'},
+            {'عدد الأطفال': 'غير محدد'},
+        ):
+            with self.subTest(overrides=overrides):
+                content = self.v3_workbook(overrides)
+                response = self.api.post(
+                    '/api/provisional-employees/template-preflight/',
+                    {'file': SimpleUploadedFile('bad-v3.xlsx', content)},
+                    format='multipart',
+                )
+                self.assertEqual(response.status_code, 400, response.data)
+                self.assertFalse(response.data['ready'])
+        self.assertFalse(ProvisionalEmployeeImportBatch.objects.exists())
+
+    def test_v3_upload_new_batch_requires_explicit_overlap_confirmation(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        self.assertEqual(self.upload().status_code, 201)
+        content = self.v3_workbook()
+        upload = lambda route, extra={}: self.api.post(
+            route, {'file': SimpleUploadedFile('later-v3.xlsx', content), **extra},
+            format='multipart',
+        )
+        preflight = upload('/api/provisional-employees/template-preflight/')
+        self.assertEqual(preflight.status_code, 200, preflight.data)
+        self.assertEqual(preflight.data['overlap_with_latest_import'], 1)
+        self.assertTrue(preflight.data['requires_explicit_new_batch_confirmation'])
+        refused = upload('/api/provisional-employees/import/')
+        self.assertEqual(refused.status_code, 409, refused.data)
+        self.assertEqual(ProvisionalEmployeeImportBatch.objects.count(), 1)
+        confirmed = upload('/api/provisional-employees/import/',
+                           {'confirm_new_batch': 'true'})
+        self.assertEqual(confirmed.status_code, 201, confirmed.data)
+        self.assertEqual(ProvisionalEmployeeImportBatch.objects.count(), 2)
+        self.assertEqual(ProvisionalEmployeeRosterRow.objects.count(), 4)
+        self.assertEqual(Employee.objects.count(), 2)
+
+    def test_approved_template_and_preflight_not_available_to_data_entry(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        self.api.force_authenticate(self.data_entry)
+        self.assertEqual(self.api.get('/api/employee-roster-template/').status_code, 403)
+        self.assertEqual(self.api.post(
+            '/api/provisional-employees/template-preflight/',
+            {'file': SimpleUploadedFile('v3.xlsx', self.v3_workbook())},
+            format='multipart',
+        ).status_code, 403)
