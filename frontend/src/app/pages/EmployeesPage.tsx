@@ -1290,6 +1290,8 @@ export function EmployeesPage() {
                     missingFields={missingEmployeeOptionalFields(employee)}
                     provisional={employee.registration_status === 'provisional'}
                     centerName={getHealthCenterName(employee)}
+                    affiliationLabel={employee.organization_unit_kind === 'department' && !employee.health_center
+                      ? (isRtl ? 'القسم' : 'Department') : (isRtl ? 'المركز الصحي' : 'Health center')}
                     isRtl={isRtl}
                     canWrite={canEditRecord(employee)}
                     canManage={can(PERMISSIONS.MANAGE_USERS)}
