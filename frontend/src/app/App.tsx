@@ -61,6 +61,7 @@ import { HealthCentersPage } from './pages/HealthCentersPage';
 import { CenterDirectoryMatchingPage } from './pages/CenterDirectoryMatchingPage';
 import { CenterFoundationPage } from './pages/CenterFoundationPage';
 import { OrganizationStructurePage } from './pages/OrganizationStructurePage';
+import { DepartmentsPage } from './pages/DepartmentsPage';
 import { EmployeeLifecyclePage } from './pages/EmployeeLifecyclePage';
 import { HealthCardVerificationPage } from './pages/HealthCardVerificationPage';
 import { Toaster } from 'sonner';
@@ -170,6 +171,11 @@ function AppRoutes() {
         <Route path="admin/center-foundation" element={
           <PermissionRoute permission="manage:users">
             <CenterFoundationPage />
+          </PermissionRoute>
+        } />
+        <Route path="admin/departments" element={
+          <PermissionRoute permission="manage:users">
+            <DepartmentsPage />
           </PermissionRoute>
         } />
         <Route path="admin/organization-structure" element={
