@@ -1929,10 +1929,20 @@ export function EmployeesPage() {
                     placeholder={isRtl ? 'اختر القسم المعتمد' : 'Select approved department'}
                     helperText={isRtl ? (approvedDepartments.length
                       ? 'الأقسام المعتمدة فقط؛ لا يلزم اختيار مركز صحي'
-                      : 'لا توجد أقسام معتمدة حاليًا؛ اعتمدها من صفحة الهيكل التنظيمي أولًا')
+                      : 'لا توجد أقسام معتمدة؛ أنشئ القسم واعتمده أولًا من صفحة إدارة الأقسام')
                       : 'Only approved departments are available'} />}
                 />
               </Grid>
+              {!approvedDepartments.length && !isReadOnly && can(PERMISSIONS.MANAGE_USERS) && (
+                <Grid size={{ xs: 12 }}>
+                  <Alert severity="info" action={<Button color="inherit" size="small"
+                    onClick={() => { setOpenDialog(false); navigate('/admin/departments'); }}>
+                    إدارة الأقسام
+                  </Button>}>
+                    لا توجد أقسام معتمدة. يمكنك تأسيس القسم كمسودة ثم اعتماده بمرجع رسمي قبل اختيار الموظف.
+                  </Alert>
+                </Grid>
+              )}
             </>}
             <Grid size={{ xs: 12, md: 6 }}>
               <TextField fullWidth required label={isRtl ? 'اسم الموظف' : 'Name'} value={form.name}
