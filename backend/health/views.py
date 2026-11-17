@@ -538,7 +538,12 @@ class EmployeeImportReviewViewSet(viewsets.ReadOnlyModelViewSet):
                 else:
                     skipped_optional.append(field)
         else:
-            submitted = request.data
+            submitted = request.data.copy()
+
+        # The department branch has intentionally no health center. Normalize
+        # form-style blank input to NULL before DRF FK validation.
+        if is_approved_department and not is_valid_center and submitted.get('health_center') in ('', None, 0, '0'):
+            submitted['health_center'] = None
 
         try:
             with transaction.atomic():
