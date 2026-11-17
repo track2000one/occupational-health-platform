@@ -100,6 +100,27 @@ class ProvisionalEmployeeRosterTests(TestCase):
         self.assertEqual(ProvisionalEmployeeRosterRow.objects.count(), 3)
         self.assertEqual(Employee.objects.count(), 2)
 
+    def test_temporary_number_stays_stable_until_real_number_is_entered(self):
+        self.assertEqual(self.upload().status_code, 201)
+        listing = self.api.get('/api/provisional-employees/').data['items']
+        self.assertEqual([item['temporary_employee_number'] for item in listing],
+                         [None, '0000', '00000'])
+        row_id = listing[1]['id']
+        url = f'/api/provisional-employees/{row_id}/complete/'
+        completion = {'identity_checked': True, 'reason': 'Synthetic verified record'}
+        response = self.api.post(url, {
+            **completion, 'fields': {'employee_number': '0000'},
+        }, format='json')
+        self.assertEqual(response.status_code, 400)
+        response = self.api.post(url, {
+            **completion, 'fields': {'employee_number': 'REAL-2'},
+        }, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        listing = self.api.get('/api/provisional-employees/').data['items']
+        self.assertEqual([item['temporary_employee_number'] for item in listing],
+                         [None, None, '00000'])
+        self.assertIsNone(Employee.objects.get(national_id='1000000002').employee_number)
+
     def test_duplicate_and_bad_ids_rejected_without_partial_data(self):
         bad = self.workbook([
             ('Center', 'One', '1000000001', '', '', ''),

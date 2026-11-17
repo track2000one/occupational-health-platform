@@ -224,6 +224,7 @@ def _summary(batch):
 
 def _card(row, user):
     source = _unseal(row.sealed_payload)
+    length = row.temporary_number_length
     # Never expose an unmasked ID or the encrypted source in JSON responses.
     result = {
         'id': row.pk, 'source_row': row.source_row, 'name': source.get('name', ''),
@@ -232,6 +233,9 @@ def _card(row, user):
         'job_title': source.get('job_title', ''),
         'classification': row.classification,
         'missing_optional': row.missing_optional,
+        'temporary_employee_number': (
+            '0' * length if length and 'employee_number' in row.missing_optional else None
+        ),
         'completed_at': row.updated_at.isoformat(),
         'temporary_only': True,
     }
@@ -258,6 +262,12 @@ class ProvisionalEmployeeImportView(APIView):
                 'message': 'سبق استيراد الملف نفسه؛ لم تنشأ سجلات مكررة.',
             }, headers=NO_CACHE)
         classified = _classify(rows)
+        missing_number_rows = (
+            number for number, _, _, missing in classified if 'employee_number' in missing
+        )
+        temporary_lengths = {
+            number: length for length, number in enumerate(missing_number_rows, start=4)
+        }
         with transaction.atomic():
             batch = ProvisionalEmployeeImportBatch.objects.create(
                 file_sha256=file_sha, file_name=str(request.FILES['file'].name)[:255],
@@ -269,6 +279,7 @@ class ProvisionalEmployeeImportView(APIView):
                     identity_digest=_digest(src['national_id']),
                     sealed_payload=_seal(src), classification=kind,
                     missing_optional=missing,
+                    temporary_number_length=temporary_lengths.get(number),
                 )
                 for number, src, kind, missing in classified
             ], batch_size=200)
@@ -344,6 +355,10 @@ class ProvisionalEmployeeCompletionView(APIView):
                 or any(not isinstance(v, str) or not v.strip()
                        or len(v.strip()) > MAX_FIELD_VALUE for v in fields.values())):
             return Response({'detail': 'الحقول المرسلة غير صالحة.'},
+                            status=400, headers=NO_CACHE)
+        employee_number = fields.get('employee_number', '').strip()
+        if employee_number and not employee_number.strip('0'):
+            return Response({'detail': 'أدخل الرقم الوظيفي الفعلي.'},
                             status=400, headers=NO_CACHE)
         with transaction.atomic():
             try:
