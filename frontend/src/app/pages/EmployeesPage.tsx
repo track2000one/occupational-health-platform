@@ -969,8 +969,8 @@ export function EmployeesPage() {
             aria-label="نوع سجل الموظفين"
             sx={{ '& .MuiTab-root': { fontWeight: 800, minHeight: 46 } }}>
             <Tab value="approved"
-              label={isRtl ? `الموظفون المعتمدون (النشطون: ${totalCount})`
-                : `Approved employees (active: ${totalCount})`} />
+              label={isRtl ? `الموظفون في السجل الرئيسي (غير المؤرشفين: ${totalCount})`
+                : `Main registry employees (not archived: ${totalCount})`} />
             <Tab value="imported"
               label={isRtl
                 ? `الموظفون المستوردون — بطاقات مؤقتة${importedTotal !== null ? ` (${importedTotal})` : ''}`
