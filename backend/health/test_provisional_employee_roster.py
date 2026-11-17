@@ -691,3 +691,30 @@ class ProvisionalEmployeeRosterTests(TestCase):
         self.api.force_authenticate(self.viewer)
         self.assertEqual(self.api.get('/api/provisional-employees/name-review/').status_code, 403)
         self.assertEqual(Employee.objects.filter(is_archived=True).count(), 2)
+
+
+    def test_imported_roster_completeness_filter_is_global_not_page_only(self):
+        """The embedded Production tab filters the entire stored batch server-side."""
+        self.assertEqual(self.upload().status_code, 201)
+        row = ProvisionalEmployeeRosterRow.objects.get(source_row=2)
+        row.missing_optional = []
+        row.save(update_fields=['missing_optional'])
+        listing = self.api.get('/api/provisional-employees/?completeness=complete')
+        self.assertEqual(listing.status_code, 200, listing.data)
+        self.assertEqual(listing.data['total'], 1)
+        self.assertEqual(listing.data['items'][0]['source_row'], 2)
+        missing = self.api.get('/api/provisional-employees/?completeness=missing')
+        self.assertEqual(missing.status_code, 200, missing.data)
+        self.assertEqual(missing.data['total'], 2)
+        self.assertEqual(len(missing.data['items']), 2)
+        matches = self.api.get(
+            '/api/provisional-employees/?completeness=missing&classification=name_review'
+        )
+        self.assertEqual(matches.status_code, 200, matches.data)
+        self.assertEqual(matches.data['total'], 1)
+        self.assertEqual(matches.data['items'][0]['source_row'], 3)
+        self.assertEqual(
+            self.api.get('/api/provisional-employees/?completeness=incorrect').status_code, 400,
+        )
+        self.assertEqual(Employee.objects.filter(is_archived=True).count(), 2)
+        self.assertEqual(Employee.objects.count(), 2)
