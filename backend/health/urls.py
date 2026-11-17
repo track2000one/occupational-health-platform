@@ -1,5 +1,6 @@
 from django.urls import path
 from .organization_structure import OrganizationDirectoryView, OrganizationImportView, OrganizationUnitReviewView
+from .department_directory import DepartmentDirectoryView, DepartmentStatusView
 from .organization_bulk_approval import OrganizationBulkApprovalView
 from .employee_roster_template import EmployeeRosterTemplateView
 from .provisional_employee_template_preflight import ProvisionalEmployeeTemplatePreflightView
@@ -73,6 +74,8 @@ urlpatterns = [
     path('center-directory/match/', CenterDirectoryMatchingView.as_view(), name='center-directory-match'),
     path('center-directory/match-history/', CenterDirectoryMatchingHistoryView.as_view(), name='center-directory-match-history'),
     path('employee-registry-reset/', EmployeeRegistryResetView.as_view(), name='employee-registry-reset'),
+    path('departments/', DepartmentDirectoryView.as_view(), name='department-directory'),
+    path('departments/<int:pk>/status/', DepartmentStatusView.as_view(), name='department-status'),
     path('organization-units/', OrganizationDirectoryView.as_view(), name='organization-units'),
     path('organization-units/import/', OrganizationImportView.as_view(), name='organization-units-import'),
     path('organization-units/bulk-approval/', OrganizationBulkApprovalView.as_view(), name='organization-units-bulk-approval'),
