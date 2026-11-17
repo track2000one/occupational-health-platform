@@ -4,6 +4,7 @@ from .organization_bulk_approval import OrganizationBulkApprovalView
 from .employee_roster_template import EmployeeRosterTemplateView
 from .employee_import_v2 import EmployeeImportV2PreviewView
 from .provisional_employee_roster import (ProvisionalEmployeeImportView, ProvisionalEmployeeRosterView, ProvisionalEmployeeCompletionView, ProvisionalEmployeeLookupView, ProvisionalEmployeeBatchRemovalView)
+from .provisional_employee_approval_readiness import ProvisionalEmployeeApprovalReadinessView
 from .employee_archived_list_visibility import ArchivedEmployeeListVisibilityView
 from .employee_review_bulk_activation import StagingEmployeeReviewBulkActivationView
 from .employee_review_bulk_discard import StagingEmployeeReviewBulkDiscardView
@@ -39,6 +40,7 @@ router.register('audit-logs', AuditLogViewSet)
 
 urlpatterns = [
     path('provisional-employees/import/', ProvisionalEmployeeImportView.as_view(), name='provisional-employee-import'),
+    path('provisional-employees/readiness/', ProvisionalEmployeeApprovalReadinessView.as_view(), name='provisional-employee-readiness'),
     path('provisional-employees/', ProvisionalEmployeeRosterView.as_view(), name='provisional-employee-list'),
     path('provisional-employees/lookup/', ProvisionalEmployeeLookupView.as_view(), name='provisional-employee-lookup'),
     path('provisional-employees/<int:pk>/complete/', ProvisionalEmployeeCompletionView.as_view(), name='provisional-employee-complete'),
