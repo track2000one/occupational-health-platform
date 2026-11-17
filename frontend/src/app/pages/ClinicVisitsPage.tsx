@@ -31,7 +31,7 @@ type Status = 'open' | 'completed' | 'follow_up';
 type Mode = 'employees' | 'history' | 'today';
 type Visit = {
   id: number; visit_number: string; employee: number | string; employee_name: string;
-  employee_number: string; national_id_masked: string; health_center_name: string;
+  employee_number: string; national_id_masked: string; health_center_name: string; affiliation_name?: string;
   job_title: string; visit_date: string | null; visit_time: string | null;
   clinic_type: string; diagnosis: string; action_taken: string;
   sick_leave_days: number | null; follow_up_date: string | null; doctor_name: string;
@@ -138,7 +138,7 @@ export function ClinicVisitsPage() {
     const map = new Map<string, { id: string; name: string; number: string; nid: string; center: string; job: string; visits: Visit[] }>();
     visits.forEach(visit => {
       const id = String(visit.employee);
-      const item = map.get(id) || { id, name: visit.employee_name, number: visit.employee_number, nid: visit.national_id_masked, center: visit.health_center_name, job: visit.job_title, visits: [] };
+      const item = map.get(id) || { id, name: visit.employee_name, number: visit.employee_number, nid: visit.national_id_masked, center: (visit.affiliation_name || visit.health_center_name), job: visit.job_title, visits: [] };
       item.visits.push(visit); map.set(id, item);
     });
     const needle = search.trim().toLowerCase();
@@ -156,7 +156,7 @@ export function ClinicVisitsPage() {
       if (status !== 'all' && visit.status !== status) return false;
       if (from && (!visit.visit_date || visit.visit_date < from)) return false;
       if (to && (!visit.visit_date || visit.visit_date > to)) return false;
-      return !needle || [visit.visit_number, visit.employee_name, visit.employee_number, visit.national_id_masked, visit.health_center_name, visit.job_title, visit.clinic_type, visit.doctor_name].some(value => String(value || '').toLowerCase().includes(needle));
+      return !needle || [visit.visit_number, visit.employee_name, visit.employee_number, visit.national_id_masked, (visit.affiliation_name || visit.health_center_name), visit.job_title, visit.clinic_type, visit.doctor_name].some(value => String(value || '').toLowerCase().includes(needle));
     }).sort((a, b) => `${b.visit_date || ''}T${b.visit_time || ''}`.localeCompare(`${a.visit_date || ''}T${a.visit_time || ''}`));
   }, [employeeId, from, mode, search, status, to, type, visits]);
 
@@ -228,7 +228,7 @@ export function ClinicVisitsPage() {
       visitTime: visit.visit_time?.slice(0, 5) || '—',
       employeeName: visit.employee_name || '—',
       employeeNumber: visit.employee_number || '—',
-      healthCenter: visit.health_center_name || '—',
+      healthCenter: (visit.affiliation_name || visit.health_center_name) || '—',
       clinicType: visit.clinic_type || '—',
       doctorName: visit.doctor_name || '—',
       status: `${STATUSES[visit.status].ar} / ${STATUSES[visit.status].en}`,
@@ -289,7 +289,7 @@ function VisitTable({ grouped, loading, rtl, formatDate, canUpdate, onView, onEd
 }
 function VisitDay({ date, visits, rtl, formatDate, canUpdate, onView, onEdit, onDelete }: { date: string; visits: Visit[]; rtl: boolean; formatDate: (v?: string | Date | null, o?: Intl.DateTimeFormatOptions) => string; canUpdate: boolean; onView: (v: Visit) => void; onEdit: (v: Visit) => void; onDelete: (v: Visit) => void }) {
   const label = date === 'undated' ? (rtl ? 'بدون تاريخ' : 'Undated') : formatDate(date, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-  return <><TableRow className="clinic-visit-day-heading"><TableCell colSpan={8} sx={{ fontWeight: 900, color: '#0F5C7A', py: 1.25 }}><Stack direction="row" spacing={1} alignItems="center"><CalendarMonth fontSize="small" /><span>{label}</span><Chip size="small" label={visits.length} /></Stack></TableCell></TableRow>{visits.map(visit => <TableRow key={visit.id} hover><TableCell><Typography variant="body2" fontFamily="monospace" fontWeight={700}>{visit.visit_number}</Typography></TableCell><TableCell><Stack direction="row" spacing={1} alignItems="center"><Avatar sx={{ width: 30, height: 30, bgcolor: '#148F8B', fontSize: 13 }}>{visit.employee_name.charAt(0)}</Avatar><Box><Typography variant="body2" fontWeight={800}>{visit.employee_name}</Typography><Typography variant="caption" color="text.secondary">{visit.employee_number || '—'} · {visit.health_center_name || '—'}</Typography></Box></Stack></TableCell><TableCell>{visit.visit_time?.slice(0, 5) || '—'}</TableCell><TableCell><Chip size="small" variant="outlined" label={visit.clinic_type} /></TableCell><TableCell>{visit.doctor_name || '—'}</TableCell><TableCell><StatusChip status={visit.status} rtl={rtl} /></TableCell><TableCell>{visit.follow_up_date ? <DateText value={visit.follow_up_date} /> : '—'}</TableCell><TableCell><Stack direction="row" spacing={0.25}><Tooltip title={rtl ? 'عرض' : 'View'}><IconButton size="small" color="primary" onClick={() => onView(visit)}><VisibilityOutlined fontSize="small" /></IconButton></Tooltip>{canUpdate && <><Tooltip title={rtl ? 'تعديل' : 'Edit'}><IconButton size="small" color="info" onClick={() => onEdit(visit)}><EditOutlined fontSize="small" /></IconButton></Tooltip><Tooltip title={rtl ? 'حذف' : 'Delete'}><IconButton size="small" color="error" onClick={() => void onDelete(visit)}><DeleteOutline fontSize="small" /></IconButton></Tooltip></>}</Stack></TableCell></TableRow>)}</>;
+  return <><TableRow className="clinic-visit-day-heading"><TableCell colSpan={8} sx={{ fontWeight: 900, color: '#0F5C7A', py: 1.25 }}><Stack direction="row" spacing={1} alignItems="center"><CalendarMonth fontSize="small" /><span>{label}</span><Chip size="small" label={visits.length} /></Stack></TableCell></TableRow>{visits.map(visit => <TableRow key={visit.id} hover><TableCell><Typography variant="body2" fontFamily="monospace" fontWeight={700}>{visit.visit_number}</Typography></TableCell><TableCell><Stack direction="row" spacing={1} alignItems="center"><Avatar sx={{ width: 30, height: 30, bgcolor: '#148F8B', fontSize: 13 }}>{visit.employee_name.charAt(0)}</Avatar><Box><Typography variant="body2" fontWeight={800}>{visit.employee_name}</Typography><Typography variant="caption" color="text.secondary">{visit.employee_number || '—'} · {(visit.affiliation_name || visit.health_center_name) || '—'}</Typography></Box></Stack></TableCell><TableCell>{visit.visit_time?.slice(0, 5) || '—'}</TableCell><TableCell><Chip size="small" variant="outlined" label={visit.clinic_type} /></TableCell><TableCell>{visit.doctor_name || '—'}</TableCell><TableCell><StatusChip status={visit.status} rtl={rtl} /></TableCell><TableCell>{visit.follow_up_date ? <DateText value={visit.follow_up_date} /> : '—'}</TableCell><TableCell><Stack direction="row" spacing={0.25}><Tooltip title={rtl ? 'عرض' : 'View'}><IconButton size="small" color="primary" onClick={() => onView(visit)}><VisibilityOutlined fontSize="small" /></IconButton></Tooltip>{canUpdate && <><Tooltip title={rtl ? 'تعديل' : 'Edit'}><IconButton size="small" color="info" onClick={() => onEdit(visit)}><EditOutlined fontSize="small" /></IconButton></Tooltip><Tooltip title={rtl ? 'حذف' : 'Delete'}><IconButton size="small" color="error" onClick={() => void onDelete(visit)}><DeleteOutline fontSize="small" /></IconButton></Tooltip></>}</Stack></TableCell></TableRow>)}</>;
 }
 
 function VisitFormDialog({ open, editing, form, setForm, saving, rtl, onClose, onEmployee, onSave, onCompleteEmployee }: { open: boolean; editing: Visit | null; form: VisitForm; setForm: Dispatch<SetStateAction<VisitForm>>; saving: boolean; rtl: boolean; onClose: () => void; onEmployee: (id: string, employee: EmployeeSearchOption | null) => void; onSave: () => void; onCompleteEmployee: () => void }) {
