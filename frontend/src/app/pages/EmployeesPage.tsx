@@ -1816,35 +1816,72 @@ export function EmployeesPage() {
         </DialogTitle>
         <DialogContent dividers>
           <Grid container spacing={2}>
-            <Grid size={{ xs: 12, md: 6 }}>
-              <HealthCenterAutocomplete
-                options={employeeFormCenters} value={form.health_center}
-                onChange={value => setForm(prev => ({ ...prev, health_center: value, organization_unit: '' }))}
-                label={isRtl ? 'المركز الصحي' : 'Health center'}
-                placeholder={isRtl ? 'اختر أو ابحث عن المركز' : 'Select or search for a center'}
-                required disabled={isReadOnly}
-              />
+            <Grid size={{ xs: 12 }}>
+              <TextField fullWidth select label={isRtl ? 'نوع التبعية الوظيفية *' : 'Employee affiliation *'}
+                value={affiliationKind} disabled={isReadOnly || (dialogMode === 'edit' &&
+                  Boolean(selectedEmployee?.health_center || selectedEmployee?.organization_unit))}
+                onChange={event => {
+                  const kind = event.target.value as 'center' | 'department';
+                  setAffiliationKind(kind);
+                  setForm(prev => ({
+                    ...prev, health_center: kind === 'center' ? String(selectableCenters[0]?.id || '') : '',
+                    organization_unit: '',
+                  }));
+                }}
+                helperText={isRtl ? 'اختر المركز الصحي أو القسم المركزي المعتمد؛ تغيير التبعية المثبتة يتطلب إجراء نقل معتمدًا' :
+                  'Choose a health center or approved department. Existing assignments require a transfer workflow.'}>
+                <MenuItem value="center">{isRtl ? 'مركز صحي' : 'Health center'}</MenuItem>
+                <MenuItem value="department">{isRtl ? 'قسم' : 'Department'}</MenuItem>
+              </TextField>
             </Grid>
-            <Grid size={{ xs: 12, md: 6 }}>
-              <Autocomplete
-                options={availableOrgUnits}
-                value={selectedOrgUnit}
-                disabled={isReadOnly || availableOrgUnits.length === 0}
-                onChange={(_, unit) => updateForm('organization_unit', unit ? String(unit.id) : '')}
-                isOptionEqualToValue={(option, value) => option.id === value.id}
-                getOptionLabel={option => option.source_path || option.parent_name
-                  ? `${option.name} — ${option.parent_name || option.source_path}`
-                  : option.name}
-                renderInput={params => <TextField {...params}
-                  label={isRtl ? 'الجهة / الوحدة التنظيمية المعتمدة' : 'Approved organization unit'}
-                  placeholder={isRtl ? 'ابحث عن الجهة أو الوحدة' : 'Search approved organization'}
-                  helperText={isRtl
-                    ? (approvedOrganizations.length
-                      ? 'تُعرض الجهات المعتمدة والمتوافقة مع المركز فقط'
-                      : 'بانتظار اعتماد الهيكل التنظيمي')
-                    : 'Only officially approved organizational links are available'} />}
-              />
-            </Grid>
+            {affiliationKind === 'center' ? <>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <HealthCenterAutocomplete
+                  options={employeeFormCenters} value={form.health_center}
+                  onChange={value => setForm(prev => ({ ...prev, health_center: value, organization_unit: '' }))}
+                  label={isRtl ? 'المركز الصحي' : 'Health center'}
+                  placeholder={isRtl ? 'اختر أو ابحث عن المركز' : 'Select or search for a center'}
+                  required disabled={isReadOnly}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <Autocomplete
+                  options={availableOrgUnits}
+                  value={selectedOrgUnit}
+                  disabled={isReadOnly || availableOrgUnits.length === 0}
+                  onChange={(_, unit) => updateForm('organization_unit', unit ? String(unit.id) : '')}
+                  isOptionEqualToValue={(option, value) => option.id === value.id}
+                  getOptionLabel={option => option.source_path || option.parent_name
+                    ? `${option.name} — ${option.parent_name || option.source_path}`
+                    : option.name}
+                  renderInput={params => <TextField {...params}
+                    label={isRtl ? 'الوحدة التابعة للمركز (اختياري)' : 'Center unit (optional)'}
+                    placeholder={isRtl ? 'ابحث عن الوحدة' : 'Search for a unit'}
+                    helperText={isRtl ? 'تظهر الوحدات المعتمدة التابعة للمركز المختار' : 'Approved units linked to this center'} />}
+                />
+              </Grid>
+            </> : <>
+              <Grid size={{ xs: 12 }}>
+                <Autocomplete
+                  options={approvedDepartments}
+                  value={selectedOrgUnit}
+                  disabled={isReadOnly || approvedDepartments.length === 0}
+                  onChange={(_, unit) => setForm(prev => ({
+                    ...prev, organization_unit: unit ? String(unit.id) : '', health_center: '',
+                  }))}
+                  isOptionEqualToValue={(option, value) => option.id === value.id}
+                  getOptionLabel={option => option.source_path || option.parent_name
+                    ? `${option.name} — ${option.parent_name || option.source_path}` : option.name}
+                  renderInput={params => <TextField {...params}
+                    required label={isRtl ? 'القسم *' : 'Department *'}
+                    placeholder={isRtl ? 'اختر القسم المعتمد' : 'Select approved department'}
+                    helperText={isRtl ? (approvedDepartments.length
+                      ? 'الأقسام المعتمدة فقط؛ لا يلزم اختيار مركز صحي'
+                      : 'لا توجد أقسام معتمدة حاليًا؛ اعتمدها من صفحة الهيكل التنظيمي أولًا')
+                      : 'Only approved departments are available'} />}
+                />
+              </Grid>
+            </>}
             <Grid size={{ xs: 12, md: 6 }}>
               <TextField fullWidth required label={isRtl ? 'اسم الموظف' : 'Name'} value={form.name}
                 onChange={event => updateForm('name', event.target.value)} disabled={isReadOnly} />
