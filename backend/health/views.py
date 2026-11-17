@@ -1314,6 +1314,8 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             if employee.employment_status != Employee.EmploymentStatus.ACTIVE:
                 return Response({'status': 'Only active employees may transfer internally.'},
                                 status=status.HTTP_400_BAD_REQUEST)
+            if employee.organization_unit and employee.organization_unit.kind == 'department':
+                return Response({'organization_unit': 'Department-to-center transfer requires an approved department reassignment workflow.'}, status=409)
             if employee.health_center_id == center.pk:
                 return Response({'new_health_center_id': 'Employee already belongs to this center.'},
                                 status=status.HTTP_400_BAD_REQUEST)
@@ -1413,6 +1415,8 @@ class EmployeeViewSet(viewsets.ModelViewSet):
 
         with transaction.atomic():
             employee = Employee.objects.select_for_update().get(pk=employee.pk)
+            if requested_center and employee.organization_unit and employee.organization_unit.kind == 'department':
+                return Response({'organization_unit': 'Department-to-center transfer requires a separate approved reassignment workflow.'}, status=409)
             if employee.employment_status == target:
                 return Response({'status': 'This employee already has the requested status.'},
                                 status=status.HTTP_400_BAD_REQUEST)
