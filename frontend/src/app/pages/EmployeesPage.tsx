@@ -974,14 +974,16 @@ export function EmployeesPage() {
             </Button>
           )}
           {can(PERMISSIONS.MANAGE_USERS) && (
-            <Button variant="contained" color="primary" startIcon={<UploadFileIcon />}
-              onClick={() => navigate('/employees/provisional')}>
-              {isRtl ? 'استيراد Excel المبسّط' : 'Simple Excel Import'}
-            </Button>
-            <Button variant="outlined" color="inherit"
-              onClick={() => navigate('/employees/import')}>
-              {isRtl ? 'المراجعة والمطابقة V2' : 'Advanced V2 Review'}
-            </Button>
+            <>
+              <Button variant="contained" color="primary" startIcon={<UploadFileIcon />}
+                onClick={() => navigate('/employees/provisional')}>
+                {isRtl ? 'استيراد Excel المبسّط' : 'Simple Excel Import'}
+              </Button>
+              <Button variant="outlined" color="inherit"
+                onClick={() => navigate('/employees/import')}>
+                {isRtl ? 'المراجعة والمطابقة V2' : 'Advanced V2 Review'}
+              </Button>
+            </>
           )}
           {canArchive && (
             <Button variant={showArchived ? 'contained' : 'outlined'} color={showArchived ? 'error' : 'inherit'}
