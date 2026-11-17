@@ -48,7 +48,7 @@ HEADERS = {
     'marital_status': {'الحالة الاجتماعية', 'marital status'},
     'national_address': {'العنوان الوطني', 'national address'},
     'birth_place': {'مكان الميلاد', 'place of birth'},
-    'organization_unit': {'الجهة الوحدة التنظيمية المعتمدة', 'الوحدة التنظيمية',
+    'organization_unit': {'القسم', 'اسم القسم', 'القسم الإداري', 'الجهة الوحدة التنظيمية المعتمدة', 'الوحدة التنظيمية',
                           'الجهة التنظيمية', 'organizational unit',
                           'الجهة أو الوحدة المعتمدة في المنصة (بعد التحقق)'},
     'sector': {'القطاع المقترح', 'القطاع', 'sector'},
