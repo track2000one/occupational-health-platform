@@ -22,6 +22,7 @@ type EmployeeCard = {
   job_title: string;
   classification: Classification;
   missing_optional: string[];
+  temporary_employee_number?: string | null;
   temporary_only: true;
 };
 type BatchInfo = {
@@ -899,6 +900,10 @@ export function ProvisionalEmployeesPage() {
           <Chip size="small" color={STATUS[row.classification].color}
             label={STATUS[row.classification].label} sx={{ alignSelf: 'flex-start' }} />
           <Typography variant="body2">الهوية: <b dir="ltr">{row.masked_id}</b></Typography>
+          {row.temporary_employee_number &&
+            <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>
+              رمز وظيفي مؤقت <b dir="ltr">{row.temporary_employee_number}</b>
+            </Typography>}
           <Typography variant="body2">المركز: {row.center || 'غير متوفر'}</Typography>
           <Typography variant="body2">المسمى: {row.job_title || 'غير متوفر'}</Typography>
           <Typography variant="caption" color="text.secondary">صف Excel: {row.source_row}</Typography>

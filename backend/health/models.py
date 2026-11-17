@@ -1358,6 +1358,7 @@ class ProvisionalEmployeeRosterRow(models.Model):
     sealed_payload = models.TextField()
     classification = models.CharField(max_length=28, db_index=True)
     missing_optional = models.JSONField(default=list)
+    temporary_number_length = models.PositiveSmallIntegerField(null=True, blank=True)
     last_completed_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True,
         blank=True, related_name='provisional_roster_completions',
