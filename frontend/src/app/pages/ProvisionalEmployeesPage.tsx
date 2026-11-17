@@ -103,6 +103,32 @@ type ApprovalPlan = {
   }>;
   note: string;
 };
+type ConflictReason =
+  | 'employee_number_used_by_different_registry_identity'
+  | 'email_used_by_different_registry_identity'
+  | 'employee_number_repeated_in_excel'
+  | 'email_repeated_in_excel'
+  | 'import_time_conflict_not_reproduced';
+type ConflictDiagnostics = {
+  mode: 'identifier_conflict_diagnostics_read_only';
+  batch_id: number | null;
+  flagged_rows: number;
+  counts: Partial<Record<ConflictReason, number>>;
+  items: Array<{
+    source_row: number; masked_id: string; name: string;
+    reason_codes: ConflictReason[]; other_excel_rows: number[];
+    requires_manual_verification: true; approved: false;
+  }>;
+  clinical_or_employee_modified: false;
+  notice: string;
+};
+const CONFLICT_REASON_LABELS: Record<ConflictReason, string> = {
+  employee_number_used_by_different_registry_identity: 'الرقم الوظيفي مستخدم في السجل الأصلي لهوية مختلفة',
+  email_used_by_different_registry_identity: 'البريد الإلكتروني مستخدم في السجل الأصلي لهوية مختلفة',
+  employee_number_repeated_in_excel: 'الرقم الوظيفي مكرر بين صفوف Excel لهويات مختلفة',
+  email_repeated_in_excel: 'البريد الإلكتروني مكرر بين صفوف Excel لهويات مختلفة',
+  import_time_conflict_not_reproduced: 'تعارض مسجل عند الاستيراد؛ لم يعد السبب ظاهرًا بالفحص الحالي',
+};
 const PLAN_LABELS: Record<ApprovalPlanStatus, string> = {
   technical_review_candidate: 'مطابقة فنية مبدئية — تحتاج تحققًا رسميًا',
   identifier_conflict: 'تعارض معرّفات',
@@ -158,6 +184,9 @@ export function ProvisionalEmployeesPage() {
   const [approvalPlan, setApprovalPlan] = useState<ApprovalPlan | null>(null);
   const [approvalPlanBusy, setApprovalPlanBusy] = useState(false);
   const [approvalPlanStatus, setApprovalPlanStatus] = useState('');
+  const [conflictDiagnostics, setConflictDiagnostics] = useState<ConflictDiagnostics | null>(null);
+  const [conflictDiagnosticsBusy, setConflictDiagnosticsBusy] = useState(false);
+
 
 
 
@@ -175,6 +204,7 @@ export function ProvisionalEmployeesPage() {
       setTotal(data.total);
       if (readiness && readiness.batch_id !== data.batch?.batch_id) setReadiness(null);
       if (approvalPlan && approvalPlan.batch_id !== data.batch?.batch_id) setApprovalPlan(null);
+      if (conflictDiagnostics && conflictDiagnostics.batch_id !== data.batch?.batch_id) setConflictDiagnostics(null);
       setBatch(data.batch);
       setError('');
     } catch (caught) {
@@ -282,6 +312,26 @@ export function ProvisionalEmployeesPage() {
       setApprovalPlan(null);
     } finally {
       setApprovalPlanBusy(false);
+    }
+  };
+
+  const diagnoseConflicts = async () => {
+    if (!isAdmin || conflictDiagnosticsBusy) return;
+    setConflictDiagnosticsBusy(true);
+    setError('');
+    try {
+      const response = await authFetch(API + '/provisional-employees/conflict-diagnostics/');
+      if (!response.ok) throw new Error(await errorMessage(response));
+      const result: ConflictDiagnostics = await response.json();
+      setConflictDiagnostics(result);
+      if (batch && result.batch_id !== batch.batch_id) {
+        setError('تغيرت دفعة الموظفين؛ أعد فتح الصفحة قبل الاعتماد على نتيجة التشخيص.');
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'تعذر تشخيص تعارض المعرّفات.');
+      setConflictDiagnostics(null);
+    } finally {
+      setConflictDiagnosticsBusy(false);
     }
   };
 
@@ -516,6 +566,54 @@ export function ProvisionalEmployeesPage() {
             هذا كشف تحضيري للمتابعة والمراجعة. لا يُنقل أي موظف إلى السجل الرئيسي بهذه الخطوة،
             ولا تُفتح السجلات الصحية حتى اكتمال الاعتماد وفق الإجراءات المعتمدة.
           </Typography>
+        </Stack>}
+      </Stack>
+    </Paper>}
+
+    {isAdmin && batch && <Paper sx={{ p: 2, mb: 2, borderRadius: 3 }}>
+      <Stack gap={1.5}>
+        <Stack direction={{ xs: 'column', md: 'row' }} gap={1} alignItems={{ md: 'center' }}
+          justifyContent="space-between">
+          <Box>
+            <Typography variant="h6" fontWeight={800}>تشخيص تعارض المعرّفات</Typography>
+            <Typography variant="body2" color="text.secondary">
+              حدد سبب كل تعارض بين الرقم الوظيفي أو البريد الإلكتروني في الملف والسجل الأصلي،
+              دون إعادة رفع Excel أو تعديل أي بيانات.
+            </Typography>
+          </Box>
+          <Button variant="outlined" color="error" disabled={conflictDiagnosticsBusy}
+            onClick={() => void diagnoseConflicts()}>
+            {conflictDiagnosticsBusy ? 'جارٍ فحص التعارضات...' : 'فحص سبب التعارض'}
+          </Button>
+        </Stack>
+        {conflictDiagnostics && <Stack gap={1}>
+          <Alert severity="info">
+            {conflictDiagnostics.notice} لا تعرض هذه الشاشة أرقامًا وظيفية أو عناوين بريد أو
+            هويات أشخاص آخرين؛ وتبقى الحالات معلّقة حتى التحقق من المصدر الصحيح.
+          </Alert>
+          <Chip color="error" variant="outlined" sx={{ alignSelf: 'flex-start' }}
+            label={'بطاقات موسومة بالتعارض: ' + conflictDiagnostics.flagged_rows} />
+          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(275px,1fr))', gap: 2 }}>
+            {conflictDiagnostics.items.map(item =>
+              <Paper key={item.source_row} variant="outlined"
+                sx={{ borderColor: 'error.light', borderRadius: 2, p: 2 }}>
+                <Stack gap={1}>
+                  <Typography variant="subtitle2" fontWeight={800}>{item.name}</Typography>
+                  <Typography variant="caption">
+                    صف Excel: {item.source_row} — الهوية: <b dir="ltr">{item.masked_id}</b>
+                  </Typography>
+                  {item.reason_codes.map(code =>
+                    <Chip key={code} variant="outlined"
+                      color={code === 'import_time_conflict_not_reproduced' ? 'warning' : 'error'}
+                      label={CONFLICT_REASON_LABELS[code]} sx={{ maxWidth: '100%', height: 'auto',
+                        '& .MuiChip-label': { whiteSpace: 'normal', py: 0.5 } }} />)}
+                  {item.other_excel_rows.length > 0 &&
+                    <Typography variant="caption" color="text.secondary">
+                      صفوف أخرى لها القيمة نفسها: {item.other_excel_rows.join('، ')}
+                    </Typography>}
+                </Stack>
+              </Paper>)}
+          </Box>
         </Stack>}
       </Stack>
     </Paper>}
