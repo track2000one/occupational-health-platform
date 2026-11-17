@@ -3,6 +3,7 @@ from .organization_structure import OrganizationDirectoryView, OrganizationImpor
 from .organization_bulk_approval import OrganizationBulkApprovalView
 from .employee_roster_template import EmployeeRosterTemplateView
 from .employee_import_v2 import EmployeeImportV2PreviewView
+from .provisional_employee_roster import (ProvisionalEmployeeImportView, ProvisionalEmployeeRosterView, ProvisionalEmployeeCompletionView, ProvisionalEmployeeLookupView, ProvisionalEmployeeBatchRemovalView)
 from .employee_archived_list_visibility import ArchivedEmployeeListVisibilityView
 from .employee_review_bulk_activation import StagingEmployeeReviewBulkActivationView
 from .employee_review_bulk_discard import StagingEmployeeReviewBulkDiscardView
@@ -37,6 +38,11 @@ router.register('injury-cases', InjuryCaseViewSet)
 router.register('audit-logs', AuditLogViewSet)
 
 urlpatterns = [
+    path('provisional-employees/import/', ProvisionalEmployeeImportView.as_view(), name='provisional-employee-import'),
+    path('provisional-employees/', ProvisionalEmployeeRosterView.as_view(), name='provisional-employee-list'),
+    path('provisional-employees/lookup/', ProvisionalEmployeeLookupView.as_view(), name='provisional-employee-lookup'),
+    path('provisional-employees/<int:pk>/complete/', ProvisionalEmployeeCompletionView.as_view(), name='provisional-employee-complete'),
+    path('provisional-employees/batches/<int:pk>/remove/', ProvisionalEmployeeBatchRemovalView.as_view(), name='provisional-batch-remove'),
     path('employee-import-v2/preview/', EmployeeImportV2PreviewView.as_view(), name='employee-import-v2-preview'),
     path('employees/archived-list-visibility/', ArchivedEmployeeListVisibilityView.as_view(), name='employee-archived-list-visibility'),
     path('employee-roster-template/', EmployeeRosterTemplateView.as_view(), name='employee-roster-template'),
