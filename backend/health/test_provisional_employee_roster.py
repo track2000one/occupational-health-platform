@@ -577,3 +577,96 @@ class ProvisionalEmployeeRosterTests(TestCase):
         self.assertEqual(row.classification, 'identifier_review')
         self.assertEqual(ProvisionalEmployeeNumberCorrectionEvent.objects.count(), 0)
         self.assertEqual(Employee.objects.count(), 2)
+
+
+    def test_name_comparison_categories_are_suggestions_not_identity_matches(self):
+        from .provisional_employee_name_review import classify_name
+        cases = (
+            ('احمد محمد صالح', 'أحمد محمد صالح', 'format_variation'),
+            ('صالح محمد أحمد', 'محمد احمد صالح', 'token_order_variation'),
+            ('محمد صالح العتيبي', 'محمد بن صالح العتيبي', 'genealogy_particle_variation'),
+            ('محمد صالح', 'محمد صالح العتيبي', 'incomplete_name'),
+            ('عبدالرحمان محمد العتيبي', 'عبدالرحمن محمد العتيبي', 'minor_spelling_variation'),
+            ('محمد صالح الحربي', 'محمد صالح الغامدي', 'substantial_difference'),
+            ('محمد صالح', '', 'missing_original'),
+        )
+        for new, original, category in cases:
+            with self.subTest(category=category):
+                self.assertEqual(classify_name(new, original), category)
+
+    def test_smart_name_review_only_compares_same_id_and_never_restores(self):
+        Employee.objects.create(
+            name='محمد أحمد صالح', national_id='1000000011',
+            is_archived=True,
+        )
+        Employee.objects.create(
+            name='محمد بن صالح العتيبي', national_id='1000000012',
+            is_archived=True,
+        )
+        Employee.objects.create(
+            name='عبدالرحمن محمد العتيبي', national_id='1000000013',
+            is_archived=True,
+        )
+        Employee.objects.create(
+            name='محمد صالح الغامدي', national_id='1000000014',
+            is_archived=True,
+        )
+        raw = self.workbook([
+            ('Test Center', 'صالح محمد أحمد', '1000000011', '', '', ''),
+            ('Test Center', 'محمد صالح العتيبي', '1000000012', '', '', ''),
+            ('Test Center', 'عبدالرحمان محمد العتيبي', '1000000013', '', '', ''),
+            ('Test Center', 'محمد صالح الحربي', '1000000014', '', '', ''),
+            ('Test Center', 'Original Match', '1000000001', 'ORIGINAL-1', '', ''),
+        ])
+        imported = self.upload(raw)
+        self.assertEqual(imported.status_code, 201, imported.data)
+        original_snapshot = list(Employee.objects.order_by('national_id').values(
+            'pk', 'national_id', 'name', 'is_archived', 'employment_status',
+        ))
+        result = self.api.get('/api/provisional-employees/name-review/')
+        self.assertEqual(result.status_code, 200, result.data)
+        self.assertEqual(result['Cache-Control'], 'private, no-store')
+        self.assertEqual(result.data['mode'], 'provisional_employee_name_review_read_only')
+        self.assertEqual(result.data['total_name_review_rows'], 4)
+        self.assertEqual(result.data['category_counts']['token_order_variation'], 1)
+        self.assertEqual(result.data['category_counts']['genealogy_particle_variation'], 1)
+        self.assertEqual(result.data['category_counts']['minor_spelling_variation'], 1)
+        self.assertEqual(result.data['category_counts']['substantial_difference'], 1)
+        self.assertEqual(sum(result.data['category_counts'].values()), 4)
+        self.assertEqual(result.data['auto_approved'], 0)
+        self.assertFalse(result.data['original_employee_modified'])
+        self.assertFalse(result.data['clinical_records_modified'])
+        self.assertEqual([item['source_row'] for item in result.data['items']], [2, 3, 4, 5])
+        for item in result.data['items']:
+            self.assertTrue(item['requires_human_verification'])
+            self.assertFalse(item['is_approved'])
+            self.assertNotIn('national_id', item)
+        for identity in ('1000000011', '1000000012', '1000000013', '1000000014'):
+            self.assertNotIn(identity, json.dumps(result.data))
+        filtered = self.api.get(
+            '/api/provisional-employees/name-review/?category=substantial_difference'
+        )
+        self.assertEqual(filtered.status_code, 200, filtered.data)
+        self.assertEqual(filtered.data['filtered_count'], 1)
+        self.assertEqual(filtered.data['items'][0]['source_row'], 5)
+        self.assertEqual(original_snapshot, list(Employee.objects.order_by('national_id').values(
+            'pk', 'national_id', 'name', 'is_archived', 'employment_status',
+        )))
+        self.assertEqual(ProvisionalEmployeeRosterRow.objects.count(), 5)
+
+    def test_smart_name_review_privacy_and_invalid_filters(self):
+        self.assertEqual(self.upload().status_code, 201)
+        self.assertEqual(self.api.get(
+            '/api/provisional-employees/name-review/?page=not-an-integer'
+        ).status_code, 400)
+        self.assertEqual(self.api.get(
+            '/api/provisional-employees/name-review/?category=auto_approve'
+        ).status_code, 400)
+        self.assertEqual(self.api.get(
+            '/api/provisional-employees/name-review/?page=101'
+        ).status_code, 400)
+        self.api.force_authenticate(self.data_entry)
+        self.assertEqual(self.api.get('/api/provisional-employees/name-review/').status_code, 403)
+        self.api.force_authenticate(self.viewer)
+        self.assertEqual(self.api.get('/api/provisional-employees/name-review/').status_code, 403)
+        self.assertEqual(Employee.objects.filter(is_archived=True).count(), 2)
