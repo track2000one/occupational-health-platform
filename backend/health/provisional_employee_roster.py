@@ -10,6 +10,8 @@ from hashlib import sha256
 import hmac
 from io import BytesIO
 import json
+import re
+from datetime import date
 
 from cryptography.fernet import Fernet, InvalidToken
 from django.conf import settings
@@ -25,8 +27,11 @@ from .employee_import_classification import (
     OPTIONAL_COMPLETENESS_FIELDS, normalize_person_name,
 )
 from .employee_import_v2 import (
-    MAX_FILE_SIZE, MAX_ROWS, MAX_COLUMNS, detect_header, identity,
+    MAX_FILE_SIZE, MAX_ROWS, MAX_COLUMNS, NORMALIZED, detect_header, heading, identity,
     is_masked_identity, text_cell,
+)
+from .employee_template_contract import (
+    CANONICAL_HEADERS, GENDER_CHOICES, MARITAL_CHOICES,
 )
 from .employee_import_v2_matching import source_profile
 from .models import (
@@ -109,6 +114,11 @@ def _parse(upload):
         if not detected:
             raise ValueError('لم يتم العثور على أعمدة الاسم والهوية.')
         header_row, headers, mapping = detected
+        names = [heading(cell) for cell in headers[:MAX_COLUMNS]]
+        for key, aliases in NORMALIZED.items():
+            if sum(1 for label in names if label in aliases) > 1:
+                raise ValueError('يوجد عمود مكرر للبيان «' + key + '». راجع رؤوس الأعمدة.')
+        strict_v3 = tuple(text_cell(v) for v in headers[:len(CANONICAL_HEADERS)]) == CANONICAL_HEADERS
         if 'name' not in mapping or 'national_id' not in mapping:
             raise ValueError('يلزم عمود اسم الموظف ورقم الهوية/الإقامة.')
         if len(headers) > MAX_COLUMNS and any(text_cell(v) for v in headers[MAX_COLUMNS:]):
@@ -129,6 +139,25 @@ def _parse(upload):
             if len(rows) >= MAX_ROWS:
                 raise ValueError('الملف يتجاوز 2500 موظف.')
             source = source_profile(values, mapping)
+            if strict_v3:
+                for field in ('date_of_birth', 'appointment_date'):
+                    value = source.get(field, '')
+                    if value:
+                        if not re.fullmatch(r'\\d{4}-\\d{2}-\\d{2}', value):
+                            raise ValueError(f'الصف {number}: تاريخ غير صحيح في «{field}». استخدم YYYY-MM-DD.')
+                        try:
+                            parsed = date.fromisoformat(value)
+                        except ValueError:
+                            raise ValueError(f'الصف {number}: تاريخ غير صحيح في «{field}».')
+                        if parsed.year < 1900:
+                            raise ValueError(f'الصف {number}: راجع التاريخ الميلادي في «{field}».')
+                if source.get('gender') and source['gender'] not in GENDER_CHOICES:
+                    raise ValueError(f'الصف {number}: استخدم ذكر أو أنثى في خانة الجنس.')
+                if source.get('marital_status') and source['marital_status'] not in MARITAL_CHOICES:
+                    raise ValueError(f'الصف {number}: اختر الحالة الاجتماعية من القائمة.')
+                children = source.get('children_count') or ''
+                if children and not (children.isdecimal() and 0 <= int(children) <= 30):
+                    raise ValueError(f'الصف {number}: عدد الأطفال يجب أن يكون رقمًا صحيحًا بين 0 و30.')
             nid = identity(source['national_id'])
             if (is_masked_identity(source['national_id']) or len(nid) != 10
                     or not source['name'].strip()):
@@ -261,6 +290,16 @@ class ProvisionalEmployeeImportView(APIView):
                 **_summary(existing), 'already_imported': True,
                 'message': 'سبق استيراد الملف نفسه؛ لم تنشأ سجلات مكررة.',
             }, headers=NO_CACHE)
+        latest = ProvisionalEmployeeImportBatch.objects.order_by('-created_at', '-pk').first()
+        if latest:
+            previous_digests = set(latest.rows.values_list('identity_digest', flat=True))
+            overlap = sum(1 for _, source in rows if _digest(source['national_id']) in previous_digests)
+            if overlap and str(request.data.get('confirm_new_batch') or '').lower() != 'true':
+                return Response({
+                    'detail': 'يتداخل الملف الجديد مع القائمة المؤقتة الحالية. افحص الملف ثم أكّد إنشاء دفعة مستقلة؛ لن تُدمج بيانات الدفعة السابقة تلقائيًا.',
+                    'existing_identity_overlap': overlap,
+                    'requires_explicit_new_batch_confirmation': True,
+                }, status=409, headers=NO_CACHE)
         classified = _classify(rows)
         missing_number_rows = (
             number for number, _, _, missing in classified if 'employee_number' in missing
