@@ -751,7 +751,7 @@ class ProvisionalEmployeeRosterTests(TestCase):
         }
         profile.update(overrides or {})
         sheet.append([profile.get(key) for key in CANONICAL_HEADERS] +
-                     (('DO NOT IMPORT',) if extra_header else ()))
+                     (['DO NOT IMPORT'] if extra_header else []))
         guide = book.create_sheet('تعليمات الاستخدام')
         guide['A1'] = 'القالب المعتمد للاستيراد - OHP-EMPLOYEE-TEMPLATE-V3'
         output = BytesIO()
