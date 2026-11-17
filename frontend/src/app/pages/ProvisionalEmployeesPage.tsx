@@ -78,6 +78,40 @@ type ApprovalReadiness = {
   clinical_activation_enabled_from_this_report?: false;
   notice: string;
 };
+type ApprovalPlanStatus =
+  | 'technical_review_candidate' | 'identifier_conflict' | 'name_difference'
+  | 'missing_original' | 'original_not_archived' | 'not_active_employment'
+  | 'archive_provenance_review';
+type ApprovalPlan = {
+  mode: 'employee_approval_preparation_read_only';
+  batch_id: number | null;
+  total_source_rows: number;
+  total_scanned: number;
+  counts: Record<ApprovalPlanStatus, number>;
+  approved_employee_count: number;
+  approval_technically_possible_to_review: number;
+  needs_independent_hr_verification: boolean;
+  requires_tested_backup_before_archive_restore: boolean;
+  archive_restore_enabled: boolean;
+  page: number;
+  page_size: number;
+  filtered_count: number;
+  items: Array<{
+    source_row: number; masked_id: string; name: string;
+    status: ApprovalPlanStatus; missing_optional_count: number;
+    is_approved_employee: false;
+  }>;
+  note: string;
+};
+const PLAN_LABELS: Record<ApprovalPlanStatus, string> = {
+  technical_review_candidate: 'مطابقة فنية مبدئية — تحتاج تحققًا رسميًا',
+  identifier_conflict: 'تعارض معرّفات',
+  name_difference: 'اختلاف اسم',
+  missing_original: 'لا يوجد سجل أصلي',
+  original_not_archived: 'السجل الأصلي غير مؤرشف',
+  not_active_employment: 'حالة وظيفية غير نشطة',
+  archive_provenance_review: 'دليل الأرشفة يحتاج مراجعة',
+};
 const STATUS: Record<Classification, { label: string; color: 'warning' | 'error' | 'info' | 'default' }> = {
   name_match: { label: 'مطابقة أولية — ليست اعتمادًا', color: 'info' },
   name_review: { label: 'اسم مختلف — يحتاج مراجعة', color: 'warning' },
@@ -121,6 +155,10 @@ export function ProvisionalEmployeesPage() {
   const [lookupResult, setLookupResult] = useState<LookupResponse | null>(null);
   const [readiness, setReadiness] = useState<ApprovalReadiness | null>(null);
   const [readinessBusy, setReadinessBusy] = useState(false);
+  const [approvalPlan, setApprovalPlan] = useState<ApprovalPlan | null>(null);
+  const [approvalPlanBusy, setApprovalPlanBusy] = useState(false);
+  const [approvalPlanStatus, setApprovalPlanStatus] = useState('');
+
 
 
   const load = async (current = page, query = search, status = category) => {
@@ -136,6 +174,7 @@ export function ProvisionalEmployeesPage() {
       setItems(data.items);
       setTotal(data.total);
       if (readiness && readiness.batch_id !== data.batch?.batch_id) setReadiness(null);
+      if (approvalPlan && approvalPlan.batch_id !== data.batch?.batch_id) setApprovalPlan(null);
       setBatch(data.batch);
       setError('');
     } catch (caught) {
@@ -220,6 +259,29 @@ export function ProvisionalEmployeesPage() {
       setReadiness(null);
     } finally {
       setReadinessBusy(false);
+    }
+  };
+
+  const loadApprovalPlan = async (nextPage = 1, nextStatus = approvalPlanStatus) => {
+    if (!isAdmin || approvalPlanBusy) return;
+    setApprovalPlanBusy(true);
+    setError('');
+    try {
+      const params = new URLSearchParams({ page: String(nextPage) });
+      if (nextStatus) params.set('status', nextStatus);
+      const response = await authFetch(API + '/provisional-employees/approval-plan/?' + params.toString());
+      if (!response.ok) throw new Error(await errorMessage(response));
+      const result: ApprovalPlan = await response.json();
+      setApprovalPlan(result);
+      setApprovalPlanStatus(nextStatus);
+      if (batch && result.batch_id !== batch.batch_id) {
+        setError('تغيرت الدفعة الحالية؛ أعد تحميل الصفحة قبل متابعة كشف الاعتماد.');
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'تعذر إعداد كشف المرشحين للمراجعة.');
+      setApprovalPlan(null);
+    } finally {
+      setApprovalPlanBusy(false);
     }
   };
 
@@ -385,6 +447,74 @@ export function ProvisionalEmployeesPage() {
           <Typography variant="caption" color="text.secondary">
             هذا تقرير قراءة فقط ولا يحتوي زر اعتماد فعلي. تُعالَج المطابقة
             والمستندات المطلوبة قبل أي إجراء على بيانات الموظفين الأصلية.
+          </Typography>
+        </Stack>}
+      </Stack>
+    </Paper>}
+
+    {isAdmin && batch && <Paper sx={{ p: 2, mb: 2, borderRadius: 3 }}>
+      <Stack gap={1.5}>
+        <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between"
+          gap={1} alignItems={{ sm: 'center' }}>
+          <Box>
+            <Typography variant="h6" fontWeight={800}>كشف تجهيز اعتماد الموظفين المؤهلين</Typography>
+            <Typography variant="body2" color="text.secondary">
+              تصنيف الموظفين حسب تطابق السجلات الأصلية ودليل أرشفتها، دون إعادة استيراد ملف Excel.
+            </Typography>
+          </Box>
+          <Button variant="contained" onClick={() => void loadApprovalPlan(1, '')}
+            disabled={approvalPlanBusy}>
+            {approvalPlanBusy ? 'جارٍ إعداد الكشف...' : 'تجهيز كشف الاعتماد'}
+          </Button>
+        </Stack>
+        {approvalPlan && <Stack gap={1.5}>
+          <Alert severity="warning">
+            {approvalPlan.note} العدد المؤهل فنيًا ليس عدد الموظفين المعتمدين.
+            يلزم التحقق من الهوية والحالة الوظيفية وتوفر نسخة احتياطية مختبرة قبل أي استعادة.
+          </Alert>
+          <Stack direction="row" gap={1} flexWrap="wrap">
+            <Chip color="primary" label={'تم فحص: ' + approvalPlan.total_scanned} />
+            <Chip color="info" label={'مرشحون للمراجعة الفنية: ' + (approvalPlan.counts.technical_review_candidate || 0)} />
+            <Chip color="warning" label={'اختلاف أسماء: ' + (approvalPlan.counts.name_difference || 0)} />
+            <Chip color="error" label={'تعارض معرّفات: ' + (approvalPlan.counts.identifier_conflict || 0)} />
+            <Chip label={'تدقيق أرشفة: ' + (approvalPlan.counts.archive_provenance_review || 0)} />
+            <Chip label={'حالة وظيفية غير نشطة: ' + (approvalPlan.counts.not_active_employment || 0)} />
+            <Chip variant="outlined" label="المعتمدون فعليًا من هذا الكشف: 0" />
+          </Stack>
+          <TextField select label="عرض حسب سبب المراجعة" size="small"
+            value={approvalPlanStatus} sx={{ maxWidth: 380 }}
+            disabled={approvalPlanBusy}
+            onChange={event => void loadApprovalPlan(1, event.target.value)}>
+            <MenuItem value="">جميع الحالات</MenuItem>
+            {Object.entries(PLAN_LABELS).map(([key, label]) =>
+              <MenuItem key={key} value={key}>{label}</MenuItem>)}
+          </TextField>
+          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(230px,1fr))', gap: 1 }}>
+            {approvalPlan.items.map(row => <Paper key={row.source_row} variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}>
+              <Typography fontWeight={800} variant="body2">{row.name}</Typography>
+              <Typography variant="caption" display="block">
+                الهوية: <b dir="ltr">{row.masked_id}</b> — صف Excel {row.source_row}
+              </Typography>
+              <Chip size="small" variant="outlined"
+                color={row.status === 'identifier_conflict' ? 'error'
+                  : row.status === 'technical_review_candidate' ? 'info' : 'warning'}
+                label={PLAN_LABELS[row.status]} sx={{ mt: 1 }} />
+              {row.missing_optional_count > 0 &&
+                <Typography display="block" variant="caption" color="text.secondary">
+                  بيانات اختيارية ناقصة: {row.missing_optional_count}
+                </Typography>}
+            </Paper>)}
+          </Box>
+          {approvalPlan.filtered_count > approvalPlan.page_size &&
+            <Stack alignItems="center" sx={{ mt: 1 }}>
+              <Pagination count={Math.ceil(approvalPlan.filtered_count / approvalPlan.page_size)}
+                page={approvalPlan.page} color="primary"
+                disabled={approvalPlanBusy}
+                onChange={(_, newPage) => void loadApprovalPlan(newPage, approvalPlanStatus)} />
+            </Stack>}
+          <Typography variant="caption" color="text.secondary">
+            هذا كشف تحضيري للمتابعة والمراجعة. لا يُنقل أي موظف إلى السجل الرئيسي بهذه الخطوة،
+            ولا تُفتح السجلات الصحية حتى اكتمال الاعتماد وفق الإجراءات المعتمدة.
           </Typography>
         </Stack>}
       </Stack>
