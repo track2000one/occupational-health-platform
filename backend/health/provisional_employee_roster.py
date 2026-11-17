@@ -259,6 +259,7 @@ def _card(row, user):
         'id': row.pk, 'source_row': row.source_row, 'name': source.get('name', ''),
         'masked_id': _masked(source.get('national_id', '')),
         'center': source.get('health_center', ''),
+        'organization_unit': source.get('organization_unit', ''),
         'job_title': source.get('job_title', ''),
         'classification': row.classification,
         'missing_optional': row.missing_optional,
