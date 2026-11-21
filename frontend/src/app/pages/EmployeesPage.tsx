@@ -3,9 +3,6 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 import {
   Alert,
-  Accordion,
-  AccordionDetails,
-  AccordionSummary,
   Autocomplete,
   Box,
   Button,
@@ -36,7 +33,6 @@ import {
 import { Grid } from '@mui/material';
 import {
   Add as AddIcon,
-  ExpandMore as ExpandMoreIcon,
   WorkHistoryOutlined as WorkHistoryIcon,
   Edit as EditIcon,
   People as PeopleIcon,
@@ -56,11 +52,12 @@ import { PERMISSIONS } from '../data/roles';
 import { CalendarDateField } from '../components/CalendarDateField';
 import { HealthCenterAutocomplete } from '../components/HealthCenterAutocomplete';
 import { EmployeeRegistryCard } from '../components/EmployeeRegistryCard';
+import { EmployeeOrganizationalFields } from '../components/EmployeeOrganizationalFields';
 import { ImportedEmployeeCardsTab } from '../components/ImportedEmployeeCardsTab';
 import { JOB_TITLES, getNationalityOptions, normalizeNationalitySearch } from '../data/employeeFormOptions';
 import { isExcludedEmployeeCenter, selectableEmployeeCenters } from '../data/employeeCenterOptions';
 import {
-  ORG_LEVELS, ORGANIZATIONAL_SUGGESTIONS, TOP_LEVELS,
+  TOP_LEVELS,
   emptyOrganizationalHierarchy, fromSourceHierarchy,
   updateHierarchyAffiliation, missingHierarchyLevels,
   type EmployeeOrgHierarchy, type OrgLevel,
@@ -1941,6 +1938,9 @@ export function EmployeesPage() {
                   setAffiliationKind(kind);
                   setForm(prev => ({
                     ...prev, health_center: '', organization_unit: '',
+                    organizational_hierarchy: updateHierarchyAffiliation(
+                      prev.organizational_hierarchy, kind, '',
+                    ),
                   }));
                 }}
                 helperText={isRtl ? 'اختر المركز الصحي أو القسم المركزي المعتمد؛ تغيير التبعية المثبتة يتطلب إجراء نقل معتمدًا' :
@@ -1953,7 +1953,14 @@ export function EmployeesPage() {
               <Grid size={{ xs: 12, md: 6 }}>
                 <HealthCenterAutocomplete
                   options={employeeFormCenters} value={form.health_center}
-                  onChange={value => setForm(prev => ({ ...prev, health_center: value, organization_unit: '' }))}
+                  onChange={value => setForm(prev => ({
+                    ...prev, health_center: value, organization_unit: '',
+                    organizational_hierarchy: updateHierarchyAffiliation(
+                      prev.organizational_hierarchy, 'center',
+                      employeeFormCenters.find(item => String(item.id) === value)
+                        ? centerDisplayName(employeeFormCenters.find(item => String(item.id) === value)!, isRtl) : '',
+                    ),
+                  }))}
                   label={isRtl ? 'المركز الصحي' : 'Health center'}
                   placeholder={isRtl ? 'اختر أو ابحث عن المركز' : 'Select or search for a center'}
                   required disabled={isReadOnly}
@@ -1982,8 +1989,11 @@ export function EmployeesPage() {
                   value={selectedOrgUnit}
                   disabled={isReadOnly || approvedDepartments.length === 0}
                   onChange={(_, unit) => setForm(prev => ({
-                    ...prev, organization_unit: unit ? String(unit.id) : '', health_center: '',
-                  }))}
+                     ...prev, organization_unit: unit ? String(unit.id) : '', health_center: '',
+                     organizational_hierarchy: updateHierarchyAffiliation(
+                       prev.organizational_hierarchy, 'department', unit?.name || '',
+                     ),
+                   }))}
                   isOptionEqualToValue={(option, value) => option.id === value.id}
                   getOptionLabel={option => option.source_path || option.parent_name
                     ? `${option.name} — ${option.parent_name || option.source_path}` : option.name}
@@ -2007,6 +2017,21 @@ export function EmployeesPage() {
                 </Grid>
               )}
             </>}
+            <Grid size={{ xs: 12 }}>
+              <EmployeeOrganizationalFields
+                mode={dialogMode}
+                value={form.organizational_hierarchy}
+                affiliationKind={affiliationKind}
+                selectedCenterNames={employeeFormCenters.map(center => centerDisplayName(center, isRtl))}
+                selectedDepartmentNames={approvedDepartments.map(unit => unit.name)}
+                selectedUnitNames={availableOrgUnits.map(unit => unit.name)}
+                isReadOnly={isReadOnly} isSuperuser={user?.isSuperuser === true}
+                defaultExpanded={dialogMode === 'add'}
+                reason={form.hierarchy_change_reason}
+                onReasonChange={value => updateForm('hierarchy_change_reason', value)}
+                onChange={updateOrgLevel}
+              />
+            </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
               <TextField fullWidth required label={isRtl ? 'اسم الموظف' : 'Name'} value={form.name}
                 onChange={event => updateForm('name', event.target.value)} disabled={isReadOnly} />
