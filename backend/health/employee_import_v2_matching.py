@@ -306,6 +306,16 @@ def registry_match(sheet_rows, *, review_category=None):
             kind = 'identifier_disagreement'
         elif employee and employee.is_archived:
             kind = 'archived_review'
+        elif employee and row.get('_org_v4') and any(
+            norm_text(existing) != norm_text(value)
+            for key, value in row['_org_v4'].items()
+            if (existing := (employee.source_organizational_hierarchy or {}).get(key))
+        ):
+            # A previously recorded source hierarchy cannot be overwritten
+            # by a later Excel file, even if the person/identity matches.
+            kind = 'organization_review'
+        elif row.get('_org_needs_review'):
+            kind = 'organization_review' if employee else 'new_provisional'
         elif source_center and approved_center_id is None:
             kind = 'center_review' if employee else 'new_provisional'
         elif (employee and approved_center_id and (
@@ -332,6 +342,12 @@ def registry_match(sheet_rows, *, review_category=None):
             ) or bool(approved_center_id and not employee.health_center_id) or bool(
                 approved_unit_id and not employee.organization_unit_id
             )
+            if row.get('_org_v4'):
+                existing_hierarchy = employee.source_organizational_hierarchy or {}
+                has_fill = has_fill or any(
+                    not existing_hierarchy.get(key)
+                    for key in row['_org_v4']
+                )
             kind = 'existing_fill_only' if has_fill else 'existing_no_change'
         elif (source_center and approved_center_id) or (
             approved_unit and approved_unit.kind == 'department' and
