@@ -196,6 +196,15 @@ class EmployeeImportV2PreviewView(APIView):
                 missing_v4 = [
                     label for label in V4_HEADERS if heading(label) not in normalized_headers
                 ]
+                duplicated_v4 = [
+                    label for label in V4_HEADERS
+                    if normalized_headers.count(heading(label)) > 1
+                ]
+                if duplicated_v4:
+                    return Response({
+                        'detail': 'يوجد تكرار لعناوين مستويات الهيكلة V4.',
+                        'duplicated_v4_headers': duplicated_v4,
+                    }, status=400)
                 if missing_v4:
                     return Response({
                         'detail': 'ملف الهيكلة V4 غير مكتمل الأعمدة؛ استخدم القالب التنظيمي المعتمد.',
@@ -268,6 +277,7 @@ class EmployeeImportV2PreviewView(APIView):
             total = 0
             masked_identity_rows = []
             invalid_hierarchy_rows = []
+            missing_organization_rows = []
             organization_review_rows = 0
             for row_number, cells in enumerate(
                 sheet.iter_rows(min_row=header_row + 1,
@@ -293,6 +303,11 @@ class EmployeeImportV2PreviewView(APIView):
                 from .employee_import_v2_matching import source_profile
                 profile = source_profile(cells, mapping)
                 if v4_anchor:
+                    if any(
+                        not text_cell(cells[idx] if idx < len(cells) else None)
+                        for idx in v4_indexes.values()
+                    ):
+                        missing_organization_rows.append(row_number)
                     hierarchy = {
                         key: clean_org_value(cells[idx] if idx < len(cells) else None)
                         for key, idx in v4_indexes.items()
@@ -344,6 +359,15 @@ class EmployeeImportV2PreviewView(APIView):
                         if len(nid) == 10 else '—',
                         'missing_optional': optional_missing,
                     })
+            if missing_organization_rows:
+                return Response({
+                    'detail': (
+                        'بعض الصفوف تحتوي على حقول تنظيمية فارغة بين الأعمدة F وR. '
+                        'استخدم لا ينطبق أو غير محدد في المصدر وفق طبيعة الحقل.'
+                    ),
+                    'incomplete_organization_count': len(missing_organization_rows),
+                    'source_rows': missing_organization_rows[:30],
+                }, status=400, headers={'Cache-Control': 'private, no-store'})
             if invalid_hierarchy_rows:
                 return Response({
                     'detail': (
