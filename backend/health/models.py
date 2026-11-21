@@ -545,6 +545,10 @@ class Employee(models.Model):
         related_name='employees',
     )
     source_center_name = models.CharField(max_length=200, blank=True)
+    # The full V4 spreadsheet hierarchy is retained as unapproved SOURCE labels.
+    # Only the separately reviewed organization_unit/health_center foreign keys
+    # represent approved operational assignments.
+    source_organizational_hierarchy = models.JSONField(default=dict, blank=True)
     registration_status = models.CharField(
         max_length=20,
         choices=(('verified', 'Verified registry record'), ('provisional', 'Awaiting identity/placement verification')),
