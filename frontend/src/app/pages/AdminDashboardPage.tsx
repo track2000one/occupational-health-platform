@@ -35,7 +35,7 @@ import {
   WarningAmber as WarningAmberIcon,
   Tune as TuneIcon,
 } from '@mui/icons-material';
-import { MOCK_USERS_LIST } from '../context/AuthContext';
+import { MOCK_USERS_LIST, useAuth } from '../context/AuthContext';
 import { PERMISSIONS, ROLE_DEFINITIONS } from '../data/roles';
 import { mockEmployees, mockHealthCenters, mockLabTests, mockVaccinations } from '../data/mockData';
 
@@ -83,6 +83,7 @@ function GovernanceItem({ label, value, color }: { label: string; value: number;
 export function AdminDashboardPage() {
   const { i18n } = useTranslation();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const isRtl = i18n.language === 'ar';
 
   const stats = useMemo(() => {
@@ -107,6 +108,12 @@ export function AdminDashboardPage() {
     .slice(0, 6);
 
   const quickActions = [
+    ...(user?.isSuperuser ? [{
+      title: 'معاينة إعادة تأسيس البيانات',
+      desc: 'حصر الموظفين والمراكز والأقسام وسجلات الاستيراد قبل التصفير',
+      icon: <StorageIcon />,
+      path: '/admin/data-refoundation',
+    }] : []),
     {
       title: isRtl ? 'إدارة المستخدمين' : 'Users Management',
       desc: isRtl ? 'إضافة، تعديل، تعطيل، وحذف المستخدمين' : 'Create, edit, disable, and remove users',
