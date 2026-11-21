@@ -279,6 +279,10 @@ class EmployeeImportV2PreviewView(APIView):
             invalid_hierarchy_rows = []
             missing_organization_rows = []
             organization_review_rows = 0
+            v4_field_counts = {
+                key: {'known': 0, 'unknown': 0, 'not_applicable': 0}
+                for key, _ in ORGANIZATION_COLUMNS
+            } if v4_anchor else {}
             for row_number, cells in enumerate(
                 sheet.iter_rows(min_row=header_row + 1,
                                 max_col=MAX_COLUMNS + 1,
@@ -308,6 +312,13 @@ class EmployeeImportV2PreviewView(APIView):
                         for idx in v4_indexes.values()
                     ):
                         missing_organization_rows.append(row_number)
+                    for key, idx in v4_indexes.items():
+                        source = text_cell(cells[idx] if idx < len(cells) else None)
+                        bucket = (
+                            'not_applicable' if source == 'لا ينطبق'
+                            else 'unknown' if is_placeholder(source) else 'known'
+                        )
+                        v4_field_counts[key][bucket] += 1
                     hierarchy = {
                         key: clean_org_value(cells[idx] if idx < len(cells) else None)
                         for key, idx in v4_indexes.items()
@@ -461,6 +472,14 @@ class EmployeeImportV2PreviewView(APIView):
                     'source_hierarchy_retained': True,
                     'review_required_rows': organization_review_rows,
                     'source_labels_not_approved_units': True,
+                    'fields': [
+                        {
+                            'key': key, 'label': label,
+                            'column_number': v4_indexes[key] + 1,
+                            **v4_field_counts[key],
+                        }
+                        for key, label in ORGANIZATION_COLUMNS
+                    ],
                 } if v4_anchor else None),
                 **registry_report,
                 **preview_details,
