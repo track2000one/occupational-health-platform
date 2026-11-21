@@ -67,6 +67,17 @@ type PreflightResult = {
   header_row: number;
   recognized_columns: string[];
   missing_optional_columns: string[];
+  organizational_template?: {
+    version: string;
+    levels: number;
+    source_hierarchy_retained: boolean;
+    review_required_rows: number;
+    source_labels_not_approved_units: boolean;
+    fields?: Array<{
+      key: string; label: string; column_number: number;
+      known: number; unknown: number; not_applicable: number;
+    }>;
+  } | null;
   counts: Record<string, number>;
   sample_masked: Array<{
     row: number;
@@ -431,6 +442,30 @@ export function EmployeeImportV2Page() {
     }
   };
 
+  const downloadOrganizationalTemplate = async () => {
+    if (busy) return;
+    setError('');
+    try {
+      const token = getAccessToken();
+      if (!token) throw new Error('يلزم تسجيل الدخول مجددًا.');
+      const response = await authFetch(API + '/employee-roster-template/org-v4/', {
+        headers: { Authorization: 'Bearer ' + token },
+      });
+      if (!response.ok) throw new Error('تعذّر تنزيل القالب من المنصة.');
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'OHP_Employee_Organizational_Template_V4.xlsx';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => window.URL.revokeObjectURL(url), 500);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'تعذّر تنزيل القالب.');
+    }
+  };
+
   if (!user?.isSuperuser) {
     return <Alert severity="warning">إدارة استيراد الموظفين مخصصة للمسؤول الأعلى.</Alert>;
   }
@@ -474,6 +509,15 @@ export function EmployeeImportV2Page() {
 
     <Paper sx={{ p: { xs: 2, md: 3 }, mb: 3, borderRadius: 3 }}>
       <Typography variant="h6" fontWeight={900} sx={{ mb: 2 }}>1. رفع الملف</Typography>
+      <Stack direction={{ xs: 'column', sm: 'row' }} gap={1} sx={{ mb: 2 }} alignItems={{ sm: 'center' }}>
+        <Button variant="outlined" startIcon={<FileIcon />} disabled={busy}
+          onClick={() => void downloadOrganizationalTemplate()}>
+          تنزيل قالب الهيكلة التنظيمية V4 (31 عمودًا)
+        </Button>
+        <Typography variant="caption" color="text.secondary">
+          المراكز والأقسام بنفس الأعمدة. لا تُجمع مستويات الهيكلة في خانة واحدة.
+        </Typography>
+      </Stack>
       <Stack direction={{ xs: 'column', sm: 'row' }} gap={2} alignItems={{ sm: 'center' }}>
         <Button component="label" variant="contained" startIcon={<UploadIcon />} disabled={busy}>
           {file ? 'تغيير الملف' : 'اختيار ملف Excel'}
@@ -584,6 +628,45 @@ export function EmployeeImportV2Page() {
       </Stack>
     </Paper>}
 
+    {preview?.organizational_template && <Alert severity="info" sx={{ mb: 2 }}>
+      تم التعرف على القالب التنظيمي {preview.organizational_template.version}:
+      {' '}{preview.organizational_template.levels} مستويات مستقلة.
+      ستُحفظ المسميات كمصدر مرجعي دون اعتماد وحدات أو مراكز جديدة تلقائيًا.
+      {preview.organizational_template.review_required_rows > 0 &&
+        ' عدد الصفوف الموسومة للمراجعة: ' + preview.organizational_template.review_required_rows}
+    </Alert>}
+    {preview?.organizational_template?.fields && (
+      <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 3 }}>
+        <Typography variant="subtitle1" fontWeight={800} sx={{ mb: 1 }}>
+          مطابقة الأعمدة التنظيمية المكتشفة تلقائيًا من ملف Excel
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          ترتيب الأعمدة داخل الملف لا يؤثر على المطابقة؛ تتم القراءة بحسب اسم الحقل.
+          «غير محدد» و«لا ينطبق» قيم تنظيمية للتوثيق وليستا جهات معتمدة.
+        </Typography>
+        <Box sx={{ overflowX: 'auto' }}>
+          <Box component="table" sx={{
+            width: '100%', minWidth: 650, borderCollapse: 'collapse',
+            '& th, & td': { p: 1, borderBottom: '1px solid', borderColor: 'divider',
+              textAlign: 'right', fontSize: 13 },
+          }}>
+            <thead><tr>
+              <th>المستوى التنظيمي</th><th>رقم العمود المكتشف</th>
+              <th>قيم معروفة</th><th>غير محدد</th><th>لا ينطبق</th>
+            </tr></thead>
+            <tbody>
+              {preview.organizational_template.fields.map(field => (
+                <tr key={field.key}>
+                  <td>{field.label}</td><td>{field.column_number}</td>
+                  <td>{field.known}</td><td>{field.unknown}</td>
+                  <td>{field.not_applicable}</td>
+                </tr>
+              ))}
+            </tbody>
+          </Box>
+        </Box>
+      </Paper>
+    )}
     {preview && <Paper sx={{ p: { xs: 2, md: 3 }, mb: 3, borderRadius: 3 }}>
       <Typography variant="h6" fontWeight={900} sx={{ mb: 1 }}>
         2. نتائج فحص الملف ومطابقة السجل

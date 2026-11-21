@@ -545,6 +545,13 @@ class Employee(models.Model):
         related_name='employees',
     )
     source_center_name = models.CharField(max_length=200, blank=True)
+    # The full V4 spreadsheet hierarchy is retained as unapproved SOURCE labels.
+    # Only the separately reviewed organization_unit/health_center foreign keys
+    # represent approved operational assignments.
+    source_organizational_hierarchy = models.JSONField(
+        default=dict, blank=True,
+        help_text='Imported organization labels as source references, NOT approved unit assignments',
+    )
     registration_status = models.CharField(
         max_length=20,
         choices=(('verified', 'Verified registry record'), ('provisional', 'Awaiting identity/placement verification')),
@@ -582,6 +589,24 @@ class Employee(models.Model):
     def __str__(self):
         return self.name
 
+
+
+class EmployeeOrganizationalHierarchyEvent(models.Model):
+    """Append-only audit of administrative source-label changes, without personal data."""
+    employee = models.ForeignKey(
+        'Employee', on_delete=models.PROTECT, related_name='organizational_hierarchy_events',
+    )
+    action = models.CharField(max_length=24)
+    changed_levels = models.JSONField(default=list)
+    reason = models.CharField(max_length=500)
+    performed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True,
+        related_name='employee_hierarchy_changes',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at', '-pk']
 
 
 class EmployeeProfileCompletionEvent(models.Model):

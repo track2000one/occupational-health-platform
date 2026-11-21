@@ -3,6 +3,7 @@ from .organization_structure import OrganizationDirectoryView, OrganizationImpor
 from .department_directory import DepartmentDirectoryView, DepartmentStatusView
 from .organization_bulk_approval import OrganizationBulkApprovalView
 from .employee_roster_template import EmployeeRosterTemplateView
+from .employee_org_template_v4 import EmployeeOrgRosterTemplateV4View
 from .provisional_employee_template_preflight import ProvisionalEmployeeTemplatePreflightView
 from .employee_import_v2 import EmployeeImportV2PreviewView
 from .provisional_employee_roster import (ProvisionalEmployeeImportView, ProvisionalEmployeeRosterView, ProvisionalEmployeeCompletionView, ProvisionalEmployeeLookupView, ProvisionalEmployeeBatchRemovalView)
@@ -59,6 +60,7 @@ urlpatterns = [
     path('employee-import-v2/preview/', EmployeeImportV2PreviewView.as_view(), name='employee-import-v2-preview'),
     path('employees/archived-list-visibility/', ArchivedEmployeeListVisibilityView.as_view(), name='employee-archived-list-visibility'),
     path('employee-roster-template/', EmployeeRosterTemplateView.as_view(), name='employee-roster-template'),
+    path('employee-roster-template/org-v4/', EmployeeOrgRosterTemplateV4View.as_view(), name='employee-org-template-v4'),
     path('employee-import-reviews/cleanup/', EmployeeImportReviewCleanupView.as_view(), name='employee-review-safe-cleanup'),
     path('employee-import-reviews/reconciliation-preview/', EmployeeReviewIdentityReconciliationPreviewView.as_view(), name='employee-import-reconciliation-preview'),
     path('employee-roster/reconcile/', EmployeeRosterReconciliationView.as_view(), name='employee-roster-safe-reconcile'),

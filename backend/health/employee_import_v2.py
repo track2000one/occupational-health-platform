@@ -16,6 +16,11 @@ from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from .employee_org_template_v4 import (
+    HEADERS as V4_HEADERS, ORGANIZATION_COLUMNS, TOP_LEVELS,
+    clean_org_value, is_placeholder, needs_source_org_review,
+)
+
 
 MAX_FILE_SIZE = 10 * 1024 * 1024
 MAX_ROWS = 2500
@@ -51,7 +56,7 @@ HEADERS = {
     'organization_unit': {'القسم', 'اسم القسم', 'القسم الإداري', 'الجهة الوحدة التنظيمية المعتمدة', 'الوحدة التنظيمية',
                           'الجهة التنظيمية', 'organizational unit',
                           'الجهة أو الوحدة المعتمدة في المنصة (بعد التحقق)'},
-    'sector': {'القطاع المقترح', 'القطاع', 'sector'},
+    'sector': {'القطاع المقترح', 'القطاع', 'القطاع الاستشاري', 'sector'},
     'children_count': {'عدد الأطفال', 'عدد الاطفال', 'عدد الأبناء', 'عدد الابناء', 'children count', 'number of children'},
 
 }
@@ -179,6 +184,37 @@ class EmployeeImportV2PreviewView(APIView):
                 return Response({'detail': 'الملف يتجاوز حد 120 عمودًا.'}, status=400)
             headers = headers[:MAX_COLUMNS]
             normalized_headers = [heading(value) for value in headers]
+            # V4 must be all 31 separate columns; never silently discard
+            # organizational levels when the user uploads a V4 workbook.
+            v4_anchor = any(heading(label) in normalized_headers for label in (
+                'الشركة القابضة', 'التجمع الصحي', 'الشبكة الصحية',
+                'الإدارة الرئيسية', 'القطاع الاستشاري',
+            ))
+            v4_indexes = {}
+            v4_review_index = None
+            if v4_anchor:
+                missing_v4 = [
+                    label for label in V4_HEADERS if heading(label) not in normalized_headers
+                ]
+                duplicated_v4 = [
+                    label for label in V4_HEADERS
+                    if normalized_headers.count(heading(label)) > 1
+                ]
+                if duplicated_v4:
+                    return Response({
+                        'detail': 'يوجد تكرار لعناوين مستويات الهيكلة V4.',
+                        'duplicated_v4_headers': duplicated_v4,
+                    }, status=400)
+                if missing_v4:
+                    return Response({
+                        'detail': 'ملف الهيكلة V4 غير مكتمل الأعمدة؛ استخدم القالب التنظيمي المعتمد.',
+                        'missing_v4_headers': missing_v4,
+                    }, status=400)
+                v4_indexes = {
+                    key: normalized_headers.index(heading(label))
+                    for key, label in ORGANIZATION_COLUMNS
+                }
+                v4_review_index = normalized_headers.index(heading('حالة المراجعة'))
             # Explicit column selection is a fallback for unusual Excel exports.
             # It never bypasses ID validation, conflict checks, or masked-ID rejection.
             manual_requested = any(request.data.get(
@@ -240,6 +276,13 @@ class EmployeeImportV2PreviewView(APIView):
             samples = []
             total = 0
             masked_identity_rows = []
+            invalid_hierarchy_rows = []
+            missing_organization_rows = []
+            organization_review_rows = 0
+            v4_field_counts = {
+                key: {'known': 0, 'unknown': 0, 'not_applicable': 0}
+                for key, _ in ORGANIZATION_COLUMNS
+            } if v4_anchor else {}
             for row_number, cells in enumerate(
                 sheet.iter_rows(min_row=header_row + 1,
                                 max_col=MAX_COLUMNS + 1,
@@ -261,9 +304,44 @@ class EmployeeImportV2PreviewView(APIView):
                 if is_masked_identity(source_identity):
                     masked_identity_rows.append(row_number)
                 nid = identity(source_identity)
+                from .employee_import_v2_matching import source_profile
+                profile = source_profile(cells, mapping)
+                if v4_anchor:
+                    if any(
+                        not text_cell(cells[idx] if idx < len(cells) else None)
+                        for idx in v4_indexes.values()
+                    ):
+                        missing_organization_rows.append(row_number)
+                    for key, idx in v4_indexes.items():
+                        source = text_cell(cells[idx] if idx < len(cells) else None)
+                        bucket = (
+                            'not_applicable' if source == 'لا ينطبق'
+                            else 'unknown' if is_placeholder(source) else 'known'
+                        )
+                        v4_field_counts[key][bucket] += 1
+                    hierarchy = {
+                        key: clean_org_value(cells[idx] if idx < len(cells) else None)
+                        for key, idx in v4_indexes.items()
+                    }
+                    if any(
+                        heading(hierarchy.get(key)) != heading(label)
+                        for key, label in TOP_LEVELS.items()
+                    ):
+                        invalid_hierarchy_rows.append(row_number)
+                    # Placeholders are for Excel completeness; they are NEVER
+                    # an actual center, organization unit or sector assignment.
+                    for key in ('health_center', 'organization_unit', 'sector'):
+                        if is_placeholder(profile.get(key)):
+                            profile[key] = ''
+                    profile['_org_v4'] = {
+                        key: value for key, value in hierarchy.items() if value
+                    }
+                    flag = text_cell(cells[v4_review_index])
+                    profile['_org_needs_review'] = needs_source_org_review(flag)
+                    organization_review_rows += int(profile['_org_needs_review'])
                 optional_missing = [
                     key for key in ('health_center', 'employee_number', 'nationality')
-                    if key in mapping and not text_cell(cells[mapping[key]])
+                    if key in mapping and not profile.get(key)
                 ]
                 if not name or len(nid) != 10:
                     classification = 'invalid_core'
@@ -276,9 +354,8 @@ class EmployeeImportV2PreviewView(APIView):
                 if len(nid) == 10:
                     seen.add(nid)
                 counts[classification] += 1
-                from .employee_import_v2_matching import source_profile
                 mapped_rows.append({
-                    **source_profile(cells, mapping),
+                    **profile,
                     '_row': row_number,
                 })
                 if len(samples) < 8:
@@ -288,6 +365,24 @@ class EmployeeImportV2PreviewView(APIView):
                         if len(nid) == 10 else '—',
                         'missing_optional': optional_missing,
                     })
+            if missing_organization_rows:
+                return Response({
+                    'detail': (
+                        'بعض الصفوف تحتوي على حقول تنظيمية فارغة بين الأعمدة F وR. '
+                        'استخدم لا ينطبق أو غير محدد في المصدر وفق طبيعة الحقل.'
+                    ),
+                    'incomplete_organization_count': len(missing_organization_rows),
+                    'source_rows': missing_organization_rows[:30],
+                }, status=400, headers={'Cache-Control': 'private, no-store'})
+            if invalid_hierarchy_rows:
+                return Response({
+                    'detail': (
+                        'توجد صفوف لا تطابق فيها الشركة أو التجمع أو الشبكة '
+                        'المستويات التنظيمية المحددة للقالب. صححها قبل الاستيراد.'
+                    ),
+                    'invalid_hierarchy_count': len(invalid_hierarchy_rows),
+                    'source_rows': invalid_hierarchy_rows[:30],
+                }, status=400, headers={'Cache-Control': 'private, no-store'})
             if masked_identity_rows:
                 return Response({
                     'detail': (
@@ -371,6 +466,21 @@ class EmployeeImportV2PreviewView(APIView):
                 ],
                 'counts': dict(counts),
                 'sample_masked': samples,
+                'organizational_template': ({
+                    'version': 'V4',
+                    'levels': len(ORGANIZATION_COLUMNS),
+                    'source_hierarchy_retained': True,
+                    'review_required_rows': organization_review_rows,
+                    'source_labels_not_approved_units': True,
+                    'fields': [
+                        {
+                            'key': key, 'label': label,
+                            'column_number': v4_indexes[key] + 1,
+                            **v4_field_counts[key],
+                        }
+                        for key, label in ORGANIZATION_COLUMNS
+                    ],
+                } if v4_anchor else None),
                 **registry_report,
                 **preview_details,
                 'direct_approval': direct_approval,

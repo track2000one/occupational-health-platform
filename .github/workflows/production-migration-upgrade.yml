@@ -73,4 +73,62 @@ jobs:
         env:
           LEGACY_EMPLOYEE_EXCEL_IMPORTS_ENABLED: "true" # Synthetic historical tests ONLY
         run: |
-          python manage.py test health.test_employee_import_v2_restore health.test_employee_import_v2_direct health.test_employee_provisional_registry health.test_employee_completion_review health.test_center_directory_matching health.test_health_center_structured_profile health.test_health_center_archive health.test_center_foundation health.test_health_center_excel_import health.test_employee_registry_reset health.test_employee_safe_archive health.test_employee_archived_list_visibility health.test_employee_registry_reports health.tests health.test_employee_import_classification health.test_employee_import_full_preview health.test_employee_review_bulk_activation health.test_employee_review_bulk_discard --verbosity 1
+          python manage.py test health.test_employee_import_v2_restore health.test_employee_import_v2_direct health.test_employee_provisional_registry health.test_employee_completion_review health.test_center_directory_matching health.test_health_center_structured_profile health.test_health_center_archive health.test_center_foundation health.test_health_center_excel_import health.test_employee_registry_reset health.test_employee_safe_archive health.test_employee_archived_list_visibility health.test_employee_registry_reports health.tests health.test_employee_import_classification health.test_employee_import_full_preview health.test_employee_review_bulk_activation health.test_employee_review_bulk_discard health.test_employee_org_template_v4 --verbosity 1
+
+
+  staging-history-upgrade:
+    runs-on: ubuntu-latest
+    # Reproduce the actual legacy staging history, where 0015 lifecycle had
+    # already been applied BEFORE 0015 job_title_en was introduced.
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_DB: ohp_staging_history_ci
+          POSTGRES_USER: ci_only
+          POSTGRES_PASSWORD: synthetic_staging_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci_only -d ohp_staging_history_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://ci_only:synthetic_staging_password@127.0.0.1:5432/ohp_staging_history_ci
+      DEBUG: 'True'
+      SECRET_KEY: synthetic-only-staging-history-upgrade
+      PGSSLMODE: disable
+    steps:
+      - name: Check out actual old deployed Staging baseline
+        uses: actions/checkout@v4
+        with:
+          ref: cc8ec7a38b68a952676e8fda44351c14c79787c6
+          path: staging-baseline
+      - name: Check out proposed V4 release
+        uses: actions/checkout@v4
+        with:
+          path: proposed-release
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: proposed-release/backend/requirements.txt
+      - name: Install V4 backend dependencies
+        run: python -m pip install -r proposed-release/backend/requirements.txt
+      - name: Apply exact old Staging migrations first
+        working-directory: staging-baseline/backend
+        run: |
+          python manage.py migrate --noinput
+          python manage.py shell -c "from health.models import Employee,HealthCenter; c=HealthCenter.objects.create(name='CI Old Staging Center'); Employee.objects.create(name='CI Old Staging Employee',national_id='9999777711',health_center=c,job_title='Old Staging Title',job_title_en='Staging English Title')"
+          python manage.py shell -c "from django.db.migrations.recorder import MigrationRecorder; a=MigrationRecorder.Migration.objects.filter(app='health'); assert a.filter(name='0015_employee_employment_lifecycle').exists(); assert not a.filter(name='0015_employee_job_title_en').exists(); print('Original staging history reproduced successfully')"
+      - name: Upgrade real old Staging history to proposed V4 migration graph
+        working-directory: proposed-release/backend
+        run: |
+          python manage.py check
+          python manage.py migrate --noinput
+          python manage.py makemigrations --check --dry-run
+          python manage.py shell -c "from django.db.migrations.recorder import MigrationRecorder; from health.models import Employee; a=MigrationRecorder.Migration.objects.filter(app='health'); assert a.filter(name='0015_employee_job_title_en').exists(); assert a.filter(name='0038_merge_legacy_job_title_en').exists(); e=Employee.objects.get(national_id='9999777711'); assert e.name=='CI Old Staging Employee'; assert e.job_title=='Old Staging Title'; assert e.job_title_en=='Staging English Title'; print('Legacy Staging migration history to V4: PASS; English title and employee intact')"
+      - name: Run V4 synthetic organizational tests on upgraded Staging history
+        working-directory: proposed-release/backend
+        run: python manage.py test health.test_employee_org_template_v4 --verbosity 1

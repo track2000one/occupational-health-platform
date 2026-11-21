@@ -1,0 +1,49 @@
+name: Staging V4 post-deployment public smoke
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/staging-v4-public-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  staging-v4-public-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify currently deployed Staging V4 and protected endpoints
+        run: |
+          set -euo pipefail
+          backend='https://occupational-staging-backend-staging.up.railway.app'
+          frontend='https://occupational-staging-frontend-staging.up.railway.app'
+          curl --silent --show-error --fail --retry 3 --retry-delay 2 --max-time 25 "$backend/health/" -o /tmp/v4_health.json
+          grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"' /tmp/v4_health.json
+
+          curl --silent --show-error --fail --retry 3 --max-time 25 "$frontend/" -o /tmp/v4_frontend.html
+          grep -q 'id="root"' /tmp/v4_frontend.html
+
+          # The V4 route MUST exist and MUST remain unavailable without admin authentication.
+          # A 404 means the new backend hasn't actually been deployed.
+          for route in '/api/employee-roster-template/org-v4/' '/api/employee-import-v2/preview/' '/api/employees/'; do
+            status=$(curl --silent --show-error --retry 2 --max-time 20 -o /dev/null -w '%{http_code}' "$backend$route")
+            if [ "$status" != 401 ] && [ "$status" != 403 ]; then
+              echo "FAIL: $route should reject an anonymous request (status=$status)"
+              exit 1
+            fi
+            echo "PASS: authenticated-only $route (status=$status)"
+          done
+
+          # The deployed JS bundle must contain the new employee V4 download label.
+          script=$(grep -oE '/assets/index-[^"]+\.js' /tmp/v4_frontend.html | head -1 || true)
+          if [ -z "$script" ]; then
+            echo 'FAIL: frontend index JS bundle missing'
+            exit 1
+          fi
+          curl --silent --show-error --fail --retry 2 --max-time 35 "$frontend$script" -o /tmp/v4_frontend.js
+          if ! grep -qF 'قالب الهيكلة التنظيمية V4' /tmp/v4_frontend.js; then
+            echo 'FAIL: deployed frontend bundle does not contain the V4 employee template feature'
+            exit 1
+          fi
+          echo 'PASS: Staging currently serves V4 frontend and protected V4 backend endpoints.'

@@ -52,9 +52,16 @@ import { PERMISSIONS } from '../data/roles';
 import { CalendarDateField } from '../components/CalendarDateField';
 import { HealthCenterAutocomplete } from '../components/HealthCenterAutocomplete';
 import { EmployeeRegistryCard } from '../components/EmployeeRegistryCard';
+import { EmployeeOrganizationalFields } from '../components/EmployeeOrganizationalFields';
 import { ImportedEmployeeCardsTab } from '../components/ImportedEmployeeCardsTab';
 import { JOB_TITLES, getNationalityOptions, normalizeNationalitySearch } from '../data/employeeFormOptions';
 import { isExcludedEmployeeCenter, selectableEmployeeCenters } from '../data/employeeCenterOptions';
+import {
+  TOP_LEVELS,
+  emptyOrganizationalHierarchy, fromSourceHierarchy,
+  updateHierarchyAffiliation, missingHierarchyLevels,
+  type EmployeeOrgHierarchy, type OrgLevel,
+} from '../data/employeeOrganizationalHierarchy';
 import {
   normalizeNationalId, isValidNationalId, isValidEmployeeEmail,
   isValidChildrenCount, toWesternDigits, calculateAgeFromIso,
@@ -150,6 +157,7 @@ type ApiEmployee = {
   marital_status?: MaritalStatus;
   health_center: number | string | null;
   source_center_name?: string;
+  source_organizational_hierarchy?: Partial<EmployeeOrgHierarchy>;
   registration_status?: 'verified' | 'provisional';
   health_center_name?: string;
   job_title?: string;
@@ -181,6 +189,8 @@ type EmployeeForm = {
   national_id: string;
   employee_number: string;
   organization_unit: string;
+  organizational_hierarchy: EmployeeOrgHierarchy;
+  hierarchy_change_reason: string;
   nationality: string;
   current_job: string;
   national_address: string;
@@ -206,6 +216,8 @@ const EMPTY_FORM: EmployeeForm = {
   national_id: '',
   employee_number: '',
   organization_unit: '',
+  organizational_hierarchy: emptyOrganizationalHierarchy(),
+  hierarchy_change_reason: '',
   nationality: '',
   current_job: '',
   national_address: '',
@@ -287,6 +299,12 @@ function asForm(employee: ApiEmployee): EmployeeForm {
     national_id: employee.national_id || '',
     employee_number: employee.employee_number || '',
     organization_unit: employee.organization_unit ? String(employee.organization_unit) : '',
+    organizational_hierarchy: fromSourceHierarchy(
+      employee.source_organizational_hierarchy,
+      !employee.health_center && employee.organization_unit_kind === 'department'
+        ? 'department' : 'center',
+    ),
+    hierarchy_change_reason: '',
     nationality: employee.nationality || '',
     current_job: employee.current_job || '',
     national_address: employee.national_address || '',
@@ -307,13 +325,17 @@ function asForm(employee: ApiEmployee): EmployeeForm {
   };
 }
 
-function buildPayload(form: EmployeeForm) {
+function buildPayload(form: EmployeeForm, includeOrgHierarchy: boolean) {
   return {
     name: form.name.trim(),
     email: form.email.trim().toLowerCase(),
     national_id: normalizeNationalId(form.national_id),
     employee_number: form.employee_number.trim(),
     organization_unit: form.organization_unit ? Number(form.organization_unit) : null,
+    ...(includeOrgHierarchy ? {
+      source_organizational_hierarchy: form.organizational_hierarchy,
+      hierarchy_change_reason: form.hierarchy_change_reason.trim(),
+    } : {}),
     nationality: form.nationality,
     current_job: form.current_job.trim(),
     national_address: form.national_address.trim(),
@@ -565,7 +587,10 @@ export function EmployeesPage() {
   function openAdd() {
     setSelectedEmployee(null);
     setAffiliationKind('center');
-    setForm({ ...EMPTY_FORM });
+    setForm({
+      ...EMPTY_FORM,
+      organizational_hierarchy: emptyOrganizationalHierarchy(),
+    });
     setDialogMode('add');
     setOpenDialog(true);
   }
@@ -587,7 +612,20 @@ export function EmployeesPage() {
     if (!canWrite) return;
     setSelectedEmployee(employee);
     setAffiliationKind(!employee.health_center && employee.organization_unit_kind === 'department' ? 'department' : 'center');
-    setForm(asForm(employee));
+    setForm({
+      ...asForm(employee),
+      organizational_hierarchy: {
+        ...fromSourceHierarchy(employee.source_organizational_hierarchy,
+          employee.health_center ? 'center' : 'department'),
+        ...(employee.health_center && {
+          health_center: employee.health_center_name ||
+            centerNameById.get(String(employee.health_center)) || 'غير محدد في المصدر',
+        }),
+        ...(!employee.health_center && employee.organization_unit_kind === 'department' && {
+          department: employee.organization_unit_name || 'غير محدد في المصدر',
+        }),
+      },
+    });
     setDialogMode('edit');
     setOpenDialog(true);
   }
@@ -664,6 +702,16 @@ export function EmployeesPage() {
     setOpenDialog(true);
   }
 
+  function updateOrgLevel(key: OrgLevel, value: string) {
+    setForm(previous => ({
+      ...previous,
+      organizational_hierarchy: {
+        ...previous.organizational_hierarchy,
+        [key]: value,
+      },
+    }));
+  }
+
   function updateForm<K extends keyof EmployeeForm>(key: K, value: EmployeeForm[K]) {
     setForm(prev => ({ ...prev, [key]: value }));
   }
@@ -691,6 +739,18 @@ export function EmployeesPage() {
       return;
     }
 
+    if (user?.isSuperuser) {
+      const missingOrg = missingHierarchyLevels(form.organizational_hierarchy);
+      if (missingOrg.length) {
+        toast.error('يلزم تعبئة المستوى التنظيمي: ' + missingOrg.join('، '));
+        return;
+      }
+      if (Object.entries(TOP_LEVELS).some(([key, value]) =>
+          form.organizational_hierarchy[key as keyof typeof TOP_LEVELS] !== value)) {
+        toast.error('المستويات الثلاثة العليا ثابتة وفق قالب V4.');
+        return;
+      }
+    }
     if (!isValidNationalId(form.national_id)) {
       toast.error(isRtl ? 'يجب أن يتكون رقم الهوية من 10 أرقام' : 'National ID must contain 10 digits');
       return;
@@ -729,14 +789,14 @@ export function EmployeesPage() {
       if (dialogMode === 'add') {
         const created = await apiRequest<ApiEmployee>('/employees/', {
           method: 'POST',
-          body: JSON.stringify(buildPayload(form)),
+          body: JSON.stringify(buildPayload(form, user?.isSuperuser === true)),
         });
         setEmployees(prev => [created, ...prev]);
         toast.success(isRtl ? 'تم إضافة الموظف وحفظه في PostgreSQL' : 'Employee saved in PostgreSQL');
       } else if (dialogMode === 'edit' && selectedEmployee) {
         const updated = await apiRequest<ApiEmployee>(`/employees/${selectedEmployee.id}/`, {
           method: 'PATCH',
-          body: JSON.stringify(buildPayload(form)),
+          body: JSON.stringify(buildPayload(form, user?.isSuperuser === true)),
         });
         setEmployees(prev => prev.map(emp => String(emp.id) === String(updated.id) ? updated : emp));
         toast.success(isRtl ? 'تم تعديل بيانات الموظف وحفظها في Django/PostgreSQL' : 'Employee updated in Django/PostgreSQL');
@@ -1878,6 +1938,9 @@ export function EmployeesPage() {
                   setAffiliationKind(kind);
                   setForm(prev => ({
                     ...prev, health_center: '', organization_unit: '',
+                    organizational_hierarchy: updateHierarchyAffiliation(
+                      prev.organizational_hierarchy, kind, '',
+                    ),
                   }));
                 }}
                 helperText={isRtl ? 'اختر المركز الصحي أو القسم المركزي المعتمد؛ تغيير التبعية المثبتة يتطلب إجراء نقل معتمدًا' :
@@ -1890,7 +1953,28 @@ export function EmployeesPage() {
               <Grid size={{ xs: 12, md: 6 }}>
                 <HealthCenterAutocomplete
                   options={employeeFormCenters} value={form.health_center}
-                  onChange={value => setForm(prev => ({ ...prev, health_center: value, organization_unit: '' }))}
+                  onChange={value => setForm(prev => {
+                    const selectedCenter = employeeFormCenters.find(item => String(item.id) === value);
+                    const linkedUnits = approvedOrganizations.filter(unit =>
+                      unit.is_approved && unit.is_active && unit.kind === 'center' &&
+                      String(unit.health_center_id) === value);
+                    const parentSector = linkedUnits.length === 1
+                      ? approvedOrganizations.find(unit =>
+                        unit.kind === 'sector' && unit.is_active && unit.is_approved &&
+                        unit.name === linkedUnits[0].parent_name)
+                      : undefined;
+                    const organizational_hierarchy = updateHierarchyAffiliation(
+                      prev.organizational_hierarchy, 'center',
+                      selectedCenter ? centerDisplayName(selectedCenter, isRtl) : '',
+                    );
+                    if (parentSector) {
+                      organizational_hierarchy.consultative_sector = parentSector.name;
+                    }
+                    return {
+                      ...prev, health_center: value, organization_unit: '',
+                      organizational_hierarchy,
+                    };
+                  })}
                   label={isRtl ? 'المركز الصحي' : 'Health center'}
                   placeholder={isRtl ? 'اختر أو ابحث عن المركز' : 'Select or search for a center'}
                   required disabled={isReadOnly}
@@ -1919,8 +2003,11 @@ export function EmployeesPage() {
                   value={selectedOrgUnit}
                   disabled={isReadOnly || approvedDepartments.length === 0}
                   onChange={(_, unit) => setForm(prev => ({
-                    ...prev, organization_unit: unit ? String(unit.id) : '', health_center: '',
-                  }))}
+                     ...prev, organization_unit: unit ? String(unit.id) : '', health_center: '',
+                     organizational_hierarchy: updateHierarchyAffiliation(
+                       prev.organizational_hierarchy, 'department', unit?.name || '',
+                     ),
+                   }))}
                   isOptionEqualToValue={(option, value) => option.id === value.id}
                   getOptionLabel={option => option.source_path || option.parent_name
                     ? `${option.name} — ${option.parent_name || option.source_path}` : option.name}
@@ -1944,6 +2031,21 @@ export function EmployeesPage() {
                 </Grid>
               )}
             </>}
+            <Grid size={{ xs: 12 }}>
+              <EmployeeOrganizationalFields
+                mode={dialogMode}
+                value={form.organizational_hierarchy}
+                affiliationKind={affiliationKind}
+                selectedCenterNames={employeeFormCenters.map(center => centerDisplayName(center, isRtl))}
+                selectedDepartmentNames={approvedDepartments.map(unit => unit.name)}
+                selectedUnitNames={availableOrgUnits.map(unit => unit.name)}
+                isReadOnly={isReadOnly} isSuperuser={user?.isSuperuser === true}
+                defaultExpanded={dialogMode === 'add'}
+                reason={form.hierarchy_change_reason}
+                onReasonChange={value => updateForm('hierarchy_change_reason', value)}
+                onChange={updateOrgLevel}
+              />
+            </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
               <TextField fullWidth required label={isRtl ? 'اسم الموظف' : 'Name'} value={form.name}
                 onChange={event => updateForm('name', event.target.value)} disabled={isReadOnly} />

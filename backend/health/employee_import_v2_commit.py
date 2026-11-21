@@ -4,6 +4,7 @@ The workbook remains in request memory and never enters Git or permanent storage
 """
 import hashlib
 import json
+import re
 from datetime import date
 
 from django.conf import settings
@@ -85,6 +86,11 @@ def normalized_employee_fields(row):
             continue
         if 1900 <= value.year <= date.today().year + (1 if field == 'appointment_date' else 0):
             fields[field] = value
+    # Preserve source Hijri appointment dates verbatim; never pretend they are
+    # Gregorian dates. Verified conversion can happen separately.
+    raw_appointment = str(row.get('appointment_date') or '').strip()
+    if re.fullmatch(r'1[34]\d{2}/\d{1,2}/\d{1,2}', raw_appointment):
+        fields['roster_hijri_appointment_date'] = raw_appointment[:30]
     return fields
 
 
@@ -98,6 +104,7 @@ def registry_fingerprint(plan):
         'is_archived': e.is_archived, 'employment_status': e.employment_status,
         'center': e.health_center_id, 'unit': e.organization_unit_id,
         'registration_status': e.registration_status,
+        'source_organizational_hierarchy': e.source_organizational_hierarchy,
         'fields': {
             k: str(getattr(e, k, '') or '')
             for k in ('nationality', 'mobile', 'job_title', 'job_title_en',
@@ -210,7 +217,7 @@ def commit_safe_plan(request, plan, file_sha, sheet, sheet_rows):
                     is_provisional = bool(
                         operation['kind'] != 'new_candidate'
                         or operation['missing_fields']
-                        or not center_id
+                        or not (center_id or unit_id)
                     )
                     employee = Employee.objects.create(
                         national_id=operation['national_id'],
@@ -219,6 +226,7 @@ def commit_safe_plan(request, plan, file_sha, sheet, sheet_rows):
                         organization_unit_id=unit_id,
                         source_center_name=str(row.get('health_center') or '')[:200],
                         registration_status=('provisional' if is_provisional else 'verified'),
+                        source_organizational_hierarchy=dict(row.get('_org_v4') or {}),
                         **fields,
                     )
                     created += 1
@@ -240,6 +248,24 @@ def commit_safe_plan(request, plan, file_sha, sheet, sheet_rows):
                     if unit_id and not employee.organization_unit_id:
                         employee.organization_unit_id = unit_id
                         changed.append('organization_unit')
+                    incoming_hierarchy = row.get('_org_v4') or {}
+                    if incoming_hierarchy:
+                        original_hierarchy = employee.source_organizational_hierarchy or {}
+                        if any(
+                            norm_text(original_hierarchy[key]) != norm_text(value)
+                            for key, value in incoming_hierarchy.items()
+                            if original_hierarchy.get(key)
+                        ):
+                            raise ValueError('تعارضت تبعية تنظيمية موجودة؛ يلزم فحص فردي')
+                        additions = {
+                            key: value for key, value in incoming_hierarchy.items()
+                            if not original_hierarchy.get(key)
+                        }
+                        if additions:
+                            employee.source_organizational_hierarchy = {
+                                **original_hierarchy, **additions,
+                            }
+                            changed.append('source_organizational_hierarchy')
                     if not employee.source_center_name and row.get('health_center'):
                         employee.source_center_name = str(row['health_center'])[:200]
                         changed.append('source_center_name')
