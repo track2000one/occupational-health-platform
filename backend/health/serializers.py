@@ -5,6 +5,7 @@ from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import Q
 from rest_framework import serializers
+from .employee_org_template_v4 import ORGANIZATION_COLUMNS, TOP_LEVELS, clean_org_value
 from .models import AuditLog, ClinicVisit, CommitteeReferral, DataImportBatch, Employee, EmployeeHealthCard, EmployeeHealthProfile, EmployeeImportReview, HealthCenter, HealthCenterAlias, OrganizationUnit, InjuryCase, LabTest, OccupationalHealthAssessment, UserProfile, Vaccination
 
 
@@ -379,6 +380,15 @@ class HealthCenterSerializer(serializers.ModelSerializer):
 
 
 class EmployeeSerializer(serializers.ModelSerializer):
+    # Source hierarchy is distinct from verified department/center relations.
+    # Only system superusers can attach or correct proposed V4 labels.
+    source_organizational_hierarchy = serializers.DictField(
+        child=serializers.CharField(max_length=220, allow_blank=False),
+        required=False,
+    )
+    hierarchy_change_reason = serializers.CharField(
+        write_only=True, required=False, allow_blank=True, max_length=500,
+    )
     health_center_name = serializers.CharField(source='health_center.name', read_only=True, default='')
     organization_unit_name = serializers.CharField(source='organization_unit.name', read_only=True, default='')
     organization_unit_kind = serializers.CharField(source='organization_unit.kind', read_only=True, default='')
@@ -394,7 +404,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
     class Meta:
         model = Employee
         fields = '__all__'
-        read_only_fields = ('employment_status', 'registration_status', 'source_center_name', 'source_organizational_hierarchy', 'is_archived', 'archive_reason', 'archived_at', 'archived_by')
+        read_only_fields = ('employment_status', 'registration_status', 'source_center_name', 'is_archived', 'archive_reason', 'archived_at', 'archived_by')
         extra_kwargs = {
             'name': {'required': True, 'allow_blank': False},
             'national_id': {'required': True, 'allow_blank': False},
@@ -468,6 +478,51 @@ class EmployeeSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         attrs = self._normalize_identity(attrs)
+        proposed = attrs.get('source_organizational_hierarchy')
+        if proposed is not None:
+            request = self.context.get('request')
+            if not request or not request.user or not request.user.is_superuser:
+                raise serializers.ValidationError({
+                    'source_organizational_hierarchy': 'تعديل مسميات الهيكلة التنظيمية متاح للمسؤول الأعلى فقط.',
+                })
+            allowed = {key for key, _ in ORGANIZATION_COLUMNS}
+            if set(proposed) != allowed:
+                raise serializers.ValidationError({
+                    'source_organizational_hierarchy': 'يلزم إرسال مستويات الهيكلة الثلاثة عشر كاملة دون أعمدة زائدة.',
+                })
+            for key, expected in TOP_LEVELS.items():
+                if proposed[key].strip() != expected:
+                    raise serializers.ValidationError({
+                        'source_organizational_hierarchy': f'القيمة غير صحيحة في المستوى {key}.',
+                    })
+            center = attrs.get('health_center', self.instance.health_center if self.instance else None)
+            unit = attrs.get('organization_unit', self.instance.organization_unit if self.instance else None)
+            src_center = clean_org_value(proposed.get('health_center'))
+            src_department = clean_org_value(proposed.get('department'))
+            # A verified center or department must agree with its source label.
+            if center and src_center not in {center.name, center.name_ar, center.name_en}:
+                raise serializers.ValidationError({
+                    'source_organizational_hierarchy': 'مسمى المركز داخل الهيكلة لا يطابق المركز الصحي المحدد والمعتمد.',
+                })
+            if not center and unit and unit.kind == 'department' and src_department != unit.name:
+                raise serializers.ValidationError({
+                    'source_organizational_hierarchy': 'مسمى القسم داخل الهيكلة لا يطابق القسم المركزي المعتمد.',
+                })
+            incoming = {
+                key: clean_org_value(value) for key, value in proposed.items()
+                if clean_org_value(value)
+            }
+            original = self.instance.source_organizational_hierarchy or {} if self.instance else {}
+            changed_existing = any(
+                original.get(key) and original[key] != value
+                for key, value in incoming.items()
+            )
+            reason = str(attrs.get('hierarchy_change_reason') or '').strip()
+            if changed_existing and len(reason) < 10:
+                raise serializers.ValidationError({
+                    'hierarchy_change_reason': 'تصحيح مستوى تنظيمي مثبت يتطلب سببًا توثيقيًا من 10 أحرف على الأقل.',
+                })
+            attrs['source_organizational_hierarchy'] = incoming
         if self.instance is not None and 'health_center' in attrs:
             new_center = attrs.get('health_center')
             if self.instance.health_center_id and (
@@ -538,6 +593,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
         # Reuse the existing EmployeeHealthProfile fields rather than
         # duplicating confidential employment metadata on Employee.
         profile_data = validated_data.pop('detailed_health_profile', {})
+        validated_data.pop('hierarchy_change_reason', None)
         if not validated_data.get('email'):
             validated_data['email'] = None
         if not validated_data.get('employee_number'):
@@ -551,11 +607,22 @@ class EmployeeSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         profile_data = validated_data.pop('detailed_health_profile', {})
+        change_reason = validated_data.pop('hierarchy_change_reason', '')
+        before_hierarchy = dict(instance.source_organizational_hierarchy or {})
         if 'email' in validated_data and not validated_data['email']:
             validated_data['email'] = None
         if 'employee_number' in validated_data and not validated_data['employee_number']:
             validated_data['employee_number'] = None
         employee = super().update(instance, validated_data)
+        after_hierarchy = employee.source_organizational_hierarchy or {}
+        if before_hierarchy != after_hierarchy:
+            AuditLog.objects.create(
+                user=str(self.context['request'].user),
+                action=('employee_source_hierarchy_corrected' if change_reason
+                        else 'employee_source_hierarchy_completed'),
+                model_name='Employee',
+                record_id=str(employee.pk),
+            )
         if profile_data:
             EmployeeHealthProfile.objects.update_or_create(
                 employee=employee, defaults=profile_data,
