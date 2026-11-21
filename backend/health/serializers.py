@@ -6,7 +6,7 @@ from django.db import transaction
 from django.db.models import Q
 from rest_framework import serializers
 from .employee_org_template_v4 import ORGANIZATION_COLUMNS, TOP_LEVELS, clean_org_value
-from .models import AuditLog, ClinicVisit, CommitteeReferral, DataImportBatch, Employee, EmployeeHealthCard, EmployeeHealthProfile, EmployeeImportReview, HealthCenter, HealthCenterAlias, OrganizationUnit, InjuryCase, LabTest, OccupationalHealthAssessment, UserProfile, Vaccination
+from .models import AuditLog, ClinicVisit, CommitteeReferral, DataImportBatch, Employee, EmployeeOrganizationalHierarchyEvent, EmployeeHealthCard, EmployeeHealthProfile, EmployeeImportReview, HealthCenter, HealthCenterAlias, OrganizationUnit, InjuryCase, LabTest, OccupationalHealthAssessment, UserProfile, Vaccination
 
 
 ROLE_PERMISSIONS = {
@@ -599,6 +599,13 @@ class EmployeeSerializer(serializers.ModelSerializer):
         if not validated_data.get('employee_number'):
             validated_data['employee_number'] = None
         employee = super().create(validated_data)
+        if employee.source_organizational_hierarchy:
+            EmployeeOrganizationalHierarchyEvent.objects.create(
+                employee=employee, action='created',
+                changed_levels=sorted(employee.source_organizational_hierarchy),
+                reason='إدخال مباشر من نموذج إضافة الموظف وفق الهيكلة V4',
+                performed_by=self.context['request'].user,
+            )
         if profile_data:
             EmployeeHealthProfile.objects.update_or_create(
                 employee=employee, defaults=profile_data,
@@ -616,10 +623,20 @@ class EmployeeSerializer(serializers.ModelSerializer):
         employee = super().update(instance, validated_data)
         after_hierarchy = employee.source_organizational_hierarchy or {}
         if before_hierarchy != after_hierarchy:
+            changed_levels = sorted(
+                key for key in set(before_hierarchy) | set(after_hierarchy)
+                if before_hierarchy.get(key) != after_hierarchy.get(key)
+            )
+            event_action = 'corrected' if change_reason else 'completed'
+            EmployeeOrganizationalHierarchyEvent.objects.create(
+                employee=employee, action=event_action,
+                changed_levels=changed_levels,
+                reason=(change_reason or 'استكمال مستويات تنظيمية لم تكن محددة في السجل'),
+                performed_by=self.context['request'].user,
+            )
             AuditLog.objects.create(
                 user=str(self.context['request'].user),
-                action=('employee_source_hierarchy_corrected' if change_reason
-                        else 'employee_source_hierarchy_completed'),
+                action='employee_source_hierarchy_' + event_action,
                 model_name='Employee',
                 record_id=str(employee.pk),
             )
