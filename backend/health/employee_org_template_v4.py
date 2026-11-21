@@ -10,6 +10,7 @@ from django.http import HttpResponse
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.worksheet.datavalidation import DataValidation
+from openpyxl.workbook.defined_name import DefinedName
 from rest_framework import permissions
 from rest_framework.views import APIView
 
@@ -148,7 +149,11 @@ def template_bytes():
     # A soft list only for known validated centers; free text remains available
     # so mismatched centers can be submitted for explicit review, not auto-created.
     if centers.max_row > 1:
-        dv = DataValidation(type='list', formula1="'المراكز_المعتمدة'!$A$2:$A$%s" % centers.max_row,
+        book.defined_names.add(DefinedName(
+            'V4_ApprovedCenters',
+            attr_text="'المراكز_المعتمدة'!$A$2:$A$%s" % centers.max_row,
+        ))
+        dv = DataValidation(type='list', formula1='V4_ApprovedCenters',
                             allow_blank=True)
         dv.showErrorMessage = False
         sheet.add_data_validation(dv)
