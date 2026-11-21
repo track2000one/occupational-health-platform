@@ -62,6 +62,15 @@ def clean_org_value(value):
     return '' if is_placeholder(text) else text[:220]
 
 
+def needs_source_org_review(value):
+    """Only explicit clean/derived statuses are safe to treat as unflagged."""
+    label = str(value or '').strip()
+    return bool(label and label not in (
+        'لا توجد ملاحظة تصنيفية سابقة',
+        'مستكمل من المسار',
+    ))
+
+
 def template_bytes():
     book = Workbook()
     sheet = book.active
