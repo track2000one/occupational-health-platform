@@ -67,6 +67,13 @@ type PreflightResult = {
   header_row: number;
   recognized_columns: string[];
   missing_optional_columns: string[];
+  organizational_template?: {
+    version: string;
+    levels: number;
+    source_hierarchy_retained: boolean;
+    review_required_rows: number;
+    source_labels_not_approved_units: boolean;
+  } | null;
   counts: Record<string, number>;
   sample_masked: Array<{
     row: number;
@@ -431,6 +438,30 @@ export function EmployeeImportV2Page() {
     }
   };
 
+  const downloadOrganizationalTemplate = async () => {
+    if (busy) return;
+    setError('');
+    try {
+      const token = getAccessToken();
+      if (!token) throw new Error('يلزم تسجيل الدخول مجددًا.');
+      const response = await authFetch(API + '/employee-roster-template/org-v4/', {
+        headers: { Authorization: 'Bearer ' + token },
+      });
+      if (!response.ok) throw new Error('تعذّر تنزيل القالب من المنصة.');
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'OHP_Employee_Organizational_Template_V4.xlsx';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => window.URL.revokeObjectURL(url), 500);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'تعذّر تنزيل القالب.');
+    }
+  };
+
   if (!user?.isSuperuser) {
     return <Alert severity="warning">إدارة استيراد الموظفين مخصصة للمسؤول الأعلى.</Alert>;
   }
@@ -474,6 +505,15 @@ export function EmployeeImportV2Page() {
 
     <Paper sx={{ p: { xs: 2, md: 3 }, mb: 3, borderRadius: 3 }}>
       <Typography variant="h6" fontWeight={900} sx={{ mb: 2 }}>1. رفع الملف</Typography>
+      <Stack direction={{ xs: 'column', sm: 'row' }} gap={1} sx={{ mb: 2 }} alignItems={{ sm: 'center' }}>
+        <Button variant="outlined" startIcon={<FileIcon />} disabled={busy}
+          onClick={() => void downloadOrganizationalTemplate()}>
+          تنزيل قالب الهيكلة التنظيمية V4 (31 عمودًا)
+        </Button>
+        <Typography variant="caption" color="text.secondary">
+          المراكز والأقسام بنفس الأعمدة. لا تُجمع مستويات الهيكلة في خانة واحدة.
+        </Typography>
+      </Stack>
       <Stack direction={{ xs: 'column', sm: 'row' }} gap={2} alignItems={{ sm: 'center' }}>
         <Button component="label" variant="contained" startIcon={<UploadIcon />} disabled={busy}>
           {file ? 'تغيير الملف' : 'اختيار ملف Excel'}
@@ -584,6 +624,13 @@ export function EmployeeImportV2Page() {
       </Stack>
     </Paper>}
 
+    {preview?.organizational_template && <Alert severity="info" sx={{ mb: 2 }}>
+      تم التعرف على القالب التنظيمي {preview.organizational_template.version}:
+      {' '}{preview.organizational_template.levels} مستويات مستقلة.
+      ستُحفظ المسميات كمصدر مرجعي دون اعتماد وحدات أو مراكز جديدة تلقائيًا.
+      {preview.organizational_template.review_required_rows > 0 &&
+        ' عدد الصفوف الموسومة للمراجعة: ' + preview.organizational_template.review_required_rows}
+    </Alert>}
     {preview && <Paper sx={{ p: { xs: 2, md: 3 }, mb: 3, borderRadius: 3 }}>
       <Typography variant="h6" fontWeight={900} sx={{ mb: 1 }}>
         2. نتائج فحص الملف ومطابقة السجل
