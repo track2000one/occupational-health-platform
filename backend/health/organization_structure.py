@@ -183,11 +183,127 @@ class OrganizationDirectoryView(APIView):
         })
 
 
+V4_DEPARTMENT_MARKER = 'IMPORT_V4_DEPARTMENT_DRAFTS_ONLY'
+V4_DEPARTMENT_SHEET = 'V4_Departments'
+V4_DEPARTMENT_HEADERS = ('main_department', 'sub_department', 'section', 'sub_unit')
+V4_MISSING_LABELS = {'غير محدد في المصدر', 'لا ينطبق', 'غير محدد', 'N/A', 'n/a'}
+
+
+def read_v4_department_workbook(upload):
+    """Read a dedicated, organizational-only workbook; no roster fields."""
+    if not upload or not upload.name.lower().endswith('.xlsx') or upload.size > MAX_FILE_SIZE:
+        raise ValueError('Select the V4 department-only XLSX (maximum 5 MB).')
+    content = upload.read(MAX_FILE_SIZE + 1)
+    if len(content) > MAX_FILE_SIZE:
+        raise ValueError('Workbook is too large.')
+    with zipfile.ZipFile(BytesIO(content)) as archive:
+        if sum(part.file_size for part in archive.infolist()) > MAX_UNCOMPRESSED_BYTES:
+            raise ValueError('Uncompressed workbook is too large.')
+    book = load_workbook(BytesIO(content), read_only=True, data_only=False)
+    try:
+        if book.sheetnames != [V4_DEPARTMENT_SHEET]:
+            raise ValueError('Use only the dedicated V4_Departments sheet.')
+        sheet = book[V4_DEPARTMENT_SHEET]
+        # Missing or incorrect worksheet dimension metadata must not crash or
+        # silently truncate the workbook. Bound iteration independently.
+        sheet.reset_dimensions()
+        plans = {}
+        paths = set()
+        for index, row in enumerate(sheet.iter_rows(min_row=1, max_col=5, values_only=False), 1):
+            if index > MAX_ROWS_PER_SHEET:
+                raise ValueError('Too many department rows.')
+            if any(cell.data_type == 'f' for cell in row):
+                raise ValueError('Formulas are not allowed in organizational labels.')
+            values = [clean(cell.value) for cell in row]
+            if index == 1:
+                if tuple(values[:4]) != V4_DEPARTMENT_HEADERS or values[4]:
+                    raise ValueError('Invalid V4 department headers.')
+                continue
+            if not any(values):
+                continue
+            if values[4]:
+                raise ValueError('Unexpected fifth column.')
+            labels = values[:4]
+            if not labels[0] or any(v in V4_MISSING_LABELS for v in labels):
+                raise ValueError('Use blank cells for unspecified trailing levels.')
+            path = tuple(v for v in labels if v)
+            if list(path) != labels[:len(path)]:
+                raise ValueError('Missing intermediate department level.')
+            if any(len(v) > 220 or '/' in v or v.startswith('القطاع ') for v in path):
+                raise ValueError('Invalid department label or sector in department path.')
+            if path in paths:
+                raise ValueError('Duplicate department path.')
+            paths.add(path)
+            for depth in range(1, len(path) + 1):
+                prefix = path[:depth]
+                code = 'V4-D-' + sha256('\x1f'.join(prefix).encode('utf-8')).hexdigest()[:24].upper()
+                parent = ('V4-D-' + sha256('\x1f'.join(prefix[:-1]).encode('utf-8')).hexdigest()[:24].upper()
+                          if depth > 1 else None)
+                plans[code] = dict(code=code, name=prefix[-1], kind='department',
+                                   parent_code=parent, source_path=' / '.join(prefix),
+                                   source_sheet=V4_DEPARTMENT_SHEET, source_rows='')
+        if not plans:
+            raise ValueError('No department paths supplied.')
+        return list(plans.values())
+    finally:
+        book.close()
+
+
+def import_v4_department_drafts(request):
+    """Separate V4-only review path; never changes existing records or assignments."""
+    if (draft_import_scope() != 'v4'
+            or os.getenv('OHP_V4_DEPARTMENT_DRAFT_IMPORT_ENABLED', '').lower() != 'true'
+            or not request.user.is_superuser):
+        return Response({'detail': 'V4 department intake is disabled or outside the isolated V4 scope.'}, status=403)
+    try:
+        plans = read_v4_department_workbook(request.FILES.get('file'))
+    except (ValueError, TypeError, OSError, zipfile.BadZipFile) as exc:
+        return Response({'detail': str(exc)}, status=400)
+    result = {'total': len(plans), 'kinds': {'department': len(plans)},
+              'preview': plans, 'created': 0, 'mode': 'preview',
+              'notice': 'No approvals or employee assignments were changed.'}
+    if clean(request.data.get('confirm')) != V4_DEPARTMENT_MARKER:
+        return Response(result)
+    with transaction.atomic():
+        existing = {u.code: u for u in OrganizationUnit.objects.select_for_update().order_by('pk')}
+        for plan in plans:
+            previous = existing.get(plan['code'])
+            if previous and (previous.name != plan['name'] or previous.kind != 'department'
+                    or (previous.parent.code if previous.parent_id else None) != plan['parent_code']
+                    or previous.health_center_id or not previous.is_active):
+                return Response({'detail': 'Existing department reference conflicts; no writes.'}, status=409)
+            parent = existing.get(plan['parent_code'])
+            if (plan['parent_code'] is None or parent is not None) and any(
+                    u.kind == 'department' and u.parent_id == (parent.pk if parent else None)
+                    and clean(u.name).casefold() == plan['name'].casefold()
+                    and u.code != plan['code'] for u in existing.values()):
+                return Response({'detail': 'Existing department name and parent conflict; no writes.'}, status=409)
+        for plan in plans:
+            parent = existing.get(plan['parent_code'])
+            if plan['parent_code'] and parent is None:
+                raise ValueError('Unexpected missing department parent.')
+            unit = existing.get(plan['code'])
+            if unit is None:
+                unit = OrganizationUnit.objects.create(
+                    code=plan['code'], name=plan['name'], kind='department', parent=parent,
+                    source_path=plan['source_path'], source_sheet=V4_DEPARTMENT_SHEET,
+                    is_approved=False)
+                existing[unit.code] = unit
+                result['created'] += 1
+                OrganizationUnitApprovalLog.objects.create(unit=unit, action='create-draft', user=request.user)
+        AuditLog.objects.create(user=str(request.user), action='v4_department_draft_import',
+                                model_name='OrganizationUnit', record_id='v4')
+    result['mode'] = 'draft'
+    return Response(result, status=201)
+
+
 class OrganizationImportView(APIView):
     permission_classes = [permissions.IsAdminUser]
     parser_classes = [MultiPartParser, FormParser]
 
     def post(self, request):
+        if clean(request.data.get('phase')) == 'departments':
+            return import_v4_department_drafts(request)
         try:
             plans = read_matching_workbook(request.FILES.get('file'))
         except (ValueError, TypeError) as exc:
