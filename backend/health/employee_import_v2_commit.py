@@ -217,7 +217,7 @@ def commit_safe_plan(request, plan, file_sha, sheet, sheet_rows):
                     is_provisional = bool(
                         operation['kind'] != 'new_candidate'
                         or operation['missing_fields']
-                        or not center_id
+                        or not (center_id or unit_id)
                     )
                     employee = Employee.objects.create(
                         national_id=operation['national_id'],
