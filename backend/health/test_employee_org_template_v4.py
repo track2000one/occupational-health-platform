@@ -166,7 +166,7 @@ class EmployeeManualV4FormTests(TestCase):
     def test_superuser_adds_v4_source_without_approving_new_org_unit(self):
         from types import SimpleNamespace
         from .serializers import EmployeeSerializer
-        from .models import OrganizationUnit
+        from .models import OrganizationUnit, EmployeeOrganizationalHierarchyEvent
         serializer = EmployeeSerializer(
             data=self.create_payload(),
             context={'request': SimpleNamespace(user=self.admin)},
@@ -177,6 +177,8 @@ class EmployeeManualV4FormTests(TestCase):
         self.assertEqual(created.source_organizational_hierarchy['holding_company'], 'شركة الصحة القابضة')
         self.assertEqual(created.source_organizational_hierarchy.get('sub_unit'), None)
         self.assertEqual(OrganizationUnit.objects.count(), 0)
+        event = EmployeeOrganizationalHierarchyEvent.objects.get(employee=created)
+        self.assertEqual(event.action, 'created')
         self.assertEqual(created.health_center_id, self.center.pk)
 
     def test_non_admin_cannot_submit_proposed_hierarchy(self):
@@ -203,7 +205,7 @@ class EmployeeManualV4FormTests(TestCase):
     def test_existing_source_hierarchy_correction_requires_reason(self):
         from types import SimpleNamespace
         from .serializers import EmployeeSerializer
-        from .models import Employee
+        from .models import Employee, EmployeeOrganizationalHierarchyEvent
         existing = Employee.objects.create(
             name='موظف اختبار', national_id='1000000002',
             health_center=self.center,
@@ -236,3 +238,7 @@ class EmployeeManualV4FormTests(TestCase):
             existing.source_organizational_hierarchy['main_administration'],
             'الرعاية الأولية والمجتمعية',
         )
+        event = EmployeeOrganizationalHierarchyEvent.objects.get(employee=existing)
+        self.assertIn('main_administration', event.changed_levels)
+        self.assertEqual(event.action, 'corrected')
+        self.assertIn('المصدر التنظيمي', event.reason)
