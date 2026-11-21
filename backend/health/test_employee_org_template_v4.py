@@ -51,6 +51,13 @@ class EmployeeOrganizationalTemplateV4Tests(TestCase):
         self.assertEqual(clean_org_value(' الصحة المهنية '), 'الصحة المهنية')
         self.assertEqual(len(TOP_LEVELS), 3)
 
+    def test_source_review_statuses_are_not_silently_approved(self):
+        self.assertFalse(needs_source_org_review('لا توجد ملاحظة تصنيفية سابقة'))
+        self.assertFalse(needs_source_org_review('مستكمل من المسار'))
+        self.assertTrue(needs_source_org_review('مراجعة تصنيف وظيفي'))
+        self.assertTrue(needs_source_org_review('تحديد القسم الفعلي'))
+        self.assertTrue(needs_source_org_review('تعارض بين F وG'))
+
     def test_hijri_appointment_date_preserved_without_false_conversion(self):
         fields = normalized_employee_fields({
             'appointment_date': '1447/07/12',
