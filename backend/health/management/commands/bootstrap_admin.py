@@ -7,7 +7,7 @@ from health.models import HealthCenter, UserProfile
 
 
 class Command(BaseCommand):
-    help = "Create or update the default admin user and base health centers. Demo users are disabled by default."
+    help = "Create or update the default admin user. Legacy demo centers are opt-in and disabled by default."
 
     def handle(self, *args, **options):
         User = get_user_model()
@@ -36,34 +36,42 @@ class Command(BaseCommand):
         else:
             self.stdout.write(self.style.WARNING("DJANGO_SUPERUSER_PASSWORD is not set; skipping superuser bootstrap."))
 
-        centers = [
-            ("Main Occupational Health Center", "مركز الصحة المهنية الرئيسي", "Dammam"),
-            ("Employee Clinic", "عيادة الموظفين", "Dammam"),
-            ("Medical Committee Unit", "وحدة اللجنة الطبية", "Dammam"),
-        ]
-        for name_en, name_ar, city in centers:
-            center, _ = HealthCenter.objects.get_or_create(
-                name=name_en,
-                defaults={
-                    "name_en": name_en,
-                    "name_ar": name_ar,
-                    "city": city,
-                    "is_active": True,
-                },
-            )
-            update_fields = []
-            if not center.name_en:
-                center.name_en = name_en
-                update_fields.append("name_en")
-            if not center.name_ar:
-                center.name_ar = name_ar
-                update_fields.append("name_ar")
-            if not center.city:
-                center.city = city
-                update_fields.append("city")
-            if update_fields:
-                center.save(update_fields=update_fields)
-        self.stdout.write(self.style.SUCCESS("Base health centers are ready."))
+        # Legacy/demo centers must not reappear after the V4 workforce
+        # refoundation. This switch defaults to OFF in all environments.
+        # Enabling it explicitly is only appropriate for isolated test/demo
+        # environments; do not set it in Production.
+        if os.getenv("OHP_BOOTSTRAP_LEGACY_CENTERS", "false").strip().lower() in ("true", "1", "yes"):
+            centers = [
+                ("Main Occupational Health Center", "مركز الصحة المهنية الرئيسي", "Dammam"),
+                ("Employee Clinic", "عيادة الموظفين", "Dammam"),
+                ("Medical Committee Unit", "وحدة اللجنة الطبية", "Dammam"),
+            ]
+            for name_en, name_ar, city in centers:
+                center, _ = HealthCenter.objects.get_or_create(
+                    name=name_en,
+                    defaults={
+                        "name_en": name_en,
+                        "name_ar": name_ar,
+                        "city": city,
+                        "is_active": True,
+                    },
+                )
+                update_fields = []
+                if not center.name_en:
+                    center.name_en = name_en
+                    update_fields.append("name_en")
+                if not center.name_ar:
+                    center.name_ar = name_ar
+                    update_fields.append("name_ar")
+                if not center.city:
+                    center.city = city
+                    update_fields.append("city")
+                if update_fields:
+                    center.save(update_fields=update_fields)
+            self.stdout.write(self.style.SUCCESS("Base health centers are ready."))
+
+        else:
+            self.stdout.write("Legacy demo center bootstrap disabled; keeping approved directory unchanged.")
 
         if os.getenv("SEED_DEMO_USERS", "False").lower() == "true":
             self.stdout.write(self.style.WARNING(
