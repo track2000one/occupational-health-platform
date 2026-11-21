@@ -6,6 +6,9 @@ header matching, placeholders, and source Hijri date handling are exercised.
 from io import BytesIO
 
 from django.test import TestCase
+from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
+from rest_framework.test import APIRequestFactory, force_authenticate
 from openpyxl import load_workbook
 
 from .employee_org_template_v4 import (
@@ -65,3 +68,64 @@ class EmployeeOrganizationalTemplateV4Tests(TestCase):
         })
         self.assertEqual(fields['roster_hijri_appointment_date'], '1447/07/12')
         self.assertNotIn('appointment_date', fields)
+
+
+class EmployeeOrganizationalPreviewV4IntegrationTests(TestCase):
+    """Synthetic workbook API checks: never store or upload real identities."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.admin = get_user_model().objects.create_superuser(
+            username='org_v4_preview_test_admin',
+            email='org-v4-test@example.invalid',
+            password='synthetic-test-password',
+        )
+
+    def preview(self, missing_org_field=False):
+        from .employee_import_v2 import EmployeeImportV2PreviewView
+
+        book = load_workbook(BytesIO(template_bytes()))
+        sheet = book['Employees']
+        row = {label: 'لا ينطبق' for label in HEADERS}
+        row.update({
+            'اسم الموظف': 'موظف اختبار اصطناعي',
+            'رقم الهوية / الإقامة': '1000000001',
+            'الرقم الوظيفي': 'ORG-V4-TEST-1',
+            'الشركة القابضة': 'شركة الصحة القابضة',
+            'التجمع الصحي': 'تجمع الشرقية الصحي',
+            'الشبكة الصحية': 'شبكة الدمام الصحية',
+            'الإدارة الرئيسية': 'الرعاية الأولية والمجتمعية',
+            'المركز الصحي': 'غير محدد في المصدر',
+            'حالة المراجعة': 'لا توجد ملاحظة تصنيفية سابقة',
+            'الجنسية': 'السعودية',
+            'تاريخ التعيين': '1447/07/12',
+        })
+        if missing_org_field:
+            row['القسم'] = ''
+        sheet.append([row[label] for label in HEADERS])
+        output = BytesIO()
+        book.save(output)
+        book.close()
+        upload = SimpleUploadedFile(
+            'synthetic_org_v4.xlsx', output.getvalue(),
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+        request = APIRequestFactory().post(
+            '/api/employee-import-v2/preview/',
+            {'file': upload, 'sheet_name': 'Employees'},
+            format='multipart',
+        )
+        force_authenticate(request, user=self.admin)
+        return EmployeeImportV2PreviewView.as_view()(request)
+
+    def test_preview_recognizes_13_source_hierarchy_levels(self):
+        response = self.preview()
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['rows_total'], 1)
+        self.assertEqual(response.data['organizational_template']['version'], 'V4')
+        self.assertEqual(response.data['organizational_template']['levels'], 13)
+
+    def test_blank_hierarchy_cell_is_rejected_before_commit(self):
+        response = self.preview(missing_org_field=True)
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data['incomplete_organization_count'], 1)
