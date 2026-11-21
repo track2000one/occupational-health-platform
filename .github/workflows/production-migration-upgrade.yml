@@ -120,7 +120,7 @@ jobs:
         working-directory: staging-baseline/backend
         run: |
           python manage.py migrate --noinput
-          python manage.py shell -c "from health.models import Employee,HealthCenter; c=HealthCenter.objects.create(name='CI Old Staging Center'); Employee.objects.create(name='CI Old Staging Employee',national_id='9999777711',health_center=c,job_title='Old Staging Title')"
+          python manage.py shell -c "from health.models import Employee,HealthCenter; c=HealthCenter.objects.create(name='CI Old Staging Center'); Employee.objects.create(name='CI Old Staging Employee',national_id='9999777711',health_center=c,job_title='Old Staging Title',job_title_en='Staging English Title')"
           python manage.py shell -c "from django.db.migrations.recorder import MigrationRecorder; a=MigrationRecorder.Migration.objects.filter(app='health'); assert a.filter(name='0015_employee_employment_lifecycle').exists(); assert not a.filter(name='0015_employee_job_title_en').exists(); print('Original staging history reproduced successfully')"
       - name: Upgrade real old Staging history to proposed V4 migration graph
         working-directory: proposed-release/backend
@@ -128,7 +128,7 @@ jobs:
           python manage.py check
           python manage.py migrate --noinput
           python manage.py makemigrations --check --dry-run
-          python manage.py shell -c "from django.db.migrations.recorder import MigrationRecorder; from health.models import Employee; a=MigrationRecorder.Migration.objects.filter(app='health'); assert a.filter(name='0015_employee_job_title_en').exists(); assert a.filter(name='0038_merge_legacy_job_title_en').exists(); e=Employee.objects.get(national_id='9999777711'); assert e.name=='CI Old Staging Employee'; assert e.job_title=='Old Staging Title'; assert e.job_title_en==''; print('Legacy Staging migration history to V4: PASS; employee intact')"
+          python manage.py shell -c "from django.db.migrations.recorder import MigrationRecorder; from health.models import Employee; a=MigrationRecorder.Migration.objects.filter(app='health'); assert a.filter(name='0015_employee_job_title_en').exists(); assert a.filter(name='0038_merge_legacy_job_title_en').exists(); e=Employee.objects.get(national_id='9999777711'); assert e.name=='CI Old Staging Employee'; assert e.job_title=='Old Staging Title'; assert e.job_title_en=='Staging English Title'; print('Legacy Staging migration history to V4: PASS; English title and employee intact')"
       - name: Run V4 synthetic organizational tests on upgraded Staging history
         working-directory: proposed-release/backend
         run: python manage.py test health.test_employee_org_template_v4 --verbosity 1
