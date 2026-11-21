@@ -1953,14 +1953,28 @@ export function EmployeesPage() {
               <Grid size={{ xs: 12, md: 6 }}>
                 <HealthCenterAutocomplete
                   options={employeeFormCenters} value={form.health_center}
-                  onChange={value => setForm(prev => ({
-                    ...prev, health_center: value, organization_unit: '',
-                    organizational_hierarchy: updateHierarchyAffiliation(
+                  onChange={value => setForm(prev => {
+                    const selectedCenter = employeeFormCenters.find(item => String(item.id) === value);
+                    const linkedUnits = approvedOrganizations.filter(unit =>
+                      unit.is_approved && unit.is_active && unit.kind === 'center' &&
+                      String(unit.health_center_id) === value);
+                    const parentSector = linkedUnits.length === 1
+                      ? approvedOrganizations.find(unit =>
+                        unit.kind === 'sector' && unit.is_active && unit.is_approved &&
+                        unit.name === linkedUnits[0].parent_name)
+                      : undefined;
+                    const organizational_hierarchy = updateHierarchyAffiliation(
                       prev.organizational_hierarchy, 'center',
-                      employeeFormCenters.find(item => String(item.id) === value)
-                        ? centerDisplayName(employeeFormCenters.find(item => String(item.id) === value)!, isRtl) : '',
-                    ),
-                  }))}
+                      selectedCenter ? centerDisplayName(selectedCenter, isRtl) : '',
+                    );
+                    if (parentSector) {
+                      organizational_hierarchy.consultative_sector = parentSector.name;
+                    }
+                    return {
+                      ...prev, health_center: value, organization_unit: '',
+                      organizational_hierarchy,
+                    };
+                  })}
                   label={isRtl ? 'المركز الصحي' : 'Health center'}
                   placeholder={isRtl ? 'اختر أو ابحث عن المركز' : 'Select or search for a center'}
                   required disabled={isReadOnly}
