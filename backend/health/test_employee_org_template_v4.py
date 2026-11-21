@@ -129,3 +129,110 @@ class EmployeeOrganizationalPreviewV4IntegrationTests(TestCase):
         response = self.preview(missing_org_field=True)
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.data['incomplete_organization_count'], 1)
+
+
+
+class EmployeeManualV4FormTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.admin = get_user_model().objects.create_superuser(
+            username='org_manual_admin', email='org-manual@example.invalid',
+            password='synthetic-test-password',
+        )
+        cls.manager = get_user_model().objects.create_user(
+            username='org_manual_staff', email='org-staff@example.invalid',
+            password='synthetic-test-password', is_staff=True,
+        )
+        from .models import HealthCenter
+        cls.center = HealthCenter.objects.create(
+            name='مركز صحي تجريبي', name_ar='مركز صحي تجريبي',
+            approval_status=HealthCenter.ApprovalStatus.APPROVED,
+        )
+
+    def hierarchy(self):
+        return {
+            key: TOP_LEVELS.get(key, 'غير محدد في المصدر')
+            for key, _ in ORGANIZATION_COLUMNS
+        } | {'health_center': self.center.name, 'main_administration': 'الرعاية الأولية والمجتمعية'}
+
+    def create_payload(self):
+        return {
+            'name': 'موظف افتراضي للاختبار',
+            'national_id': '1000000001',
+            'health_center': self.center.pk,
+            'source_organizational_hierarchy': self.hierarchy(),
+        }
+
+    def test_superuser_adds_v4_source_without_approving_new_org_unit(self):
+        from types import SimpleNamespace
+        from .serializers import EmployeeSerializer
+        from .models import OrganizationUnit
+        serializer = EmployeeSerializer(
+            data=self.create_payload(),
+            context={'request': SimpleNamespace(user=self.admin)},
+        )
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        created = serializer.save()
+        self.assertEqual(created.source_organizational_hierarchy['health_center'], self.center.name)
+        self.assertEqual(created.source_organizational_hierarchy['holding_company'], 'شركة الصحة القابضة')
+        self.assertEqual(created.source_organizational_hierarchy.get('sub_unit'), None)
+        self.assertEqual(OrganizationUnit.objects.count(), 0)
+        self.assertEqual(created.health_center_id, self.center.pk)
+
+    def test_non_admin_cannot_submit_proposed_hierarchy(self):
+        from types import SimpleNamespace
+        from .serializers import EmployeeSerializer
+        serializer = EmployeeSerializer(
+            data=self.create_payload(),
+            context={'request': SimpleNamespace(user=self.manager)},
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('source_organizational_hierarchy', serializer.errors)
+
+    def test_mismatching_center_name_is_rejected(self):
+        from types import SimpleNamespace
+        from .serializers import EmployeeSerializer
+        payload = self.create_payload()
+        payload['source_organizational_hierarchy']['health_center'] = 'مركز آخر غير معتمد'
+        serializer = EmployeeSerializer(
+            data=payload, context={'request': SimpleNamespace(user=self.admin)},
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('source_organizational_hierarchy', serializer.errors)
+
+    def test_existing_source_hierarchy_correction_requires_reason(self):
+        from types import SimpleNamespace
+        from .serializers import EmployeeSerializer
+        from .models import Employee
+        existing = Employee.objects.create(
+            name='موظف اختبار', national_id='1000000002',
+            health_center=self.center,
+            source_organizational_hierarchy={
+                'holding_company': 'شركة الصحة القابضة',
+                'health_cluster': 'تجمع الشرقية الصحي',
+                'health_network': 'شبكة الدمام الصحية',
+                'health_center': self.center.name,
+                'main_administration': 'التشغيل',
+            },
+        )
+        updated = self.hierarchy()
+        serializer = EmployeeSerializer(
+            existing, data={'source_organizational_hierarchy': updated},
+            partial=True, context={'request': SimpleNamespace(user=self.admin)},
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('hierarchy_change_reason', serializer.errors)
+        serializer = EmployeeSerializer(
+            existing, data={
+                'source_organizational_hierarchy': updated,
+                'hierarchy_change_reason': 'تصحيح مستوى الإدارة بعد مراجعة المصدر التنظيمي',
+            },
+            partial=True, context={'request': SimpleNamespace(user=self.admin)},
+        )
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        serializer.save()
+        existing.refresh_from_db()
+        self.assertEqual(
+            existing.source_organizational_hierarchy['main_administration'],
+            'الرعاية الأولية والمجتمعية',
+        )
