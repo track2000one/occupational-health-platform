@@ -10,7 +10,7 @@ from openpyxl import load_workbook
 
 from .employee_org_template_v4 import (
     HEADERS, ORGANIZATION_COLUMNS, TOP_LEVELS, template_bytes,
-    clean_org_value, is_placeholder,
+    clean_org_value, is_placeholder, needs_source_org_review,
 )
 from .employee_import_v2 import detect_header
 from .employee_import_v2_commit import normalized_employee_fields
