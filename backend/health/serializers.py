@@ -514,8 +514,8 @@ class EmployeeSerializer(serializers.ModelSerializer):
             }
             original = self.instance.source_organizational_hierarchy or {} if self.instance else {}
             changed_existing = any(
-                original.get(key) and original[key] != value
-                for key, value in incoming.items()
+                original.get(key) and original[key] != incoming.get(key)
+                for key in allowed
             )
             reason = str(attrs.get('hierarchy_change_reason') or '').strip()
             if changed_existing and len(reason) < 10:
