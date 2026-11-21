@@ -548,7 +548,10 @@ class Employee(models.Model):
     # The full V4 spreadsheet hierarchy is retained as unapproved SOURCE labels.
     # Only the separately reviewed organization_unit/health_center foreign keys
     # represent approved operational assignments.
-    source_organizational_hierarchy = models.JSONField(default=dict, blank=True)
+    source_organizational_hierarchy = models.JSONField(
+        default=dict, blank=True,
+        help_text='Imported organization labels as source references, NOT approved unit assignments',
+    )
     registration_status = models.CharField(
         max_length=20,
         choices=(('verified', 'Verified registry record'), ('provisional', 'Awaiting identity/placement verification')),
