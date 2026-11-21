@@ -45,6 +45,7 @@ import { MedicalCommitteePage } from './pages/MedicalCommitteePage';
 import { ReportsPage } from './pages/ReportsPage';
 import { AdminUsersPage } from './pages/AdminUsersPage';
 import { AdminDashboardPage } from './pages/AdminDashboardPage';
+import { WorkforceRefoundationPage } from './pages/WorkforceRefoundationPage';
 import { RolesPermissionsPage } from './pages/RolesPermissionsPage';
 import { NotificationsPage } from './pages/NotificationsPage';
 import { AppointmentsPage } from './pages/AppointmentsPage';
@@ -137,6 +138,11 @@ function AppRoutes() {
         <Route path="admin" element={
           <PermissionRoute permission="manage:users">
             <AdminDashboardPage />
+          </PermissionRoute>
+        } />
+        <Route path="admin/data-refoundation" element={
+          <PermissionRoute permission="manage:users">
+            <WorkforceRefoundationPage />
           </PermissionRoute>
         } />
         <Route path="audit-log" element={
