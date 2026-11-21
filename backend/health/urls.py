@@ -22,6 +22,7 @@ from .health_center_archive import HealthCenterArchiveView
 from .center_foundation import (CenterFoundationRegistryView, CenterFoundationImportView, CenterFoundationDecisionView)
 from .center_directory_matching import CenterDirectoryMatchingView, CenterDirectoryMatchingHistoryView
 from .employee_registry_reset import EmployeeRegistryResetView
+from .workforce_refoundation_preview import WorkforceRefoundationImpactPreviewView
 from .employee_review_cleanup import EmployeeImportReviewCleanupView
 from .employee_review_identity_reconciliation import EmployeeReviewIdentityReconciliationPreviewView
 from .employee_roster_reconciliation import EmployeeRosterReconciliationView
@@ -76,6 +77,7 @@ urlpatterns = [
     path('center-directory/match/', CenterDirectoryMatchingView.as_view(), name='center-directory-match'),
     path('center-directory/match-history/', CenterDirectoryMatchingHistoryView.as_view(), name='center-directory-match-history'),
     path('employee-registry-reset/', EmployeeRegistryResetView.as_view(), name='employee-registry-reset'),
+    path('workforce-refoundation/preview/', WorkforceRefoundationImpactPreviewView.as_view(), name='workforce-refoundation-preview'),
     path('departments/', DepartmentDirectoryView.as_view(), name='department-directory'),
     path('departments/<int:pk>/status/', DepartmentStatusView.as_view(), name='department-status'),
     path('organization-units/', OrganizationDirectoryView.as_view(), name='organization-units'),
