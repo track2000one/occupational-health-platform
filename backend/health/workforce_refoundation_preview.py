@@ -58,7 +58,16 @@ SCOPES = {
     ),
 }
 
+# A separate workforce roster and center-linked statistics live in a different
+# Django app. Count them too, but never mix/delete their operational records.
+RELATED_EXTERNAL_SCOPES = {
+    'periodic_statistics_related': (
+        'WorkforceMember', 'WorkforceTarget', 'DailyStatistic',
+    ),
+}
+
 DISPLAY_NAMES = {
+    'periodic_statistics_related': 'مؤشرات دورية وسجلات قوى عاملة مستقلة قد ترتبط بالمراكز',
     'employees': 'الموظفون وسجل الأرشفة والتعديلات',
     'clinical_and_health_history': 'الملفات الطبية والفحوصات والزيارات',
     'health_centers': 'المراكز الصحية وتوثيقها ومراجعتها',
@@ -105,6 +114,17 @@ def read_only_inventory():
             'title': DISPLAY_NAMES[key],
             'total': sum(r['count'] for r in rows),
             'items': rows,
+        })
+    for key, class_names in RELATED_EXTERNAL_SCOPES.items():
+        items = [
+            {'model': name, 'count': apps.get_model('periodic_stats', name).objects.count()}
+            for name in class_names
+        ]
+        sections.append({
+            'key': key,
+            'title': DISPLAY_NAMES[key],
+            'total': sum(item['count'] for item in items),
+            'items': items,
         })
     employees = {
         'active': Employee.objects.filter(is_archived=False).count(),
