@@ -6,7 +6,7 @@ import django.db.models.deletion
 class Migration(migrations.Migration):
     dependencies = [
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
-        ('health', '0015_employee_job_title_en'),
+        ('health', '0014_healthcenter_bilingual_names'),
     ]
 
     operations = [
