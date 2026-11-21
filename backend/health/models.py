@@ -591,6 +591,24 @@ class Employee(models.Model):
 
 
 
+class EmployeeOrganizationalHierarchyEvent(models.Model):
+    """Append-only audit of administrative source-label changes, without personal data."""
+    employee = models.ForeignKey(
+        'Employee', on_delete=models.PROTECT, related_name='organizational_hierarchy_events',
+    )
+    action = models.CharField(max_length=24)
+    changed_levels = models.JSONField(default=list)
+    reason = models.CharField(max_length=500)
+    performed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True,
+        related_name='employee_hierarchy_changes',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at', '-pk']
+
+
 class EmployeeProfileCompletionEvent(models.Model):
     """Minimum-necessary audit metadata; never duplicate identity or medical data."""
     employee = models.ForeignKey(
