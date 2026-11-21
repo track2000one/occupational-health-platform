@@ -3,9 +3,10 @@ from collections import Counter
 from hashlib import sha256
 from io import BytesIO
 import re
+import os
 import zipfile
 
-from django.db import transaction
+from django.db import connections, transaction
 from django.utils import timezone
 from openpyxl import load_workbook
 from rest_framework import permissions, status
@@ -21,6 +22,24 @@ MAX_ROWS_PER_SHEET = 250
 IMPORT_MARKER = 'IMPORT_ORGANIZATION_DRAFTS_ONLY'
 EXPECTED_SHEETS = ('المراكز المقترحة', 'وحدات المراكز', 'جهات مركزية')
 STAGING_PROJECT = 'cf4b2162-5236-4f92-b010-165f505fe2c2'
+V4_PROJECT = 'b03e2139-48b5-4f93-ad71-0344dc1fd56d'
+V4_ENVIRONMENT = '38c01e11-bf2d-4279-b7a7-d3194412d10b'
+V4_SERVICE = '3efc83d4-9a5a-4f17-bacb-3ed45b6fde32'
+V4_DB_HOST = 'postgres-9ev.railway.internal'
+
+
+def draft_import_scope():
+    """Allow existing isolated Staging or explicitly enabled, isolated V4 backend only."""
+    if (os.getenv('STAGING_MODE', '').lower() == 'true'
+            and os.getenv('RAILWAY_PROJECT_ID') == STAGING_PROJECT):
+        return 'staging'
+    if (os.getenv('OHP_V4_CENTER_DRAFT_IMPORT_ENABLED', '').lower() == 'true'
+            and os.getenv('RAILWAY_PROJECT_ID') == V4_PROJECT
+            and os.getenv('RAILWAY_ENVIRONMENT_ID') == V4_ENVIRONMENT
+            and os.getenv('RAILWAY_SERVICE_ID') == V4_SERVICE
+            and str(connections['default'].settings_dict.get('HOST', '')).lower() == V4_DB_HOST):
+        return 'v4'
+    return ''
 
 
 def clean(value):
@@ -180,15 +199,20 @@ class OrganizationImportView(APIView):
                    'mode': 'preview', 'notice': 'No approvals or employee assignments were changed.'}
         if clean(request.data.get('confirm')) != IMPORT_MARKER:
             return Response(results)
-        # Data owner has only approved preparation/review in the isolated staging project.
-        import os
-        if (os.getenv('STAGING_MODE', '').lower() != 'true'
-                or os.getenv('RAILWAY_PROJECT_ID') != STAGING_PROJECT):
-            return Response({'detail': 'Draft import is restricted to isolated Staging.'},
+        # Never open the existing live backend to draft imports.
+        scope = draft_import_scope()
+        if not scope:
+            return Response({'detail': 'Draft import is restricted to an authorized isolated environment.'},
                             status=status.HTTP_403_FORBIDDEN)
         if not request.user.is_superuser:
-            return Response({'detail': 'A staging superuser must import draft organizational data.'},
+            return Response({'detail': 'A superuser must import draft organizational data.'},
                             status=status.HTTP_403_FORBIDDEN)
+        # Phase 1 of V4: preserve only reviewed sector/center proposals.
+        # Department hierarchy requires a dedicated reviewed intake design.
+        if scope == 'v4' and (not plans or any(
+                p['kind'] not in ('sector', 'center') for p in plans)):
+            return Response({'detail': 'V4 currently accepts sector and center drafts only.'},
+                            status=status.HTTP_400_BAD_REQUEST)
         with transaction.atomic():
             for plan in plans:
                 prev = OrganizationUnit.objects.filter(code=plan['code']).first()
@@ -210,7 +234,7 @@ class OrganizationImportView(APIView):
                 )
                 results['created'] += int(created)
             AuditLog.objects.create(user=str(request.user), action='organization_draft_import',
-                                    model_name='OrganizationUnit', record_id='staging')
+                                    model_name='OrganizationUnit', record_id=scope)
         results['mode'] = 'draft'
         return Response(results, status=status.HTTP_201_CREATED)
 
