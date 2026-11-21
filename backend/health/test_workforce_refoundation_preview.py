@@ -7,7 +7,7 @@ from .models import (
     HealthCenter, OrganizationUnit,
 )
 from .workforce_refoundation_preview import (
-    SCOPES, WorkforceRefoundationImpactPreviewView,
+    SCOPES, RELATED_EXTERNAL_SCOPES, WorkforceRefoundationImpactPreviewView,
     read_only_inventory,
 )
 
@@ -59,7 +59,7 @@ class WorkforceRefoundationPreviewTests(TestCase):
         self.assertEqual(response.data['employees']['total'], 1)
         self.assertEqual(response.data['health_centers']['total'], 1)
         self.assertEqual(response.data['organization_units']['total'], 1)
-        self.assertEqual(len(response.data['sections']), len(SCOPES))
+        self.assertEqual(len(response.data['sections']), len(SCOPES) + len(RELATED_EXTERNAL_SCOPES))
         self.assertFalse(response.data['execution_available'])
         self.assertFalse(response.data['archive_frees_unique_employee_identity'])
         self.assertFalse(response.data['production_backup_restored_and_verified'])
