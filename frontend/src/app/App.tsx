@@ -408,6 +408,15 @@ export default function App(_props: Record<string, unknown>) {
         <ThemedShell>
           <BrowserRouter>
             <AuthProvider>
+              {import.meta.env.VITE_API_URL === 'http://127.0.0.1:18081/api' && (
+                <div role="status" dir="rtl" style={{
+                  padding: '9px 16px', textAlign: 'center', fontWeight: 700,
+                  background: '#e1f3f0', color: '#124d49', borderBottom: '1px solid #9bc9c1',
+                  position: 'relative', zIndex: 1201,
+                }}>
+                  V4 — منصة الصحة المهنية | نسخة مستقلة قيد التأسيس — اتصال خاص وآمن
+                </div>
+              )}
               <AppRoutes />
             </AuthProvider>
           </BrowserRouter>
