@@ -325,13 +325,8 @@ class EmployeeImportV2PreviewView(APIView):
                     profile['_org_v4'] = {
                         key: value for key, value in hierarchy.items() if value
                     }
-                    flag = text_cell(cells[v4_review_index]).casefold()
-                    profile['_org_needs_review'] = any(
-                        marker in flag for marker in (
-                            'تحتاج مراجعة', 'قيد المراجعة',
-                            'تعارض', 'غير معتمد', 'تحتاج تحقق',
-                        )
-                    )
+                    flag = text_cell(cells[v4_review_index])
+                    profile['_org_needs_review'] = needs_source_org_review(flag)
                     organization_review_rows += int(profile['_org_needs_review'])
                 optional_missing = [
                     key for key in ('health_center', 'employee_number', 'nationality')
