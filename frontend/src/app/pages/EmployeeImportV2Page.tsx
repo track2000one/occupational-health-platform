@@ -73,6 +73,10 @@ type PreflightResult = {
     source_hierarchy_retained: boolean;
     review_required_rows: number;
     source_labels_not_approved_units: boolean;
+    fields?: Array<{
+      key: string; label: string; column_number: number;
+      known: number; unknown: number; not_applicable: number;
+    }>;
   } | null;
   counts: Record<string, number>;
   sample_masked: Array<{
@@ -631,6 +635,38 @@ export function EmployeeImportV2Page() {
       {preview.organizational_template.review_required_rows > 0 &&
         ' عدد الصفوف الموسومة للمراجعة: ' + preview.organizational_template.review_required_rows}
     </Alert>}
+    {preview?.organizational_template?.fields && (
+      <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 3 }}>
+        <Typography variant="subtitle1" fontWeight={800} sx={{ mb: 1 }}>
+          مطابقة الأعمدة التنظيمية المكتشفة تلقائيًا من ملف Excel
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          ترتيب الأعمدة داخل الملف لا يؤثر على المطابقة؛ تتم القراءة بحسب اسم الحقل.
+          «غير محدد» و«لا ينطبق» قيم تنظيمية للتوثيق وليستا جهات معتمدة.
+        </Typography>
+        <Box sx={{ overflowX: 'auto' }}>
+          <Box component="table" sx={{
+            width: '100%', minWidth: 650, borderCollapse: 'collapse',
+            '& th, & td': { p: 1, borderBottom: '1px solid', borderColor: 'divider',
+              textAlign: 'right', fontSize: 13 },
+          }}>
+            <thead><tr>
+              <th>المستوى التنظيمي</th><th>رقم العمود المكتشف</th>
+              <th>قيم معروفة</th><th>غير محدد</th><th>لا ينطبق</th>
+            </tr></thead>
+            <tbody>
+              {preview.organizational_template.fields.map(field => (
+                <tr key={field.key}>
+                  <td>{field.label}</td><td>{field.column_number}</td>
+                  <td>{field.known}</td><td>{field.unknown}</td>
+                  <td>{field.not_applicable}</td>
+                </tr>
+              ))}
+            </tbody>
+          </Box>
+        </Box>
+      </Paper>
+    )}
     {preview && <Paper sx={{ p: { xs: 2, md: 3 }, mb: 3, borderRadius: 3 }}>
       <Typography variant="h6" fontWeight={900} sx={{ mb: 1 }}>
         2. نتائج فحص الملف ومطابقة السجل
