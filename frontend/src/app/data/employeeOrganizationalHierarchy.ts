@@ -86,13 +86,14 @@ export function updateHierarchyAffiliation(
 ): EmployeeOrgHierarchy {
   const next = { ...hierarchy };
   if (kind === 'center') {
+    const switchingFromCentralDepartment = hierarchy.health_center === NOT_APPLICABLE;
     next.health_center = approvedName.trim() || UNVERIFIED;
     if (next.consultative_sector === NOT_APPLICABLE) {
       next.consultative_sector = UNVERIFIED;
     }
-    // A center may have its own department, but previous central-department
-    // source labels must not be silently copied into this center.
-    next.department = UNVERIFIED;
+    // Only clear a prior *central* department affiliation during a switch.
+    // Selecting the same center must preserve its own sourced department.
+    if (switchingFromCentralDepartment) next.department = UNVERIFIED;
   } else {
     next.health_center = NOT_APPLICABLE;
     next.consultative_sector = NOT_APPLICABLE;
