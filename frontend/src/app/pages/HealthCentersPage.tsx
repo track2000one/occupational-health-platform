@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 import {
-  Alert, Box, Button, Chip, CircularProgress,
+  Alert, Box, Button, Checkbox, Chip, CircularProgress,
   InputAdornment, MenuItem, Paper, Stack, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, TextField, Typography,
 } from '@mui/material';
@@ -20,6 +20,9 @@ import { loadCenterPages } from '../utils/healthCenterPagination';
 import { HealthCenterArchiveDialog, type CenterArchiveAction } from '../components/HealthCenterArchiveDialog';
 import { HealthCenterVerificationDialog } from '../components/HealthCenterVerificationDialog';
 import { V4CenterOperationalActivation } from '../components/V4CenterOperationalActivation';
+import {
+  canActivateCenter, retainVisibleSelection, selectableCenterIds, toggleVisibleCenter,
+} from '../utils/centerActivationSelection';
 import { V4_PRIVATE_UI } from '../data/v4AffiliationHierarchy';
 import {
   HealthCenterProfileFormDialog, type HealthCenterFormValues,
@@ -83,6 +86,8 @@ export function HealthCentersPage() {
   const [archivedCenters, setArchivedCenters] = useState<Center[]>([]);
   const [importOpen, setImportOpen] = useState(false);
   const [centers, setCenters] = useState<Center[]>([]);
+  const [selectedCenterIds, setSelectedCenterIds] = useState<number[]>([]);
+  const [directoryReady, setDirectoryReady] = useState(false);
   const [organizationUnits, setOrganizationUnits] = useState<OrgCenter[]>([]);
   // Default to all records: the source-reference subset may contain none.
   const [sourceFilter, setSourceFilter] = useState<'reference' | 'all' | 'qa' | 'other'>('all');
@@ -114,6 +119,7 @@ export function HealthCentersPage() {
     const generation = ++loadGeneration.current;
     const isCurrent = () => generation === loadGeneration.current;
     setLoading(true);
+    setDirectoryReady(false);
     setLoadError('');
     // Master centers are the primary source. Auxiliary archive/hierarchy
     // requests must not hide loaded centers if either of them times out.
@@ -128,6 +134,7 @@ export function HealthCentersPage() {
           }
         },
       );
+      if (isCurrent()) setDirectoryReady(true);
     } catch (error) {
       if (!isCurrent()) return;
       const message = error instanceof Error ? error.message : 'تعذر تحميل دليل المراكز الصحية.';
@@ -212,6 +219,25 @@ export function HealthCentersPage() {
     (centerOrg.get(a.id)?.parent_name || '').localeCompare(centerOrg.get(b.id)?.parent_name || '', 'ar')
     || (a.name_ar || a.name).localeCompare(b.name_ar || b.name, 'ar')
   ), [visibleCenters, centerOrg, sourceFilter, sectorFilter, search, regionFilter, cityFilter, statusFilter]);
+
+  // Selection is always scoped to the *currently displayed*, not-yet-activated
+  // centers. Hidden, archived, inactive or previously activated records cannot
+  // accidentally be included in a bulk API request.
+  const selectableVisibleIds = useMemo(() =>
+    showArchived ? [] : selectableCenterIds(filtered), [filtered, showArchived]);
+  const selectedVisibleIds = useMemo(() =>
+    retainVisibleSelection(selectedCenterIds, showArchived ? [] : filtered),
+    [selectedCenterIds, filtered, showArchived]);
+  const allVisibleSelected = selectableVisibleIds.length > 0 &&
+    selectedVisibleIds.length === selectableVisibleIds.length;
+  const selectionDisabled = !directoryReady || loading || Boolean(loadError);
+  useEffect(() => {
+    setSelectedCenterIds(previous => {
+      const next = retainVisibleSelection(previous, showArchived ? [] : filtered);
+      return previous.length === next.length &&
+        previous.every((id, index) => id === next[index]) ? previous : next;
+    });
+  }, [filtered, showArchived]);
 
   const buildingLabel = (type: Center['building_type']) => ({ unknown: isRtl ? 'غير محدد' : 'Unspecified', model: isRtl ? 'نموذجي' : 'Model', rented: isRtl ? 'مستأجر' : 'Rented', owned: isRtl ? 'مملوك' : 'Owned', other: isRtl ? 'أخرى' : 'Other' }[type]);
   const displayName = (center: Center) => (isRtl ? center.name_ar : center.name_en) || center.name || center.name_en || center.name_ar || '—';
@@ -351,8 +377,6 @@ export function HealthCentersPage() {
           onClick={() => navigate('/admin/departments')}>
           إدارة الأقسام
         </Button>
-        {canArchiveCenters && V4_PRIVATE_UI && <V4CenterOperationalActivation
-          centers={centers} onActivated={load} />}
         {canImport && <Button variant="contained" color="primary"
           startIcon={<FoundationIcon />}
           onClick={() => navigate('/admin/center-directory-match')}>
@@ -451,6 +475,38 @@ export function HealthCentersPage() {
         </Button>
       </Stack>
     </Stack>
+    {canArchiveCenters && V4_PRIVATE_UI && !showArchived && <Paper
+      variant="outlined" sx={{ mb: 2, px: 2, py: 1.25, borderRadius: 2.5,
+        borderColor: '#bad6e7', bgcolor: '#f1f8fd' }}>
+      <Stack direction={{ xs: 'column', md: 'row' }} gap={1.5}
+        alignItems={{ xs: 'stretch', md: 'center' }} justifyContent="space-between">
+        <Stack direction="row" gap={1} alignItems="center" flexWrap="wrap">
+          <Checkbox
+            checked={allVisibleSelected}
+            indeterminate={selectedVisibleIds.length > 0 && !allVisibleSelected}
+            disabled={selectionDisabled || selectableVisibleIds.length === 0}
+            onChange={(_, checked) => setSelectedCenterIds(checked ? selectableVisibleIds : [])}
+            inputProps={{ 'aria-label': 'تحديد جميع المراكز المؤهلة المعروضة' }} />
+          <Button size="small" variant="outlined"
+            disabled={selectionDisabled || selectableVisibleIds.length === 0}
+            onClick={() => setSelectedCenterIds(selectableVisibleIds)}>
+            تحديد الكل ({selectableVisibleIds.length})
+          </Button>
+          <Chip label={`تم تحديد: ${selectedVisibleIds.length}`}
+            color={selectedVisibleIds.length ? 'primary' : 'default'} variant="outlined" />
+          <Button size="small" variant="text" disabled={!selectedVisibleIds.length}
+            onClick={() => setSelectedCenterIds([])}>إلغاء التحديد</Button>
+        </Stack>
+        <V4CenterOperationalActivation
+          selectedCenterIds={selectionDisabled ? [] : selectedVisibleIds}
+          disabled={selectionDisabled || selectedVisibleIds.length === 0}
+          onActivated={async () => { setSelectedCenterIds([]); await load(); }} />
+      </Stack>
+      <Typography variant="caption" color="text.secondary">
+        تحديد الكل يشمل المراكز المؤهلة الظاهرة حسب التصفية فقط؛ ولا يشمل المؤرشفة أو غير النشطة أو المفعّلة سابقًا.
+        {!directoryReady ? ' جارٍ استكمال تحميل القائمة قبل إتاحة التفعيل.' : ''}
+      </Typography>
+    </Paper>}
     {loadError && centers.length > 0 && <Alert severity="warning" sx={{ mb: 2 }}>
       تعذر استكمال تحميل كل صفحات المراكز؛ البيانات الظاهرة جزئية. لم تُحذف أي سجلات.
       السبب: {loadError}
@@ -491,10 +547,19 @@ export function HealthCentersPage() {
             const location = [center.region, center.city, center.district].filter(Boolean).join(' / ');
             return <Paper key={center.id} elevation={2}
               sx={{ p: 2.25, borderRadius: 3, minWidth: 0,
-                border: '1px solid #DAE5EF',
+                border: selectedVisibleIds.includes(center.id)
+                  ? '2px solid #1677a6' : '1px solid #DAE5EF',
                 borderTop: '3px solid #1B5A82',
                 display: 'flex', flexDirection: 'column', gap: 1.5 }}>
               <Stack direction="row" alignItems="flex-start" justifyContent="space-between" gap={1}>
+                {canArchiveCenters && V4_PRIVATE_UI && !showArchived && <Checkbox
+                  checked={selectedVisibleIds.includes(center.id)}
+                  disabled={selectionDisabled || !canActivateCenter(center)}
+                  onChange={(_, checked) => setSelectedCenterIds(current =>
+                    checked ? toggleVisibleCenter(current, center.id, filtered)
+                      : current.filter(id => id !== center.id))}
+                  inputProps={{ 'aria-label': 'تحديد مركز ' + displayName(center) }}
+                  sx={{ p: 0.35, flexShrink: 0 }} />}
                 <Box sx={{ minWidth: 0 }}>
                   <Typography fontWeight={900} fontSize={16} sx={{ overflowWrap: 'anywhere' }}>
                     {displayName(center)}
@@ -569,6 +634,7 @@ export function HealthCentersPage() {
       ) : <TableContainer component={Paper} sx={{ borderRadius: 3, overflowX: 'auto' }}>
         <Table sx={{ minWidth: 1030 }}>
           <TableHead><TableRow sx={{ '& .MuiTableCell-root': { fontWeight: 900, fontSize: 14 } }}>
+            {canArchiveCenters && V4_PRIVATE_UI && !showArchived && <TableCell>تحديد</TableCell>}
             <TableCell>اسم المركز الصحي</TableCell>
             <TableCell>القطاع والوحدات</TableCell>
             <TableCell>مدير المركز</TableCell>
@@ -584,7 +650,16 @@ export function HealthCentersPage() {
                  (org ? organizationUnits.filter(unit =>
                    unit.kind === 'unit' && unit.parent_code === org.code).length : 0);
               const isReference = isFromSource(center);
-              return <TableRow key={center.id} hover sx={{ '& .MuiTableCell-root': { verticalAlign: 'middle', py: 1.6 } }}>
+              return <TableRow key={center.id} hover selected={selectedVisibleIds.includes(center.id)}
+                sx={{ '& .MuiTableCell-root': { verticalAlign: 'middle', py: 1.6 } }}>
+                {canArchiveCenters && V4_PRIVATE_UI && !showArchived && <TableCell>
+                  <Checkbox checked={selectedVisibleIds.includes(center.id)}
+                    disabled={selectionDisabled || !canActivateCenter(center)}
+                    onChange={(_, checked) => setSelectedCenterIds(current =>
+                      checked ? toggleVisibleCenter(current, center.id, filtered)
+                        : current.filter(id => id !== center.id))}
+                    inputProps={{ 'aria-label': 'تحديد مركز ' + displayName(center) }} />
+                </TableCell>}
                 <TableCell sx={{ minWidth: 185 }}>
                   <Typography fontWeight={900} fontSize={15}>{displayName(center)}</Typography>
                   {secondaryName(center) && <Typography variant="caption" display="block" color="text.secondary">{secondaryName(center)}</Typography>}

@@ -45,3 +45,6 @@ test('ordinary reads, credential refresh and writes retain existing policies', (
 
 // Run the related private-proxy directory pagination safeguards in the same CI suite.
 import './healthCenterPagination.test.mjs';
+
+// Run V4 center selection regression in the existing employee lifecycle CI suite.
+import './centerActivationSelection.test.mjs';
