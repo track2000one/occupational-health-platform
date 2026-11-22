@@ -19,6 +19,8 @@ import { HealthCenterExcelImportDialog } from '../components/HealthCenterExcelIm
 import { loadCenterPages } from '../utils/healthCenterPagination';
 import { HealthCenterArchiveDialog, type CenterArchiveAction } from '../components/HealthCenterArchiveDialog';
 import { HealthCenterVerificationDialog } from '../components/HealthCenterVerificationDialog';
+import { V4CenterOperationalActivation } from '../components/V4CenterOperationalActivation';
+import { V4_PRIVATE_UI } from '../data/v4AffiliationHierarchy';
 import {
   HealthCenterProfileFormDialog, type HealthCenterFormValues,
   type CenterUnitDraft,
@@ -326,7 +328,7 @@ export function HealthCentersPage() {
     {canImport && <HealthCenterExcelImportDialog
       open={importOpen} onClose={() => setImportOpen(false)}
       onImported={() => load()} />}
-    {canArchiveCenters && <HealthCenterVerificationDialog
+    {canArchiveCenters && !V4_PRIVATE_UI && <HealthCenterVerificationDialog
       center={verifyTarget ? {
         id: verifyTarget.id, name: displayName(verifyTarget),
         approval_status: verifyTarget.approval_status,
@@ -349,6 +351,8 @@ export function HealthCentersPage() {
           onClick={() => navigate('/admin/departments')}>
           إدارة الأقسام
         </Button>
+        {canArchiveCenters && V4_PRIVATE_UI && <V4CenterOperationalActivation
+          centers={centers} onActivated={load} />}
         {canImport && <Button variant="contained" color="primary"
           startIcon={<FoundationIcon />}
           onClick={() => navigate('/admin/center-directory-match')}>
@@ -514,7 +518,9 @@ export function HealthCentersPage() {
                   label={org.is_approved ? 'ارتباط تنظيمي معتمد' : 'ارتباط قيد المراجعة'} />}
                 <Chip size="small" color={center.approval_status === 'approved' ? 'success' : 'warning'}
                   variant="outlined"
-                  label={center.approval_status === 'approved' ? 'مرجع المركز موثق' : 'مرجع بانتظار التوثيق'} />
+                  label={V4_PRIVATE_UI
+                    ? (center.approval_status === 'approved' ? 'مُفعّل للتشغيل' : 'ينتظر التفعيل')
+                    : (center.approval_status === 'approved' ? 'مرجع المركز موثق' : 'مرجع بانتظار التوثيق')} />
               </Stack>
               <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5, flex: 1 }}>
                 {[
@@ -545,7 +551,7 @@ export function HealthCentersPage() {
                     {center.is_active ? 'تعطيل' : 'تفعيل'}
                   </Button>
                 </>}
-                {canArchiveCenters && !center.is_archived && <Button size="small"
+                {canArchiveCenters && !V4_PRIVATE_UI && !center.is_archived && <Button size="small"
                   variant="outlined" color="primary" startIcon={<FoundationIcon />}
                   onClick={() => setVerifyTarget(center)}>
                   {center.approval_status === 'approved' ? 'مراجعة الاعتماد' : 'توثيق المرجع'}
