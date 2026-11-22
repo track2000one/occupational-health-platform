@@ -8,6 +8,7 @@ from .provisional_employee_template_preflight import ProvisionalEmployeeTemplate
 from .employee_import_v2 import EmployeeImportV2PreviewView
 from .provisional_employee_roster import (ProvisionalEmployeeImportView, ProvisionalEmployeeRosterView, ProvisionalEmployeeCompletionView, ProvisionalEmployeeLookupView, ProvisionalEmployeeBatchRemovalView)
 from .provisional_employee_approval_readiness import ProvisionalEmployeeApprovalReadinessView
+from .v4_affiliation_bulk_preview import V4ProvisionalAffiliationPreviewView
 from .provisional_employee_approval_plan import ProvisionalEmployeeApprovalPlanView
 from .provisional_employee_conflict_diagnostics import ProvisionalEmployeeConflictDiagnosticsView
 from .provisional_employee_number_edit import ProvisionalEmployeeNumberEditView
@@ -50,6 +51,7 @@ urlpatterns = [
     path('provisional-employees/import/', ProvisionalEmployeeImportView.as_view(), name='provisional-employee-import'),
     path('provisional-employees/template-preflight/', ProvisionalEmployeeTemplatePreflightView.as_view(), name='provisional-employee-template-preflight'),
     path('provisional-employees/readiness/', ProvisionalEmployeeApprovalReadinessView.as_view(), name='provisional-employee-readiness'),
+    path('provisional-employees/affiliation-preview/', V4ProvisionalAffiliationPreviewView.as_view(), name='v4-provisional-affiliation-preview'),
     path('provisional-employees/approval-plan/', ProvisionalEmployeeApprovalPlanView.as_view(), name='provisional-employee-approval-plan'),
     path('provisional-employees/name-review/', ProvisionalEmployeeNameReviewView.as_view(), name='provisional-employee-name-review'),
     path('provisional-employees/conflict-diagnostics/', ProvisionalEmployeeConflictDiagnosticsView.as_view(), name='provisional-employee-conflict-diagnostics'),
