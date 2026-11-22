@@ -4,15 +4,18 @@ A missing visit field never blocks provisional roster intake and must never be
 written by the temporary administrative completion endpoint.
 """
 from io import BytesIO
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
-from openpyxl import Workbook
+from openpyxl import load_workbook
 from rest_framework.test import APIClient
 
 from .employee_import_classification import VISIT_DEFERRED_FIELDS
 from .models import Employee, ProvisionalEmployeeRosterRow, AuditLog
+from .employee_org_template_v4 import HEADERS
+from .test_v4_provisional_roster_import import fake_book
 
 
 class V4VisitDeferredFieldsTests(TestCase):
@@ -24,23 +27,21 @@ class V4VisitDeferredFieldsTests(TestCase):
         self.api.force_authenticate(self.admin)
 
     def upload(self):
-        book = Workbook()
-        sheet = book.active
-        sheet.title = 'Employees'
-        sheet.append([
-            'المركز الصحي', 'اسم الموظف', 'رقم الهوية / الإقامة',
-            'الرقم الوظيفي', 'البريد الإلكتروني', 'رقم الجوال',
-        ])
-        sheet.append([
-            'Synthetic Center', 'Synthetic Visit Employee', '1000000777',
-            '', '', '',
-        ])
+        book = load_workbook(BytesIO(fake_book(1)))
+        sheet = book['Employees']
+        for heading in ('البريد الإلكتروني', 'رقم الجوال'):
+            col = HEADERS.index(heading) + 1
+            sheet.cell(row=2, column=col, value='')
         output = BytesIO()
         book.save(output)
         book.close()
-        return self.api.post('/api/provisional-employees/import/', {
-            'file': SimpleUploadedFile('synthetic-visit-only.xlsx', output.getvalue()),
-        }, format='multipart')
+        with patch('health.provisional_employee_roster.draft_import_scope',
+                   return_value='v4'):
+            return self.api.post('/api/provisional-employees/import/', {
+                'file': SimpleUploadedFile(
+                    'synthetic-v4-visit.xlsx', output.getvalue(),
+                ),
+            }, format='multipart')
 
     def test_missing_visit_data_remains_optional_and_readiness_separates_it(self):
         imported = self.upload()
