@@ -15,6 +15,7 @@ import {
 } from '@mui/icons-material';
 import { authFetch, getAccessToken, useAuth } from '../context/AuthContext';
 import { V4DepartmentImport } from '../components/V4DepartmentImport';
+import { departmentReviewGuidance } from '../data/v4DepartmentReviewGuidance';
 
 // Never silently use Production API for an unconfigured Staging instance.
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
@@ -175,7 +176,7 @@ export function DepartmentsPage() {
       )}
       {canManage && !item.is_approved && item.is_active && (
         <Button size="small" variant="contained" startIcon={<ApproveIcon />}
-          disabled={busy || item.health_center_id !== null || item.parent_id !== null}
+          disabled={busy || !departmentReviewGuidance(item, departments).canApprove}
           onClick={() => { setApproval(item); setApprovalReference(''); }}>اعتماد</Button>
       )}
       {canManage && <Button size="small" color={item.is_active ? 'warning' : 'success'}
@@ -188,8 +189,7 @@ export function DepartmentsPage() {
   );
 
   const isEditingName = edit !== null && edit !== 'new';
-  const needsParentReview = (department: Department) =>
-    department.health_center_id !== null || department.parent_id !== null;
+  const reviewGuidance = (department: Department) => departmentReviewGuidance(department, departments);
   return (
     <Box dir={isRtl ? 'rtl' : 'ltr'} sx={{ pb: 4 }}>
       <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between"
@@ -304,8 +304,8 @@ export function DepartmentsPage() {
                   <Typography fontWeight={750} sx={{ overflowWrap: 'anywhere' }}>{item.approval_reference || 'بانتظار الاعتماد'}</Typography>
                 </Grid>
               </Grid>
-              {needsParentReview(item) && <Alert severity="warning" sx={{ py: 0.3 }}>
-                ارتباط تنظيمي قديم يستلزم مراجعة قبل الاعتماد.
+              {reviewGuidance(item).kind !== 'none' && <Alert severity={reviewGuidance(item).kind} sx={{ py: 0.3 }}>
+                {reviewGuidance(item).label}
               </Alert>}
               <Box sx={{ mt: 'auto', pt: 1 }}>{actions(item)}</Box>
             </Paper>
@@ -322,7 +322,7 @@ export function DepartmentsPage() {
               <TableCell>{item.name}</TableCell>
               <TableCell dir="ltr">{item.code}</TableCell>
               <TableCell>{item.is_approved ? 'معتمد' : 'مسودة'}</TableCell>
-              <TableCell>{item.is_active ? 'نشط' : 'غير نشط'}</TableCell>
+              <TableCell>{reviewGuidance(item).parentName ? 'تتبع: ' + reviewGuidance(item).parentName : item.is_active ? 'نشط' : 'غير نشط'}</TableCell>
               <TableCell>{item.employee_count}</TableCell>
               <TableCell>{actions(item)}</TableCell>
             </TableRow>)}</TableBody>
@@ -367,8 +367,7 @@ export function DepartmentsPage() {
         <DialogContent dividers>
           <Stack gap={2}>
             <Alert severity="warning">
-              اعتماد القسم يجعله متاحًا في قائمة «القسم» بنموذج الموظف.
-              تحقق من الاسم والرمز قبل تأكيد الاعتماد.
+              تحقق من التسلسل والاسم والرمز والقرار الرسمي. يجب اعتماد الإدارة الأعلى قبل الأقسام التابعة؛ لا يتم الاعتماد تلقائيًا عند الاستيراد.
             </Alert>
             <Typography fontWeight={850}>{approval?.name}</Typography>
             <TextField fullWidth required label="رقم القرار / مرجع الاعتماد *"
@@ -416,6 +415,7 @@ export function DepartmentsPage() {
           <Stack gap={1.4}>
             <Typography variant="h6" fontWeight={900}>{detail?.name}</Typography>
             <Typography>الرمز: {detail?.code}</Typography>
+            {detail && reviewGuidance(detail).parentName && <Typography>الجهة الأعلى: {reviewGuidance(detail).parentName}</Typography>}
             <Typography>الحالة: {detail?.is_active ? 'نشط' : 'غير نشط'}</Typography>
             <Typography>الاعتماد: {detail?.is_approved ? 'معتمد' : 'بانتظار الاعتماد'}</Typography>
             <Typography>المرجع: {detail?.approval_reference || '—'}</Typography>
