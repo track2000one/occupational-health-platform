@@ -29,9 +29,13 @@ class V4VisitDeferredFieldsTests(TestCase):
     def upload(self):
         book = load_workbook(BytesIO(fake_book(1)))
         sheet = book['Employees']
-        for heading in ('البريد الإلكتروني', 'رقم الجوال'):
+        for heading in (
+            'البريد الإلكتروني', 'رقم الجوال',
+            'تاريخ الميلاد', 'مكان الميلاد', 'الحالة الاجتماعية',
+            'العنوان الوطني', 'الوظيفة الحالية',
+        ):
             col = HEADERS.index(heading) + 1
-            sheet.cell(row=2, column=col, value='')
+            sheet.cell(row=2, column=col).value = None
         output = BytesIO()
         book.save(output)
         book.close()
