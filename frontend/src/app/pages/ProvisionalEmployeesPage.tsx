@@ -750,6 +750,10 @@ export function ProvisionalEmployeesPage() {
             {readinessBusy ? 'جارٍ فحص الجاهزية...' : 'فحص الجاهزية الآن'}
           </Button>
         </Stack>
+        {readinessBusy && <Alert severity="info">
+          يجري فحص البطاقات المشفرة ومقارنتها بالبيانات المعتمدة. قد يستغرق الفحص وقتًا عند وجود 1,401 بطاقة؛ لا تضغط الزر مجددًا.
+          هذه عملية قراءة فقط ولا تنشئ موظفين أو تعتمد سجلات.
+        </Alert>}
         {readiness && <Stack gap={1.5}>
           <Alert severity="warning">
             {readiness.notice} المطابقة الأولية ليست تحققًا من هوية الموظف أو حالته الوظيفية.
