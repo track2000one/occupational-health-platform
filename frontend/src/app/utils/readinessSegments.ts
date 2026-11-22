@@ -31,7 +31,7 @@ function sumNumber(left: unknown, right: unknown) {
     throw new Error('Invalid readiness summary value');
   return a + b;
 }
-const GROUPS = ['source_classification','original_registry','approved_center_name_check','optional_fields_missing'] as const;
+const GROUPS = ['source_classification','original_registry','approved_center_name_check','source_affiliation_kind','optional_fields_missing'] as const;
 const NESTED = ['same_name_review_only','different_name_unverified','blank_in_both_for_matching_name'] as const;
 const HISTORIC_CENTER = ['original_linked_center','original_linked_to_currently_approved_center','original_source_center_text_available'] as const;
 

@@ -14,7 +14,8 @@ function report(offset, scan, counts, batch_id = 91) {
     segment:{offset,limit:2,next_offset:offset+scan,has_more:offset+scan<3},
     source_classification:{not_in_registry:counts},
     original_registry:{no_original_record:counts,archived:0},
-    approved_center_name_check:{missing_in_file:counts,approved_exact_unique:0},
+    approved_center_name_check:{missing_in_file:counts,approved_exact_unique:0,not_applicable:0},
+    source_affiliation_kind:{center:counts,department:0,unresolved:0,legacy_unknown:0},
     optional_fields_missing:{email:counts},
     historical_values_for_missing_source:{
       same_name_review_only:{email:counts},
@@ -40,6 +41,7 @@ test('combines V4 report segments without inflating official directory count',()
   const full = mergeReadinessSegments(initial,report(2,1,1));
   assert.equal(full.rows_scanned,3);
   assert.equal(full.source_classification.not_in_registry,3);
+  assert.equal(full.source_affiliation_kind.center,3);
   assert.equal(full.original_registry.no_original_record,3);
   assert.equal(full.optional_fields_missing.email,3);
   assert.equal(full.historical_values_for_missing_source.same_name_review_only.email,3);
