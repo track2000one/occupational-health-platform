@@ -145,3 +145,77 @@ class OrganizationBulkApprovalTests(TestCase):
             rejected = self.preview([self.sector.pk])
         self.assertEqual(rejected.status_code, 403)
         self.assertEqual(OrganizationUnit.objects.filter(is_approved=True).count(), 0)
+
+
+class V4BulkPreviewSafetyTests(TestCase):
+    """Synthetic V4 hierarchy: preview works; bulk writes fail closed."""
+    def setUp(self):
+        self.user = get_user_model().objects.create_superuser(
+            username='v4-bulk-reviewer', password='synthetic-test-secret')
+        self.client = APIClient()
+        self.client.force_authenticate(self.user)
+        self.root = OrganizationUnit.objects.create(
+            code='V4-D-ROOT', name='Z Root', kind='department')
+        self.child = OrganizationUnit.objects.create(
+            code='V4-D-CHILD', name='A Child', kind='department', parent=self.root)
+        self.leaf = OrganizationUnit.objects.create(
+            code='V4-D-LEAF', name='B Leaf', kind='department', parent=self.child)
+
+    def v4_preview(self, ids):
+        with patch('health.organization_bulk_approval.draft_import_scope', return_value='v4'):
+            with patch.dict('os.environ', {
+                'STAGING_MODE': 'false', 'OHP_V4_BULK_PREVIEW_ENABLED': 'true',
+                'OHP_V4_BULK_APPROVAL_COMMIT_ENABLED': 'false',
+            }):
+                return self.client.post(URL, {'action': 'preview', 'unit_ids': ids}, format='json')
+
+    def test_v4_preview_is_parent_first_and_read_only(self):
+        selected = [self.leaf.pk, self.child.pk, self.root.pk]
+        preview = self.v4_preview(selected)
+        self.assertEqual(preview.status_code, 200, preview.data)
+        self.assertEqual(preview.data['eligible_count'], 3, preview.data)
+        self.assertEqual(preview.data['blocked_count'], 0)
+        self.assertIs(preview.data['commit_enabled'], False)
+        self.assertFalse(OrganizationUnit.objects.filter(is_approved=True).exists())
+        self.assertFalse(OrganizationUnitApprovalLog.objects.exists())
+        self.assertFalse(AuditLog.objects.exists())
+        self.assertFalse(Employee.objects.exists())
+
+    def test_v4_commit_stays_denied_even_with_valid_preview_and_reference(self):
+        ids = [self.root.pk, self.child.pk, self.leaf.pk]
+        preview = self.v4_preview(ids)
+        with patch('health.organization_bulk_approval.draft_import_scope', return_value='v4'):
+            with patch.dict('os.environ', {
+                'STAGING_MODE': 'false', 'OHP_V4_BULK_PREVIEW_ENABLED': 'true',
+                'OHP_V4_BULK_APPROVAL_COMMIT_ENABLED': 'false',
+            }):
+                commit = self.client.post(URL, {
+                    'action': 'approve', 'unit_ids': ids,
+                    'preview_token': preview.data['preview_token'],
+                    'approval_reference': 'QA-V4-ONLY-001', 'reference_covers_all': True,
+                }, format='json')
+        self.assertEqual(commit.status_code, 403)
+        self.assertFalse(OrganizationUnit.objects.filter(is_approved=True).exists())
+
+    def test_preview_denied_without_v4_flag_and_in_wrong_scope(self):
+        with patch('health.organization_bulk_approval.draft_import_scope', return_value='v4'):
+            with patch.dict('os.environ', {
+                'STAGING_MODE': 'false', 'OHP_V4_BULK_PREVIEW_ENABLED': 'false',
+            }):
+                self.assertEqual(self.client.post(
+                    URL, {'action': 'preview', 'unit_ids': [self.root.pk]}, format='json').status_code, 403)
+        with patch('health.organization_bulk_approval.draft_import_scope', return_value=''):
+            with patch.dict('os.environ', {
+                'STAGING_MODE': 'false', 'OHP_V4_BULK_PREVIEW_ENABLED': 'true',
+            }):
+                self.assertEqual(self.client.post(
+                    URL, {'action': 'preview', 'unit_ids': [self.root.pk]}, format='json').status_code, 403)
+
+    def test_v4_invalid_hierarchy_is_blocked_even_when_parent_selected(self):
+        self.child.code = 'LEGACY-CHILD'
+        self.child.save(update_fields=['code'])
+        preview = self.v4_preview([self.root.pk, self.child.pk, self.leaf.pk])
+        self.assertEqual(preview.status_code, 200)
+        self.assertEqual(preview.data['eligible_count'], 1, preview.data)
+        self.assertEqual(preview.data['blocked_count'], 2, preview.data)
+        self.assertFalse(OrganizationUnit.objects.filter(is_approved=True).exists())
