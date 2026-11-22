@@ -304,7 +304,7 @@ export function DepartmentsPage() {
                   <Typography fontWeight={750} sx={{ overflowWrap: 'anywhere' }}>{item.approval_reference || 'بانتظار الاعتماد'}</Typography>
                 </Grid>
               </Grid>
-              {reviewGuidance(item).kind !== 'none' && <Alert severity={reviewGuidance(item).kind} sx={{ py: 0.3 }}>
+              {reviewGuidance(item).kind !== 'none' && <Alert severity={reviewGuidance(item).kind === 'warning' ? 'warning' : 'info'} sx={{ py: 0.3 }}>
                 {reviewGuidance(item).label}
               </Alert>}
               <Box sx={{ mt: 'auto', pt: 1 }}>{actions(item)}</Box>
@@ -315,14 +315,15 @@ export function DepartmentsPage() {
           <Table size="small">
             <TableHead><TableRow>
               <TableCell>القسم</TableCell><TableCell>الرمز</TableCell>
-              <TableCell>الاعتماد</TableCell><TableCell>الحالة</TableCell>
+              <TableCell>الاعتماد</TableCell><TableCell>الجهة الأعلى</TableCell><TableCell>الحالة</TableCell>
               <TableCell>الموظفون</TableCell><TableCell>الإجراءات</TableCell>
             </TableRow></TableHead>
             <TableBody>{filtered.map(item => <TableRow key={item.id} hover>
               <TableCell>{item.name}</TableCell>
               <TableCell dir="ltr">{item.code}</TableCell>
               <TableCell>{item.is_approved ? 'معتمد' : 'مسودة'}</TableCell>
-              <TableCell>{reviewGuidance(item).parentName ? 'تتبع: ' + reviewGuidance(item).parentName : item.is_active ? 'نشط' : 'غير نشط'}</TableCell>
+              <TableCell>{reviewGuidance(item).parentName || '—'}</TableCell>
+              <TableCell>{item.is_active ? 'نشط' : 'غير نشط'}</TableCell>
               <TableCell>{item.employee_count}</TableCell>
               <TableCell>{actions(item)}</TableCell>
             </TableRow>)}</TableBody>
