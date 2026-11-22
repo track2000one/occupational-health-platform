@@ -56,6 +56,10 @@ class V4VisitDeferredFieldsTests(TestCase):
         self.assertEqual(readiness.data['cards_pending_visit_data'], 1)
         self.assertEqual(readiness.data['cards_missing_previsit_data'], 1)
         self.assertEqual(readiness.data['cards_missing_any_optional_field'], 1)
+        plan = self.api.get('/api/provisional-employees/approval-plan/')
+        self.assertEqual(plan.status_code, 200, plan.data)
+        self.assertEqual(plan.data['items'][0]['pending_visit_count'], len(VISIT_DEFERRED_FIELDS))
+        self.assertGreater(plan.data['items'][0]['missing_previsit_count'], 0)
         self.assertFalse(Employee.objects.exists())
 
     def test_provisional_completion_cannot_write_any_visit_field(self):
