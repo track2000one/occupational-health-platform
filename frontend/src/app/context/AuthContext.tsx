@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { type UserRole, type Permission, hasPermission } from '../data/roles';
+import { requestPolicy } from '../utils/requestPolicy';
 
 export type { UserRole };
 
@@ -57,9 +58,7 @@ let refreshInFlight: Promise<string> | null = null;
 // Normal paginated reads may include authentication renewal and proxy latency.
 // Excel uploads need a larger budget: aborting a commit early can invite
 // an accidental second submission while the server is still processing it.
-const SAFE_REQUEST_TIMEOUT_MS = 15000;
 const WRITE_REQUEST_TIMEOUT_MS = 30000;
-const EXCEL_IMPORT_TIMEOUT_MS = 120000;
 const RETRYABLE_STATUS_CODES = new Set([502, 503, 504]);
 
 function wait(ms: number) {
@@ -89,12 +88,8 @@ async function fetchWithTimeout(input: RequestInfo | URL, options: RequestInit =
 
 async function resilientFetch(input: RequestInfo | URL, options: RequestInit = {}) {
   const method = String(options.method || 'GET').toUpperCase();
-  const safeToRetry = method === 'GET' || method === 'HEAD' || method === 'OPTIONS';
-  const attempts = safeToRetry ? 2 : 1;
-  const requestUrl = String(input);
-  const timeoutMs = (requestUrl.includes('/excel-import/upload/') || requestUrl.includes('/employee-roster/reconcile/') || requestUrl.includes('/provisional-employees/import/'))
-    ? EXCEL_IMPORT_TIMEOUT_MS
-    : safeToRetry ? SAFE_REQUEST_TIMEOUT_MS : WRITE_REQUEST_TIMEOUT_MS;
+  const { attempts, timeoutMs } = requestPolicy(String(input), method);
+  const safeToRetry = attempts > 1;
   let lastError: unknown;
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
