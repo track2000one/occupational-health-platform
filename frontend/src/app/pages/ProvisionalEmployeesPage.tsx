@@ -73,6 +73,8 @@ type ApprovalReadiness = {
     legacy_unknown: number;
   };
   cards_missing_any_optional_field?: number;
+  cards_pending_visit_data?: number;
+  cards_missing_previsit_data?: number;
   optional_fields_missing?: Record<string, number>;
   historical_values_for_missing_source?: {
     same_name_review_only: Record<string, number>;
@@ -111,6 +113,7 @@ type ApprovalPlan = {
   items: Array<{
     source_row: number; masked_id: string; name: string;
     status: ApprovalPlanStatus; missing_optional_count: number;
+    pending_visit_count: number; missing_previsit_count: number;
     is_approved_employee: false;
   }>;
   note: string;
@@ -231,6 +234,17 @@ const FIELD_LABELS: Record<string, string> = {
   appointment_date: 'تاريخ التعيين', job_title_en: 'المسمى الوظيفي بالإنجليزية',
   health_center: 'المركز الصحي (مؤقت)', organization_unit: 'الوحدة التنظيمية (مؤقت)',
 };
+// These five optional values are collected directly from the patient during a
+// verified clinic visit, not required to create, import or organize a card.
+const VISIT_DEFERRED_FIELDS = new Set([
+  'date_of_birth', 'birth_place', 'marital_status',
+  'national_address', 'current_job',
+]);
+const missingPrevisit = (fields: string[]) =>
+  fields.filter(field => !VISIT_DEFERRED_FIELDS.has(field));
+const missingAtVisit = (fields: string[]) =>
+  fields.filter(field => VISIT_DEFERRED_FIELDS.has(field));
+
 const errorMessage = async (response: Response) => {
   const payload = await response.json().catch(() => ({}));
   return payload?.detail || payload?.message || 'تعذر تنفيذ العملية.';
@@ -661,7 +675,7 @@ export function ProvisionalEmployeesPage() {
 
   const openCompletion = (row: EmployeeCard) => {
     setEditRow(row);
-    setField(row.missing_optional[0] || '');
+    setField(missingPrevisit(row.missing_optional)[0] || '');
     setFieldValue('');
     setReason('');
     setIdentityChecked(false);
@@ -841,7 +855,10 @@ export function ProvisionalEmployeesPage() {
             <Chip color="info" label={'الأصل المؤرشف: ' + (readiness.original_registry?.archived ?? 0)} />
             <Chip label={'الأصل النشط: ' + (readiness.original_registry?.active ?? 0)} />
             <Chip color="warning" label={'حالة وظيفية غير نشطة: ' + (readiness.original_registry?.non_active_employment_status ?? 0)} />
-            <Chip color="error" label={'بطاقات ناقصة: ' + (readiness.cards_missing_any_optional_field ?? 0)} />
+            <Chip color="info" variant="outlined"
+              label={'بانتظار الزيارة لاستكمال البيانات: ' + (readiness.cards_pending_visit_data ?? 0)} />
+            <Chip color="warning" variant="outlined"
+              label={'بيانات إدارية اختيارية للمراجعة: ' + (readiness.cards_missing_previsit_data ?? 0)} />
           </Stack>
           {V4_PRIVATE_UI && readiness.source_affiliation_kind && <Stack gap={0.5}>
             <Typography variant="subtitle2" fontWeight={800}>نوع التبعية التنظيمية من Excel</Typography>
@@ -894,10 +911,22 @@ export function ProvisionalEmployeesPage() {
             وليست دليلًا على أن أعمدة ملف Excel الأصلي كانت خالية. أسماء أعمدة المصدر
             لم تُحفظ مع الدفعة الحالية؛ يلزم فحص الملف المرجعي الأصلي قبل تصحيح الربط.
           </Alert>}
-          <Typography variant="subtitle2" fontWeight={800}>أكثر الحقول الاختيارية نقصًا</Typography>
+          <Typography variant="subtitle2" fontWeight={800}>بيانات تُستكمل عند زيارة المراجع</Typography>
+          <Typography variant="caption" color="text.secondary">
+            لا يُطلب إدخال هذه البيانات قبل الزيارة، ولا يؤدي غيابها إلى رفض البطاقة أو تعطيل ربطها التنظيمي.
+          </Typography>
           <Stack direction="row" gap={1} flexWrap="wrap">
             {Object.entries(readiness.optional_fields_missing || {})
-              .filter(([, count]) => count > 0)
+              .filter(([key, count]) => VISIT_DEFERRED_FIELDS.has(key) && count > 0)
+              .sort((a, b) => b[1] - a[1])
+              .map(([key, count]) =>
+                <Chip key={key} color="info" variant="outlined"
+                  label={(FIELD_LABELS[key] || key) + ': ' + count} />)}
+          </Stack>
+          <Typography variant="subtitle2" fontWeight={800}>بيانات إدارية اختيارية للمراجعة</Typography>
+          <Stack direction="row" gap={1} flexWrap="wrap">
+            {Object.entries(readiness.optional_fields_missing || {})
+              .filter(([key, count]) => !VISIT_DEFERRED_FIELDS.has(key) && count > 0)
               .sort((a, b) => b[1] - a[1])
               .slice(0, 8).map(([key, count]) =>
                 <Chip key={key} color="warning" variant="outlined"
@@ -960,9 +989,13 @@ export function ProvisionalEmployeesPage() {
                 color={row.status === 'identifier_conflict' ? 'error'
                   : row.status === 'technical_review_candidate' ? 'info' : 'warning'}
                 label={PLAN_LABELS[row.status]} sx={{ mt: 1 }} />
-              {row.missing_optional_count > 0 &&
+              {row.pending_visit_count > 0 &&
+                <Typography display="block" variant="caption" color="info.main">
+                  بيانات تُستكمل عند الزيارة: {row.pending_visit_count}
+                </Typography>}
+              {row.missing_previsit_count > 0 &&
                 <Typography display="block" variant="caption" color="text.secondary">
-                  بيانات اختيارية ناقصة: {row.missing_optional_count}
+                  بيانات إدارية اختيارية للمراجعة: {row.missing_previsit_count}
                 </Typography>}
             </Paper>)}
           </Box>
@@ -1126,8 +1159,8 @@ export function ProvisionalEmployeesPage() {
         p: 2, borderRadius: 3, border: '1px solid',
         borderColor: row.classification === 'identifier_review' ? 'error.main'
           : row.classification === 'name_review' ? 'warning.main'
-          : row.missing_optional.length ? 'warning.light' : 'divider',
-        bgcolor: row.missing_optional.length ? 'rgba(255,193,7,0.06)' : 'background.paper',
+          : missingPrevisit(row.missing_optional).length ? 'warning.light' : 'divider',
+        bgcolor: missingPrevisit(row.missing_optional).length ? 'rgba(255,193,7,0.06)' : 'background.paper',
       }}>
         <Stack gap={1.5}>
           <Typography variant="subtitle1" fontWeight={800}>{row.name}</Typography>
@@ -1155,11 +1188,17 @@ export function ProvisionalEmployeesPage() {
             </Box>
           )}
           <Typography variant="caption" color="text.secondary">صف Excel: {row.source_row}</Typography>
-          {row.missing_optional.length > 0
-            ? <Chip size="small" color="warning" label={'بيانات ناقصة: ' + row.missing_optional.length} />
-            : <Chip size="small" color="success" variant="outlined" label="الحقول الاختيارية المستوردة مكتملة" />}
-          {row.missing_optional.length > 0 &&
-            <Button size="small" variant="outlined" onClick={() => openCompletion(row)}>استكمال البيانات</Button>}
+          {missingAtVisit(row.missing_optional).length > 0 &&
+            <Chip size="small" color="info" variant="outlined"
+              label={'بانتظار الزيارة لاستكمال البيانات: ' + missingAtVisit(row.missing_optional).length} />}
+          {missingPrevisit(row.missing_optional).length > 0
+            ? <Chip size="small" color="warning" variant="outlined"
+                label={'بيانات إدارية اختيارية للمراجعة: ' + missingPrevisit(row.missing_optional).length} />
+            : missingAtVisit(row.missing_optional).length === 0
+              ? <Chip size="small" color="success" variant="outlined" label="البيانات الاختيارية متوفرة" />
+              : null}
+          {missingPrevisit(row.missing_optional).length > 0 &&
+            <Button size="small" variant="outlined" onClick={() => openCompletion(row)}>مراجعة البيانات الإدارية</Button>}
         </Stack>
       </Paper>)}
     </Box>
@@ -1253,11 +1292,16 @@ export function ProvisionalEmployeesPage() {
       <DialogTitle>استكمال بيانات بطاقة مؤقتة</DialogTitle>
       <DialogContent>
         <Stack gap={2} sx={{ pt: 1 }}>
-          <Alert severity="warning">التعديل على البطاقة الإدارية المؤقتة فقط؛ لن يعدّل السجل الصحي.</Alert>
+          <Alert severity="info">
+            تُستكمل بيانات الميلاد والحالة الاجتماعية والعنوان الوطني والوظيفة الحالية
+            عند زيارة المراجع بعد التحقق منه. لا تُطلب هذه الحقول لتأسيس البطاقة
+            أو ربط الموظف تنظيميًا. تُراجع هنا الحقول الإدارية الأخرى فقط،
+            ولن يُعدَّل السجل الصحي.
+          </Alert>
           <Typography fontWeight={700}>{editRow?.name}</Typography>
           <TextField select label="الحقل الناقص" value={field}
             onChange={event => setField(event.target.value)}>
-            {(editRow?.missing_optional || []).map(key =>
+            {missingPrevisit(editRow?.missing_optional || []).map(key =>
               <MenuItem key={key} value={key}>{FIELD_LABELS[key] || key}</MenuItem>)}
           </TextField>
           <TextField label="القيمة الجديدة" value={fieldValue}
