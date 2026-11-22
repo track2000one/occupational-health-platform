@@ -9,7 +9,6 @@ import { authFetch, getAccessToken } from '../context/AuthContext';
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 const PHRASE = 'تفعيل تشغيلي';
 
-type Center = { id: number; name: string; name_ar?: string; approval_status?: string; is_active: boolean; is_archived?: boolean };
 type Preview = {
   selected_count: number; eligible_count: number; blocked_count: number;
   already_active_count: number; blocked: Array<{id: number; name: string; reason: string}>;
@@ -35,19 +34,20 @@ async function post(payload: Record<string, unknown>) {
 }
 
 export function V4CenterOperationalActivation({
-  centers, onActivated,
+  selectedCenterIds, onActivated, disabled = false,
 }: {
-  centers: Center[]; onActivated: () => Promise<void> | void;
+  selectedCenterIds: number[];
+  onActivated: () => Promise<void> | void;
+  disabled?: boolean;
 }) {
   const [preview, setPreview] = useState<Preview | null>(null);
   const [selected, setSelected] = useState<number[]>([]);
   const [confirmed, setConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
-  const eligibleCenters = centers.filter(center =>
-    !center.is_archived && center.is_active && center.approval_status !== 'approved');
 
   async function openPreview(ids: number[]) {
-    setBusy(true); setSelected(ids); setConfirmed(false);
+    if (disabled || busy || ids.length === 0) return;
+    setBusy(true); setSelected([...ids]); setConfirmed(false);
     try {
       const data = await post({ action: 'preview', center_ids: ids });
       setPreview(data as Preview);
@@ -79,9 +79,9 @@ export function V4CenterOperationalActivation({
 
   return <>
     <Button variant="contained" color="success"
-      disabled={busy || eligibleCenters.length === 0}
-      onClick={() => void openPreview(eligibleCenters.map(center => center.id))}>
-      {busy ? 'جارٍ فحص المراكز…' : 'معاينة وتفعيل المراكز (' + eligibleCenters.length + ')'}
+      disabled={disabled || busy || selectedCenterIds.length === 0}
+      onClick={() => void openPreview(selectedCenterIds)}>
+      {busy ? 'جارٍ فحص المحدد…' : 'تفعيل المحدد (' + selectedCenterIds.length + ')'}
     </Button>
     <Dialog open={!!preview} onClose={() => !busy && setPreview(null)} fullWidth maxWidth="sm" dir="rtl">
       <DialogTitle fontWeight={900}>تفعيل المراكز للتشغيل الداخلي</DialogTitle>
