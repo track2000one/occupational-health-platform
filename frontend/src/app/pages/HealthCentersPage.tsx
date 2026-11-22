@@ -21,7 +21,7 @@ import { HealthCenterArchiveDialog, type CenterArchiveAction } from '../componen
 import { HealthCenterVerificationDialog } from '../components/HealthCenterVerificationDialog';
 import { V4CenterOperationalActivation } from '../components/V4CenterOperationalActivation';
 import {
-  canActivateCenter, retainVisibleSelection, selectableCenterIds, toggleVisibleCenter,
+  canSelectCenter, needsOperationalActivation, retainVisibleSelection, selectableCenterIds, toggleVisibleCenter,
 } from '../utils/centerActivationSelection';
 import { V4_PRIVATE_UI } from '../data/v4AffiliationHierarchy';
 import {
@@ -220,9 +220,9 @@ export function HealthCentersPage() {
     || (a.name_ar || a.name).localeCompare(b.name_ar || b.name, 'ar')
   ), [visibleCenters, centerOrg, sourceFilter, sectorFilter, search, regionFilter, cityFilter, statusFilter]);
 
-  // Selection is always scoped to the *currently displayed*, not-yet-activated
-  // centers. Hidden, archived, inactive or previously activated records cannot
-  // accidentally be included in a bulk API request.
+  // All active, nonarchived records can be selected for review, including those
+  // activated before. The API prevents re-activation; selection is not a write.
+  // Hidden, archived and inactive records are excluded from submissions.
   const selectableVisibleIds = useMemo(() =>
     showArchived ? [] : selectableCenterIds(filtered), [filtered, showArchived]);
   const selectedVisibleIds = useMemo(() =>
@@ -230,6 +230,11 @@ export function HealthCentersPage() {
     [selectedCenterIds, filtered, showArchived]);
   const allVisibleSelected = selectableVisibleIds.length > 0 &&
     selectedVisibleIds.length === selectableVisibleIds.length;
+  const pendingVisibleCount = filtered.filter(needsOperationalActivation).length;
+  const selectedPendingCount = filtered.filter(center =>
+    selectedVisibleIds.includes(center.id) && needsOperationalActivation(center)).length;
+  const alreadyActivatedVisibleCount = filtered.filter(center =>
+    canSelectCenter(center) && !needsOperationalActivation(center)).length;
   const selectionDisabled = !directoryReady || loading || Boolean(loadError);
   useEffect(() => {
     setSelectedCenterIds(previous => {
@@ -486,7 +491,7 @@ export function HealthCentersPage() {
             indeterminate={selectedVisibleIds.length > 0 && !allVisibleSelected}
             disabled={selectionDisabled || selectableVisibleIds.length === 0}
             onChange={(_, checked) => setSelectedCenterIds(checked ? selectableVisibleIds : [])}
-            inputProps={{ 'aria-label': 'تحديد جميع المراكز المؤهلة المعروضة' }} />
+            inputProps={{ 'aria-label': 'تحديد جميع المراكز النشطة المعروضة' }} />
           <Button size="small" variant="outlined"
             disabled={selectionDisabled || selectableVisibleIds.length === 0}
             onClick={() => setSelectedCenterIds(selectableVisibleIds)}>
@@ -499,12 +504,14 @@ export function HealthCentersPage() {
         </Stack>
         <V4CenterOperationalActivation
           selectedCenterIds={selectionDisabled ? [] : selectedVisibleIds}
+          pendingActivationCount={selectedPendingCount}
           disabled={selectionDisabled || selectedVisibleIds.length === 0}
           onActivated={async () => { setSelectedCenterIds([]); await load(); }} />
       </Stack>
       <Typography variant="caption" color="text.secondary">
-        تحديد الكل يشمل المراكز المؤهلة الظاهرة حسب التصفية فقط؛ ولا يشمل المؤرشفة أو غير النشطة أو المفعّلة سابقًا.
-        {!directoryReady ? ' جارٍ استكمال تحميل القائمة قبل إتاحة التفعيل.' : ''}
+        تحديد الكل يشمل المراكز النشطة المعروضة حسب التصفية، حتى المفعّلة سابقًا، ويستبعد المؤرشفة وغير النشطة.
+        المفعّلة مسبقًا: {alreadyActivatedVisibleCount} | بانتظار التفعيل: {pendingVisibleCount}.
+        {!directoryReady ? ' جارٍ استكمال تحميل القائمة قبل إتاحة المراجعة.' : ''}
       </Typography>
     </Paper>}
     {loadError && centers.length > 0 && <Alert severity="warning" sx={{ mb: 2 }}>
@@ -554,7 +561,7 @@ export function HealthCentersPage() {
               <Stack direction="row" alignItems="flex-start" justifyContent="space-between" gap={1}>
                 {canArchiveCenters && V4_PRIVATE_UI && !showArchived && <Checkbox
                   checked={selectedVisibleIds.includes(center.id)}
-                  disabled={selectionDisabled || !canActivateCenter(center)}
+                  disabled={selectionDisabled || !canSelectCenter(center)}
                   onChange={(_, checked) => setSelectedCenterIds(current =>
                     checked ? toggleVisibleCenter(current, center.id, filtered)
                       : current.filter(id => id !== center.id))}
@@ -654,7 +661,7 @@ export function HealthCentersPage() {
                 sx={{ '& .MuiTableCell-root': { verticalAlign: 'middle', py: 1.6 } }}>
                 {canArchiveCenters && V4_PRIVATE_UI && !showArchived && <TableCell>
                   <Checkbox checked={selectedVisibleIds.includes(center.id)}
-                    disabled={selectionDisabled || !canActivateCenter(center)}
+                    disabled={selectionDisabled || !canSelectCenter(center)}
                     onChange={(_, checked) => setSelectedCenterIds(current =>
                       checked ? toggleVisibleCenter(current, center.id, filtered)
                         : current.filter(id => id !== center.id))}
