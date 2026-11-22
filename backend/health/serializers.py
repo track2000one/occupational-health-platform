@@ -6,6 +6,7 @@ from django.db import transaction
 from django.db.models import Q
 from rest_framework import serializers
 from .employee_org_template_v4 import ORGANIZATION_COLUMNS, TOP_LEVELS, clean_org_value
+from .v4_department_paths import v4_department_path, v4_department_labels
 from .models import AuditLog, ClinicVisit, CommitteeReferral, DataImportBatch, Employee, EmployeeOrganizationalHierarchyEvent, EmployeeHealthCard, EmployeeHealthProfile, EmployeeImportReview, HealthCenter, HealthCenterAlias, OrganizationUnit, InjuryCase, LabTest, OccupationalHealthAssessment, UserProfile, Vaccination
 
 
@@ -443,6 +444,8 @@ class EmployeeSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('Choose a center or an approved unit instead.')
         if value.kind == 'department' and value.health_center_id:
             raise serializers.ValidationError('Central departments cannot be mapped to a health center.')
+        if value.kind == 'department' and value.code.startswith('V4-D-') and not v4_department_path(value):
+            raise serializers.ValidationError('Choose an active, approved V4 department with approved ancestors.')
         return value
 
     def validate_nationality(self, value):
@@ -504,10 +507,18 @@ class EmployeeSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({
                     'source_organizational_hierarchy': 'مسمى المركز داخل الهيكلة لا يطابق المركز الصحي المحدد والمعتمد.',
                 })
-            if not center and unit and unit.kind == 'department' and src_department != unit.name:
-                raise serializers.ValidationError({
-                    'source_organizational_hierarchy': 'مسمى القسم داخل الهيكلة لا يطابق القسم المركزي المعتمد.',
-                })
+            if not center and unit and unit.kind == 'department':
+                if unit.code.startswith('V4-D-'):
+                    path = v4_department_path(unit)
+                    if not path or any(clean_org_value(proposed.get(key)) != expected
+                                       for key, expected in v4_department_labels(path).items()):
+                        raise serializers.ValidationError({
+                            'source_organizational_hierarchy': 'مسميات الإدارة والقسم والوحدة لا تطابق المسار التنظيمي المعتمد.',
+                        })
+                elif src_department != unit.name:
+                    raise serializers.ValidationError({
+                        'source_organizational_hierarchy': 'مسمى القسم داخل الهيكلة لا يطابق القسم المركزي المعتمد.',
+                    })
             incoming = {
                 key: clean_org_value(value) for key, value in proposed.items()
                 if clean_org_value(value)
@@ -544,6 +555,16 @@ class EmployeeSerializer(serializers.ModelSerializer):
                 })
         if org:
             if org.kind == 'department':
+                if org.code.startswith('V4-D-'):
+                    path = v4_department_path(org)
+                    if not path:
+                        raise serializers.ValidationError({'organization_unit': 'التسلسل التنظيمي غير معتمد بالكامل.'})
+                    if self.instance is None and proposed is None:
+                        # Preserve the canonical selected path even for a creator who
+                        # cannot submit editable source-hierarchy metadata.
+                        attrs['source_organizational_hierarchy'] = {
+                            **TOP_LEVELS, **{k: v for k, v in v4_department_labels(path).items() if v},
+                        }
                 if center:
                     raise serializers.ValidationError({
                         'health_center': 'A central department assignment must not include a health center.',
