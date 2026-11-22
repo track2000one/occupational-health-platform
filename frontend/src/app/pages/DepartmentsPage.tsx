@@ -16,6 +16,7 @@ import {
 import { authFetch, getAccessToken, useAuth } from '../context/AuthContext';
 import { V4DepartmentImport } from '../components/V4DepartmentImport';
 import { departmentReviewGuidance } from '../data/v4DepartmentReviewGuidance';
+import { V4_PRIVATE_UI } from '../data/v4AffiliationHierarchy';
 
 // Never silently use Production API for an unconfigured Staging instance.
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
@@ -135,17 +136,21 @@ export function DepartmentsPage() {
     } finally { setBusy(false); }
   }
   async function approve() {
-    if (!canManage || !approval || approvalReference.trim().length < 3) return;
+    if (!canManage || !approval || (!V4_PRIVATE_UI && approvalReference.trim().length < 3)) return;
     setBusy(true);
     try {
       await api('/organization-units/' + approval.id + '/review/', {
         method: 'POST', body: JSON.stringify({
-          action: 'approve', approval_reference: approvalReference.trim(),
+          ...(V4_PRIVATE_UI
+            ? { action: 'activate', confirmed: true }
+            : { action: 'approve', approval_reference: approvalReference.trim() }),
         }),
       });
       setApproval(null); setApprovalReference('');
       await refresh();
-      toast.success('تم اعتماد القسم وأصبح متاحًا لاختيار تبعية الموظف.');
+      toast.success(V4_PRIVATE_UI
+        ? 'تم تفعيل القسم للتشغيل الداخلي وأصبح متاحًا لاختيار تبعية الموظف.'
+        : 'تم اعتماد القسم وأصبح متاحًا لاختيار تبعية الموظف.');
     } catch (e) { toast.error(message(e)); }
     finally { setBusy(false); }
   }
@@ -218,7 +223,7 @@ export function DepartmentsPage() {
 
       <Alert severity="info" sx={{ mb: 2 }}>
         تُسجّل الأقسام مستقلة عن المراكز الصحية. القسم الجديد يُحفظ كمسودة أولًا،
-        ثم يُعتمد بمرجع رسمي. لا يظهر في قائمة تبعية الموظفين إلا بعد الاعتماد والتفعيل.
+        ثم يُفعّل داخليًا بواسطة المسؤول بعد التحقق من الاسم والتسلسل. لا يظهر في قائمة تبعية الموظفين إلا بعد التفعيل.
         لا تُغيّر هذه الصفحة بيانات الموظفين أو البطاقات الطبية.
       </Alert>
       {!canManage && <Alert severity="warning" sx={{ mb: 2 }}>
@@ -364,24 +369,26 @@ export function DepartmentsPage() {
       </Dialog>
 
       <Dialog open={approval !== null} onClose={() => !busy && setApproval(null)} fullWidth maxWidth="sm">
-        <DialogTitle fontWeight={900}>اعتماد القسم رسميًا</DialogTitle>
+        <DialogTitle fontWeight={900}>{V4_PRIVATE_UI ? 'تفعيل القسم للتشغيل الداخلي' : 'اعتماد القسم رسميًا'}</DialogTitle>
         <DialogContent dividers>
           <Stack gap={2}>
             <Alert severity="warning">
-              تحقق من التسلسل والاسم والرمز والقرار الرسمي. يجب اعتماد الإدارة الأعلى قبل الأقسام التابعة؛ لا يتم الاعتماد تلقائيًا عند الاستيراد.
+              {V4_PRIVATE_UI
+                ? 'تحقق من الاسم والتسلسل قبل التفعيل. لا يلزم رقم قرار، ولا يتم التفعيل تلقائيًا أثناء الاستيراد.'
+                : 'تحقق من التسلسل والاسم والرمز والقرار الرسمي. يجب اعتماد الإدارة الأعلى قبل الأقسام التابعة.'}
             </Alert>
             <Typography fontWeight={850}>{approval?.name}</Typography>
-            <TextField fullWidth required label="رقم القرار / مرجع الاعتماد *"
+            {!V4_PRIVATE_UI && <TextField fullWidth required label="رقم القرار / مرجع الاعتماد *"
               value={approvalReference} onChange={e => setApprovalReference(e.target.value)}
               slotProps={{ htmlInput: { maxLength: 255 } }}
-              helperText="مرجع رسمي لا يقل عن 3 أحرف، يُحفظ في سجل الاعتماد." />
+              helperText="مرجع رسمي لا يقل عن 3 أحرف، يُحفظ في سجل الاعتماد." />}
           </Stack>
         </DialogContent>
         <DialogActions>
           <Button disabled={busy} onClick={() => setApproval(null)}>إلغاء</Button>
           <Button variant="contained" color="success"
-            disabled={busy || approvalReference.trim().length < 3}
-            onClick={() => void approve()}>تأكيد الاعتماد</Button>
+            disabled={busy || (!V4_PRIVATE_UI && approvalReference.trim().length < 3)}
+            onClick={() => void approve()}>{V4_PRIVATE_UI ? 'تأكيد التفعيل' : 'تأكيد الاعتماد'}</Button>
         </DialogActions>
       </Dialog>
 
