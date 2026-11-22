@@ -24,6 +24,7 @@ type Props = {
   onReasonChange: (reason: string) => void;
   onChange: (key: OrgLevel, value: string) => void;
   mode: 'view' | 'add' | 'edit';
+  lockedLevels?: readonly OrgLevel[];
 };
 
 /** Manual employee entry uses the same 13 source fields as Excel V4.
@@ -32,7 +33,7 @@ type Props = {
 export function EmployeeOrganizationalFields({
   value, affiliationKind, selectedCenterNames, selectedDepartmentNames,
   selectedUnitNames, isReadOnly, isSuperuser, defaultExpanded,
-  reason, onReasonChange, onChange, mode,
+  reason, onReasonChange, onChange, mode, lockedLevels = [],
 }: Props) {
   const suggestions = useMemo(() => {
     const result: Partial<Record<OrgLevel, string[]>> = {};
@@ -75,11 +76,12 @@ export function EmployeeOrganizationalFields({
           const isTop = key in TOP_LEVELS;
           const assignedCenter = key === 'health_center' && affiliationKind === 'center';
           const assignedDepartment = key === 'department' && affiliationKind === 'department';
+          const locked = lockedLevels.includes(key);
           return <Grid key={key} size={{ xs: 12, md: 6 }}>
             <Autocomplete freeSolo options={suggestions[key] || []}
               value={value[key]}
               disabled={isReadOnly || !isSuperuser || isTop ||
-                assignedCenter || assignedDepartment}
+                assignedCenter || assignedDepartment || locked}
               onChange={(_, selected) => onChange(key, selected || '')}
               onInputChange={(_, typed, reason) => {
                 if (reason === 'input') onChange(key, typed);
@@ -88,7 +90,7 @@ export function EmployeeOrganizationalFields({
                 label={label} size="small"
                 slotProps={{ htmlInput: { ...params.inputProps, maxLength: 220 } }}
                 helperText={isTop ? 'مستوى ثابت' :
-                  (assignedCenter || assignedDepartment) ? 'مرتبط بالجهة المعتمدة المختارة' :
+                  (assignedCenter || assignedDepartment || locked) ? 'مرتبط بالجهة المعتمدة المختارة' :
                     'اختر من المقترحات أو اكتب المسمى من المصدر؛ لا يُعتمد تلقائيًا'} />}
             />
           </Grid>;
