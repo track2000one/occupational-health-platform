@@ -1,6 +1,7 @@
-/** Selection rules for operational activation in isolated V4.
- * Only active, nonarchived, not-yet-activated center IDs can be submitted.
- * Selection never crosses a changed filter or the archived view.
+/** UI selection is independent of whether an active center was activated before.
+ * Preview remains read-only: the server counts previously activated records as
+ * already active and never activates them again.
+ * Archived and administratively inactive centers are excluded for safety.
  */
 export type ActivatableCenter = {
   id: number;
@@ -9,14 +10,17 @@ export type ActivatableCenter = {
   approval_status?: string;
 };
 
-export function canActivateCenter(center: ActivatableCenter) {
+export function canSelectCenter(center: ActivatableCenter) {
   return Number.isInteger(center.id) && center.id > 0 &&
-    center.is_active === true && center.is_archived !== true &&
-    center.approval_status !== 'approved';
+    center.is_active === true && center.is_archived !== true;
+}
+
+export function needsOperationalActivation(center: ActivatableCenter) {
+  return canSelectCenter(center) && center.approval_status !== 'approved';
 }
 
 export function selectableCenterIds(visible: ActivatableCenter[]): number[] {
-  return Array.from(new Set(visible.filter(canActivateCenter).map(center => center.id)));
+  return Array.from(new Set(visible.filter(canSelectCenter).map(center => center.id)));
 }
 
 export function retainVisibleSelection(selected: number[], visible: ActivatableCenter[]): number[] {
