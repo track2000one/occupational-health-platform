@@ -113,6 +113,7 @@ type ApprovalPlan = {
   items: Array<{
     source_row: number; masked_id: string; name: string;
     status: ApprovalPlanStatus; missing_optional_count: number;
+    pending_visit_count: number; missing_previsit_count: number;
     is_approved_employee: false;
   }>;
   note: string;
@@ -988,9 +989,13 @@ export function ProvisionalEmployeesPage() {
                 color={row.status === 'identifier_conflict' ? 'error'
                   : row.status === 'technical_review_candidate' ? 'info' : 'warning'}
                 label={PLAN_LABELS[row.status]} sx={{ mt: 1 }} />
-              {row.missing_optional_count > 0 &&
+              {row.pending_visit_count > 0 &&
+                <Typography display="block" variant="caption" color="info.main">
+                  بيانات تُستكمل عند الزيارة: {row.pending_visit_count}
+                </Typography>}
+              {row.missing_previsit_count > 0 &&
                 <Typography display="block" variant="caption" color="text.secondary">
-                  بيانات اختيارية ناقصة: {row.missing_optional_count}
+                  بيانات إدارية اختيارية للمراجعة: {row.missing_previsit_count}
                 </Typography>}
             </Paper>)}
           </Box>
