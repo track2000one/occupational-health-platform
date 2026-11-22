@@ -15,8 +15,8 @@ export function requestPolicy(url: string, method: string = 'GET') {
   const safeRead = ['GET', 'HEAD', 'OPTIONS'].includes(verb);
   const path = url.split(/[?#]/, 1)[0];
   const report = verb === 'GET' && LARGE_READ_ONLY_REPORT.test(path);
-  const segmented = report && /(?:[?&])offset=\\d+/.test(url) &&
-    /(?:[?&])limit=\\d+/.test(url);
+  const segmented = report && /(?:[?&])offset=\d+/.test(url) &&
+    /(?:[?&])limit=\d+/.test(url);
   return {
     timeoutMs: segmented ? 25000 : report ? ROSTER_REPORT_TIMEOUT_MS
       : LARGE_UPLOAD.test(path) ? EXCEL_IMPORT_TIMEOUT_MS
