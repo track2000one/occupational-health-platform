@@ -44,7 +44,7 @@ type BulkPreview = {
   commit_enabled?: boolean; notice?: string;
 };
 type BulkResult = {
-  mode: 'approved'; approved_count: number; approved_ids: number[];
+  mode: 'approved' | 'activated'; approved_count: number; approved_ids: number[];
   blocked_count: number; blocked: BulkBlocked[]; approval_reference: string;
 };
 const BLOCK_REASON_LABELS: Record<string, string> = {
@@ -195,24 +195,25 @@ export function OrganizationStructurePage() {
 
   async function confirmBulkReview() {
     if (!bulkPreview || (V4_PRIVATE_UI && bulkPreview.commit_enabled !== true) ||
-        bulkReference.trim().length < 3 || !bulkConsent) return;
+        (!V4_PRIVATE_UI && bulkReference.trim().length < 3) || !bulkConsent) return;
     setBusy(true);
     try {
       const result = await apiRequest<BulkResult>('/organization-units/bulk-approval/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'approve',
+          action: V4_PRIVATE_UI ? 'activate' : 'approve',
           unit_ids: bulkRequestIds,
           preview_token: bulkPreview.preview_token,
-          approval_reference: bulkReference.trim(),
-          reference_covers_all: true,
+          ...(V4_PRIVATE_UI
+            ? { confirmed: true, confirm_text: 'تفعيل تشغيلي' }
+            : { approval_reference: bulkReference.trim(), reference_covers_all: true }),
         }),
       });
       setBulkPreview(null);
       setSelectedIds([]);
       await reload();
-      toast.success(`تم اعتماد ${result.approved_count} سجلًا. بقي ${result.blocked_count} سجلًا يحتاج استكمال المتطلبات.`);
+      toast.success(`تم ${V4_PRIVATE_UI ? 'التفعيل التشغيلي' : 'اعتماد'} ${result.approved_count} سجلًا؛ و${result.blocked_count} يحتاج إلى مراجعة.`);
     } catch (error) {
       toast.error(localizedError(error) + ' — أعد المعاينة قبل المحاولة مجددًا.');
       setBulkPreview(null);
@@ -240,7 +241,7 @@ export function OrganizationStructurePage() {
     finally { setBusy(false); }
   }
 
-  async function review(item: OrgUnit, action: 'map-center' | 'approve' | 'edit-draft', editedName?: string): Promise<boolean> {
+  async function review(item: OrgUnit, action: 'map-center' | 'approve' | 'activate' | 'edit-draft', editedName?: string): Promise<boolean> {
     setBusy(true);
     try {
       await apiRequest('/organization-units/' + item.id + '/review/', {
@@ -250,11 +251,13 @@ export function OrganizationStructurePage() {
           action,
           ...(action === 'map-center' ? { center_id: mappedCenters[item.id] }
             : action === 'edit-draft' ? { name: editedName || '' }
+              : action === 'activate' ? { confirmed: true }
               : { approval_reference: approvalRefs[item.id] || '' }),
         }),
       });
       await reload();
-      toast.success(action === 'approve' ? 'تم اعتماد السجل وربط مرجع الاعتماد'
+      toast.success(action === 'activate' ? 'تم التفعيل التشغيلي الداخلي بعد مراجعة التسلسل'
+        : action === 'approve' ? 'تم اعتماد السجل وربط مرجع الاعتماد'
         : action === 'map-center' ? 'تمت مطابقة المركز بنجاح' : 'تم حفظ تعديل الاسم مع الاحتفاظ بالمصدر الأصلي');
       return true;
     } catch (e) {
@@ -409,7 +412,7 @@ export function OrganizationStructurePage() {
             </Stack>
           </Stack>
           <Typography sx={{ color: '#536c80', fontSize: '13px', mt: 1, lineHeight: 1.6 }}>
-            {V4_PRIVATE_UI ? 'المعاينة الجماعية في V4 لا تعتمد أي سجل. الاعتماد الرسمي يبقى إجراءً منفصلًا بعد مراجعة الهيكل والمراجع.' : 'قبل الاعتماد ستظهر معاينة توضح السجلات المؤهلة والمعلّقة، ولا يُعتمد أي سجل دون مرجع رسمي وتأكيد صريح.'}
+            {V4_PRIVATE_UI ? 'تُراجع الجهات جماعيًا ثم تُفعّل للتشغيل الداخلي فقط، دون رقم قرار. السجلات ذات التعارض أو التي لم تُطابق تبقى معلّقة.' : 'قبل الاعتماد ستظهر معاينة توضح السجلات المؤهلة والمعلّقة، ولا يُعتمد أي سجل دون مرجع رسمي وتأكيد صريح.'}
             يمكن اعتماد القطاع ثم المركز ثم الوحدة في دفعة واحدة إذا اكتملت مطابقة المركز.
           </Typography>
         </Paper>
@@ -618,11 +621,11 @@ export function OrganizationStructurePage() {
       </Dialog>
       <Dialog open={bulkPreview !== null} onClose={() => !busy && setBulkPreview(null)} maxWidth="sm" fullWidth
         PaperProps={{ sx: { borderRadius: 3 } }}>
-        <DialogTitle sx={{ fontWeight: 900 }}>{V4_PRIVATE_UI ? 'معاينة أهلية الاعتماد — دون تنفيذ' : 'اعتماد جماعي — معاينة قبل التنفيذ'}</DialogTitle>
+        <DialogTitle sx={{ fontWeight: 900 }}>{V4_PRIVATE_UI ? 'معاينة التفعيل التشغيلي الجماعي' : 'اعتماد جماعي — معاينة قبل التنفيذ'}</DialogTitle>
         <DialogContent dividers>
           {bulkPreview && <Stack spacing={2}>
             <Alert severity={bulkPreview.blocked_count ? 'warning' : 'info'}>
-              {V4_PRIVATE_UI ? 'هذه معاينة للمراجعة فقط. لا يتم اعتماد أي جهة، ولا ربط المراكز أو الموظفين من هذه النافذة.' : 'لن يعتمد النظام جميع السجلات دون استيفاء الشروط. المعاينة تحدد السجلات التي سيُعتمد وضعها فقط.'}
+              {V4_PRIVATE_UI ? 'المعاينة لا تحفظ شيئًا. بعد التأكيد تُفعّل الجهات المؤهلة للاستخدام الداخلي فقط، دون قرارات رسمية أو تعديل الموظفين.' : 'لن يعتمد النظام جميع السجلات دون استيفاء الشروط. المعاينة تحدد السجلات التي سيُعتمد وضعها فقط.'}
             </Alert>
             <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: 1 }}>
               {[
@@ -650,19 +653,21 @@ export function OrganizationStructurePage() {
               </Typography>)}
             </Box>}
             {(!V4_PRIVATE_UI || bulkPreview.commit_enabled === true) ? <>
-              <TextField fullWidth required label="مرجع الاعتماد الرسمي للدفعة" value={bulkReference}
+              {!V4_PRIVATE_UI && <TextField fullWidth required label="مرجع الاعتماد الرسمي للدفعة" value={bulkReference}
                 onChange={event => setBulkReference(event.target.value)}
                 helperText="أدخل مرجعًا معتمدًا يغطي جميع السجلات المؤهلة في هذه الدفعة."
-                slotProps={{ htmlInput: { maxLength: 255 } }} />
+                slotProps={{ htmlInput: { maxLength: 255 } }} />}
               <FormControlLabel
                 control={<Checkbox checked={bulkConsent} onChange={(_, checked) => setBulkConsent(checked)} />}
                 label={<Typography variant="body2" fontWeight={750}>
-                  أقر بأن مرجع الاعتماد يغطي جميع السجلات التي ستُعتمد، وأنني راجعت القائمة المؤهلة والمعلّقة.
+                  {V4_PRIVATE_UI
+                    ? 'راجعت المراكز والأقسام المؤهلة وأوافق على تفعيلها داخليًا دون تغيير الموظفين.'
+                    : 'أقر بأن مرجع الاعتماد يغطي جميع السجلات التي ستُعتمد، وأنني راجعت القائمة المؤهلة والمعلّقة.'}
                 </Typography>}
               />
-              <Alert severity="info">سيتم توثيق الاعتماد باسم المستخدم ومرجعه. لن تتغير بيانات الموظفين أو سجلات المراكز الصحية.</Alert>
+              <Alert severity="info">{V4_PRIVATE_UI ? 'سيُحفظ اسم المسؤول والتوقيت في سجل التدقيق. هذا ليس اعتمادًا رسميًا.' : 'سيتم توثيق الاعتماد باسم المستخدم ومرجعه.'} لن تتغير بيانات الموظفين أو المراكز.</Alert>
             </> : <Alert severity="info">
-              الاعتماد الجماعي في V4 غير مفعل. راجع المسارات والمراكز والمستندات الرسمية أولًا؛ هذه الصفحة لا تنفذ اعتمادًا.
+              التفعيل التشغيلي غير مفعل في خدمة V4. المعاينة متاحة دون حفظ، ولا يلزم قرار رسمي.
             </Alert>}
           </Stack>}
         </DialogContent>
@@ -670,37 +675,39 @@ export function OrganizationStructurePage() {
           <Button disabled={busy} onClick={() => setBulkPreview(null)}>إلغاء</Button>
           {(!V4_PRIVATE_UI || bulkPreview?.commit_enabled === true) && <Button variant="contained" color="success" disabled={
             busy || !bulkPreview || !bulkPreview.eligible_count ||
-            bulkReference.trim().length < 3 || !bulkConsent
+            (!V4_PRIVATE_UI && bulkReference.trim().length < 3) || !bulkConsent
           } onClick={() => void confirmBulkReview()}>
-            {busy ? 'جارٍ الاعتماد...' : `تأكيد اعتماد ${bulkPreview?.eligible_count || 0} سجل`}
+            {busy ? 'جارٍ التفعيل...' : `تأكيد ${V4_PRIVATE_UI ? 'تفعيل' : 'اعتماد'} ${bulkPreview?.eligible_count || 0} سجل`}
           </Button>}
         </DialogActions>
       </Dialog>
       <Dialog open={confirmationUnit !== null} onClose={() => !busy && setConfirmationUnit(null)} maxWidth="sm" fullWidth>
-        <DialogTitle>تأكيد اعتماد جهة تنظيمية</DialogTitle>
+        <DialogTitle>{V4_PRIVATE_UI ? 'تأكيد التفعيل التشغيلي للجهة' : 'تأكيد اعتماد جهة تنظيمية'}</DialogTitle>
         <DialogContent dividers>
           <Alert severity="warning" sx={{ mb: 2 }}>
-            يرجى التحقق من المرجع الرسمي قبل الاعتماد. يصبح السجل متاحًا للربط حسب ضوابط المركز، ولا يمكن التراجع من هذه الشاشة.
+            {V4_PRIVATE_UI
+              ? 'تحقق من الاسم والتسلسل قبل التفعيل الداخلي. لا يلزم رقم قرار، ويُسجل منفّذ العملية وتاريخها.'
+              : 'يرجى التحقق من المرجع الرسمي قبل الاعتماد. يصبح السجل متاحًا للربط حسب ضوابط المركز.'}
           </Alert>
           <Typography fontWeight={900}>{confirmationUnit?.name}</Typography>
           <Typography color="text.secondary" variant="body2">
             {confirmationUnit?.parent_name ? `تتبع: ${confirmationUnit.parent_name}` : 'جهة تنظيمية عليا'}
           </Typography>
-          <Box sx={{ mt: 2 }}>
+          {!V4_PRIVATE_UI && <Box sx={{ mt: 2 }}>
             <TextField fullWidth label="مرجع الاعتماد الرسمي" size="small" required
               value={confirmationUnit ? approvalRefs[confirmationUnit.id] || '' : ''}
               onChange={event => { if (confirmationUnit) setApprovalRefs(prev => ({ ...prev, [confirmationUnit.id]: event.target.value })); }}
               slotProps={{ htmlInput: { maxLength: 255 } }} />
-          </Box>
+          </Box>}
         </DialogContent>
         <DialogActions>
           <Button disabled={busy} onClick={() => setConfirmationUnit(null)}>إلغاء</Button>
-          <Button disabled={busy || !confirmationUnit || confirmationUnit.review_status !== 'ready' || (confirmationUnit && (approvalRefs[confirmationUnit.id] || '').trim().length < 3)} variant="contained" color="success"
+          <Button disabled={busy || !confirmationUnit || confirmationUnit.review_status !== 'ready' || (!V4_PRIVATE_UI && confirmationUnit && (approvalRefs[confirmationUnit.id] || '').trim().length < 3)} variant="contained" color="success"
             onClick={async () => {
               if (!confirmationUnit) return;
-              if (await review(confirmationUnit, 'approve')) setConfirmationUnit(null);
+              if (await review(confirmationUnit, V4_PRIVATE_UI ? 'activate' : 'approve')) setConfirmationUnit(null);
             }}>
-            تأكيد الاعتماد
+            {V4_PRIVATE_UI ? 'تأكيد التفعيل' : 'تأكيد الاعتماد'}
           </Button>
         </DialogActions>
       </Dialog>
