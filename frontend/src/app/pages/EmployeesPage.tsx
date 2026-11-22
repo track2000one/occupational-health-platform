@@ -489,7 +489,7 @@ export function EmployeesPage() {
   const selectedOrgUnit = approvedOrganizations.find(item => String(item.id) === form.organization_unit) || null;
   // V4 new-entry form: verified IDs drive the cascade. Legacy views stay unchanged.
   const v4NewEntry = V4_PRIVATE_UI && dialogMode === 'add';
-  const v4Path = v4NewEntry && selectedOrgUnit
+  const v4Path = V4_PRIVATE_UI && selectedOrgUnit
     ? departmentPath(approvedOrganizations, selectedOrgUnit.id) : [];
   const v4Sectors = approvedOrganizations.filter(node =>
     node.kind === 'sector' && node.is_active && node.is_approved && node.parent_id === null);
@@ -645,7 +645,8 @@ export function EmployeesPage() {
           health_center: employee.health_center_name ||
             centerNameById.get(String(employee.health_center)) || 'غير محدد في المصدر',
         }),
-        ...(!employee.health_center && employee.organization_unit_kind === 'department' && {
+        ...(!employee.health_center && employee.organization_unit_kind === 'department' &&
+          !(V4_PRIVATE_UI && approvedOrganizations.some(node => node.id === Number(employee.organization_unit) && node.code.startsWith('V4-D-'))) && {
           department: employee.organization_unit_name || 'غير محدد في المصدر',
         }),
       },
@@ -2011,7 +2012,7 @@ export function EmployeesPage() {
                     const parentSector = linkedUnits.length === 1
                       ? approvedOrganizations.find(unit =>
                         unit.kind === 'sector' && unit.is_active && unit.is_approved &&
-                        unit.name === linkedUnits[0].parent_name)
+                        (v4NewEntry ? unit.id === linkedUnits[0].parent_id : unit.name === linkedUnits[0].parent_name))
                       : undefined;
                     const organizational_hierarchy = updateHierarchyAffiliation(
                       prev.organizational_hierarchy, 'center',
@@ -2046,7 +2047,7 @@ export function EmployeesPage() {
                     helperText={isRtl ? 'تظهر الوحدات المعتمدة التابعة للمركز المختار' : 'Approved units linked to this center'} />}
                 />
               </Grid>
-            </> : v4NewEntry ? <>
+            </> : (v4NewEntry || (V4_PRIVATE_UI && v4Path.length > 0)) ? <>
               {DEPARTMENT_LEVELS.map((key, index) => {
                 const parent = index === 0 ? null : v4Path[index - 1]?.id;
                 if (index > 0 && !parent) return null;
@@ -2056,6 +2057,7 @@ export function EmployeesPage() {
                 return <Grid key={key} size={{ xs: 12, md: 6 }}>
                   <TextField fullWidth select label={labels[index] + (index === 0 ? ' *' : '')}
                     value={v4Path[index] ? String(v4Path[index].id) : ''}
+                    disabled={!v4NewEntry || isReadOnly}
                     onChange={event => selectV4Department(event.target.value ? Number(event.target.value) : parent ?? null)}
                     helperText={index === 0 ? 'الإدارات المعتمدة في دليل V4 فقط' : 'اختياري؛ يتبع الجهة الأعلى مباشرة'}>
                     <MenuItem value="">{index === 0 ? 'اختر الإدارة' : 'الاكتفاء بالجهة الأعلى'}</MenuItem>
@@ -2114,9 +2116,10 @@ export function EmployeesPage() {
                 reason={form.hierarchy_change_reason}
                 onReasonChange={value => updateForm('hierarchy_change_reason', value)}
                 onChange={updateOrgLevel}
-                lockedLevels={v4NewEntry ? (affiliationKind === 'department'
+                lockedLevels={V4_PRIVATE_UI && affiliationKind === 'department' && (v4NewEntry || v4Path.length > 0)
                   ? [...DEPARTMENT_LEVELS, 'health_center']
-                  : ['main_administration', 'sub_administration', 'consultative_sector', 'health_center']) : undefined}
+                  : v4NewEntry && affiliationKind === 'center'
+                    ? ['main_administration', 'sub_administration', 'consultative_sector', 'health_center'] : undefined}
               />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
