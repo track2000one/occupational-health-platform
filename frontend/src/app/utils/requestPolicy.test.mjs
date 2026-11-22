@@ -21,6 +21,10 @@ test('V4 readiness uses one bounded 90-second read-only request', () => {
     assert.equal(policy.report, true, path);
   }
 });
+test('bounded V4 readiness segments are retryable and preserve report classification', () => {
+  const policy = requestPolicy('http://127.0.0.1:18081/api/provisional-employees/readiness/?offset=100&limit=100', 'GET');
+  assert.deepEqual(policy, { timeoutMs: 25000, attempts: 2, report: true });
+});
 test('ordinary reads, credential refresh and writes retain existing policies', () => {
   assert.deepEqual(requestPolicy('http://127.0.0.1:18081/api/provisional-employees/?page=1', 'GET'),
     { timeoutMs: 15000, attempts: 2, report: false });
