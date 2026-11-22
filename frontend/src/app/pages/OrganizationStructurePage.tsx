@@ -15,6 +15,7 @@ import {
 } from '@mui/icons-material';
 import { authFetch, getAccessToken } from '../context/AuthContext';
 import { exactCenterSuggestions } from '../utils/organizationMatching';
+import { V4_PRIVATE_UI } from '../data/v4AffiliationHierarchy';
 
 const API = (import.meta.env.VITE_API_URL || 'https://occupational-health-platform-production.up.railway.app/api').replace(/\/$/, '');
 type OrgUnit = {
@@ -40,6 +41,7 @@ type BulkPreview = {
   mode: 'preview'; selected_count: number; eligible_count: number; blocked_count: number;
   already_approved_count: number; eligible_by_kind: Record<string, number>;
   eligible_ids: number[]; blocked: BulkBlocked[]; preview_token: string;
+  commit_enabled?: boolean; notice?: string;
 };
 type BulkResult = {
   mode: 'approved'; approved_count: number; approved_ids: number[];
@@ -53,6 +55,7 @@ const BLOCK_REASON_LABELS: Record<string, string> = {
   parent_center_mapping_required: 'المركز الأعلى يحتاج مطابقة',
   unexpected_root_parent: 'وجود ارتباط أعلى غير متوقع',
   invalid_kind: 'تصنيف غير صالح للاعتماد',
+  invalid_department_hierarchy: 'مسار الإدارة غير سليم أو لا يتبع تسلسل V4',
 };
 const REVIEW_LABELS: Record<OrgUnit['review_status'], string> = {
   approved: 'معتمد', ready: 'جاهز للمراجعة', await_parent: 'ينتظر اعتماد الجهة الأعلى',
@@ -191,7 +194,8 @@ export function OrganizationStructurePage() {
   }
 
   async function confirmBulkReview() {
-    if (!bulkPreview || bulkReference.trim().length < 3 || !bulkConsent) return;
+    if (!bulkPreview || (V4_PRIVATE_UI && bulkPreview.commit_enabled !== true) ||
+        bulkReference.trim().length < 3 || !bulkConsent) return;
     setBusy(true);
     try {
       const result = await apiRequest<BulkResult>('/organization-units/bulk-approval/', {
@@ -395,17 +399,17 @@ export function OrganizationStructurePage() {
             <Stack direction={{ xs: 'column', sm: 'row' }} gap={1}>
               <Button variant="outlined" disabled={busy || !selectedIds.length} startIcon={<BulkIcon />}
                 onClick={() => void openBulkReview(selectedIds)}>
-                اعتماد المحدد ({selectedIds.length})
+                {V4_PRIVATE_UI ? `معاينة أهلية المحدد (${selectedIds.length})` : `اعتماد المحدد (${selectedIds.length})`}
               </Button>
               <Button variant="contained" color="success" disabled={busy || !items.some(unit => !unit.is_approved && unit.is_active)}
                 startIcon={<ApproveIcon />}
                 onClick={() => void openBulkReview(items.filter(unit => !unit.is_approved && unit.is_active).map(unit => unit.id))}>
-                اعتماد جميع السجلات المؤهلة
+                {V4_PRIVATE_UI ? 'معاينة أهلية جميع السجلات' : 'اعتماد جميع السجلات المؤهلة'}
               </Button>
             </Stack>
           </Stack>
           <Typography sx={{ color: '#536c80', fontSize: '13px', mt: 1, lineHeight: 1.6 }}>
-            قبل الاعتماد ستظهر معاينة توضح السجلات المؤهلة والمعلّقة، ولا يُعتمد أي سجل دون مرجع رسمي وتأكيد صريح.
+            {V4_PRIVATE_UI ? 'المعاينة الجماعية في V4 لا تعتمد أي سجل. الاعتماد الرسمي يبقى إجراءً منفصلًا بعد مراجعة الهيكل والمراجع.' : 'قبل الاعتماد ستظهر معاينة توضح السجلات المؤهلة والمعلّقة، ولا يُعتمد أي سجل دون مرجع رسمي وتأكيد صريح.'}
             يمكن اعتماد القطاع ثم المركز ثم الوحدة في دفعة واحدة إذا اكتملت مطابقة المركز.
           </Typography>
         </Paper>
@@ -614,11 +618,11 @@ export function OrganizationStructurePage() {
       </Dialog>
       <Dialog open={bulkPreview !== null} onClose={() => !busy && setBulkPreview(null)} maxWidth="sm" fullWidth
         PaperProps={{ sx: { borderRadius: 3 } }}>
-        <DialogTitle sx={{ fontWeight: 900 }}>اعتماد جماعي — معاينة قبل التنفيذ</DialogTitle>
+        <DialogTitle sx={{ fontWeight: 900 }}>{V4_PRIVATE_UI ? 'معاينة أهلية الاعتماد — دون تنفيذ' : 'اعتماد جماعي — معاينة قبل التنفيذ'}</DialogTitle>
         <DialogContent dividers>
           {bulkPreview && <Stack spacing={2}>
             <Alert severity={bulkPreview.blocked_count ? 'warning' : 'info'}>
-              لن يعتمد النظام جميع السجلات دون استيفاء الشروط. المعاينة تحدد السجلات التي سيُعتمد وضعها فقط.
+              {V4_PRIVATE_UI ? 'هذه معاينة للمراجعة فقط. لا يتم اعتماد أي جهة، ولا ربط المراكز أو الموظفين من هذه النافذة.' : 'لن يعتمد النظام جميع السجلات دون استيفاء الشروط. المعاينة تحدد السجلات التي سيُعتمد وضعها فقط.'}
             </Alert>
             <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: 1 }}>
               {[
@@ -630,7 +634,7 @@ export function OrganizationStructurePage() {
                 <Typography sx={{ fontSize: 12, fontWeight: 750, color: 'text.secondary' }}>{label}</Typography>
               </Box>)}
             </Box>
-            <Typography fontWeight={800}>سيُعتمد من هذه الدفعة:</Typography>
+            <Typography fontWeight={800}>{V4_PRIVATE_UI ? 'الجهات المؤهلة نظريًا، ولا تُعتمد الآن:' : 'سيُعتمد من هذه الدفعة:'}</Typography>
             <Typography variant="body2">
               {[
                 ['القطاعات', bulkPreview.eligible_by_kind.sector || 0],
@@ -645,27 +649,31 @@ export function OrganizationStructurePage() {
                 {item.name} — {BLOCK_REASON_LABELS[item.reason] || item.reason}
               </Typography>)}
             </Box>}
-            <TextField fullWidth required label="مرجع الاعتماد الرسمي للدفعة" value={bulkReference}
-              onChange={event => setBulkReference(event.target.value)}
-              helperText="أدخل مرجعًا معتمدًا يغطي جميع السجلات المؤهلة في هذه الدفعة."
-              slotProps={{ htmlInput: { maxLength: 255 } }} />
-            <FormControlLabel
-              control={<Checkbox checked={bulkConsent} onChange={(_, checked) => setBulkConsent(checked)} />}
-              label={<Typography variant="body2" fontWeight={750}>
-                أقر بأن مرجع الاعتماد يغطي جميع السجلات التي ستُعتمد، وأنني راجعت القائمة المؤهلة والمعلّقة.
-              </Typography>}
-            />
-            <Alert severity="info">سيتم توثيق الاعتماد باسم المستخدم ومرجعه. لن تتغير بيانات الموظفين أو سجلات المراكز الصحية.</Alert>
+            {(!V4_PRIVATE_UI || bulkPreview.commit_enabled === true) ? <>
+              <TextField fullWidth required label="مرجع الاعتماد الرسمي للدفعة" value={bulkReference}
+                onChange={event => setBulkReference(event.target.value)}
+                helperText="أدخل مرجعًا معتمدًا يغطي جميع السجلات المؤهلة في هذه الدفعة."
+                slotProps={{ htmlInput: { maxLength: 255 } }} />
+              <FormControlLabel
+                control={<Checkbox checked={bulkConsent} onChange={(_, checked) => setBulkConsent(checked)} />}
+                label={<Typography variant="body2" fontWeight={750}>
+                  أقر بأن مرجع الاعتماد يغطي جميع السجلات التي ستُعتمد، وأنني راجعت القائمة المؤهلة والمعلّقة.
+                </Typography>}
+              />
+              <Alert severity="info">سيتم توثيق الاعتماد باسم المستخدم ومرجعه. لن تتغير بيانات الموظفين أو سجلات المراكز الصحية.</Alert>
+            </> : <Alert severity="info">
+              الاعتماد الجماعي في V4 غير مفعل. راجع المسارات والمراكز والمستندات الرسمية أولًا؛ هذه الصفحة لا تنفذ اعتمادًا.
+            </Alert>}
           </Stack>}
         </DialogContent>
         <DialogActions sx={{ p: 2, gap: 1 }}>
           <Button disabled={busy} onClick={() => setBulkPreview(null)}>إلغاء</Button>
-          <Button variant="contained" color="success" disabled={
+          {(!V4_PRIVATE_UI || bulkPreview?.commit_enabled === true) && <Button variant="contained" color="success" disabled={
             busy || !bulkPreview || !bulkPreview.eligible_count ||
             bulkReference.trim().length < 3 || !bulkConsent
           } onClick={() => void confirmBulkReview()}>
             {busy ? 'جارٍ الاعتماد...' : `تأكيد اعتماد ${bulkPreview?.eligible_count || 0} سجل`}
-          </Button>
+          </Button>}
         </DialogActions>
       </Dialog>
       <Dialog open={confirmationUnit !== null} onClose={() => !busy && setConfirmationUnit(null)} maxWidth="sm" fullWidth>
