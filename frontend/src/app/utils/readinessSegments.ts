@@ -50,8 +50,8 @@ export function mergeReadinessSegments<T extends ReadinessPiece>(current: T | nu
   if (chunk.has_more !== (chunk.next_offset < next.rows_total))
     throw new Error('Inconsistent readiness progress');
   if (!current) return { ...next };
-  const a = current as ReadyCounters;
-  const b = next as ReadyCounters;
+  const a = current as unknown as ReadyCounters;
+  const b = next as unknown as ReadyCounters;
   const merged: ReadyCounters = { ...a, rows_scanned: progress + next.rows_scanned, segment: chunk };
   for (const key of GROUPS) merged[key] = sumCounts(a[key], b[key]);
   const historicalA = a.historical_values_for_missing_source as ReadyCounters || {};
@@ -71,5 +71,5 @@ export function mergeReadinessSegments<T extends ReadinessPiece>(current: T | nu
                       'cards_missing_any_optional_field']) {
     merged[key] = sumNumber(a[key], b[key]);
   }
-  return merged as T;
+  return merged as unknown as T;
 }
