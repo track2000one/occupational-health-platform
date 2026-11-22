@@ -16,6 +16,9 @@ from rest_framework.views import APIView
 from .employee_template_contract import (
     CANONICAL_FIELDS, CANONICAL_HEADERS, REQUIRED_FIELDS, TEMPLATE_VERSION,
 )
+from .employee_org_template_v4 import (
+    HEADERS as V4_HEADERS, needs_source_org_review,
+)
 from .employee_import_v2 import MAX_COLUMNS, NORMALIZED, detect_header, heading, text_cell
 from .employee_import_classification import OPTIONAL_COMPLETENESS_FIELDS
 from .models import ProvisionalEmployeeImportBatch
@@ -52,6 +55,9 @@ class ProvisionalEmployeeTemplatePreflightView(APIView):
             is_v3 = (tuple(text_cell(x) for x in
                            header_cells[:len(CANONICAL_HEADERS)])
                      == CANONICAL_HEADERS)
+            is_v4 = (tuple(text_cell(x) for x in
+                           header_cells[:len(V4_HEADERS)])
+                     == V4_HEADERS)
         finally:
             book.close()
 
@@ -80,7 +86,13 @@ class ProvisionalEmployeeTemplatePreflightView(APIView):
         return Response({
             'mode': 'canonical_employee_excel_preflight_read_only',
             'ready': True,
-            'schema_version': TEMPLATE_VERSION if is_v3 else 'compatible_legacy',
+            'schema_version': 'OHP-EMPLOYEE-ORGANIZATIONAL-V4' if is_v4 else
+                              TEMPLATE_VERSION if is_v3 else 'compatible_legacy',
+            'organizational_source_levels_preserved': 13 if is_v4 else 0,
+            'source_review_required_count': (
+                sum(needs_source_org_review(source.get('source_review_status'))
+                    for _, source in rows) if is_v4 else 0
+            ),
             'canonical_column_count': len(CANONICAL_HEADERS),
             'recognized_columns': [
                 {'key': key, 'label': safe_labels[key]}
@@ -102,7 +114,9 @@ class ProvisionalEmployeeTemplatePreflightView(APIView):
             'will_create_separate_batch': not same_file,
             'medical_or_original_records_modified': False,
             'note': (
-                'الملف قابل للقراءة؛ فحص المعاينة لا ينشئ موظفين أو يغير سجلاتهم. '
+                ('ستُحفظ مستويات الهيكلة الثلاثة عشر وملاحظات المراجعة في البطاقات المشفرة، '
+                 'دون اعتماد التبعيات أو إنشاء سجلات طبية. '
+                 if is_v4 else 'الملف قابل للقراءة؛ فحص المعاينة لا ينشئ موظفين أو يغير سجلاتهم. ') +
                 'الدفعة الجديدة لا تدمج تلقائيًا بيانات الدفعة السابقة؛ راجع التداخل قبل الاستيراد.'
             ),
         }, headers=NO_CACHE)
