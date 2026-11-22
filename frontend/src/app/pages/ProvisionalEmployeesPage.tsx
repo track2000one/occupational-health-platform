@@ -65,6 +65,11 @@ type ApprovalReadiness = {
   approved_center_name_check?: {
     approved_exact_unique: number; missing_in_file: number;
     not_matched_to_approved: number; ambiguous: number;
+    not_applicable?: number; affiliation_unresolved?: number;
+  };
+  source_affiliation_kind?: {
+    center: number; department: number; unresolved: number;
+    legacy_unknown: number;
   };
   cards_missing_any_optional_field?: number;
   optional_fields_missing?: Record<string, number>;
@@ -837,12 +842,21 @@ export function ProvisionalEmployeesPage() {
             <Chip color="warning" label={'حالة وظيفية غير نشطة: ' + (readiness.original_registry?.non_active_employment_status ?? 0)} />
             <Chip color="error" label={'بطاقات ناقصة: ' + (readiness.cards_missing_any_optional_field ?? 0)} />
           </Stack>
-          <Typography variant="subtitle2" fontWeight={800}>مطابقة مسميات المراكز الصحية المعتمدة</Typography>
+          {V4_PRIVATE_UI && readiness.source_affiliation_kind && <Stack gap={0.5}>
+            <Typography variant="subtitle2" fontWeight={800}>نوع التبعية التنظيمية من Excel</Typography>
+            <Stack direction="row" gap={1} flexWrap="wrap">
+              <Chip color="info" label={'موظفو المراكز: ' + (readiness.source_affiliation_kind.center || 0)} />
+              <Chip color="primary" variant="outlined" label={'موظفو الإدارات والأقسام: ' + (readiness.source_affiliation_kind.department || 0)} />
+              <Chip color="warning" label={'تبعية تحتاج تصنيفًا: ' + (readiness.source_affiliation_kind.unresolved || 0)} />
+            </Stack>
+          </Stack>}
+          <Typography variant="subtitle2" fontWeight={800}>مطابقة مسميات المراكز الصحية المعتمدة — لموظفي المراكز فقط</Typography>
           <Stack direction="row" gap={1} flexWrap="wrap">
             <Chip color="success" variant="outlined" label={'تطابق فريد: ' + (readiness.approved_center_name_check?.approved_exact_unique ?? 0)} />
             <Chip color="warning" label={'اسم المركز مفقود في الملف: ' + (readiness.approved_center_name_check?.missing_in_file ?? 0)} />
             <Chip label={'غير مطابق للدليل: ' + (readiness.approved_center_name_check?.not_matched_to_approved ?? 0)} />
             <Chip color="error" label={'أسماء ملتبسة: ' + (readiness.approved_center_name_check?.ambiguous ?? 0)} />
+            {V4_PRIVATE_UI && <Chip variant="outlined" label={'لا ينطبق — موظفو الإدارات: ' + (readiness.approved_center_name_check?.not_applicable ?? 0)} />}
           </Stack>
           <Typography variant="subtitle2" fontWeight={800}>التغطية في دليل المراكز والسجلات الأصلية</Typography>
           <Stack direction="row" gap={1} flexWrap="wrap">
