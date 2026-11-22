@@ -16,6 +16,7 @@ from .employee_import_v2_matching import norm_text
 from .models import Employee, HealthCenter, ProvisionalEmployeeImportBatch
 from .provisional_employee_roster import NO_CACHE, _unseal
 from .organization_structure import draft_import_scope
+from .employee_org_template_v4 import clean_org_value
 
 
 def calculate_readiness(batch, *, offset=None, limit=None):
@@ -50,6 +51,7 @@ def calculate_readiness(batch, *, offset=None, limit=None):
 
     class_counts = Counter()
     center_counts = Counter()
+    affiliation_counts = Counter()
     original_counts = Counter()
     missing_fields = Counter()
     # Distinguish empty imported snapshots from available historical values.
@@ -71,17 +73,41 @@ def calculate_readiness(batch, *, offset=None, limit=None):
         if blank_fields:
             missing_any += 1
 
-        source_center = str(src.get('health_center') or '').strip()
-        if not source_center:
-            center_counts['missing_in_file'] += 1
-        else:
-            linked = indexed_centers.get(norm_text(source_center), set())
-            if len(linked) == 1:
-                center_counts['approved_exact_unique'] += 1
-            elif linked:
-                center_counts['ambiguous'] += 1
+        # The V4 Excel has two independent affiliation paths. A department
+        # employee is not a failed health-center match. Source values such as
+        # "لا ينطبق" must never be looked up as health-center names.
+        levels = src.get('source_organizational_hierarchy')
+        if isinstance(levels, dict):
+            source_center = clean_org_value(levels.get('health_center'))
+            dept_path = any(clean_org_value(levels.get(level)) for level in (
+                'main_administration', 'sub_administration',
+                'department', 'sub_unit',
+            ))
+            if source_center:
+                affiliation_counts['center'] += 1
+            elif dept_path:
+                affiliation_counts['department'] += 1
+                center_counts['not_applicable'] += 1
+                source_center = ''
             else:
-                center_counts['not_matched_to_approved'] += 1
+                affiliation_counts['unresolved'] += 1
+                center_counts['affiliation_unresolved'] += 1
+                source_center = ''
+        else:
+            # Preserve historical V3 and Staging report semantics unchanged.
+            source_center = str(src.get('health_center') or '').strip()
+            affiliation_counts['legacy_unknown'] += 1
+        if not isinstance(levels, dict) or source_center:
+            if not source_center:
+                center_counts['missing_in_file'] += 1
+            else:
+                linked = indexed_centers.get(norm_text(source_center), set())
+                if len(linked) == 1:
+                    center_counts['approved_exact_unique'] += 1
+                elif linked:
+                    center_counts['ambiguous'] += 1
+                else:
+                    center_counts['not_matched_to_approved'] += 1
 
         original = originals.get(str(src.get('national_id') or ''))
         if original is None:
@@ -136,6 +162,12 @@ def calculate_readiness(batch, *, offset=None, limit=None):
             key: center_counts.get(key, 0) for key in (
                 'approved_exact_unique', 'missing_in_file',
                 'not_matched_to_approved', 'ambiguous',
+                'not_applicable', 'affiliation_unresolved',
+            )
+        },
+        'source_affiliation_kind': {
+            key: affiliation_counts.get(key, 0) for key in (
+                'center', 'department', 'unresolved', 'legacy_unknown',
             )
         },
         'optional_fields_missing': {
