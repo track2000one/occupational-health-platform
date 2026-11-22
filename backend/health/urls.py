@@ -2,6 +2,7 @@ from django.urls import path
 from .organization_structure import OrganizationDirectoryView, OrganizationImportView, OrganizationUnitReviewView
 from .department_directory import DepartmentDirectoryView, DepartmentStatusView
 from .organization_bulk_approval import OrganizationBulkApprovalView
+from .v4_center_operational_activation import V4HealthCenterOperationalActivationView
 from .employee_roster_template import EmployeeRosterTemplateView
 from .employee_org_template_v4 import EmployeeOrgRosterTemplateV4View
 from .provisional_employee_template_preflight import ProvisionalEmployeeTemplatePreflightView
@@ -72,6 +73,7 @@ urlpatterns = [
     path('employee-import-reviews/center-reconciliation/', StagingReviewCenterReconciliationView.as_view(), name='employee-review-center-reconciliation'),
     path('staging-employee-card-reset/', StagingEmployeeCardResetView.as_view(), name='staging-employee-card-reset'),
     path('health-centers/import-excel/', HealthCenterExcelImportView.as_view(), name='health-center-excel-import'),
+    path('health-centers/operational-activation/', V4HealthCenterOperationalActivationView.as_view(), name='v4-center-operational-activation'),
     path('health-centers/archive/', HealthCenterArchiveView.as_view(), name='health-center-archive'),
     path('center-foundation/', CenterFoundationRegistryView.as_view(), name='center-foundation-registry'),
     path('center-foundation/import/', CenterFoundationImportView.as_view(), name='center-foundation-import'),

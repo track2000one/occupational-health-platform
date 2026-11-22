@@ -219,3 +219,159 @@ class V4BulkPreviewSafetyTests(TestCase):
         self.assertEqual(preview.data['eligible_count'], 1, preview.data)
         self.assertEqual(preview.data['blocked_count'], 2, preview.data)
         self.assertFalse(OrganizationUnit.objects.filter(is_approved=True).exists())
+
+
+class V4InternalOperationalActivationTests(TestCase):
+    """All data and users are synthetic. No actual employee or medical writes."""
+
+    def setUp(self):
+        users = get_user_model()
+        self.admin = users.objects.create_superuser(
+            username='v4-operational-admin', password='test-only-secret')
+        self.staff = users.objects.create_user(
+            username='v4-operational-staff', password='test-only-secret', is_staff=True)
+        self.api = APIClient()
+        self.api.force_authenticate(self.admin)
+        self.center = HealthCenter.objects.create(
+            name='Synthetic Unique Center', name_ar='مركز اختبار فريد')
+        self.duplicate_a = HealthCenter.objects.create(
+            name='Synthetic Duplicate A', name_ar='مركز مكرر')
+        self.duplicate_b = HealthCenter.objects.create(
+            name='Synthetic Duplicate B', name_ar='مركز مكرر')
+        self.root = OrganizationUnit.objects.create(
+            code='V4-D-OP-ROOT', name='Operational Root', kind='department')
+        self.child = OrganizationUnit.objects.create(
+            code='V4-D-OP-CHILD', name='Operational Child', kind='department',
+            parent=self.root)
+
+    def test_defaults_deny_all_activation_with_no_writes(self):
+        with patch('health.v4_operational_activation.draft_import_scope', return_value='v4'):
+            with patch.dict('os.environ', {
+                'OHP_V4_OPERATIONAL_ACTIVATION_ENABLED': 'false',
+                'OHP_V4_BULK_PREVIEW_ENABLED': 'true',
+            }):
+                result = self.api.post(
+                    '/api/health-centers/operational-activation/',
+                    {'action': 'preview', 'center_ids': [self.center.pk]}, format='json')
+                org = self.api.post(URL, {
+                    'action': 'activate', 'unit_ids': [self.root.pk],
+                }, format='json')
+        self.assertEqual(result.status_code, 403)
+        self.assertEqual(org.status_code, 403)
+        self.assertEqual(self.center.approval_status, 'pending')
+        self.assertFalse(self.root.is_approved)
+
+    def test_center_activation_rejects_duplicate_names_and_preserves_records(self):
+        from .models import HealthCenterProfileAuditEvent
+        ids = [self.center.pk, self.duplicate_a.pk, self.duplicate_b.pk]
+        with patch('health.v4_operational_activation.draft_import_scope', return_value='v4'):
+            with patch.dict('os.environ', {'OHP_V4_OPERATIONAL_ACTIVATION_ENABLED': 'true'}):
+                url = '/api/health-centers/operational-activation/'
+                pre = self.api.post(url, {'action': 'preview', 'center_ids': ids}, format='json')
+                self.assertEqual(pre.status_code, 200, pre.data)
+                self.assertEqual(pre.data['eligible_count'], 1)
+                self.assertEqual(pre.data['blocked_count'], 2)
+                self.assertEqual(pre.data['mode'], 'preview')
+                self.assertEqual(HealthCenterProfileAuditEvent.objects.count(), 0)
+                invalid = self.api.post(url, {
+                    'action': 'activate', 'center_ids': ids,
+                    'preview_token': pre.data['preview_token'], 'confirmed': False,
+                }, format='json')
+                self.assertEqual(invalid.status_code, 400, invalid.data)
+                applied = self.api.post(url, {
+                    'action': 'activate', 'center_ids': ids,
+                    'preview_token': pre.data['preview_token'],
+                    'confirmed': True, 'confirm_text': 'تفعيل تشغيلي',
+                }, format='json')
+                self.assertEqual(applied.status_code, 200, applied.data)
+                self.assertEqual(applied.data['activated_count'], 1)
+                stale = self.api.post(url, {
+                    'action': 'activate', 'center_ids': ids,
+                    'preview_token': pre.data['preview_token'],
+                    'confirmed': True, 'confirm_text': 'تفعيل تشغيلي',
+                }, format='json')
+                self.assertEqual(stale.status_code, 409)
+        self.center.refresh_from_db()
+        self.duplicate_a.refresh_from_db()
+        self.assertEqual(self.center.approval_status, 'approved')
+        self.assertEqual(self.center.approval_reference, '')
+        self.assertEqual(self.center.approved_by, self.admin)
+        self.assertEqual(self.duplicate_a.approval_status, 'pending')
+        self.assertEqual(HealthCenterProfileAuditEvent.objects.filter(
+            action='v4_operational_activate').count(), 1)
+        self.assertEqual(Employee.objects.count(), 0)
+        self.assertEqual(OrganizationUnit.objects.filter(is_approved=True).count(), 0)
+
+    def test_org_bulk_v4_operational_activation_uses_parent_first_without_reference(self):
+        ids = [self.child.pk, self.root.pk]
+        with patch('health.v4_operational_activation.draft_import_scope', return_value='v4'):
+            with patch('health.organization_bulk_approval.draft_import_scope', return_value='v4'):
+                with patch.dict('os.environ', {
+                    'STAGING_MODE': 'false',
+                    'OHP_V4_OPERATIONAL_ACTIVATION_ENABLED': 'true',
+                    'OHP_V4_BULK_PREVIEW_ENABLED': 'true',
+                    'OHP_V4_BULK_APPROVAL_COMMIT_ENABLED': 'false',
+                }):
+                    pre = self.api.post(URL, {'action': 'preview', 'unit_ids': ids}, format='json')
+                    self.assertEqual(pre.status_code, 200, pre.data)
+                    self.assertEqual(pre.data['eligible_count'], 2, pre.data)
+                    self.assertTrue(pre.data['commit_enabled'])
+                    bad = self.api.post(URL, {
+                        'action': 'activate', 'unit_ids': ids,
+                        'preview_token': pre.data['preview_token'], 'confirmed': False,
+                    }, format='json')
+                    self.assertEqual(bad.status_code, 400)
+                    result = self.api.post(URL, {
+                        'action': 'activate', 'unit_ids': ids,
+                        'preview_token': pre.data['preview_token'],
+                        'confirmed': True, 'confirm_text': 'تفعيل تشغيلي',
+                    }, format='json')
+                    self.assertEqual(result.status_code, 200, result.data)
+                    self.assertEqual(result.data['mode'], 'activated')
+                    self.assertEqual(result.data['approved_count'], 2)
+        self.root.refresh_from_db()
+        self.child.refresh_from_db()
+        self.assertTrue(self.root.is_approved and self.child.is_approved)
+        self.assertEqual(self.root.approval_reference, '')
+        self.assertEqual(self.child.approval_reference, '')
+        self.assertEqual(OrganizationUnitApprovalLog.objects.filter(
+            action='v4-activate').count(), 2)
+        self.assertEqual(Employee.objects.count(), 0)
+        self.assertFalse(HealthCenter.objects.filter(approved_at__isnull=False).exists())
+
+    def test_non_admin_cannot_operationally_activate(self):
+        self.api.force_authenticate(self.staff)
+        with patch('health.v4_operational_activation.draft_import_scope', return_value='v4'):
+            with patch('health.organization_bulk_approval.draft_import_scope', return_value='v4'):
+                with patch.dict('os.environ', {
+                    'OHP_V4_OPERATIONAL_ACTIVATION_ENABLED': 'true',
+                    'OHP_V4_BULK_PREVIEW_ENABLED': 'true',
+                }):
+                    centers = self.api.post(
+                        '/api/health-centers/operational-activation/',
+                        {'action': 'preview', 'center_ids': [self.center.pk]}, format='json')
+                    orgs = self.api.post(
+                        URL, {'action': 'preview', 'unit_ids': [self.root.pk]}, format='json')
+        self.assertEqual(centers.status_code, 403)
+        self.assertEqual(orgs.status_code, 403)
+
+    def test_single_department_operational_activation_without_official_reference(self):
+        url = f'/api/organization-units/{self.root.pk}/review/'
+        with patch('health.v4_operational_activation.draft_import_scope', return_value='v4'):
+            with patch('health.organization_structure.draft_import_scope', return_value='v4'):
+                with patch.dict('os.environ', {
+                    'OHP_V4_OPERATIONAL_ACTIVATION_ENABLED': 'true',
+                    'OHP_V4_DEPARTMENT_DRAFT_IMPORT_ENABLED': 'true',
+                }):
+                    not_confirmed = self.api.post(
+                        url, {'action': 'activate'}, format='json')
+                    self.assertEqual(not_confirmed.status_code, 400)
+                    activated = self.api.post(
+                        url, {'action': 'activate', 'confirmed': True}, format='json')
+                    self.assertEqual(activated.status_code, 200, activated.data)
+        self.root.refresh_from_db()
+        self.assertTrue(self.root.is_approved)
+        self.assertEqual(self.root.approval_reference, '')
+        self.assertTrue(OrganizationUnitApprovalLog.objects.filter(
+            action='v4-activate', unit=self.root).exists())
+        self.assertEqual(Employee.objects.count(), 0)

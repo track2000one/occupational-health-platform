@@ -15,6 +15,7 @@ from rest_framework.views import APIView
 
 from .models import AuditLog, HealthCenter, OrganizationUnit, OrganizationUnitApprovalLog
 from .organization_structure import STAGING_PROJECT, clean, draft_import_scope
+from .v4_operational_activation import operational_activation_enabled, OPERATIONAL_NOTE
 
 
 ORDER = {'sector': 0, 'department': 1, 'center': 2, 'unit': 3}
@@ -155,8 +156,11 @@ class OrganizationBulkApprovalView(APIView):
             return Response({'detail': 'Bulk review is disabled outside isolated Staging or explicitly enabled V4.'},
                             status=status.HTTP_403_FORBIDDEN)
         action = request.data.get('action')
-        if action not in ('preview', 'approve'):
-            return Response({'detail': 'Action must be preview or approve.'}, status=400)
+        if action not in ('preview', 'approve', 'activate'):
+            return Response({'detail': 'الإجراء يجب أن يكون معاينة أو تفعيلًا.'}, status=400)
+        if action == 'activate' and not (scope == 'v4' and operational_activation_enabled()):
+            return Response({'detail': 'التفعيل التشغيلي متاح فقط في نسخة V4 المعزولة.'},
+                            status=status.HTTP_403_FORBIDDEN)
         if (scope == 'v4' and action == 'approve'
                 and os.getenv('OHP_V4_BULK_APPROVAL_COMMIT_ENABLED', '').lower() != 'true'):
             return Response({'detail': 'V4 bulk approval commit is disabled; review only. No organizations were approved.'},
@@ -184,15 +188,27 @@ class OrganizationBulkApprovalView(APIView):
             fingerprint = _snapshot_token(raw_ids, units, active_centers)
             if action == 'preview':
                 return Response({**plan, 'preview_token': fingerprint, 'mode': 'preview',
-                                 'commit_enabled': scope != 'v4' or
-                                 os.getenv('OHP_V4_BULK_APPROVAL_COMMIT_ENABLED', '').lower() == 'true',
-                                 'notice': 'Preview only; no approvals or employee assignments were changed.'})
+                                 'commit_enabled': (
+                                     operational_activation_enabled() if scope == 'v4'
+                                     else True
+                                 ),
+                                 'activation_mode': 'internal_operational' if scope == 'v4' else 'formal',
+                                 'notice': OPERATIONAL_NOTE if scope == 'v4' else
+                                     'Preview only; no approvals or employee assignments were changed.'})
 
-            reference = clean(request.data.get('approval_reference'))
-            if not 3 <= len(reference) <= 255:
-                return Response({'detail': 'Provide an official approval reference (3–255 characters).'}, status=400)
-            if request.data.get('reference_covers_all') is not True:
-                return Response({'detail': 'Confirm the official reference covers every eligible item.'}, status=400)
+            operational = scope == 'v4' and action == 'activate'
+            if operational:
+                if (request.data.get('confirmed') is not True or
+                        request.data.get('confirm_text') != 'تفعيل تشغيلي'):
+                    return Response({'detail': 'أكد التفعيل التشغيلي للبيانات بعد المعاينة.'},
+                                    status=400)
+                reference = ''  # Never manufacture a legal decision number.
+            else:
+                reference = clean(request.data.get('approval_reference'))
+                if not 3 <= len(reference) <= 255:
+                    return Response({'detail': 'Provide an official approval reference (3–255 characters).'}, status=400)
+                if request.data.get('reference_covers_all') is not True:
+                    return Response({'detail': 'Confirm the official reference covers every eligible item.'}, status=400)
             expected = request.data.get('preview_token')
             if not isinstance(expected, str) or expected != fingerprint:
                 return Response({'detail': 'The preview is outdated. Recheck before approving.'},
@@ -213,19 +229,23 @@ class OrganizationBulkApprovalView(APIView):
                 unit.approval_reference = reference
                 unit.save()
                 OrganizationUnitApprovalLog.objects.create(
-                    unit=unit, action='bulk-approve',
+                    unit=unit, action='v4-activate' if operational else 'bulk-approve',
                     approval_reference=reference, user=request.user,
                 )
             AuditLog.objects.create(
-                user=str(request.user), action='organization_bulk_approve',
+                user=str(request.user),
+                action='v4_operational_activate_organizations' if operational else 'organization_bulk_approve',
                 model_name='OrganizationUnit',
                 record_id='bulk:' + sha256(','.join(str(unit.pk) for unit in eligible).encode()).hexdigest()[:20],
             )
             return Response({
-                'mode': 'approved', 'approved_count': len(eligible),
+                'mode': 'activated' if operational else 'approved',
+                'approved_count': len(eligible),
                 'approved_ids': [unit.pk for unit in eligible],
                 'blocked_count': plan['blocked_count'],
                 'blocked': plan['blocked'],
                 'approval_reference': reference,
-                'notice': 'No employees or health center master records were changed.',
+                'notice': OPERATIONAL_NOTE if operational else
+                    'No employees or health center master records were changed.',
+                'employee_records_modified': 0, 'health_center_records_modified': 0,
             }, status=status.HTTP_200_OK)
