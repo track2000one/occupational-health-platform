@@ -354,3 +354,24 @@ class V4InternalOperationalActivationTests(TestCase):
                         URL, {'action': 'preview', 'unit_ids': [self.root.pk]}, format='json')
         self.assertEqual(centers.status_code, 403)
         self.assertEqual(orgs.status_code, 403)
+
+    def test_single_department_operational_activation_without_official_reference(self):
+        url = f'/api/organization-units/{self.root.pk}/review/'
+        with patch('health.v4_operational_activation.draft_import_scope', return_value='v4'):
+            with patch('health.organization_structure.draft_import_scope', return_value='v4'):
+                with patch.dict('os.environ', {
+                    'OHP_V4_OPERATIONAL_ACTIVATION_ENABLED': 'true',
+                    'OHP_V4_DEPARTMENT_DRAFT_IMPORT_ENABLED': 'true',
+                }):
+                    not_confirmed = self.api.post(
+                        url, {'action': 'activate'}, format='json')
+                    self.assertEqual(not_confirmed.status_code, 400)
+                    activated = self.api.post(
+                        url, {'action': 'activate', 'confirmed': True}, format='json')
+                    self.assertEqual(activated.status_code, 200, activated.data)
+        self.root.refresh_from_db()
+        self.assertTrue(self.root.is_approved)
+        self.assertEqual(self.root.approval_reference, '')
+        self.assertTrue(OrganizationUnitApprovalLog.objects.filter(
+            action='v4-activate', unit=self.root).exists())
+        self.assertEqual(Employee.objects.count(), 0)
