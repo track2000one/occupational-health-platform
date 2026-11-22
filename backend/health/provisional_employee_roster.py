@@ -24,7 +24,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .employee_import_classification import (
-    OPTIONAL_COMPLETENESS_FIELDS, normalize_person_name,
+    OPTIONAL_COMPLETENESS_FIELDS, VISIT_DEFERRED_FIELDS, normalize_person_name,
 )
 from .employee_import_v2 import (
     MAX_FILE_SIZE, MAX_ROWS, MAX_COLUMNS, NORMALIZED, detect_header, heading, identity,
@@ -431,6 +431,12 @@ class ProvisionalEmployeeCompletionView(APIView):
                        or len(v.strip()) > MAX_FIELD_VALUE for v in fields.values())):
             return Response({'detail': 'الحقول المرسلة غير صالحة.'},
                             status=400, headers=NO_CACHE)
+        if any(field in VISIT_DEFERRED_FIELDS for field in fields):
+            return Response({
+                'detail': 'تُستكمل بيانات الميلاد والحالة الاجتماعية والعنوان الوطني '
+                          'والوظيفة الحالية أثناء زيارة المراجع فقط، وليست مطلوبة '
+                          'لتأسيس البطاقة المؤقتة أو ربط الموظف تنظيميًا.',
+            }, status=409, headers=NO_CACHE)
         employee_number = fields.get('employee_number', '').strip()
         if employee_number and not employee_number.strip('0'):
             return Response({'detail': 'أدخل الرقم الوظيفي الفعلي.'},
