@@ -407,13 +407,13 @@ export function OrganizationStructurePage() {
               <Button variant="contained" color="success" disabled={busy || !items.some(unit => !unit.is_approved && unit.is_active)}
                 startIcon={<ApproveIcon />}
                 onClick={() => void openBulkReview(items.filter(unit => !unit.is_approved && unit.is_active).map(unit => unit.id))}>
-                {V4_PRIVATE_UI ? 'معاينة أهلية جميع السجلات' : 'اعتماد جميع السجلات المؤهلة'}
+                {V4_PRIVATE_UI ? 'معاينة وتفعيل جميع السجلات' : 'اعتماد جميع السجلات المؤهلة'}
               </Button>
             </Stack>
           </Stack>
           <Typography sx={{ color: '#536c80', fontSize: '13px', mt: 1, lineHeight: 1.6 }}>
             {V4_PRIVATE_UI ? 'تُراجع الجهات جماعيًا ثم تُفعّل للتشغيل الداخلي فقط، دون رقم قرار. السجلات ذات التعارض أو التي لم تُطابق تبقى معلّقة.' : 'قبل الاعتماد ستظهر معاينة توضح السجلات المؤهلة والمعلّقة، ولا يُعتمد أي سجل دون مرجع رسمي وتأكيد صريح.'}
-            يمكن اعتماد القطاع ثم المركز ثم الوحدة في دفعة واحدة إذا اكتملت مطابقة المركز.
+            {V4_PRIVATE_UI ? 'يمكن تفعيل القطاع ثم المركز ثم الوحدة في دفعة واحدة إذا اكتملت المطابقة.' : 'يمكن اعتماد القطاع ثم المركز ثم الوحدة في دفعة واحدة إذا اكتملت مطابقة المركز.'}
           </Typography>
         </Paper>
         <Divider sx={{mb:2}}/>
@@ -493,7 +493,8 @@ export function OrganizationStructurePage() {
 
                     <Box sx={{ mt: 'auto', pt: 0.8 }}>
                       <Chip size="small" color={REVIEW_COLORS[unit.review_status] || 'default'}
-                        label={REVIEW_LABELS[unit.review_status] || 'بانتظار المراجعة'}
+                        label={V4_PRIVATE_UI && unit.is_approved
+                          ? 'مُفعّل للتشغيل' : REVIEW_LABELS[unit.review_status] || 'بانتظار المراجعة'}
                         sx={{ maxWidth: '100%', height: 28, fontSize: '12px', fontWeight: 800, '& .MuiChip-label': { overflow: 'hidden', textOverflow: 'ellipsis' } }} />
                       {needsReview && <Typography sx={{ fontSize: '12px', lineHeight: 1.6, color: '#607a90', mt: 0.5 }}>
                         {unit.review_status === 'await_parent' ? 'يجب اعتماد الجهة الأعلى أولًا' : 'يلزم التحقق من مطابقة المركز'}
@@ -517,13 +518,15 @@ export function OrganizationStructurePage() {
                         onClick={() => setDetailUnit(unit)}>مراجعة</Button>
                       <Button variant="outlined" size="small" color="success" startIcon={<ApproveIcon />}
                         disabled={busy || unit.review_status !== 'ready'}
-                        title={unit.review_status === 'ready' ? 'الاعتماد بعد إدخال المرجع الرسمي' : (REVIEW_LABELS[unit.review_status] || 'متطلبات الاعتماد غير مكتملة')}
-                        onClick={() => setConfirmationUnit(unit)}>اعتماد</Button>
+                        title={unit.review_status === 'ready'
+                          ? (V4_PRIVATE_UI ? 'التفعيل الداخلي بعد مراجعة البيانات' : 'الاعتماد بعد إدخال المرجع الرسمي')
+                          : (REVIEW_LABELS[unit.review_status] || 'متطلبات التفعيل غير مكتملة')}
+                        onClick={() => setConfirmationUnit(unit)}>{V4_PRIVATE_UI ? 'تفعيل' : 'اعتماد'}</Button>
                       <Button variant="outlined" size="small" color="primary" startIcon={<EditIcon />}
                         disabled={busy || unit.is_approved}
                         onClick={() => { setEditUnit(unit); setEditName(unit.name); }}>تعديل</Button>
-                      <Button variant="outlined" size="small" color="inherit" startIcon={<ReferenceIcon />}
-                        onClick={() => setReferenceUnit(unit)}>مرجع الاعتماد</Button>
+                      {!V4_PRIVATE_UI && <Button variant="outlined" size="small" color="inherit" startIcon={<ReferenceIcon />}
+                        onClick={() => setReferenceUnit(unit)}>مرجع الاعتماد</Button>}
                     </Box>
                   </CardContent>
                 </Card>
