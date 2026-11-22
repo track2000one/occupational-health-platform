@@ -15,6 +15,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import AuditLog, HealthCenter, OrganizationUnit, OrganizationUnitApprovalLog
+from .v4_department_paths import v4_department_path
 
 MAX_FILE_SIZE = 5 * 1024 * 1024
 MAX_UNCOMPRESSED_BYTES = 20 * 1024 * 1024
@@ -403,7 +404,13 @@ class OrganizationUnitReviewView(APIView):
             elif action == 'approve':
                 if not unit.is_active:
                     return Response({'detail': 'لا يمكن اعتماد جهة غير نشطة.'}, status=409)
-                if unit.kind == 'department' and (unit.health_center_id or unit.parent_id):
+                if unit.kind == 'department' and unit.code.startswith('V4-D-'):
+                    if (draft_import_scope() != 'v4'
+                            or os.getenv('OHP_V4_DEPARTMENT_DRAFT_IMPORT_ENABLED', '').lower() != 'true'):
+                        return Response({'detail': 'V4 department approval is restricted to isolated V4.'}, status=403)
+                    if not v4_department_path(unit, require_leaf_approved=False):
+                        return Response({'detail': 'اعتمد الجهات الأعلى أولاً، وتحقق من سلامة التسلسل وعدم ارتباطه بمركز صحي.'}, status=409)
+                elif unit.kind == 'department' and (unit.health_center_id or unit.parent_id):
                     return Response({'detail': 'القسم المركزي يجب ألا يكون مرتبطًا بمركز صحي أو بجهة أعلى غير معتمدة لهذا التصنيف.'}, status=409)
                 if len(ref) < 3 or len(ref) > 255:
                     return Response({'detail': 'Enter an official approval reference (3–255 characters).'}, status=400)
