@@ -1,7 +1,7 @@
-"""Review-and-confirm bulk organizational approvals, restricted to isolated Staging.
+"""Review organizational approvals in isolated V4 or Staging.
 
-No silent approvals: preview first, verify a snapshot fingerprint, then explicit
-confirmation with an official reference covering the approved entries.
+V4 bulk preview is separately enabled. V4 bulk commits stay disabled unless
+explicitly and independently enabled after governance review. No implicit approvals.
 """
 from hashlib import sha256
 import json
@@ -14,11 +14,44 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import AuditLog, HealthCenter, OrganizationUnit, OrganizationUnitApprovalLog
-from .organization_structure import STAGING_PROJECT, clean
+from .organization_structure import STAGING_PROJECT, clean, draft_import_scope
 
 
 ORDER = {'sector': 0, 'department': 1, 'center': 2, 'unit': 3}
 MAX_BULK_SELECTION = 500
+
+
+def _approval_scope():
+    """V4 requires exact service/project/environment/private DB identity and opt-in."""
+    if (os.getenv('STAGING_MODE', '').lower() == 'true'
+            and os.getenv('RAILWAY_PROJECT_ID') == STAGING_PROJECT):
+        return 'staging'
+    if (draft_import_scope() == 'v4'
+            and os.getenv('OHP_V4_BULK_PREVIEW_ENABLED', '').lower() == 'true'):
+        return 'v4'
+    return ''
+
+
+def _v4_department_depth(unit, by_id):
+    """Validate a V4 department chain without requiring ancestors preapproved."""
+    if not unit.code.startswith('V4-D-'):
+        return None
+    seen = set()
+    depth = 0
+    current = unit
+    while current is not None:
+        if (current.pk in seen or current.kind != 'department'
+                or not current.code.startswith('V4-D-')
+                or not current.is_active or current.health_center_id
+                or depth >= 4):
+            return None
+        seen.add(current.pk)
+        if not current.parent_id:
+            return depth
+        current = by_id.get(current.parent_id)
+        depth += 1
+    return None
+
 
 
 def _snapshot_token(selected_ids, units, active_centers):
@@ -36,9 +69,17 @@ def _snapshot_token(selected_ids, units, active_centers):
 
 def _plan_approvals(selected_ids, units, active_centers):
     units_by_id = {unit.pk: unit for unit in units}
+    # Hierarchical V4 departments must be considered parent-first, regardless
+    # of their Arabic display names or import order.
     selected = sorted(
         (units_by_id[key] for key in selected_ids),
-        key=lambda unit: (ORDER.get(unit.kind, 10), unit.name, unit.pk),
+        key=lambda unit: (
+            ORDER.get(unit.kind, 10),
+            _v4_department_depth(unit, units_by_id)
+            if unit.kind == 'department' and _v4_department_depth(unit, units_by_id) is not None
+            else 99,
+            unit.name, unit.pk,
+        ),
     )
     selected_ids_set = set(selected_ids)
     previously_approved = {unit.pk for unit in units if unit.is_approved}
@@ -73,7 +114,13 @@ def _plan_approvals(selected_ids, units, active_centers):
                 reason = 'invalid_parent_center'
             elif not parent.health_center_id or parent.health_center_id not in active_centers:
                 reason = 'parent_center_mapping_required'
-        elif unit.kind in ('sector', 'department') and unit.parent_id:
+        elif unit.kind == 'department':
+            if unit.code.startswith('V4-D-'):
+                if _v4_department_depth(unit, units_by_id) is None:
+                    reason = 'invalid_department_hierarchy'
+            elif unit.parent_id or unit.health_center_id:
+                reason = 'unexpected_root_parent'
+        elif unit.kind == 'sector' and (unit.parent_id or unit.health_center_id):
             reason = 'unexpected_root_parent'
         if reason:
             blocked.append({
@@ -103,13 +150,17 @@ class OrganizationBulkApprovalView(APIView):
         if not request.user.is_superuser:
             return Response({'detail': 'Bulk approvals require a superuser.'},
                             status=status.HTTP_403_FORBIDDEN)
-        if (os.getenv('STAGING_MODE', '').lower() != 'true'
-                or os.getenv('RAILWAY_PROJECT_ID') != STAGING_PROJECT):
-            return Response({'detail': 'Bulk organization approval is restricted to isolated Staging.'},
+        scope = _approval_scope()
+        if not scope:
+            return Response({'detail': 'Bulk review is disabled outside isolated Staging or explicitly enabled V4.'},
                             status=status.HTTP_403_FORBIDDEN)
         action = request.data.get('action')
         if action not in ('preview', 'approve'):
             return Response({'detail': 'Action must be preview or approve.'}, status=400)
+        if (scope == 'v4' and action == 'approve'
+                and os.getenv('OHP_V4_BULK_APPROVAL_COMMIT_ENABLED', '').lower() != 'true'):
+            return Response({'detail': 'V4 bulk approval commit is disabled; review only. No organizations were approved.'},
+                            status=status.HTTP_403_FORBIDDEN)
         raw_ids = request.data.get('unit_ids')
         if (not isinstance(raw_ids, list) or not raw_ids
                 or len(raw_ids) > MAX_BULK_SELECTION
@@ -118,7 +169,7 @@ class OrganizationBulkApprovalView(APIView):
             return Response({'detail': 'Provide 1–500 unique, positive organization IDs.'}, status=400)
 
         # Lock all relevant hierarchy rows so parent approvals and center references
-        # cannot change mid-plan. This is inexpensive (107 rows) in staging.
+        # cannot change mid-plan. Bounded by the organizational registry size.
         with transaction.atomic():
             units = list(OrganizationUnit.objects.select_for_update().order_by('pk'))
             by_id = {unit.pk for unit in units}
@@ -132,7 +183,10 @@ class OrganizationBulkApprovalView(APIView):
             plan, eligible = _plan_approvals(raw_ids, units, active_centers)
             fingerprint = _snapshot_token(raw_ids, units, active_centers)
             if action == 'preview':
-                return Response({**plan, 'preview_token': fingerprint, 'mode': 'preview'})
+                return Response({**plan, 'preview_token': fingerprint, 'mode': 'preview',
+                                 'commit_enabled': scope != 'v4' or
+                                 os.getenv('OHP_V4_BULK_APPROVAL_COMMIT_ENABLED', '').lower() == 'true',
+                                 'notice': 'Preview only; no approvals or employee assignments were changed.'})
 
             reference = clean(request.data.get('approval_reference'))
             if not 3 <= len(reference) <= 255:
