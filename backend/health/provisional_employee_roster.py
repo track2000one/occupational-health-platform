@@ -33,6 +33,10 @@ from .employee_import_v2 import (
 from .employee_template_contract import (
     CANONICAL_HEADERS, GENDER_CHOICES, MARITAL_CHOICES,
 )
+from .employee_org_template_v4 import (
+    HEADERS as V4_HEADERS, ORGANIZATION_COLUMNS, TOP_LEVELS,
+    needs_source_org_review,
+)
 from .employee_import_v2_matching import source_profile
 from .models import (
     AuditLog, Employee, ProvisionalEmployeeImportBatch,
@@ -119,6 +123,11 @@ def _parse(upload):
             if sum(1 for label in names if label in aliases) > 1:
                 raise ValueError('يوجد عمود مكرر للبيان «' + key + '». راجع رؤوس الأعمدة.')
         strict_v3 = tuple(text_cell(v) for v in headers[:len(CANONICAL_HEADERS)]) == CANONICAL_HEADERS
+        exact_v4 = tuple(text_cell(v) for v in headers[:len(V4_HEADERS)]) == V4_HEADERS
+        # Only the full exact V4 contract may set the 13-source hierarchy.
+        # Do not guess levels from similarly named columns in legacy files.
+        if exact_v4 and len(headers) != len(V4_HEADERS):
+            raise ValueError('ملف V4 يجب أن يتضمن 31 عمودًا بالترتيب المعتمد.')
         if 'name' not in mapping or 'national_id' not in mapping:
             raise ValueError('يلزم عمود اسم الموظف ورقم الهوية/الإقامة.')
         if len(headers) > MAX_COLUMNS and any(text_cell(v) for v in headers[MAX_COLUMNS:]):
@@ -168,6 +177,18 @@ def _parse(upload):
                 raise ValueError(f'الصف {number}: رقم هوية مكرر في الملف.')
             if any(len(str(v)) > 500 for v in source.values()):
                 raise ValueError(f'الصف {number}: إحدى قيم النص أطول من الحد.')
+            if exact_v4:
+                levels = {
+                    key: text_cell(values[5 + index])
+                    for index, (key, _label) in enumerate(ORGANIZATION_COLUMNS)
+                }
+                if any(not value or len(value) > 220 for value in levels.values()):
+                    raise ValueError(f'الصف {number}: جميع مستويات هيكلة V4 مطلوبة؛ استخدم «لا ينطبق» للمستوى غير المعني.')
+                if any(levels.get(key) != expected for key, expected in TOP_LEVELS.items()):
+                    raise ValueError(f'الصف {number}: مستويات V4 العليا لا تطابق القالب المعتمد.')
+                source['source_organizational_hierarchy'] = levels
+                source['source_review_status'] = text_cell(values[18])[:255]
+                source['source_review_notes'] = text_cell(values[19])[:500]
             seen.add(nid)
             source['national_id'] = nid
             rows.append((number, source))
@@ -261,6 +282,10 @@ def _card(row, user):
         'center': source.get('health_center', ''),
         'organization_unit': source.get('organization_unit', ''),
         'job_title': source.get('job_title', ''),
+        'source_organizational_hierarchy': source.get('source_organizational_hierarchy', {}),
+        'source_review_status': source.get('source_review_status', ''),
+        'source_review_required': needs_source_org_review(source.get('source_review_status', '')),
+
         'classification': row.classification,
         'missing_optional': row.missing_optional,
         'temporary_employee_number': (
