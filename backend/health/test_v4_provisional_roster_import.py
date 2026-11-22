@@ -1,5 +1,6 @@
 """Synthetic V4 31-column roster safety checks; no real employee data."""
 from io import BytesIO
+from unittest.mock import patch
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
@@ -54,11 +55,12 @@ class V4ProvisionalRosterImportTests(TestCase):
         self.client = APIClient()
         self.client.force_authenticate(self.admin)
 
-    def send(self, url, content):
-        return self.client.post(url, {
-            'file':SimpleUploadedFile('synthetic-v4.xlsx',content,
-                content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-        },format='multipart')
+    def send(self, url, content, scope='v4'):
+        with patch('health.provisional_employee_roster.draft_import_scope', return_value=scope):
+            return self.client.post(url, {
+                'file':SimpleUploadedFile('synthetic-v4.xlsx',content,
+                    content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            },format='multipart')
 
     def test_preflight_and_import_preserve_all_13_levels_and_review_notes(self):
         data = fake_book()
@@ -104,3 +106,11 @@ class V4ProvisionalRosterImportTests(TestCase):
         response=self.send('/api/provisional-employees/import/',output.getvalue())
         self.assertEqual(response.status_code,400)
         self.assertFalse(ProvisionalEmployeeRosterRow.objects.exists())
+
+    def test_original_production_or_staging_rejects_v4_workbook(self):
+        data = fake_book()
+        for scope in ('staging', ''):
+            result = self.send('/api/provisional-employees/import/', data, scope=scope)
+            self.assertEqual(result.status_code, 400)
+        self.assertFalse(ProvisionalEmployeeRosterRow.objects.exists())
+        self.assertFalse(Employee.objects.exists())
