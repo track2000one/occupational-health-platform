@@ -129,8 +129,8 @@ def _parse(upload):
             raise ValueError('استيراد القالب التنظيمي V4 محصور بالخادم المستقل، ولا يعمل في Production أو Staging.')
         # Only the full exact V4 contract may set the 13-source hierarchy.
         # Do not guess levels from similarly named columns in legacy files.
-        if exact_v4 and len(headers) != len(V4_HEADERS):
-            raise ValueError('ملف V4 يجب أن يتضمن 31 عمودًا بالترتيب المعتمد.')
+        if exact_v4 and any(text_cell(v) for v in headers[len(V4_HEADERS):]):
+            raise ValueError('ملف V4 يجب أن يتضمن 31 عمودًا بالترتيب المعتمد دون أعمدة إضافية.')
         if 'name' not in mapping or 'national_id' not in mapping:
             raise ValueError('يلزم عمود اسم الموظف ورقم الهوية/الإقامة.')
         if len(headers) > MAX_COLUMNS and any(text_cell(v) for v in headers[MAX_COLUMNS:]):
