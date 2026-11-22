@@ -2024,7 +2024,12 @@ export function EmployeesPage() {
                       prev.organizational_hierarchy, 'center',
                       selectedCenter ? centerDisplayName(selectedCenter, isRtl) : '',
                     );
-                    if (parentSector) {
+                    // Never retain the previous sector when the newly selected
+                    // center has no verified sector mapping yet.
+                    if (v4NewEntry) {
+                      organizational_hierarchy.consultative_sector =
+                        parentSector?.name || 'غير محدد في المصدر';
+                    } else if (parentSector) {
                       organizational_hierarchy.consultative_sector = parentSector.name;
                     }
                     return {
