@@ -9,7 +9,7 @@ export const EXCEL_IMPORT_TIMEOUT_MS = 120_000;
 export const ROSTER_REPORT_TIMEOUT_MS = 90_000;
 
 const LARGE_READ_ONLY_REPORT = /\/provisional-employees\/(?:readiness|approval-plan|name-review|conflict-diagnostics)\/?$/;
-const HEALTH_CENTER_DIRECTORY_READ = /\\/health-centers\\/?$/;
+const HEALTH_CENTER_DIRECTORY_READ = /\/health-centers\/?$/;
 const LARGE_UPLOAD = /\/(?:excel-import\/upload|employee-roster\/reconcile|provisional-employees\/import)\/?$/;
 
 export function requestPolicy(url: string, method: string = 'GET') {
