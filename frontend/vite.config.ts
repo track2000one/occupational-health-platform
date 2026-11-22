@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig, type ProxyOptions } from 'vite'
 import path from 'path'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
@@ -31,7 +31,7 @@ function privateProxy() {
   }
   // Runtime diagnosis: record only route and HTTP status. No credentials,
   // names, identifiers, payloads, or query strings appear in these logs.
-  const apiProxy = {
+  const apiProxy: ProxyOptions = {
     target: target.origin,
     changeOrigin: false,
     timeout: 120000,
@@ -49,7 +49,7 @@ function privateProxy() {
       })
       proxy.on('error', (error, request) => {
         if (request.url?.split('?')[0] === '/api/provisional-employees/readiness/') {
-          console.error('[v4-private-proxy] readiness transport error=' + String(error.code || 'unknown'))
+          console.error('[v4-private-proxy] readiness transport error=' + String((error as { code?: string }).code || 'unknown'))
         }
       })
     },
