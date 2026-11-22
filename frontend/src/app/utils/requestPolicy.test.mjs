@@ -25,6 +25,13 @@ test('bounded V4 readiness segments are retryable and preserve report classifica
   const policy = requestPolicy('http://127.0.0.1:18081/api/provisional-employees/readiness/?offset=100&limit=100', 'GET');
   assert.deepEqual(policy, { timeoutMs: 25000, attempts: 2, report: true });
 });
+test('health center master reads use a bounded private-proxy budget', () => {
+  assert.deepEqual(requestPolicy('http://127.0.0.1:18081/api/health-centers/?page=1', 'GET'),
+    { timeoutMs: 30000, attempts: 2, report: false });
+  assert.deepEqual(requestPolicy('http://127.0.0.1:18081/api/health-centers/?archived=true&page=1', 'GET'),
+    { timeoutMs: 30000, attempts: 2, report: false });
+});
+
 test('ordinary reads, credential refresh and writes retain existing policies', () => {
   assert.deepEqual(requestPolicy('http://127.0.0.1:18081/api/provisional-employees/?page=1', 'GET'),
     { timeoutMs: 15000, attempts: 2, report: false });
@@ -35,3 +42,6 @@ test('ordinary reads, credential refresh and writes retain existing policies', (
   assert.deepEqual(requestPolicy('http://127.0.0.1:18081/api/provisional-employees/readiness/', 'POST'),
     { timeoutMs: 30000, attempts: 1, report: false });
 });
+
+// Run the related private-proxy directory pagination safeguards in the same CI suite.
+import './healthCenterPagination.test.mjs';

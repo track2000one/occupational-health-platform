@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 import {
@@ -16,6 +16,7 @@ import {
 import { toast } from 'sonner';
 import { authFetch, getAccessToken, useAuth } from '../context/AuthContext';
 import { HealthCenterExcelImportDialog } from '../components/HealthCenterExcelImportDialog';
+import { loadCenterPages } from '../utils/healthCenterPagination';
 import { HealthCenterArchiveDialog, type CenterArchiveAction } from '../components/HealthCenterArchiveDialog';
 import { HealthCenterVerificationDialog } from '../components/HealthCenterVerificationDialog';
 import {
@@ -54,7 +55,6 @@ const REFERENCE_SECTORS = [
   'القطاع الغربي الاستشاري 1', 'القطاع الغربي الاستشاري 2',
 ];
 
-function list<T>(payload: any): T[] { return Array.isArray(payload) ? payload : Array.isArray(payload?.results) ? payload.results : []; }
 async function request<T>(path: string, init: RequestInit = {}) {
   const token = getAccessToken();
   if (!token) throw new Error('Authentication required');
@@ -88,6 +88,7 @@ export function HealthCentersPage() {
   const [loadError, setLoadError] = useState('');
   const [sectorFilter, setSectorFilter] = useState('all');
   const [loading, setLoading] = useState(true);
+  const loadGeneration = useRef(0);
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
   const [regionFilter, setRegionFilter] = useState('all');
@@ -108,45 +109,59 @@ export function HealthCentersPage() {
   ])].sort((a,b)=>a.localeCompare(b,'ar')), [organizationUnits, centers]);
 
   async function load() {
+    const generation = ++loadGeneration.current;
+    const isCurrent = () => generation === loadGeneration.current;
     setLoading(true);
     setLoadError('');
+    // Master centers are the primary source. Auxiliary archive/hierarchy
+    // requests must not hide loaded centers if either of them times out.
     try {
-      const first = await request<Center[] | { results: Center[]; next: string | null }>('/health-centers/?page=1');
-      const all = list<Center>(first);
-      if (!Array.isArray(first) && first.next) {
-        for (let page = 2; page <= 40; page++) {
-          const data = await request<{results: Center[]; next: string | null}>(`/health-centers/?page=${page}`);
-          all.push(...data.results);
-          if (!data.next) break;
-        }
-      }
-      setCenters(all);
-      if (canArchiveCenters) {
-        const archived = await request<Center[] | { results: Center[]; next: string | null }>('/health-centers/?archived=true&page=1');
-        const archivedList = list<Center>(archived);
-        if (!Array.isArray(archived) && archived.next) {
-          for (let page = 2; page <= 40; page++) {
-            const next = await request<{ results: Center[]; next: string | null }>(
-              `/health-centers/?archived=true&page=${page}`);
-            archivedList.push(...next.results);
-            if (!next.next) break;
+      await loadCenterPages<Center>(
+        page => request<Center[] | { results: Center[]; next: string | null }>(
+          '/health-centers/?page=' + page),
+        rows => {
+          if (isCurrent()) {
+            setCenters(rows);
+            setLoading(false); // Show verified rows as soon as the first page arrives.
           }
-        }
-        setArchivedCenters(archivedList);
-      }
-      // The organizational directory is a non-destructive proposal: not an approval.
-      try {
-        const directory = await request<{results: OrgCenter[]}>('/organization-units/');
-        setOrganizationUnits(directory.results || []);
-      } catch {
-        setOrganizationUnits([]);
-        toast.warning('تعذر تحميل روابط الهيكل التنظيمي؛ أسماء المراكز ستظل متاحة.');
-      }
+        },
+      );
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to load health centers';
+      if (!isCurrent()) return;
+      const message = error instanceof Error ? error.message : 'تعذر تحميل دليل المراكز الصحية.';
       setLoadError(message);
       toast.error(message);
-    } finally { setLoading(false); }
+      setLoading(false);
+      return;
+    }
+    if (!isCurrent()) return;
+    setLoading(false);
+
+    await Promise.all([
+      (async () => {
+        if (!canArchiveCenters) return;
+        try {
+          await loadCenterPages<Center>(
+            page => request<Center[] | { results: Center[]; next: string | null }>(
+              '/health-centers/?archived=true&page=' + page),
+            rows => { if (isCurrent()) setArchivedCenters(rows); },
+          );
+        } catch {
+          if (isCurrent()) toast.warning('تعذر تحميل أرشيف المراكز؛ المراكز المسجلة ستبقى ظاهرة.');
+        }
+      })(),
+      (async () => {
+        try {
+          const directory = await request<{results: OrgCenter[]}>('/organization-units/');
+          if (!Array.isArray(directory?.results)) {
+            throw new Error('استجابة الهيكل التنظيمي غير صالحة.');
+          }
+          if (isCurrent()) setOrganizationUnits(directory.results);
+        } catch {
+          if (isCurrent()) toast.warning('تعذر تحميل الروابط التنظيمية؛ المراكز المسجلة ستبقى ظاهرة.');
+        }
+      })(),
+    ]);
   }
   useEffect(() => { void load(); }, []);
 
@@ -376,7 +391,9 @@ export function HealthCentersPage() {
         [isRtl ? 'المراكز النشطة' : 'Active centers', centers.filter(c => c.is_active).length],
         [isRtl ? 'مراكز ملف الجهات' : 'Reference centers', sourceCenters.length],
         [isRtl ? 'مراكز اختبار QA' : 'QA centers', qaCenters.length],
-      ].map(([label, value]) => <Paper key={String(label)} sx={{ p: 2, textAlign: 'center' }}><Typography variant="h4" fontWeight={950} color="primary.main">{value}</Typography><Typography variant="body2" color="text.secondary">{label}</Typography></Paper>)}
+      ].map(([label, count]) => {
+        const value = (loading || loadError) && centers.length === 0 ? '—' : count;
+        return <Paper key={String(label)} sx={{ p: 2, textAlign: 'center' }}><Typography variant="h4" fontWeight={950} color="primary.main">{value}</Typography><Typography variant="body2" color="text.secondary">{label}</Typography></Paper>})}
     </Box>
 
     <Alert severity="info" sx={{ mb: 2, fontSize: 14 }}>
@@ -406,7 +423,11 @@ export function HealthCentersPage() {
       justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }} sx={{ mb: 1.5 }}>
       <Box>
         <Typography fontWeight={900} color="text.secondary">
-          عرض {filtered.length} مركزًا من إجمالي {visibleCenters.length} مركز {showArchived ? 'مؤرشف' : 'مسجل'}
+          {loading && visibleCenters.length === 0
+            ? 'جارٍ تحميل المراكز من الخادم…'
+            : loadError && centers.length === 0
+              ? 'تعذر قراءة إجمالي المراكز — لا يعني ذلك أن السجل فارغ'
+              : `عرض ${filtered.length} مركزًا من إجمالي ${visibleCenters.length} مركز ${showArchived ? 'مؤرشف' : 'مسجل'}`}
         </Typography>
         <Typography variant="caption" color="text.secondary">
           مصدر السجل يحدد طريقة العرض فقط ولا يغيّر بيانات المراكز أو الموظفين.
@@ -426,8 +447,12 @@ export function HealthCentersPage() {
         </Button>
       </Stack>
     </Stack>
+    {loadError && centers.length > 0 && <Alert severity="warning" sx={{ mb: 2 }}>
+      تعذر استكمال تحميل كل صفحات المراكز؛ البيانات الظاهرة جزئية. لم تُحذف أي سجلات.
+      السبب: {loadError}
+    </Alert>}
     {loading ? <Paper sx={{ p: 6, textAlign: 'center' }}><CircularProgress /></Paper>
-      : loadError ? <Alert severity="error" action={
+      : loadError && centers.length === 0 ? <Alert severity="error" action={
         <Button size="small" onClick={() => void load()}>إعادة المحاولة</Button>
       }>تعذر تحميل دليل المراكز الصحية: {loadError}</Alert>
       : visibleCenters.length === 0 ? <Paper sx={{ p: 4, textAlign: 'center', borderRadius: 3 }}>
