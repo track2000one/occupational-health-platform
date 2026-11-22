@@ -6,6 +6,7 @@ import {
   Pagination, Paper, Stack, TextField, Typography,
 } from '@mui/material';
 import { authFetch, useAuth } from '../context/AuthContext';
+import { V4_PRIVATE_UI } from '../data/v4AffiliationHierarchy';
 
 const API = (import.meta.env.VITE_API_URL ||
   (typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
@@ -193,6 +194,8 @@ type EmployeeTemplatePreflight = {
   ready: true;
   schema_version: string;
   valid_rows: number;
+  organizational_source_levels_preserved?: number;
+  source_review_required_count?: number;
   recognized_count: number;
   unrecognized_column_count: number;
   missing_known_headers: string[];
@@ -644,7 +647,7 @@ export function ProvisionalEmployeesPage() {
     {isAdmin && <Paper sx={{ p: 3, mb: 2, borderRadius: 3 }}>
       <Stack direction={{ xs: 'column', md: 'row' }}
         gap={1} alignItems={{ md: 'center' }} justifyContent="space-between" sx={{ mb: 1.5 }}>
-        <Typography variant="h6" fontWeight={800}>استيراد موظفين باستخدام القالب المعتمد V3</Typography>
+        <Typography variant="h6" fontWeight={800}>{V4_PRIVATE_UI ? 'إدراج دفعة الموظفين الموحدة — هيكلة V4' : 'استيراد موظفين باستخدام القالب المعتمد V3'}</Typography>
         <Button variant="outlined" color="success" disabled={templateDownloadBusy}
           onClick={() => void downloadApprovedTemplate()}>
           {templateDownloadBusy ? 'جارٍ تنزيل القالب...' : 'تنزيل قالب الموظفين المعتمد V3'}
@@ -667,19 +670,29 @@ export function ProvisionalEmployeesPage() {
           !templatePreview?.ready || templatePreview.same_file_already_imported ||
           (templatePreview.requires_explicit_new_batch_confirmation && !confirmSeparateBatch)}
           onClick={importFile}>
-          استيراد البطاقات الإدارية
+          {V4_PRIVATE_UI && templatePreview?.schema_version === 'OHP-EMPLOYEE-ORGANIZATIONAL-V4'
+            ? `إدراج ${templatePreview.valid_rows} بطاقة إدارية مؤقتة` : 'استيراد البطاقات الإدارية'}
         </Button>
       </Stack>
       {templatePreview && <Stack gap={1.2} sx={{ mt: 2 }}>
         <Alert severity={templatePreview.unrecognized_column_count ? 'warning' : 'success'}>
           تمت قراءة {templatePreview.valid_rows} موظفًا، والتعرف على {templatePreview.recognized_count} عمودًا.
-          {templatePreview.schema_version === 'OHP-EMPLOYEE-TEMPLATE-V3'
-            ? ' الملف مطابق للقالب المعتمد V3.'
-            : ' الملف بتنسيق سابق متوافق؛ يفضل استعمال القالب المعتمد V3.'}
+          {templatePreview.schema_version === 'OHP-EMPLOYEE-ORGANIZATIONAL-V4'
+            ? ' ملف V4 مطابق: تحفظ الهيكلة التنظيمية في 13 حقلًا مستقلًا دون اعتماد تلقائي.'
+            : templatePreview.schema_version === 'OHP-EMPLOYEE-TEMPLATE-V3'
+              ? ' الملف مطابق للقالب المعتمد V3.'
+              : ' الملف بتنسيق سابق متوافق؛ يفضل استعمال القالب المعتمد V3.'}
           {templatePreview.unrecognized_column_count > 0
             ? ' توجد أعمدة غير معروفة لن تُستورد: ' + templatePreview.unrecognized_column_count + '.'
             : ''}
         </Alert>
+        {V4_PRIVATE_UI && templatePreview.schema_version === 'OHP-EMPLOYEE-ORGANIZATIONAL-V4' && (
+          <Alert severity="warning">
+            سيُحفظ {templatePreview.valid_rows} سجلًا إداريًا مؤقتًا مع {templatePreview.organizational_source_levels_preserved || 0} مستوى تنظيمي.
+            {templatePreview.source_review_required_count || 0} سجلات عليها ملاحظات تصنيفية ستبقى ظاهرة للمراجعة؛
+            لن تُعتمد تبعية أي موظف أو تُنشأ بطاقة طبية تلقائيًا.
+          </Alert>
+        )}
         <Stack direction="row" gap={1} flexWrap="wrap">
           <Chip size="small" color="info"
             label={'مطابقة أولية: ' + (templatePreview.classification_counts.name_match || 0)} />
