@@ -48,3 +48,6 @@ import './healthCenterPagination.test.mjs';
 
 // Run V4 center selection regression in the existing employee lifecycle CI suite.
 import './centerActivationSelection.test.mjs';
+
+// V4: synthetic regression for canonical center/department options on employee creation.
+import '../data/v4EmployeePlacementOptions.test.mjs';
