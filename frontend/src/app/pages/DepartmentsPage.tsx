@@ -14,6 +14,7 @@ import {
   AccountTree as StructureIcon, LocalHospital as CenterIcon,
 } from '@mui/icons-material';
 import { authFetch, getAccessToken, useAuth } from '../context/AuthContext';
+import { V4DepartmentImport } from '../components/V4DepartmentImport';
 
 // Never silently use Production API for an unconfigured Staging instance.
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
@@ -209,6 +210,7 @@ export function DepartmentsPage() {
             onClick={() => navigate('/admin/health-centers')}>المراكز الصحية</Button>
           <Button variant="outlined" startIcon={<StructureIcon />}
             onClick={() => navigate('/admin/organization-structure')}>الهيكل التنظيمي</Button>
+          <V4DepartmentImport onImported={refresh} />
           {canManage && <Button variant="contained" startIcon={<AddIcon />}
             onClick={openCreate}>إضافة قسم جديد</Button>}
         </Stack>
