@@ -8,6 +8,7 @@ import {
 import { authFetch, useAuth } from '../context/AuthContext';
 import { V4_PRIVATE_UI } from '../data/v4AffiliationHierarchy';
 import { mergeReadinessSegments } from '../utils/readinessSegments';
+import { V4AffiliationBulkPreview } from '../components/V4AffiliationBulkPreview';
 
 const API = (import.meta.env.VITE_API_URL ||
   (typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
@@ -909,6 +910,8 @@ export function ProvisionalEmployeesPage() {
         </Stack>}
       </Stack>
     </Paper>}
+
+    {isAdmin && batch && <V4AffiliationBulkPreview batch={batch} />}
 
     {isAdmin && batch && <Paper sx={{ p: 2, mb: 2, borderRadius: 3 }}>
       <Stack gap={1.5}>
