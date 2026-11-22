@@ -21,6 +21,9 @@ type EmployeeCard = {
   masked_id: string;
   center: string;
   job_title: string;
+  source_organizational_hierarchy?: Record<string, string>;
+  source_review_status?: string;
+  source_review_required?: boolean;
   classification: Classification;
   missing_optional: string[];
   temporary_employee_number?: string | null;
@@ -1046,6 +1049,20 @@ export function ProvisionalEmployeesPage() {
             </Typography>}
           <Typography variant="body2">المركز: {row.center || 'غير متوفر'}</Typography>
           <Typography variant="body2">المسمى: {row.job_title || 'غير متوفر'}</Typography>
+          {V4_PRIVATE_UI && row.source_organizational_hierarchy && Object.keys(row.source_organizational_hierarchy).length > 0 && (
+            <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1.5, p: 1.2 }}>
+              <Typography variant="caption" fontWeight={800}>التبعية التنظيمية من Excel — غير معتمدة</Typography>
+              <Typography variant="body2">
+                {[
+                  'main_administration','sub_administration','department','sub_unit',
+                  'consultative_sector','health_center',
+                ].map(key => row.source_organizational_hierarchy?.[key]).filter(v =>
+                  v && !['لا ينطبق','غير محدد في المصدر'].includes(v)).join(' / ') || 'بانتظار استكمال الهيكلة'}
+              </Typography>
+              {row.source_review_required && <Chip size="small" color="warning" sx={{ mt: 1 }}
+                label={row.source_review_status || 'تحتاج مراجعة تصنيفية'} />}
+            </Box>
+          )}
           <Typography variant="caption" color="text.secondary">صف Excel: {row.source_row}</Typography>
           {row.missing_optional.length > 0
             ? <Chip size="small" color="warning" label={'بيانات ناقصة: ' + row.missing_optional.length} />
