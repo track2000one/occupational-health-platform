@@ -37,6 +37,7 @@ from .employee_org_template_v4 import (
     HEADERS as V4_HEADERS, ORGANIZATION_COLUMNS, TOP_LEVELS,
     needs_source_org_review,
 )
+from .organization_structure import draft_import_scope
 from .employee_import_v2_matching import source_profile
 from .models import (
     AuditLog, Employee, ProvisionalEmployeeImportBatch,
@@ -124,6 +125,8 @@ def _parse(upload):
                 raise ValueError('يوجد عمود مكرر للبيان «' + key + '». راجع رؤوس الأعمدة.')
         strict_v3 = tuple(text_cell(v) for v in headers[:len(CANONICAL_HEADERS)]) == CANONICAL_HEADERS
         exact_v4 = tuple(text_cell(v) for v in headers[:len(V4_HEADERS)]) == V4_HEADERS
+        if exact_v4 and draft_import_scope() != 'v4':
+            raise ValueError('استيراد القالب التنظيمي V4 محصور بالخادم المستقل، ولا يعمل في Production أو Staging.')
         # Only the full exact V4 contract may set the 13-source hierarchy.
         # Do not guess levels from similarly named columns in legacy files.
         if exact_v4 and len(headers) != len(V4_HEADERS):
