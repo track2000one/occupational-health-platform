@@ -11,7 +11,9 @@ from rest_framework import permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .employee_import_classification import normalize_person_name, OPTIONAL_COMPLETENESS_FIELDS
+from .employee_import_classification import (
+    normalize_person_name, OPTIONAL_COMPLETENESS_FIELDS, VISIT_DEFERRED_FIELDS,
+)
 from .employee_import_v2_matching import norm_text
 from .models import Employee, HealthCenter, ProvisionalEmployeeImportBatch
 from .provisional_employee_roster import NO_CACHE, _unseal
@@ -61,6 +63,8 @@ def calculate_readiness(batch, *, offset=None, limit=None):
     missing_both_for_matched_name = Counter()
     historic_center_counts = Counter()
     missing_any = 0
+    cards_pending_visit_data = 0
+    cards_missing_previsit_data = 0
     original_same_name = 0
     archived_active = 0
     for row, src in zip(rows, decrypted):
@@ -72,6 +76,10 @@ def calculate_readiness(batch, *, offset=None, limit=None):
         missing_fields.update(blank_fields)
         if blank_fields:
             missing_any += 1
+        if any(field in VISIT_DEFERRED_FIELDS for field in blank_fields):
+            cards_pending_visit_data += 1
+        if any(field not in VISIT_DEFERRED_FIELDS for field in blank_fields):
+            cards_missing_previsit_data += 1
 
         # The V4 Excel has two independent affiliation paths. A department
         # employee is not a failed health-center match. Source values such as
@@ -201,6 +209,9 @@ def calculate_readiness(batch, *, offset=None, limit=None):
         'source_completeness_basis': 'decrypted_stored_provisional_profile_not_original_excel',
         'source_headers_not_preserved': True,
         'cards_missing_any_optional_field': missing_any,
+        'cards_pending_visit_data': cards_pending_visit_data,
+        'cards_missing_previsit_data': cards_missing_previsit_data,
+        'visit_deferred_fields': sorted(VISIT_DEFERRED_FIELDS),
         'blocking_conditions': [
             'technical_identity_match_is_not_independent_identity_verification',
             'current_employment_must_be_verified',
