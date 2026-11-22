@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig, type ProxyOptions } from 'vite'
 import path from 'path'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
@@ -29,8 +29,33 @@ function privateProxy() {
       || target.pathname !== '/' || target.search || target.hash) {
     throw new Error('V4 API target must be a private Railway HTTP service on port 8080')
   }
+  // Runtime diagnosis: record only route and HTTP status. No credentials,
+  // names, identifiers, payloads, or query strings appear in these logs.
+  const apiProxy: ProxyOptions = {
+    target: target.origin,
+    changeOrigin: false,
+    timeout: 120000,
+    proxyTimeout: 120000,
+    configure(proxy) {
+      proxy.on('proxyReq', (_proxyReq, request) => {
+        if (request.url?.split('?')[0] === '/api/provisional-employees/readiness/') {
+          console.info('[v4-private-proxy] readiness request forwarded');
+        }
+      })
+      proxy.on('proxyRes', (proxyResponse, request) => {
+        if (request.url?.split('?')[0] === '/api/provisional-employees/readiness/') {
+          console.info('[v4-private-proxy] readiness upstream status=' + String(proxyResponse.statusCode))
+        }
+      })
+      proxy.on('error', (error, request) => {
+        if (request.url?.split('?')[0] === '/api/provisional-employees/readiness/') {
+          console.error('[v4-private-proxy] readiness transport error=' + String((error as { code?: string }).code || 'unknown'))
+        }
+      })
+    },
+  }
   return {
-    '/api/': { target: target.origin, changeOrigin: false },
+    '/api/': apiProxy,
     '/health/': { target: target.origin, changeOrigin: false },
   }
 }

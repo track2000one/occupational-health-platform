@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 import {
   Alert, Box, Button, Checkbox, Chip, CircularProgress, Dialog,
@@ -7,6 +7,7 @@ import {
 } from '@mui/material';
 import { authFetch, useAuth } from '../context/AuthContext';
 import { V4_PRIVATE_UI } from '../data/v4AffiliationHierarchy';
+import { mergeReadinessSegments } from '../utils/readinessSegments';
 
 const API = (import.meta.env.VITE_API_URL ||
   (typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
@@ -248,6 +249,13 @@ export function ProvisionalEmployeesPage() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  // Keep report and list transport errors separate. A stale page-load failure
+  // must not obscure a successful readiness report from the same V4 batch.
+  const [listError, setListError] = useState('');
+  const [readinessError, setReadinessError] = useState('');
+  const [readinessCheckedAt, setReadinessCheckedAt] = useState('');
+  const listRequestSequence = useRef(0);
+  const readinessInFlight = useRef(false);
   const [editRow, setEditRow] = useState<EmployeeCard | null>(null);
   const [field, setField] = useState('');
   const [fieldValue, setFieldValue] = useState('');
@@ -257,6 +265,7 @@ export function ProvisionalEmployeesPage() {
   const [lookupResult, setLookupResult] = useState<LookupResponse | null>(null);
   const [readiness, setReadiness] = useState<ApprovalReadiness | null>(null);
   const [readinessBusy, setReadinessBusy] = useState(false);
+  const [readinessProgress, setReadinessProgress] = useState<{ done: number; total: number } | null>(null);
   const [approvalPlan, setApprovalPlan] = useState<ApprovalPlan | null>(null);
   const [approvalPlanBusy, setApprovalPlanBusy] = useState(false);
   const [approvalPlanStatus, setApprovalPlanStatus] = useState('');
@@ -281,6 +290,7 @@ export function ProvisionalEmployeesPage() {
 
   const load = async (current = page, query = search, status = category) => {
     if (!canUse) return;
+    const requestSequence = ++listRequestSequence.current;
     try {
       setBusy(true);
       const params = new URLSearchParams({ page: String(current) });
@@ -289,6 +299,7 @@ export function ProvisionalEmployeesPage() {
       const response = await authFetch(API + '/provisional-employees/?' + params.toString());
       if (!response.ok) throw new Error(await errorMessage(response));
       const data: ListResponse = await response.json();
+      if (requestSequence !== listRequestSequence.current) return;
       setItems(data.items);
       setTotal(data.total);
       if (readiness && readiness.batch_id !== data.batch?.batch_id) setReadiness(null);
@@ -296,11 +307,13 @@ export function ProvisionalEmployeesPage() {
       if (conflictDiagnostics && conflictDiagnostics.batch_id !== data.batch?.batch_id) setConflictDiagnostics(null);
       if (nameReview && nameReview.batch_id !== data.batch?.batch_id) setNameReview(null);
       setBatch(data.batch);
-      setError('');
+      setListError('');
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'تعذر تحميل القائمة.');
+      if (requestSequence === listRequestSequence.current) {
+        setListError(caught instanceof Error ? caught.message : 'تعذر تحميل قائمة البطاقات.');
+      }
     } finally {
-      setBusy(false);
+      if (requestSequence === listRequestSequence.current) setBusy(false);
     }
   };
 
@@ -420,22 +433,67 @@ export function ProvisionalEmployeesPage() {
   };
 
   const checkReadiness = async () => {
-    if (!isAdmin || readinessBusy) return;
+    if (!isAdmin || readinessInFlight.current) return;
+    readinessInFlight.current = true;
     setReadinessBusy(true);
-    setError('');
+    setReadinessProgress(null);
+    setReadinessError('');
     try {
-      const response = await authFetch(API + '/provisional-employees/readiness/');
-      if (!response.ok) throw new Error(await errorMessage(response));
-      const result: ApprovalReadiness = await response.json();
-      setReadiness(result);
+      let result: ApprovalReadiness;
+      if (V4_PRIVATE_UI && batch && batch.total > 0) {
+        // Fetch small, read-only segments instead of one long-running 1,401-row
+        // report. Never display a partial report as a complete verification.
+        let combined: (ApprovalReadiness & { segment?: {
+          offset: number; limit: number; next_offset: number; has_more: boolean;
+        } }) | null = null;
+        const batchId = batch.batch_id;
+        setReadinessProgress({ done: 0, total: batch.total });
+        for (let offset = 0; offset < batch.total;) {
+          const response = await authFetch(
+            API + '/provisional-employees/readiness/?offset=' + offset + '&limit=100',
+          );
+          if (!response.ok) throw new Error(await errorMessage(response));
+          const chunk = await response.json() as ApprovalReadiness & {
+            segment?: { offset: number; limit: number; next_offset: number; has_more: boolean };
+          };
+          if (chunk.mode !== 'provisional_final_approval_readiness_read_only'
+              || chunk.batch_id !== batchId) {
+            throw new Error('تغيرت دفعة الموظفين؛ أعد فتح الصفحة قبل متابعة الفحص.');
+          }
+          combined = mergeReadinessSegments(combined, chunk);
+          offset = chunk.segment!.next_offset;
+          setReadinessProgress({ done: offset, total: chunk.rows_total });
+          if (offset === chunk.rows_total) break;
+          if (!chunk.segment!.has_more) throw new Error('توقف التقرير قبل اكتمال البطاقات.');
+        }
+        if (!combined || combined.rows_scanned !== batch.total
+            || combined.rows_total !== batch.total) {
+          throw new Error('فحص غير مكتمل؛ لم تُفحص جميع البطاقات.');
+        }
+        result = combined;
+      } else {
+        const response = await authFetch(API + '/provisional-employees/readiness/');
+        if (!response.ok) throw new Error(await errorMessage(response));
+        result = await response.json() as ApprovalReadiness;
+      }
       if (batch && result.batch_id !== batch.batch_id) {
-        setError('تم تغيير الدفعة الحالية؛ أعد فتح القائمة للتحقق من نتائج الفحص.');
+        setReadiness(null);
+        setReadinessError('تم تغيير دفعة الموظفين أثناء الفحص؛ أعد فتح القائمة للتحقق.');
+      } else {
+        setReadiness(result);
+        setReadinessError('');
+        setReadinessCheckedAt(new Date().toLocaleTimeString('ar-SA'));
       }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'تعذر إجراء فحص الجاهزية.');
-      setReadiness(null);
+      // A failed browser request does not imply that the server failed or that
+      // imported cards disappeared. Leave any previous successful report visible.
+      setReadinessError('تعذر عرض نتيجة فحص الجاهزية: ' +
+        (caught instanceof Error ? caught.message : 'انقطع اتصال المتصفح بالخادم.') +
+        ' البطاقات محفوظة؛ لا تُعد استيراد Excel.');
     } finally {
+      readinessInFlight.current = false;
       setReadinessBusy(false);
+      setReadinessProgress(null);
     }
   };
 
@@ -726,6 +784,9 @@ export function ProvisionalEmployeesPage() {
 
     {message && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setMessage('')}>{message}</Alert>}
     {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
+    {listError && <Alert severity="warning" sx={{ mb: 2 }} onClose={() => setListError('')}>
+      تحديث قائمة البطاقات: {listError} لا يعني ذلك حذف البطاقات الموجودة.
+    </Alert>}
     {batch && <Paper sx={{ p: 2, mb: 2, borderRadius: 3 }}>
       <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">
         <Chip color="primary" label={'إجمالي الملف: ' + batch.total} />
@@ -751,8 +812,17 @@ export function ProvisionalEmployeesPage() {
           </Button>
         </Stack>
         {readinessBusy && <Alert severity="info">
-          يجري فحص البطاقات المشفرة ومقارنتها بالبيانات المعتمدة. قد يستغرق الفحص وقتًا عند وجود 1,401 بطاقة؛ لا تضغط الزر مجددًا.
-          هذه عملية قراءة فقط ولا تنشئ موظفين أو تعتمد سجلات.
+          {readinessProgress
+            ? `يجري الفحص المرحلي: ${readinessProgress.done} من ${readinessProgress.total} بطاقة.`
+            : 'يجري فحص البطاقات المشفرة ومقارنتها بالبيانات المعتمدة.'}
+          {' '}لا تضغط الزر مجددًا. هذه عملية قراءة فقط، ولا تنشئ موظفين أو تعتمد سجلات.
+        </Alert>}
+        {readinessError && <Alert severity="error" onClose={() => setReadinessError('')}>
+          {readinessError}
+        </Alert>}
+        {readiness && !readinessBusy && !readinessError && <Alert severity="success">
+          اكتمل فحص الجاهزية للدفعة رقم {readiness.batch_id} عند الساعة {readinessCheckedAt}.
+          عدد البطاقات المفحوصة: {readiness.rows_scanned ?? readiness.rows_total}. التقرير للقراءة فقط، ولا يعني اعتماد الموظفين.
         </Alert>}
         {readiness && <Stack gap={1.5}>
           <Alert severity="warning">

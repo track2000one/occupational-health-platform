@@ -15,12 +15,16 @@ from .employee_import_classification import normalize_person_name, OPTIONAL_COMP
 from .employee_import_v2_matching import norm_text
 from .models import Employee, HealthCenter, ProvisionalEmployeeImportBatch
 from .provisional_employee_roster import NO_CACHE, _unseal
+from .organization_structure import draft_import_scope
 
 
-def calculate_readiness(batch):
-    rows = list(batch.rows.all().only(
+def calculate_readiness(batch, *, offset=None, limit=None):
+    rows_query = batch.rows.all().only(
         'source_row', 'sealed_payload', 'classification', 'missing_optional',
-    ).order_by('source_row'))
+    ).order_by('source_row')
+    if offset is not None:
+        rows_query = rows_query[offset:offset + limit]
+    rows = list(rows_query)
     decrypted = [_unseal(item.sealed_payload) for item in rows]
     source_ids = [str(src.get('national_id') or '') for src in decrypted]
     originals = {
@@ -197,11 +201,38 @@ class ProvisionalEmployeeApprovalReadinessView(APIView):
                 'batch_id': None, 'rows_total': 0, 'approved_count': 0,
                 'notice': 'لم تُرفع قائمة مؤقتة بعد.',
             }, headers=NO_CACHE)
+        raw_offset = request.query_params.get('offset')
+        raw_limit = request.query_params.get('limit')
+        segment_requested = raw_offset is not None or raw_limit is not None
+        offset = limit = None
+        if segment_requested:
+            # Large reports are fetched in bounded read-only slices in the
+            # isolated V4 environment. Other environments keep the unchanged API.
+            if draft_import_scope() != 'v4':
+                return Response({'detail': 'Segmented report is private to isolated V4.'},
+                                status=403, headers=NO_CACHE)
+            try:
+                if raw_offset is None or raw_limit is None:
+                    raise ValueError('Both offset and limit are required')
+                offset = int(raw_offset)
+                limit = int(raw_limit)
+                if offset < 0 or offset > batch.total_rows or not 1 <= limit <= 100:
+                    raise ValueError('Invalid offset or limit')
+            except (TypeError, ValueError):
+                return Response({'detail': 'Use offset >= 0 and 1 <= limit <= 100.'},
+                                status=400, headers=NO_CACHE)
         try:
-            report = calculate_readiness(batch)
+            report = calculate_readiness(batch, offset=offset, limit=limit)
         except ValueError:
             # Encryption key rotation may invalidate temporary data.
             return Response({
                 'detail': 'تعذّر فك تشفير القائمة المؤقتة. لا تُعد استيرادها قبل مراجعة المسؤول التقني.',
             }, status=409, headers=NO_CACHE)
+        if segment_requested:
+            report['segment'] = {
+                'offset': offset,
+                'limit': limit,
+                'next_offset': offset + report['rows_scanned'],
+                'has_more': offset + report['rows_scanned'] < batch.total_rows,
+            }
         return Response(report, headers=NO_CACHE)
