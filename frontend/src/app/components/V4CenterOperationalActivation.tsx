@@ -34,9 +34,10 @@ async function post(payload: Record<string, unknown>) {
 }
 
 export function V4CenterOperationalActivation({
-  selectedCenterIds, onActivated, disabled = false,
+  selectedCenterIds, pendingActivationCount, onActivated, disabled = false,
 }: {
   selectedCenterIds: number[];
+  pendingActivationCount: number;
   onActivated: () => Promise<void> | void;
   disabled?: boolean;
 }) {
@@ -81,7 +82,9 @@ export function V4CenterOperationalActivation({
     <Button variant="contained" color="success"
       disabled={disabled || busy || selectedCenterIds.length === 0}
       onClick={() => void openPreview(selectedCenterIds)}>
-      {busy ? 'جارٍ فحص المحدد…' : 'تفعيل المحدد (' + selectedCenterIds.length + ')'}
+      {busy ? 'جارٍ فحص المحدد…'
+        : (pendingActivationCount > 0 ? 'تفعيل المحدد (' : 'مراجعة المحدد (')
+            + selectedCenterIds.length + ')'}
     </Button>
     <Dialog open={!!preview} onClose={() => !busy && setPreview(null)} fullWidth maxWidth="sm" dir="rtl">
       <DialogTitle fontWeight={900}>تفعيل المراكز للتشغيل الداخلي</DialogTitle>
@@ -103,6 +106,15 @@ export function V4CenterOperationalActivation({
                 {row.name} — {REASONS[row.reason] || row.reason}
               </Typography>)}
           </Box>}
+          {preview.eligible_count === 0 && preview.already_active_count === preview.selected_count &&
+            <Alert severity="success">
+              جميع المراكز المحددة مفعّلة مسبقًا للتشغيل. لا حاجة لإعادة التفعيل،
+              ويمكن الانتقال إلى مراجعة الأقسام والهيكل التنظيمي.
+            </Alert>}
+          {preview.eligible_count === 0 && preview.already_active_count !== preview.selected_count &&
+            <Alert severity="warning">
+              لا توجد مراكز مؤهلة للتفعيل ضمن التحديد الحالي. راجع أسباب الاستبعاد.
+            </Alert>}
           {preview.eligible_count > 0 &&
             <FormControlLabel
               control={<Checkbox checked={confirmed} onChange={(_, checked) => setConfirmed(checked)}/>}
@@ -110,7 +122,9 @@ export function V4CenterOperationalActivation({
         </Stack>}
       </DialogContent>
       <DialogActions>
-        <Button disabled={busy} onClick={() => setPreview(null)}>إلغاء</Button>
+        <Button disabled={busy} onClick={() => setPreview(null)}>
+          {preview?.eligible_count === 0 ? 'إغلاق' : 'إلغاء'}
+        </Button>
         <Button color="success" variant="contained"
           disabled={busy || !confirmed || !preview?.eligible_count}
           onClick={() => void activate()}>تأكيد التفعيل التشغيلي</Button>
