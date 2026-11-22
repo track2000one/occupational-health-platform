@@ -42,3 +42,6 @@ test('ordinary reads, credential refresh and writes retain existing policies', (
   assert.deepEqual(requestPolicy('http://127.0.0.1:18081/api/provisional-employees/readiness/', 'POST'),
     { timeoutMs: 30000, attempts: 1, report: false });
 });
+
+// Run the related private-proxy directory pagination safeguards in the same CI suite.
+import './healthCenterPagination.test.mjs';
