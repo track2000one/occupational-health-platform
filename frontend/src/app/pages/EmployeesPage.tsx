@@ -53,7 +53,8 @@ import { CalendarDateField } from '../components/CalendarDateField';
 import { HealthCenterAutocomplete } from '../components/HealthCenterAutocomplete';
 import { EmployeeRegistryCard } from '../components/EmployeeRegistryCard';
 import { EmployeeOrganizationalFields } from '../components/EmployeeOrganizationalFields';
-import { V4_PRIVATE_UI, DEPARTMENT_LEVELS, departmentPath, departmentChildren, approvedSectorCenters } from '../data/v4AffiliationHierarchy';
+import { V4_PRIVATE_UI, DEPARTMENT_LEVELS, departmentPath, departmentChildren } from '../data/v4AffiliationHierarchy';
+import { v4RegisteredCenters, v4VisibleDepartments } from '../data/v4EmployeePlacementOptions';
 import { ImportedEmployeeCardsTab } from '../components/ImportedEmployeeCardsTab';
 import { JOB_TITLES, getNationalityOptions, normalizeNationalitySearch } from '../data/employeeFormOptions';
 import { isExcludedEmployeeCenter, selectableEmployeeCenters } from '../data/employeeCenterOptions';
@@ -494,11 +495,10 @@ export function EmployeesPage() {
   // For creating an employee, the canonical active HealthCenter registry is
   // authoritative. Organizational sector/center mappings may still be pending;
   // their absence must never hide a registered center or fabricate a sector.
-  const v4CenterOptions = employeeFormCenters.filter(center => center.is_active !== false);
+  const v4CenterOptions = v4RegisteredCenters(employeeFormCenters);
   // Show all active V4 department drafts to admins for visibility, but keep
   // backend-authorized assignment restricted to fully activated parent paths.
-  const v4DirectoryDepartments = approvedOrganizations.filter(unit =>
-    unit.kind === 'department' && unit.code.startsWith('V4-D-') && unit.is_active);
+  const v4DirectoryDepartments = v4VisibleDepartments(approvedOrganizations);
   const v4ReadyDepartments = v4DirectoryDepartments.filter(unit =>
     departmentPath(approvedOrganizations, unit.id).length > 0);
   const v4PendingDepartments = v4DirectoryDepartments.length - v4ReadyDepartments.length;
