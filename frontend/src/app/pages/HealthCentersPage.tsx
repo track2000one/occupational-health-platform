@@ -24,6 +24,7 @@ import {
   canSelectCenter, needsOperationalActivation, retainVisibleSelection, selectableCenterIds, toggleVisibleCenter,
 } from '../utils/centerActivationSelection';
 import { V4_PRIVATE_UI } from '../data/v4AffiliationHierarchy';
+import { V4_FOUNDATION_CONTEXT } from '../data/v4FoundationHierarchyReference';
 import {
   HealthCenterProfileFormDialog, type HealthCenterFormValues,
   type CenterUnitDraft,
@@ -258,7 +259,9 @@ export function HealthCentersPage() {
     resetFilters();
   }
   function openAdd() {
-    setEditing(null); setForm({ ...EMPTY_FORM });
+    setEditing(null); setForm({ ...EMPTY_FORM,
+      proposed_parent_name: V4_PRIVATE_UI ? V4_FOUNDATION_CONTEXT.center_main_administration : '',
+    });
     setCenterUnits([]); setUnitName(''); setUnitReference('');
     setUnitsLoadError(''); setOpen(true);
   }
@@ -320,6 +323,8 @@ export function HealthCentersPage() {
 
   async function save() {
     if (!form.name_ar.trim()) return toast.error(isRtl ? 'اسم المركز الصحي بالعربية مطلوب' : 'Arabic health center name is required');
+    if (V4_PRIVATE_UI && !form.proposed_sector_name.trim())
+      return toast.error('اختر القطاع الاستشاري أولًا لضمان صحة التسلسل التنظيمي.');
     // Original source does not supply English translations or building type.
     // Preserve 'unknown' instead of inventing administrative facts.
     setSaving(true);
@@ -331,7 +336,9 @@ export function HealthCentersPage() {
         alternate_name: form.alternate_name.trim(),
         region: form.region.trim(), city: form.city.trim(),
         district: form.district.trim(), manager_name: form.manager_name.trim(),
-        proposed_parent_name: form.proposed_parent_name.trim(),
+        proposed_parent_name: V4_PRIVATE_UI && !editing
+          ? V4_FOUNDATION_CONTEXT.center_main_administration
+          : form.proposed_parent_name.trim(),
         proposed_sector_name: form.proposed_sector_name.trim(),
         organizational_source_reference: form.organizational_source_reference.trim(),
         supporting_document_reference: form.supporting_document_reference.trim(),
