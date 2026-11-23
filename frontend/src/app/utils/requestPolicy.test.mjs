@@ -51,3 +51,5 @@ import './centerActivationSelection.test.mjs';
 
 // V4: synthetic regression for canonical center/department options on employee creation.
 import '../data/v4EmployeePlacementOptions.test.mjs';
+// Isolated V4 department batch selection regression.
+import '../data/v4DepartmentBulkSelection.test.mjs';

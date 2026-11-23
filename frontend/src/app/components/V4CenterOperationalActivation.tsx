@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router';
 import {
   Alert, Box, Button, Checkbox, Dialog, DialogActions, DialogContent,
   DialogTitle, FormControlLabel, Stack, Typography,
@@ -41,6 +42,7 @@ export function V4CenterOperationalActivation({
   onActivated: () => Promise<void> | void;
   disabled?: boolean;
 }) {
+  const navigate = useNavigate();
   const [preview, setPreview] = useState<Preview | null>(null);
   const [selected, setSelected] = useState<number[]>([]);
   const [confirmed, setConfirmed] = useState(false);
@@ -87,7 +89,9 @@ export function V4CenterOperationalActivation({
             + selectedCenterIds.length + ')'}
     </Button>
     <Dialog open={!!preview} onClose={() => !busy && setPreview(null)} fullWidth maxWidth="sm" dir="rtl">
-      <DialogTitle fontWeight={900}>تفعيل المراكز للتشغيل الداخلي</DialogTitle>
+      <DialogTitle fontWeight={900}>
+        {preview?.eligible_count === 0 ? 'نتيجة مراجعة المراكز الصحية' : 'تفعيل المراكز للتشغيل الداخلي'}
+      </DialogTitle>
       <DialogContent dividers>
         {preview && <Stack gap={2}>
           <Alert severity="info">
@@ -125,9 +129,16 @@ export function V4CenterOperationalActivation({
         <Button disabled={busy} onClick={() => setPreview(null)}>
           {preview?.eligible_count === 0 ? 'إغلاق' : 'إلغاء'}
         </Button>
-        <Button color="success" variant="contained"
-          disabled={busy || !confirmed || !preview?.eligible_count}
-          onClick={() => void activate()}>تأكيد التفعيل التشغيلي</Button>
+        {Boolean(preview?.eligible_count) && <Button color="success" variant="contained"
+          disabled={busy || !confirmed}
+          onClick={() => void activate()}>تأكيد التفعيل التشغيلي</Button>}
+        {preview?.eligible_count === 0 &&
+          preview.already_active_count === preview.selected_count &&
+          <Button color="primary" variant="contained"
+            onClick={() => {
+              setPreview(null);
+              navigate('/admin/departments');
+            }}>الانتقال إلى تفعيل الأقسام</Button>}
       </DialogActions>
     </Dialog>
   </>;
