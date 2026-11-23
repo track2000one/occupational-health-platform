@@ -17,6 +17,10 @@ import { authFetch, getAccessToken, useAuth } from '../context/AuthContext';
 import { V4DepartmentImport } from '../components/V4DepartmentImport';
 import { departmentReviewGuidance } from '../data/v4DepartmentReviewGuidance';
 import { V4_PRIVATE_UI } from '../data/v4AffiliationHierarchy';
+import {
+  V4_FOUNDATION_CONTEXT, V4_LEVEL_LABELS, v4MainDepartmentChoices,
+  v4DepartmentChoices,
+} from '../data/v4FoundationHierarchyReference';
 import { pendingV4DepartmentIds } from '../data/v4DepartmentBulkSelection';
 
 // Never silently use Production API for an unconfigured Staging instance.
@@ -80,6 +84,10 @@ function message(error: unknown) {
 
 const EMPTY_SUMMARY: Summary = { total: 0, active: 0, approved: 0, pending: 0, inactive: 0, employees: 0 };
 type Filter = 'all' | 'approved' | 'pending' | 'inactive';
+type FoundationLevel = 'main_administration' | 'sub_administration' | 'department' | 'sub_unit';
+const FOUNDATION_LEVELS: FoundationLevel[] = [
+  'main_administration', 'sub_administration', 'department', 'sub_unit',
+];
 type Mode = 'cards' | 'table';
 
 export function DepartmentsPage() {
@@ -98,6 +106,10 @@ export function DepartmentsPage() {
   const [mode, setMode] = useState<Mode>('cards');
   const [edit, setEdit] = useState<Department | 'new' | null>(null);
   const [name, setName] = useState('');
+  const [newLevel, setNewLevel] = useState<FoundationLevel>('department');
+  const [foundationMain, setFoundationMain] = useState('');
+  const [foundationSub, setFoundationSub] = useState('');
+  const [foundationSection, setFoundationSection] = useState('');
   const [code, setCode] = useState('');
   const [approval, setApproval] = useState<Department | null>(null);
   const [approvalReference, setApprovalReference] = useState('');
@@ -183,20 +195,41 @@ export function DepartmentsPage() {
   }
 
   function openCreate() {
-    setName(''); setCode(''); setEdit('new');
+    setName(''); setCode('');
+    setNewLevel('department');
+    setFoundationMain(''); setFoundationSub(''); setFoundationSection('');
+    setEdit('new');
   }
   function openEdit(item: Department) {
     setName(item.name); setCode(item.code); setEdit(item);
   }
+  const canSaveFoundation = !V4_PRIVATE_UI || edit !== 'new' ||
+    (newLevel === 'main_administration' ||
+      (Boolean(foundationMain) && (newLevel === 'sub_administration' ||
+        (Boolean(foundationSub) && (newLevel === 'department' || Boolean(foundationSection))))));
+
+  const foundationHierarchy = () => ({
+    main_administration: newLevel === 'main_administration' ? name.trim() : foundationMain,
+    sub_administration: newLevel === 'sub_administration' ? name.trim()
+      : newLevel === 'main_administration' ? '' : foundationSub,
+    department: newLevel === 'department' ? name.trim()
+      : newLevel === 'sub_unit' ? foundationSection : '',
+    sub_unit: newLevel === 'sub_unit' ? name.trim() : '',
+  });
+
   async function save() {
-    if (!edit || !canManage || !name.trim()) return;
+    if (!edit || !canManage || !name.trim() || !canSaveFoundation) return;
     setBusy(true);
     try {
       if (edit === 'new') {
         await api('/departments/', {
-          method: 'POST', body: JSON.stringify({ name: name.trim(), code: code.trim() }),
+          method: 'POST', body: JSON.stringify(V4_PRIVATE_UI
+            ? { hierarchy: foundationHierarchy() }
+            : { name: name.trim(), code: code.trim() }),
         });
-        toast.success('تم تأسيس القسم كمسودة. يلزم الاعتماد الرسمي قبل إتاحته للموظفين.');
+        toast.success(V4_PRIVATE_UI
+          ? 'تم تأسيس التسلسل التنظيمي كمسودة. يجب تفعيل المستويات قبل ربط الموظفين.'
+          : 'تم تأسيس القسم كمسودة. يلزم الاعتماد الرسمي قبل إتاحته للموظفين.');
       } else {
         await api('/organization-units/' + edit.id + '/review/', {
           method: 'POST', body: JSON.stringify({ action: 'edit-draft', name: name.trim() }),
@@ -478,19 +511,81 @@ export function DepartmentsPage() {
         <DialogTitle fontWeight={900}>{isEditingName ? 'تعديل مسودة القسم' : 'إضافة وتأسيس قسم جديد'}</DialogTitle>
         <DialogContent dividers>
           <Stack gap={2} sx={{ mt: 1 }}>
-            <Alert severity="info">
+            {V4_PRIVATE_UI && edit === 'new' && <>
+              <Alert severity="info">
+                اتبع التسلسل التنظيمي الوارد في ملف الأقسام: تجمع الشرقية الصحي ← شبكة الدمام الصحية
+                ← الإدارة الرئيسية ← الإدارة الفرعية ← القسم ← الوحدة الفرعية عند وجودها.
+                لا ننشئ مركزًا صحيًا داخل هذا المسار، ولا نحتاج رقم قرار رسمي.
+              </Alert>
+              <Stack direction={{ xs: 'column', sm: 'row' }} gap={1}>
+                <TextField fullWidth label="التجمع الصحي" disabled
+                  value={V4_FOUNDATION_CONTEXT.health_cluster} />
+                <TextField fullWidth label="الشبكة الصحية" disabled
+                  value={V4_FOUNDATION_CONTEXT.health_network} />
+              </Stack>
+              <TextField fullWidth select label="المستوى المراد تأسيسه *"
+                value={newLevel}
+                onChange={event => {
+                  setNewLevel(event.target.value as FoundationLevel);
+                  setName('');
+                }}>
+                {FOUNDATION_LEVELS.map((level, i) =>
+                  <MenuItem key={level} value={level}>{V4_LEVEL_LABELS[i]}</MenuItem>)}
+              </TextField>
+              {newLevel !== 'main_administration' && <TextField fullWidth select required
+                label="الإدارة الرئيسية *" value={foundationMain}
+                onChange={event => {
+                  setFoundationMain(event.target.value); setFoundationSub(''); setFoundationSection('');
+                }}>
+                <MenuItem value="">اختر الإدارة الرئيسية</MenuItem>
+                {v4MainDepartmentChoices().map(value =>
+                  <MenuItem key={value} value={value}>{value}</MenuItem>)}
+              </TextField>}
+              {['department','sub_unit'].includes(newLevel) && <TextField
+                fullWidth required select label="الإدارة الفرعية *"
+                value={foundationSub} disabled={!foundationMain}
+                onChange={event => {
+                  setFoundationSub(event.target.value); setFoundationSection('');
+                }}>
+                <MenuItem value="">اختر الإدارة الفرعية</MenuItem>
+                {v4DepartmentChoices([foundationMain],1).map(value =>
+                  <MenuItem key={value} value={value}>{value}</MenuItem>)}
+              </TextField>}
+              {newLevel === 'sub_unit' && <TextField fullWidth select required
+                label="القسم الأعلى *" value={foundationSection}
+                disabled={!foundationSub} onChange={event => setFoundationSection(event.target.value)}>
+                <MenuItem value="">اختر القسم الأعلى</MenuItem>
+                {v4DepartmentChoices([foundationMain,foundationSub],2).map(value =>
+                  <MenuItem key={value} value={value}>{value}</MenuItem>)}
+              </TextField>}
+              <Alert severity="warning">
+                وردت «التشغيل» ضمن بيانات المصدر، لكنها مستبعدة من قوائم تأسيس الهيكل حسب
+                التعديل السابق. تبقى سجلاتها الأصلية للمراجعة دون حذفها.
+              </Alert>
+            </>}
+            {V4_PRIVATE_UI && edit !== 'new' && <Alert severity="info">
+              تعديل اسم مسودة قائمة لا يغيّر مكانها في التسلسل التنظيمي.
+            </Alert>}
+            {!V4_PRIVATE_UI && <Alert severity="info">
               هذا القسم مستقل عن المراكز الصحية. لن يتاح في نموذج الموظف حتى اكتمال الاعتماد.
-            </Alert>
-            <TextField fullWidth required label="اسم القسم بالعربية *"
+            </Alert>}
+            <TextField fullWidth required
+              label={V4_PRIVATE_UI && edit === 'new'
+                ? `اسم ${V4_LEVEL_LABELS[FOUNDATION_LEVELS.indexOf(newLevel)]} الجديد بالعربية *`
+                : 'اسم القسم بالعربية *'}
               value={name} onChange={e => setName(e.target.value)}
               slotProps={{ htmlInput: { maxLength: 220 } }} />
-            <TextField fullWidth label="رمز القسم (اختياري)"
+            {(!V4_PRIVATE_UI || edit !== 'new') && <TextField fullWidth label="رمز القسم (اختياري)"
               value={code} disabled={isEditingName}
               onChange={e => setCode(e.target.value.toUpperCase())}
               helperText={isEditingName
                 ? 'الرمز ثابت بعد الإنشاء لحماية الربط التاريخي'
                 : 'اكتب رمزًا رسميًا إن توفر، أو اتركه فارغًا لتوليد رمز داخلي فريد يبدأ DEP-'}
-              slotProps={{ htmlInput: { maxLength: 40 } }} />
+              slotProps={{ htmlInput: { maxLength: 40 } }} />}
+            {V4_PRIVATE_UI && edit === 'new' && <Typography variant="caption" color="text.secondary">
+              يُولّد النظام رمزًا تنظيميًا ثابتًا من المسار الكامل، ويعيد استخدام المستويات
+              الموجودة دون إنشاء نسخ مكررة. تظل المسودة غير مفعّلة حتى المراجعة.
+            </Typography>}
             <Typography variant="body2" color="text.secondary">
               لا نُنشئ مركزًا صحيًا بديلًا للقسم، ولا نعتمد أي تبعية دون مراجعة موثقة.
             </Typography>
@@ -499,6 +594,7 @@ export function DepartmentsPage() {
         <DialogActions>
           <Button onClick={() => setEdit(null)} disabled={busy}>إلغاء</Button>
           <Button variant="contained" disabled={busy || name.trim().length < 3 ||
+            !canSaveFoundation ||
             (isEditingName && name.trim() === (edit as Department).name)}
             onClick={() => void save()}>
             {busy ? 'جارٍ الحفظ...' : 'حفظ القسم كمسودة'}

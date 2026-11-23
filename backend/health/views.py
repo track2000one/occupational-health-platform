@@ -647,6 +647,27 @@ class HealthCenterViewSet(viewsets.ModelViewSet):
     serializer_class = HealthCenterSerializer
     permission_classes = [permissions.IsAuthenticated, CanManageHealthCenters]
 
+    def create(self, request, *args, **kwargs):
+        # Only the isolated V4 center foundation flow requires the source-based
+        # hierarchy fields. Do not change existing staging/production behavior.
+        from .organization_structure import draft_import_scope, clean
+        if draft_import_scope() == 'v4':
+            sector = clean(request.data.get('proposed_sector_name'))
+            main = clean(request.data.get('proposed_parent_name'))
+            known_sectors = {
+                'القطاع الشرقي الاستشاري 1', 'القطاع الشرقي الاستشاري 2',
+                'القطاع الغربي الاستشاري 1', 'القطاع الغربي الاستشاري 2',
+            }
+            if sector not in known_sectors:
+                return Response({
+                    'proposed_sector_name': 'اختر أحد القطاعات الاستشارية الأربعة الواردة في ملف Excel.'
+                }, status=400)
+            if main != 'الرعاية الأولية والمجتمعية':
+                return Response({
+                    'proposed_parent_name': 'الإدارة الرئيسية لمسار المراكز هي الرعاية الأولية والمجتمعية.'
+                }, status=400)
+        return super().create(request, *args, **kwargs)
+
     def list(self, request, *args, **kwargs):
         """Return directory pages without per-center count/alias database queries.
 
