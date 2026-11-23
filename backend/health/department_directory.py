@@ -6,6 +6,7 @@ rewritten by these endpoints. No synthetic HealthCenter is created.
 """
 import re
 import uuid
+from hashlib import sha256
 
 from django.db import IntegrityError, transaction
 from django.db.models import Count
@@ -14,7 +15,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import AuditLog, OrganizationUnit, OrganizationUnitApprovalLog
-from .organization_structure import clean
+from .organization_structure import clean, draft_import_scope, V4_MISSING_LABELS
 
 
 def is_department_admin(request):
@@ -44,6 +45,99 @@ def duplicate_name(name, exclude_pk=None):
     return records.exists()
 
 
+
+V4_PATH_LEVELS = ('main_administration', 'sub_administration', 'department', 'sub_unit')
+
+
+def create_v4_department_hierarchy(request):
+    """Create one reviewed draft path in V4, reusing existing prefixes atomically.
+
+    Does not activate any unit or touch Employee/HealthCenter. A prefix with
+    a different existing code or parent must be resolved, not duplicated.
+    """
+    if draft_import_scope() != 'v4':
+        return Response({'detail': 'هذه الميزة مخصصة لنسخة V4 المعزولة.'}, status=403)
+    if set(request.data) != {'hierarchy'} or not isinstance(request.data['hierarchy'], dict):
+        return Response({'detail': 'استخدم حقول التسلسل التنظيمي المحددة فقط.'}, status=400)
+    source = request.data['hierarchy']
+    if set(source) - set(V4_PATH_LEVELS):
+        return Response({'detail': 'حقول غير معروفة ضمن التسلسل التنظيمي.'}, status=400)
+    values = [clean(source.get(key)) for key in V4_PATH_LEVELS]
+    if not values[0]:
+        return Response({'detail': 'الإدارة الرئيسية مطلوبة.'}, status=400)
+    path = tuple(label for label in values if label)
+    if list(path) != values[:len(path)]:
+        return Response({'detail': 'لا يمكن تجاوز مستوى تنظيمي وسيط.'}, status=400)
+    if (any(label in V4_MISSING_LABELS or len(label) > 220
+            or '/' in label or label.startswith('القطاع ') for label in path)
+            or path[0] == 'التشغيل'):
+        return Response({
+            'detail': 'اسم غير صالح أو مسار مستبعد من التأسيس؛ راجع ملف المصدر والتسلسل.'
+        }, status=400)
+    try:
+        with transaction.atomic():
+            created = []
+            parent = None
+            final = None
+            for depth in range(1, len(path) + 1):
+                prefix = path[:depth]
+                expected_code = 'V4-D-' + sha256(
+                    '\x1f'.join(prefix).encode('utf-8')
+                ).hexdigest()[:24].upper()
+                existing = OrganizationUnit.objects.select_for_update().filter(
+                    code=expected_code,
+                ).first()
+                if existing:
+                    if (existing.name != prefix[-1] or
+                            existing.kind != OrganizationUnit.Kind.DEPARTMENT or
+                            existing.parent_id != (parent.pk if parent else None) or
+                            existing.health_center_id or not existing.is_active):
+                        return Response({'detail': 'تعارض في التسلسل الحالي؛ لم تُجرَ أي إضافة.'},
+                                        status=409)
+                else:
+                    conflict = OrganizationUnit.objects.select_for_update().filter(
+                        name__iexact=prefix[-1], kind=OrganizationUnit.Kind.DEPARTMENT,
+                        parent=parent,
+                    ).first()
+                    if conflict is not None:
+                        return Response({
+                            'detail': 'المستوى التنظيمي موجود برمز مختلف؛ راجع السجل بدل إنشاء نسخة مكررة.'
+                        }, status=409)
+                    existing = OrganizationUnit.objects.create(
+                        code=expected_code, name=prefix[-1],
+                        kind=OrganizationUnit.Kind.DEPARTMENT, parent=parent,
+                        health_center=None, is_active=True, is_approved=False,
+                        source_sheet='V4 manual hierarchical foundation',
+                        source_path=' / '.join(prefix),
+                        source_rows='',
+                    )
+                    created.append(existing)
+                    OrganizationUnitApprovalLog.objects.create(
+                        unit=existing, action='create-draft', user=request.user,
+                    )
+                parent = existing
+                final = existing
+            if not created:
+                return Response({
+                    'detail': 'المسار التنظيمي موجود بالفعل؛ يمكن مراجعته أو تفعيله.'
+                }, status=409)
+            AuditLog.objects.create(
+                user=str(request.user),
+                action='v4_manual_hierarchical_department_created',
+                model_name='OrganizationUnit', record_id=str(final.pk),
+            )
+            final.employee_count = 0
+            return Response({
+                'department': department_payload(final),
+                'created_count': len(created),
+                'reused_count': len(path) - len(created),
+                'notice': 'حُفظ التسلسل التنظيمي كمسودة. يلزم تفعيله قبل ربط الموظفين به.',
+            }, status=status.HTTP_201_CREATED)
+    except IntegrityError:
+        return Response({'detail': 'تعارض متزامن في التسلسل؛ أعد تحديث السجل.'}, status=409)
+
+
+
 class DepartmentDirectoryView(APIView):
     permission_classes = [permissions.IsAdminUser]
 
@@ -67,6 +161,8 @@ class DepartmentDirectoryView(APIView):
     def post(self, request):
         if not is_department_admin(request):
             return Response({'detail': 'تأسيس الأقسام متاح للمسؤول الأعلى فقط.'}, status=403)
+        if 'hierarchy' in request.data:
+            return create_v4_department_hierarchy(request)
         allowed = {'name', 'code'}
         if any(key not in allowed for key in request.data):
             return Response({'detail': 'الحقول المرسلة غير معروفة.'}, status=400)
