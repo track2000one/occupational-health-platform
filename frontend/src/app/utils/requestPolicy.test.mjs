@@ -53,3 +53,6 @@ import './centerActivationSelection.test.mjs';
 import '../data/v4EmployeePlacementOptions.test.mjs';
 // Isolated V4 department batch selection regression.
 import '../data/v4DepartmentBulkSelection.test.mjs';
+
+// Organizational source hierarchy regression (metadata only; no employee rows).
+import '../data/v4FoundationHierarchyReference.test.mjs';
