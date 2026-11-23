@@ -9,6 +9,8 @@
  * The "التشغيل" paths still exist in the uploaded XLSX (56 employee rows);
  * preserve them as review-only source data instead of silently discarding them
  * or reinstating the excluded category for new foundation.
+ * Eight section-workbook rows have a subunit but no section; keep these
+ * incomplete paths out of suggested creation levels pending review.
  */
 export const V4_FOUNDATION_CONTEXT = {
   health_cluster: 'تجمع الشرقية الصحي',
@@ -161,11 +163,6 @@ export const V4_DEPARTMENT_SOURCE_PATHS: readonly (readonly string[])[] =
   ],
   [
     "الرعاية الأولية والمجتمعية",
-    "القطاعات التشغيلية للرعاية الأولية",
-    "الوحدة الإدارية للفحص الشامل"
-  ],
-  [
-    "الرعاية الأولية والمجتمعية",
     "تمريض الرعاية الصحية الأولية",
     "التثقيف والتدريب الصحي"
   ],
@@ -197,12 +194,12 @@ export const V4_LEVEL_LABELS = [
 
 export function v4MainDepartmentChoices(): string[] {
   return Array.from(new Set(V4_DEPARTMENT_SOURCE_PATHS
-    .map(path=>path[0]).filter(name=>name && name!==V4_REVIEW_ONLY_MAIN))).sort('ar');
+    .map(path=>path[0]).filter(name=>name && name!==V4_REVIEW_ONLY_MAIN))).sort((a,b)=>a.localeCompare(b,'ar'));
 }
 export function v4DepartmentChoices(prefix: readonly string[], depth: number): string[] {
   return Array.from(new Set(V4_DEPARTMENT_SOURCE_PATHS
     .filter(path => prefix.every((name,index)=>path[index]===name))
-    .map(path=>path[depth]).filter((value): value is string => Boolean(value)))).sort('ar');
+    .map(path=>path[depth]).filter((value): value is string => Boolean(value)))).sort((a,b)=>a.localeCompare(b,'ar'));
 }
 export function v4CenterNamesForSector(sector: string): readonly string[] {
   return V4_CENTER_SECTORS[sector] || [];
