@@ -80,8 +80,11 @@ class V4FoundationHierarchyTests(TestCase):
         self.assertFalse(OrganizationUnit.objects.exists())
 
     def test_conflicting_late_prefix_rolls_back_earlier_creation(self):
+        expected_conflicting_code = 'V4-D-' + sha256(
+            '\x1f'.join(['الرعاية الأولية والمجتمعية', 'الصحة المهنية']).encode('utf-8')
+        ).hexdigest()[:24].upper()
         OrganizationUnit.objects.create(
-            code='DEP-LEGACY', name='الصحة المهنية',
+            code=expected_conflicting_code, name='مسار تعارض اصطناعي',
             kind=OrganizationUnit.Kind.DEPARTMENT,
         )
         result = self.send_path([
