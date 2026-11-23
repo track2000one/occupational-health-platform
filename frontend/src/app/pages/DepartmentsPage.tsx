@@ -17,6 +17,7 @@ import { authFetch, getAccessToken, useAuth } from '../context/AuthContext';
 import { V4DepartmentImport } from '../components/V4DepartmentImport';
 import { departmentReviewGuidance } from '../data/v4DepartmentReviewGuidance';
 import { V4_PRIVATE_UI } from '../data/v4AffiliationHierarchy';
+import { pendingV4DepartmentIds } from '../data/v4DepartmentBulkSelection';
 
 // Never silently use Production API for an unconfigured Staging instance.
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
@@ -132,13 +133,12 @@ export function DepartmentsPage() {
       String(value || '').toLocaleLowerCase().includes(needle));
   }), [departments, search, filter]);
 
-  const pendingV4Departments = useMemo(() => departments.filter(item =>
-    item.code.startsWith('V4-D-') && item.is_active && !item.is_approved), [departments]);
+  const pendingV4Ids = useMemo(() => pendingV4DepartmentIds(departments), [departments]);
 
   async function previewBulkDepartmentActivation() {
     if (!V4_PRIVATE_UI || !canManage || bulkBusy || busy || loading || error ||
-        !pendingV4Departments.length) return;
-    const ids = pendingV4Departments.map(item => item.id);
+        !pendingV4Ids.length) return;
+    const ids = [...pendingV4Ids];
     setBulkIds(ids);
     setBulkConsent(false);
     setBulkBusy(true);
@@ -291,9 +291,9 @@ export function DepartmentsPage() {
             onClick={() => navigate('/admin/organization-structure')}>الهيكل التنظيمي</Button>
           {V4_PRIVATE_UI && canManage && <Button
             color="success" variant="contained" startIcon={<ApproveIcon />}
-            disabled={busy || bulkBusy || loading || Boolean(error) || !pendingV4Departments.length}
+            disabled={busy || bulkBusy || loading || Boolean(error) || !pendingV4Ids.length}
             onClick={() => void previewBulkDepartmentActivation()}>
-            معاينة وتفعيل الأقسام ({pendingV4Departments.length})
+            معاينة وتفعيل الأقسام ({pendingV4Ids.length})
           </Button>}
           <V4DepartmentImport onImported={refresh} />
           {canManage && <Button variant="contained" startIcon={<AddIcon />}
