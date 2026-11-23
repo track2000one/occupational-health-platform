@@ -92,6 +92,7 @@ def create_v4_department_hierarchy(request):
                             existing.kind != OrganizationUnit.Kind.DEPARTMENT or
                             existing.parent_id != (parent.pk if parent else None) or
                             existing.health_center_id or not existing.is_active):
+                        transaction.set_rollback(True)
                         return Response({'detail': 'تعارض في التسلسل الحالي؛ لم تُجرَ أي إضافة.'},
                                         status=409)
                 else:
@@ -100,6 +101,7 @@ def create_v4_department_hierarchy(request):
                         parent=parent,
                     ).first()
                     if conflict is not None:
+                        transaction.set_rollback(True)
                         return Response({
                             'detail': 'المستوى التنظيمي موجود برمز مختلف؛ راجع السجل بدل إنشاء نسخة مكررة.'
                         }, status=409)
