@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import {
-  Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent,
+  Alert, Box, Button, Checkbox, Chip, CircularProgress, Dialog, DialogActions, DialogContent,
   DialogTitle, Divider, Grid, MenuItem, Paper, Stack, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, TextField, Typography,
 } from '@mui/material';
@@ -32,6 +32,26 @@ type Summary = {
   inactive: number; employees: number;
 };
 type Registry = { results: Department[]; summary: Summary };
+type BulkDepartmentPreview = {
+  selected_count: number;
+  eligible_count: number;
+  blocked_count: number;
+  already_approved_count: number;
+  eligible_by_kind?: Record<string, number>;
+  preview_token: string;
+  commit_enabled: boolean;
+  blocked: Array<{ id: number; name: string; code: string; reason: string }>;
+};
+type BulkDepartmentResult = {
+  approved_count: number; blocked_count: number;
+};
+const BULK_BLOCKED_LABELS: Record<string, string> = {
+  inactive: 'القسم غير نشط',
+  parent_not_approved_or_selected: 'الجهة الأعلى ليست مفعّلة أو غير مشمولة في المعاينة',
+  invalid_department_hierarchy: 'التسلسل الهرمي يحتاج مراجعة',
+  unexpected_root_parent: 'ارتباط الجهة الأعلى غير صحيح',
+  invalid_kind: 'نوع السجل غير مؤهل للتفعيل',
+};
 
 async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = getAccessToken();
@@ -83,6 +103,10 @@ export function DepartmentsPage() {
   const [statusTarget, setStatusTarget] = useState<Department | null>(null);
   const [statusReason, setStatusReason] = useState('');
   const [detail, setDetail] = useState<Department | null>(null);
+  const [bulkPreview, setBulkPreview] = useState<BulkDepartmentPreview | null>(null);
+  const [bulkIds, setBulkIds] = useState<number[]>([]);
+  const [bulkConsent, setBulkConsent] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -107,6 +131,56 @@ export function DepartmentsPage() {
     return !needle || [item.name, item.code, item.approval_reference].some(value =>
       String(value || '').toLocaleLowerCase().includes(needle));
   }), [departments, search, filter]);
+
+  const pendingV4Departments = useMemo(() => departments.filter(item =>
+    item.code.startsWith('V4-D-') && item.is_active && !item.is_approved), [departments]);
+
+  async function previewBulkDepartmentActivation() {
+    if (!V4_PRIVATE_UI || !canManage || bulkBusy || busy || loading || error ||
+        !pendingV4Departments.length) return;
+    const ids = pendingV4Departments.map(item => item.id);
+    setBulkIds(ids);
+    setBulkConsent(false);
+    setBulkBusy(true);
+    try {
+      const preview = await api<BulkDepartmentPreview>('/organization-units/bulk-approval/', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'preview', unit_ids: ids }),
+      });
+      setBulkPreview(preview);
+    } catch (caught) {
+      setBulkPreview(null);
+      toast.error('تعذرت معاينة الأقسام: ' + message(caught));
+    } finally { setBulkBusy(false); }
+  }
+
+  async function activateBulkDepartments() {
+    if (!V4_PRIVATE_UI || !canManage || bulkBusy || !bulkPreview ||
+        !bulkPreview.commit_enabled || !bulkPreview.eligible_count || !bulkConsent) return;
+    setBulkBusy(true);
+    try {
+      const result = await api<BulkDepartmentResult>('/organization-units/bulk-approval/', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'activate', unit_ids: bulkIds,
+          preview_token: bulkPreview.preview_token,
+          confirmed: true, confirm_text: 'تفعيل تشغيلي',
+        }),
+      });
+      setBulkPreview(null);
+      setBulkIds([]);
+      setBulkConsent(false);
+      await refresh();
+      toast.success('تم التفعيل التشغيلي لعدد ' + result.approved_count +
+        ' جهة تنظيمية. لم تتغير بيانات الموظفين.');
+      if (result.blocked_count > 0)
+        toast.warning(result.blocked_count + ' جهة بقيت للمراجعة؛ راجع التسلسل التنظيمي.');
+    } catch (caught) {
+      setBulkPreview(null);
+      setBulkConsent(false);
+      toast.error(message(caught) + ' — أعد المعاينة قبل المحاولة التالية.');
+    } finally { setBulkBusy(false); }
+  }
 
   function openCreate() {
     setName(''); setCode(''); setEdit('new');
@@ -215,6 +289,12 @@ export function DepartmentsPage() {
             onClick={() => navigate('/admin/health-centers')}>المراكز الصحية</Button>
           <Button variant="outlined" startIcon={<StructureIcon />}
             onClick={() => navigate('/admin/organization-structure')}>الهيكل التنظيمي</Button>
+          {V4_PRIVATE_UI && canManage && <Button
+            color="success" variant="contained" startIcon={<ApproveIcon />}
+            disabled={busy || bulkBusy || loading || Boolean(error) || !pendingV4Departments.length}
+            onClick={() => void previewBulkDepartmentActivation()}>
+            معاينة وتفعيل الأقسام ({pendingV4Departments.length})
+          </Button>}
           <V4DepartmentImport onImported={refresh} />
           {canManage && <Button variant="contained" startIcon={<AddIcon />}
             onClick={openCreate}>إضافة قسم جديد</Button>}
@@ -335,6 +415,64 @@ export function DepartmentsPage() {
           </Table>
         </TableContainer>}
       </>}
+
+      <Dialog open={Boolean(bulkPreview)}
+        onClose={() => { if (!bulkBusy) { setBulkPreview(null); setBulkConsent(false); } }}
+        maxWidth="sm" fullWidth dir="rtl">
+        <DialogTitle fontWeight={900}>معاينة التفعيل التشغيلي للأقسام</DialogTitle>
+        <DialogContent dividers>
+          {bulkPreview && <Stack gap={1.5}>
+            <Alert severity="info">
+              المعاينة لا تحفظ أي تغييرات. عند التأكيد، يفعّل النظام الأقسام المؤهلة
+              بالترتيب الهرمي بدءًا من الإدارات الأعلى، دون رقم قرار رسمي.
+              لن تتغير بيانات الموظفين أو المراكز الصحية.
+            </Alert>
+            <Stack direction="row" flexWrap="wrap" gap={1}>
+              <Chip label={`المحددة: ${bulkPreview.selected_count}`} />
+              <Chip color="success" variant="outlined"
+                label={`المؤهلة: ${bulkPreview.eligible_count}`} />
+              <Chip color="info" variant="outlined"
+                label={`مفعّلة سابقًا: ${bulkPreview.already_approved_count}`} />
+              <Chip color={bulkPreview.blocked_count ? 'warning' : 'default'}
+                label={`تحتاج مراجعة: ${bulkPreview.blocked_count}`} />
+            </Stack>
+            {bulkPreview.blocked_count > 0 && <Box sx={{ maxHeight: 220, overflowY: 'auto' }}>
+              {bulkPreview.blocked.map(item =>
+                <Typography key={item.id} variant="body2" sx={{ py: 0.4 }}>
+                  {item.name} — {BULK_BLOCKED_LABELS[item.reason] || item.reason}
+                </Typography>)}
+            </Box>}
+            {!bulkPreview.commit_enabled && <Alert severity="warning">
+              خدمة V4 لا تسمح بالحفظ الجماعي حاليًا. المعاينة فقط متاحة.
+            </Alert>}
+            {bulkPreview.eligible_count === 0 && <Alert severity="info">
+              لا توجد أقسام مؤهلة للتفعيل ضمن الدفعة الحالية؛ لا يوجد إجراء حفظ.
+            </Alert>}
+            {bulkPreview.commit_enabled && bulkPreview.eligible_count > 0 &&
+              <Stack direction="row" gap={1} alignItems="center">
+                <Checkbox checked={bulkConsent}
+                  disabled={bulkBusy}
+                  onChange={(_, checked) => setBulkConsent(checked)}
+                  inputProps={{ 'aria-label': 'تأكيد مراجعة الأقسام المؤهلة' }} />
+                <Typography variant="body2">
+                  راجعت الأقسام المؤهلة وأوافق على تفعيلها تشغيليًا داخل المنصة.
+                </Typography>
+              </Stack>}
+          </Stack>}
+        </DialogContent>
+        <DialogActions>
+          <Button disabled={bulkBusy}
+            onClick={() => { setBulkPreview(null); setBulkConsent(false); }}>
+            {bulkPreview?.eligible_count ? 'إلغاء' : 'إغلاق'}
+          </Button>
+          {Boolean(bulkPreview?.eligible_count && bulkPreview?.commit_enabled) &&
+            <Button color="success" variant="contained"
+              disabled={bulkBusy || !bulkConsent}
+              onClick={() => void activateBulkDepartments()}>
+              {bulkBusy ? 'جارٍ التفعيل...' : `تأكيد تفعيل ${bulkPreview?.eligible_count} قسم/إدارة`}
+            </Button>}
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={edit !== null} onClose={() => !busy && setEdit(null)} maxWidth="sm" fullWidth>
         <DialogTitle fontWeight={900}>{isEditingName ? 'تعديل مسودة القسم' : 'إضافة وتأسيس قسم جديد'}</DialogTitle>
