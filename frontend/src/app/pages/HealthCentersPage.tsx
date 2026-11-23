@@ -121,6 +121,8 @@ export function HealthCentersPage() {
     setLoading(true);
     setDirectoryReady(false);
     setLoadError('');
+    // Keep previously verified cards visible while refreshing in place; do
+    // not clear the directory or show a false zero while network is pending.
     // Master centers are the primary source. Auxiliary archive/hierarchy
     // requests must not hide loaded centers if either of them times out.
     try {
@@ -458,6 +460,8 @@ export function HealthCentersPage() {
         <Typography fontWeight={900} color="text.secondary">
           {loading && visibleCenters.length === 0
             ? 'جارٍ تحميل المراكز من الخادم…'
+            : loading && visibleCenters.length > 0
+              ? `جارٍ تحديث المراكز… (عرض ${filtered.length} مركزًا محفوظًا من آخر استجابة)`
             : loadError && centers.length === 0
               ? 'تعذر قراءة إجمالي المراكز — لا يعني ذلك أن السجل فارغ'
               : `عرض ${filtered.length} مركزًا من إجمالي ${visibleCenters.length} مركز ${showArchived ? 'مؤرشف' : 'مسجل'}`}
@@ -518,7 +522,8 @@ export function HealthCentersPage() {
       تعذر استكمال تحميل كل صفحات المراكز؛ البيانات الظاهرة جزئية. لم تُحذف أي سجلات.
       السبب: {loadError}
     </Alert>}
-    {loading ? <Paper sx={{ p: 6, textAlign: 'center' }}><CircularProgress /></Paper>
+    {loading && visibleCenters.length === 0
+      ? <Paper sx={{ p: 6, textAlign: 'center' }}><CircularProgress /></Paper>
       : loadError && centers.length === 0 ? <Alert severity="error" action={
         <Button size="small" onClick={() => void load()}>إعادة المحاولة</Button>
       }>تعذر تحميل دليل المراكز الصحية: {loadError}</Alert>
