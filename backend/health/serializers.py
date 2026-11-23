@@ -237,8 +237,8 @@ def normalized_center_alias(value):
 
 
 class HealthCenterSerializer(serializers.ModelSerializer):
-    employee_count = serializers.IntegerField(source='employees.count', read_only=True)
-    user_count = serializers.IntegerField(source='platform_users.count', read_only=True)
+    employee_count = serializers.SerializerMethodField()
+    user_count = serializers.SerializerMethodField()
     building_type_label = serializers.CharField(source='get_building_type_display', read_only=True)
     alias_names = serializers.SerializerMethodField()
     # An extra name to register. Existing historic aliases are append-only.
@@ -256,10 +256,26 @@ class HealthCenterSerializer(serializers.ModelSerializer):
             'approval_reference', 'approved_by', 'approved_at',
         )
 
+    def get_employee_count(self, obj):
+        annotated = getattr(obj, '_employee_count', None)
+        return annotated if annotated is not None else obj.employees.count()
+
+    def get_user_count(self, obj):
+        annotated = getattr(obj, '_user_count', None)
+        return annotated if annotated is not None else obj.platform_users.count()
+
     def get_alias_names(self, obj):
+        aliases = getattr(obj, '_directory_aliases', None)
+        if aliases is not None:
+            return [alias.name for alias in aliases]
         return list(obj.aliases.order_by('created_at', 'pk').values_list('name', flat=True))
 
     def get_center_units_count(self, obj):
+        # The directory list precomputes this for its entire page in one query.
+        # Standalone detail/update serializers retain the previous exact count.
+        counts = self.context.get('center_units_counts')
+        if counts is not None:
+            return counts.get(obj.pk, 0)
         return OrganizationUnit.objects.filter(
             Q(health_center=obj) | Q(parent__health_center=obj),
             kind=OrganizationUnit.Kind.UNIT, is_active=True,
