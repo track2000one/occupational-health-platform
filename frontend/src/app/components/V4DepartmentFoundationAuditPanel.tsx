@@ -68,7 +68,7 @@ export function V4DepartmentFoundationAuditPanel({
             {view === 'review' && <Chip size="small"
               color={item.reviewKind==='historic' ? 'default' :
                 item.reviewKind==='incomplete' ? 'warning' : 'info'}
-              label={reviewFilterLabels[item.reviewKind as ReviewFilter]} variant="outlined"/>
+              label={reviewFilterLabels[item.reviewKind as ReviewFilter]} variant="outlined"/>}
             <Chip size="small" label={item.sourceEmployees+' في ملف المصدر'} variant="outlined"/>
             {item.rowCount>1 && <Chip size="small"
               label={item.rowCount+' تصنيفات للخدمة نفسها'} variant="outlined"/>}
