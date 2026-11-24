@@ -19,11 +19,11 @@ import { V4DepartmentFoundationAuditPanel } from '../components/V4DepartmentFoun
 import { departmentReviewGuidance } from '../data/v4DepartmentReviewGuidance';
 import { V4_PRIVATE_UI } from '../data/v4AffiliationHierarchy';
 import {
-  V4_FOUNDATION_CONTEXT, V4_LEVEL_LABELS, v4MainDepartmentChoices,
-  v4DepartmentChoices,
+  V4_FOUNDATION_CONTEXT, V4_LEVEL_LABELS,
 } from '../data/v4FoundationHierarchyReference';
 import { pendingV4DepartmentIds } from '../data/v4DepartmentBulkSelection';
 import { auditDepartmentPaths, knownDepartmentPaths, V4_DEPARTMENT_LABELS,
+  availableOrganizationLevelChoices,
 } from '../data/v4DepartmentSourceAudit';
 
 // Never silently use Production API for an unconfigured Staging instance.
@@ -155,6 +155,8 @@ export function DepartmentsPage() {
   // Do not bulk-activate all cards while registered/source paths are inconsistent.
   const bulkAuditIncomplete = hierarchyAudit.missing.length>0 ||
     hierarchyAudit.broken.length>0;
+  const choicesAtLevel = (prefix: string[], level: number) =>
+    availableOrganizationLevelChoices(orgPaths,prefix,level);
   const levelFor = (item: Department) => {
     const path = orgPaths.get(item.id);
     if(!path || path.status!=='valid') return 'تبعية غير مكتملة';
@@ -580,7 +582,7 @@ export function DepartmentsPage() {
                   setFoundationMain(event.target.value); setFoundationSub(''); setFoundationSection('');
                 }}>
                 <MenuItem value="">اختر الإدارة الرئيسية</MenuItem>
-                {v4MainDepartmentChoices().map(value =>
+                {choicesAtLevel([],0).map(value =>
                   <MenuItem key={value} value={value}>{value}</MenuItem>)}
               </TextField>}
               {['department','sub_unit'].includes(newLevel) && <TextField
@@ -590,19 +592,20 @@ export function DepartmentsPage() {
                   setFoundationSub(event.target.value); setFoundationSection('');
                 }}>
                 <MenuItem value="">اختر الإدارة الفرعية</MenuItem>
-                {v4DepartmentChoices([foundationMain],1).map(value =>
+                {choicesAtLevel([foundationMain],1).map(value =>
                   <MenuItem key={value} value={value}>{value}</MenuItem>)}
               </TextField>}
               {newLevel === 'sub_unit' && <TextField fullWidth select required
                 label="القسم الأعلى *" value={foundationSection}
                 disabled={!foundationSub} onChange={event => setFoundationSection(event.target.value)}>
                 <MenuItem value="">اختر القسم الأعلى</MenuItem>
-                {v4DepartmentChoices([foundationMain,foundationSub],2).map(value =>
+                {choicesAtLevel([foundationMain,foundationSub],2).map(value =>
                   <MenuItem key={value} value={value}>{value}</MenuItem>)}
               </TextField>}
               <Alert severity="warning">
-                وردت «التشغيل» ضمن بيانات المصدر، لكنها مستبعدة من قوائم تأسيس الهيكل حسب
-                التعديل السابق. تبقى سجلاتها الأصلية للمراجعة دون حذفها.
+                القوائم تعرض المسميات الواردة في ملف Excel والمسجلة حاليًا في المنصة
+                وفق تسلسلها الكامل. مسار «التشغيل» السابق مخصص للمراجعة ولا يُنشأ تلقائيًا.
+                ويمكن إنشاء إدارة جديدة بعد مراجعتها إذا لم تكن ضمن الخيارات.
               </Alert>
             </>}
             {V4_PRIVATE_UI && edit !== 'new' && <Alert severity="info">
