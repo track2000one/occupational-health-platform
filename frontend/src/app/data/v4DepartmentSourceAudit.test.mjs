@@ -53,9 +53,11 @@ test('actual records must match all ancestors, not only same department name',()
     mk(4,null,'قسم مستقل لكنه بنفس اسم الصحة المهنية'),
   ];
   const audit=m.auditDepartmentPaths(units);
-  assert.equal(audit.matched.length,1);
+  // Both the intermediate 'الصحة العامة' and its child 'الصحة المهنية'
+  // are complete workbook paths. The unrelated standalone leaf is not.
+  assert.equal(audit.matched.length,2);
   assert.equal(audit.matchableCount,21);
-  assert.equal(audit.missing.length,20);
+  assert.equal(audit.missing.length,19);
   assert.ok(audit.matched[0].key.includes('الصحة المهنية'));
   assert.equal(audit.broken.length,0);
 });
