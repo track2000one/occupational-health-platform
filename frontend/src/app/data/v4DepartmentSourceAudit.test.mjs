@@ -97,7 +97,7 @@ test('foundation dropdowns include only matching full-path parents from source a
     ['إدارة فرعية محدثة']);
 });
 
-test('10 review paths split into five sector placements, one direct main, one missing level, three historical',()=>{
+test('10 review paths split into five sectors, one direct main, one confirmed sector unit, and three historical',()=>{
   const reviews=m.sourceOrganizationPaths().filter(p=>p.status!=='matchable');
   assert.equal(reviews.length,10);
   const buckets={
@@ -105,13 +105,15 @@ test('10 review paths split into five sector placements, one direct main, one mi
     sector:reviews.filter(x=>x.reviewKind==='sector'),
     main:reviews.filter(x=>x.reviewKind==='main'),
     incomplete:reviews.filter(x=>x.reviewKind==='incomplete'),
+    sector_unit:reviews.filter(x=>x.reviewKind==='sector_unit'),
   };
   assert.deepEqual(Object.fromEntries(Object.entries(buckets).map(([key,items])=>
     [key,{paths:items.length,rows:items.reduce((n,x)=>n+x.sourceEmployees,0)}])),{
       historic:{paths:3,rows:56},
       sector:{paths:5,rows:39},
       main:{paths:1,rows:19},
-      incomplete:{paths:1,rows:8},
+      incomplete:{paths:0,rows:0},
+      sector_unit:{paths:1,rows:8},
   });
   const names=buckets.sector.map(x=>x.sector);
   assert.deepEqual(new Set(names),new Set([
@@ -121,8 +123,8 @@ test('10 review paths split into five sector placements, one direct main, one mi
   assert.equal(buckets.sector.filter(x=>x.sector==='القطاع الشرقي الاستشاري 1').length,2);
 });
 
-test('orphaned full-checkup subunit preserves original depth, never displays as subadministration',()=>{
-  const item=m.sourceOrganizationPaths().find(p=>p.reviewKind==='incomplete');
+test('confirmed full-checkup unit remains a subunit directly under Eastern Sector 1, not a department',()=>{
+  const item=m.sourceOrganizationPaths().find(p=>p.reviewKind==='sector_unit');
   assert.ok(item);
   assert.equal(item.levels[0],'الرعاية الأولية والمجتمعية');
   assert.equal(item.levels[1],null);
@@ -132,4 +134,7 @@ test('orphaned full-checkup subunit preserves original depth, never displays as 
   assert.equal(m.V4_DEPARTMENT_LABELS[item.sourceLevel],'الوحدة الفرعية');
   assert.equal(item.sector,'القطاع الشرقي الاستشاري 1');
   assert.equal(item.service,'الفحص الشامل');
+  assert.ok(item.note.includes('تأكدت التبعية مباشرة'));
+  assert.equal(item.status,'source_review'); // no DB assignment was created
+  assert.equal(m.sourceOrganizationPaths().filter(x=>x.reviewKind==='incomplete').length,0);
 });
