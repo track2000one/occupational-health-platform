@@ -74,3 +74,23 @@ test('reference module never carries personal employee data',()=>{
   assert.ok(!text.includes('البريد الإلكتروني'));
   assert.ok(!text.includes('الجوال'));
 });
+
+test('foundation dropdowns include only matching full-path parents from source and live registry',()=>{
+  const none=new Map();
+  const main=m.availableOrganizationLevelChoices(none,[],0);
+  assert.ok(main.includes('الخدمات الطبية والإكلينيكية'));
+  assert.ok(main.includes('الرعاية الأولية والمجتمعية'));
+  assert.ok(!main.includes('التشغيل'));
+  const subs=m.availableOrganizationLevelChoices(none,['الرعاية الأولية والمجتمعية'],1);
+  assert.ok(subs.includes('الصحة العامة'));
+  assert.ok(!subs.includes('خدمات طب الأسنان'));
+  const units=m.availableOrganizationLevelChoices(none,[
+    'الخدمات الطبية والإكلينيكية','الخدمات الصحية المساندة',
+    'خدمات إعادة التأهيل',
+  ],3);
+  assert.deepEqual(units,['العلاج الطبيعي']);
+  const live=new Map([[101,{path:['إدارة جديدة','إدارة فرعية محدثة'],status:'valid'}]]);
+  assert.ok(m.availableOrganizationLevelChoices(live,[],0).includes('إدارة جديدة'));
+  assert.deepEqual(m.availableOrganizationLevelChoices(live,['إدارة جديدة'],1),
+    ['إدارة فرعية محدثة']);
+});
