@@ -74,7 +74,7 @@ export type SourcePathReview = {
   note: string;
 };
 
-const normalize = (value: string) => value.trim().replace(/\\s+/g,' ');
+const normalize = (value: string) => value.trim().replace(/\s+/g,' ');
 export const departmentPathKey = (path: readonly string[]) =>
   path.map(normalize).join(' / ');
 
