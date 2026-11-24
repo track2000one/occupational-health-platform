@@ -97,9 +97,14 @@ export function sourceOrganizationPaths(): SourcePathReview[] {
     const path=row.levels.filter((x):x is string=>Boolean(x));
     const key=departmentPathKey(path);
     const check=classifySource(row);
-    const prev=grouped.get(key+'#'+check.status);
+    // A pure organizational path may represent multiple service/classification
+    // rows; merge only verified paths. Keep sector-only and incomplete records
+    // distinct so their review reasons are not accidentally conflated.
+    const groupKey = check.status === 'matchable' ? key :
+      key+'#'+check.note+'#'+(row.sector||'')+'#'+(row.service||'');
+    const prev=grouped.get(groupKey);
     if(prev){prev.sourceEmployees+=row.sourceEmployees;prev.rowCount++;continue;}
-    grouped.set(key+'#'+check.status,{
+    grouped.set(groupKey,{
       path,key,sourceEmployees:row.sourceEmployees,rowCount:1,
       status:check.status,note:check.note
     });
