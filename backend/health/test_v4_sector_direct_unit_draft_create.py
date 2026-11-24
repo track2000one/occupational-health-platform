@@ -125,11 +125,33 @@ class V4SectorDirectUnitDraftCreateTests(TestCase):
         self.sector()
         self.assertEqual(self.preview().status_code,409)
 
-    def test_approval_is_separate_and_pending_sector_cannot_found_unit(self):
-        self.sector(approved=False)
-        r=self.preview()
-        self.assertEqual(r.status_code,409)
-        self.assertEqual(r.data['status'],'sector_pending_activation')
+    def test_pending_sector_allows_draft_only_without_approving_either_node(self):
+        sector = self.sector(approved=False)
+        preview = self.preview()
+        self.assertEqual(preview.status_code, 200, preview.data)
+        self.assertFalse(preview.data['sector_activated'])
+        self.assertEqual(preview.data['target_status'], 'مسودة غير مفعّلة')
+        self.assertFalse(OrganizationUnit.objects.filter(kind='unit').exists())
+        created = self.confirm(preview.data['preview_token'])
+        self.assertEqual(created.status_code, 201, created.data)
+        sector.refresh_from_db()
+        unit = OrganizationUnit.objects.get(code=DRAFT_CODE)
+        self.assertFalse(sector.is_approved)
+        self.assertFalse(unit.is_approved)
+        self.assertEqual(unit.parent_id, sector.pk)
+        self.assertEqual(unit.kind, OrganizationUnit.Kind.UNIT)
+        self.assertIsNone(unit.health_center_id)
+        self.assertFalse(Employee.objects.exists())
+        self.assertFalse(HealthCenter.objects.exists())
+        self.assertEqual(OrganizationUnit.objects.count(),2)
+
+    def test_inactive_sector_does_not_allow_draft_creation(self):
+        sector = self.sector(approved=False)
+        sector.is_active = False
+        sector.save(update_fields=['is_active'])
+        preview = self.preview()
+        self.assertEqual(preview.status_code,409)
+        self.assertEqual(preview.data['status'],'sector_invalid')
         self.assertFalse(OrganizationUnit.objects.filter(kind='unit').exists())
 
     def test_scope_and_role_required_for_both_phases(self):

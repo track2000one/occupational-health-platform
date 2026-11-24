@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { authFetch, getAccessToken } from '../context/AuthContext';
 import { V4_PRIVATE_UI } from '../data/v4AffiliationHierarchy';
+import { canPreviewSectorUnitDraft } from '../data/v4SectorUnitDraftEligibility';
 import {
   Alert, Box, Button, Checkbox, Chip, Divider, Paper, Stack, Typography,
 } from '@mui/material';
@@ -14,12 +15,14 @@ const API = (import.meta.env.VITE_API_URL ||
 type SectorUnitPreflight = {
   status: string; detail: string; sector_matches: number;
   unit_matches: number; linked: boolean; can_create_link: boolean;
-  sector_activated: boolean; source_record_count: number; read_only: boolean;
+  sector_activated: boolean; sector_active: boolean;
+  source_record_count: number; read_only: boolean;
 };
 type SectorUnitDraftPreview = {
   mode: string; sector: string; unit: string; source_record_count:number;
   unit_code: string; preview_token: string; confirmation_text: string;
-  target_status:string; employee_changes:number; health_center_changes:number;
+  target_status:string; sector_activated:boolean;
+  employee_changes:number; health_center_changes:number;
 };
 type SectorUnitDraftResult = {
   id:number; code:string; name:string; parent_id:number;
@@ -75,8 +78,7 @@ export function V4DepartmentFoundationAuditPanel({
   }
 
   async function previewSectorUnitDraft() {
-    if(draftBusy || !sectorUnitCheck?.can_create_link ||
-      sectorUnitCheck?.status!=='unit_missing' || !sectorUnitCheck.sector_activated)return;
+    if(draftBusy || !canPreviewSectorUnitDraft(sectorUnitCheck))return;
     setDraftBusy(true);setDraftPreview(null);setDraftConfirmed(false);setSectorUnitError('');
     try {
       const result=await sectorUnitRequest<SectorUnitDraftPreview>({action:'preview'});
@@ -278,9 +280,13 @@ export function V4DepartmentFoundationAuditPanel({
               : ' لم يُنشأ أي ربط أو يُعدّل أي موظف أثناء الفحص.'}
           </Typography>
         </Alert>}
-      {view==='review' && canManage && sectorUnitCheck?.status==='unit_missing' &&
-        sectorUnitCheck.can_create_link && sectorUnitCheck.sector_activated &&
+      {view==='review' && canManage && canPreviewSectorUnitDraft(sectorUnitCheck) &&
         !draftPreview && !draftCreated && <Box>
+          {!sectorUnitCheck.sector_activated && <Alert severity="info" sx={{mb:1}}>
+            القطاع موجود ونشط لكنه لم يُفعّل تشغيليًا بعد. يمكن إنشاء الوحدة
+            كمسودة فقط؛ لا يمكن تفعيلها أو ربط الموظفين بها قبل استكمال
+            التفعيل التنظيمي.
+          </Alert>}
           <Button variant="outlined" disabled={draftBusy || sectorUnitBusy}
             onClick={()=>void previewSectorUnitDraft()}>
             {draftBusy?'جارٍ إعداد المعاينة…':'معاينة إنشاء الوحدة كمسودة — دون حفظ'}
@@ -298,8 +304,9 @@ export function V4DepartmentFoundationAuditPanel({
             سيتم إنشاء سجل تنظيمي واحد فقط كمسودة غير مفعّلة.
           </Typography>
           <Alert severity="warning">
-            ليس اعتمادًا تنظيميًا رسميًا، ولا يربط الموظفين الثمانية،
-            ولا يغيّر المراكز أو السجلات الصحية.
+            {draftPreview.sector_activated
+              ? 'ستُحفظ الوحدة كمسودة غير مفعّلة؛ لا يغيّر ذلك تبعية الموظفين الثمانية أو السجلات الصحية.'
+              : 'القطاع الحالي لم يُفعّل تشغيليًا بعد. ستُحفظ الوحدة كمسودة فقط، وتبقى غير متاحة للموظفين حتى استكمال التفعيل الصحيح دون أي تعديل تلقائي.'}
           </Alert>
           <Stack direction="row" alignItems="center" gap={1}>
             <Checkbox checked={draftConfirmed} disabled={draftBusy}

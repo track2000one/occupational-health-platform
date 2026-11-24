@@ -42,10 +42,14 @@ class V4SectorDirectUnitDraftCreateView(APIView):
         sector = OrganizationUnit.objects.get(
             pk=check['sector_id'], kind=OrganizationUnit.Kind.SECTOR,
         )
-        if not sector.is_approved or not sector.is_active:
+        # Founding an INACTIVE-DRAFT child does not require the parent's
+        # operational approval. The existing sector must still be active,
+        # uniquely identified, and free of invalid relationships; all
+        # employee-assignment/activation gates remain separate.
+        if not sector.is_active:
             check.update(
-                status='sector_pending_activation', can_create_link=False,
-                detail='القطاع موجود لكنه غير مفعّل تشغيليًا؛ لا يُنشأ الارتباط قبل تفعيله.',
+                status='sector_inactive', can_create_link=False,
+                detail='القطاع موجود لكنه غير نشط؛ لا يمكن إنشاء المسودة تحته.',
             )
             return check, None
         if OrganizationUnit.objects.filter(code=DRAFT_CODE).exists():
@@ -56,6 +60,7 @@ class V4SectorDirectUnitDraftCreateView(APIView):
             'sector_id': sector.pk,
             'sector_updated_at': sector.updated_at.isoformat(),
             'sector_code': sector.code,
+            'sector_is_approved': sector.is_approved,
             'unit_code': DRAFT_CODE,
         }
         return check, snapshot
@@ -76,10 +81,15 @@ class V4SectorDirectUnitDraftCreateView(APIView):
                 'source_record_count': 8,
                 'sector_id': snapshot['sector_id'], 'unit_code': DRAFT_CODE,
                 'target_kind': 'unit', 'target_status': 'مسودة غير مفعّلة',
+                'sector_activated': snapshot['sector_is_approved'],
                 'employee_changes': 0, 'health_center_changes': 0,
                 'preview_token': signing.dumps(snapshot, salt=PREVIEW_SALT),
                 'confirmation_text': CONFIRM_TEXT,
-                'notice': 'المعاينة لا تكتب أي بيانات. التأكيد ينشئ مسودة واحدة فقط تحت القطاع الحالي.',
+                'notice': (
+                    'المعاينة لا تكتب أي بيانات. التأكيد ينشئ مسودة غير مفعّلة '
+                    'تحت القطاع الموجود، ولو كان اعتماد القطاع التشغيلي معلقًا. '
+                    'لا يتم تفعيل الوحدة أو ربط موظفيها إلا بعد معالجة اعتماد الأسلاف.'
+                ),
             })
 
         if action != 'create':

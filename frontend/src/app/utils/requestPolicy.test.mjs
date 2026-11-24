@@ -59,3 +59,6 @@ import '../data/v4FoundationHierarchyReference.test.mjs';
 
 // Independent organizational reconciliation coverage; no roster data.
 import '../data/v4DepartmentSourceAudit.test.mjs';
+
+// V4 sector-unit draft must remain visible for an active parent awaiting approval.
+import '../data/v4SectorUnitDraftEligibility.test.mjs';
