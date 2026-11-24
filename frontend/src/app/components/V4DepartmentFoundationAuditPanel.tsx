@@ -1,4 +1,6 @@
 import { useMemo, useState } from 'react';
+import { authFetch, getAccessToken } from '../context/AuthContext';
+import { V4_PRIVATE_UI } from '../data/v4AffiliationHierarchy';
 import {
   Alert, Box, Button, Chip, Divider, Paper, Stack, Typography,
 } from '@mui/material';
@@ -7,6 +9,13 @@ import { auditDepartmentPaths, V4_DEPARTMENT_SOURCE_ROWS,
   type DepartmentReviewKind,
 } from '../data/v4DepartmentSourceAudit';
 
+const API = (import.meta.env.VITE_API_URL ||
+  'https://occupational-health-platform-production.up.railway.app/api').replace(/\\/$/, '');
+type SectorUnitPreflight = {
+  status: string; detail: string; sector_matches: number;
+  unit_matches: number; linked: boolean; can_create_link: boolean;
+  sector_activated: boolean; source_record_count: number; read_only: boolean;
+};
 type View = 'missing'|'matched'|'review';
 type ReviewFilter = 'all'|Exclude<DepartmentReviewKind,'matchable'>;
 const reviewFilterLabels: Record<ReviewFilter,string> = {
@@ -34,6 +43,28 @@ export function V4DepartmentFoundationAuditPanel({
   const [view,setView]=useState<View>('missing');
   const [reviewFilter,setReviewFilter]=useState<ReviewFilter>('all');
   const [showAll,setShowAll]=useState(false);
+  const [sectorUnitCheck,setSectorUnitCheck]=useState<SectorUnitPreflight|null>(null);
+  const [sectorUnitError,setSectorUnitError]=useState('');
+  const [sectorUnitBusy,setSectorUnitBusy]=useState(false);
+  async function checkSectorUnitLink() {
+    if(!V4_PRIVATE_UI || !canManage || sectorUnitBusy)return;
+    setSectorUnitBusy(true);
+    setSectorUnitCheck(null);
+    setSectorUnitError('');
+    try {
+      const token=getAccessToken();
+      if(!token)throw new Error('يلزم تسجيل الدخول للمسؤول.');
+      const response=await authFetch(
+        API+'/organization-units/sector-direct-unit-preflight/',
+        {headers:{Authorization:'Bearer '+token}},
+      );
+      const data=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(data.detail||'تعذر فحص الربط التنظيمي');
+      setSectorUnitCheck(data as SectorUnitPreflight);
+    }catch(error){
+      setSectorUnitError(error instanceof Error?error.message:'تعذر فحص الربط');
+    }finally{setSectorUnitBusy(false);}
+  }
   const reviewRows = reviewFilter === 'all' ? audit.review
     : audit.review.filter(row=>row.reviewKind===reviewFilter);
   const rows = view === 'missing' ? audit.missing
@@ -87,6 +118,11 @@ export function V4DepartmentFoundationAuditPanel({
         {view === 'missing' && canManage &&
           <Button size="small" variant="outlined" onClick={()=>onOpenPath(item.path)}>
             فتح مسار التأسيس للمراجعة
+          </Button>}
+        {item.reviewKind==='sector_unit' && canManage && V4_PRIVATE_UI &&
+          <Button size="small" variant="outlined" disabled={sectorUnitBusy}
+            onClick={()=>void checkSectorUnitLink()}>
+            {sectorUnitBusy?'جارٍ فحص الربط…':'فحص الارتباط الحالي — دون حفظ'}
           </Button>}
       </Stack>
     </Paper>
@@ -161,6 +197,22 @@ export function V4DepartmentFoundationAuditPanel({
         {rows.length===0 &&
           <Alert severity="success">لا توجد عناصر ضمن هذا التصنيف.</Alert>}
       </Stack>
+      {view==='review' && sectorUnitError &&
+        <Alert severity="error">{sectorUnitError}</Alert>}
+      {view==='review' && sectorUnitCheck &&
+        <Alert severity={sectorUnitCheck.linked?'success':
+            sectorUnitCheck.can_create_link?'info':'warning'}>
+          <Typography variant="body2" fontWeight={800}>
+            نتيجة فحص سجل الجهات — للقراءة فقط
+          </Typography>
+          <Typography variant="body2">{sectorUnitCheck.detail}</Typography>
+          <Typography variant="caption">
+            عدد سجلات القطاع: {sectorUnitCheck.sector_matches}،
+            عدد سجلات الوحدة: {sectorUnitCheck.unit_matches}،
+            سجلات المصدر المرجعية: {sectorUnitCheck.source_record_count}.
+            لم يُنشأ أي ربط أو يُعدّل أي موظف.
+          </Typography>
+        </Alert>}
       {rows.length>8 && <Button variant="text" onClick={()=>setShowAll(v=>!v)}>
         {showAll ? 'عرض العناصر الأولى فقط' : 'عرض جميع العناصر ('+rows.length+')'}
       </Button>}
