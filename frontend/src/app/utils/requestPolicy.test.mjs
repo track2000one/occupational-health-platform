@@ -56,3 +56,6 @@ import '../data/v4DepartmentBulkSelection.test.mjs';
 
 // Organizational source hierarchy regression (metadata only; no employee rows).
 import '../data/v4FoundationHierarchyReference.test.mjs';
+
+// Independent organizational reconciliation coverage; no roster data.
+import '../data/v4DepartmentSourceAudit.test.mjs';
