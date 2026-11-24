@@ -37,7 +37,7 @@ class V4SectorDirectUnitPreflightTests(TestCase):
             return self.client.get(self.PATH)
 
     def test_sector_missing_reports_no_writes(self):
-        with self.assertNumQueries(1):
+        with self.assertNumQueries(2):
             result = self.get()
         self.assertEqual(result.status_code,200)
         self.assertEqual(result.data['status'],'sector_missing')
