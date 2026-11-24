@@ -10,7 +10,7 @@ import { auditDepartmentPaths, V4_DEPARTMENT_SOURCE_ROWS,
 } from '../data/v4DepartmentSourceAudit';
 
 const API = (import.meta.env.VITE_API_URL ||
-  'https://occupational-health-platform-production.up.railway.app/api').replace(/\\/$/, '');
+  'https://occupational-health-platform-production.up.railway.app/api').replace(/\/$/, '');
 type SectorUnitPreflight = {
   status: string; detail: string; sector_matches: number;
   unit_matches: number; linked: boolean; can_create_link: boolean;
