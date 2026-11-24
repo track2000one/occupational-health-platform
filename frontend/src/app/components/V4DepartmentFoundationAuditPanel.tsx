@@ -15,6 +15,7 @@ const reviewFilterLabels: Record<ReviewFilter,string> = {
   sector:'تبعية قطاعات',
   main:'إدارة رئيسية مباشرة',
   incomplete:'مسار ناقص',
+  sector_unit:'وحدة تتبع قطاعًا مباشرةً',
 };
 const viewLabels: Record<View,string> = {
   missing:'مسارات تحتاج مطابقة أو تأسيس',
@@ -45,6 +46,10 @@ export function V4DepartmentFoundationAuditPanel({
   const titleBySourceLevel = (item:SourcePathReview) =>
     V4_DEPARTMENT_LABELS[item.sourceLevel] || 'مسار تنظيمي';
   const displayPath = (item:SourcePathReview) => {
+    if(item.reviewKind==='sector_unit'){
+      return [item.levels[0],item.sector ? 'القطاع الاستشاري: '+item.sector : '',
+        item.levels[3]].filter(Boolean).join(' ← ');
+    }
     if(item.reviewKind==='incomplete'){
       return item.levels.map((part,i)=>part ||
         (i<item.sourceLevel ? '['+V4_DEPARTMENT_LABELS[i]+': غير محددة]' : ''))
@@ -136,11 +141,13 @@ export function V4DepartmentFoundationAuditPanel({
       {view==='review' && <>
         <Alert severity="info" variant="outlined">
           المسارات العشرة ليست عشرة أقسام ناقصة. صنّفنا حالات المصدر إلى
-          تبعية قطاعات، إدارة مباشرة، مسارات تاريخية، وحالة واحدة تحتاج تدقيق مستوياتها.
+          تبعية قطاعات، إدارة مباشرة، مسارات تاريخية، ووحدة الفحص الشامل التي
+          تأكدت تبعيتها المباشرة للقطاع الشرقي الاستشاري 1.
+          تأكيد التبعية لا يعني إنشاء علاقة في قاعدة البيانات أو ربط الموظفين تلقائيًا.
           الأعداد تشير إلى صفوف مرجعية في Excel لا إلى أقسام جديدة.
         </Alert>
         <Stack direction="row" flexWrap="wrap" gap={1}>
-          {(['all','sector','main','incomplete','historic'] as ReviewFilter[]).map(kind=>
+          {(['all','sector','sector_unit','main','incomplete','historic'] as ReviewFilter[]).map(kind=>
             <Button key={kind} size="small"
               variant={reviewFilter===kind?'contained':'outlined'}
               onClick={()=>{setReviewFilter(kind);setShowAll(false);}}>
