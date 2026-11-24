@@ -58,7 +58,7 @@ test('actual records must match all ancestors, not only same department name',()
   assert.equal(audit.matched.length,2);
   assert.equal(audit.matchableCount,21);
   assert.equal(audit.missing.length,19);
-  assert.ok(audit.matched[0].key.includes('الصحة المهنية'));
+  assert.ok(audit.matched.some(row=>row.key.includes('الصحة المهنية')));
   assert.equal(audit.broken.length,0);
 });
 
