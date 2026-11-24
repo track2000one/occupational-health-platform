@@ -3,6 +3,7 @@ from .organization_structure import OrganizationDirectoryView, OrganizationImpor
 from .department_directory import DepartmentDirectoryView, DepartmentStatusView
 from .organization_bulk_approval import OrganizationBulkApprovalView
 from .v4_center_operational_activation import V4HealthCenterOperationalActivationView
+from .v4_sector_direct_unit_preflight import V4SectorDirectUnitPreflightView
 from .employee_roster_template import EmployeeRosterTemplateView
 from .employee_org_template_v4 import EmployeeOrgRosterTemplateV4View
 from .provisional_employee_template_preflight import ProvisionalEmployeeTemplatePreflightView
@@ -85,6 +86,7 @@ urlpatterns = [
     path('departments/', DepartmentDirectoryView.as_view(), name='department-directory'),
     path('departments/<int:pk>/status/', DepartmentStatusView.as_view(), name='department-status'),
     path('organization-units/', OrganizationDirectoryView.as_view(), name='organization-units'),
+    path('organization-units/sector-direct-unit-preflight/', V4SectorDirectUnitPreflightView.as_view(), name='v4-sector-direct-unit-preflight'),
     path('organization-units/import/', OrganizationImportView.as_view(), name='organization-units-import'),
     path('organization-units/bulk-approval/', OrganizationBulkApprovalView.as_view(), name='organization-units-bulk-approval'),
     path('organization-units/<int:pk>/review/', OrganizationUnitReviewView.as_view(), name='organization-units-review'),
