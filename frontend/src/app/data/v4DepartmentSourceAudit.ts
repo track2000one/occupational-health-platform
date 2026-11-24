@@ -148,3 +148,22 @@ export function auditDepartmentPaths(units:readonly DepartmentNode[]) {
     broken:units.filter(node=>actual.get(node.id)?.status!=='valid'),
   };
 }
+
+/** Dropdown choices come from verified Excel paths PLUS the live department
+ * registry. This prevents hardcoded reference lists from hiding valid existing
+ * parents or inventing parent-child relationships.
+ */
+export function availableOrganizationLevelChoices(
+  actual: ReadonlyMap<number,{path:string[],status:'valid'|'orphan'|'cycle'}>,
+  prefix: readonly string[], level: number,
+): string[] {
+  if(level<0 || level>3) return [];
+  const sourcePaths=sourceOrganizationPaths()
+    .filter(row=>row.status==='matchable').map(row=>row.path);
+  const actualPaths=[...actual.values()]
+    .filter(row=>row.status==='valid').map(row=>row.path);
+  const all=[...sourcePaths,...actualPaths].filter(path=>path[0]!=='التشغيل');
+  const choices=all.filter(path=>prefix.every((part,i)=>normalize(path[i]||'')===normalize(part)))
+    .map(path=>path[level]).filter((name): name is string=>Boolean(name));
+  return [...new Set(choices)].sort((a,b)=>a.localeCompare(b,'ar'));
+}
