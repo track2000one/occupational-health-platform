@@ -4,9 +4,18 @@ import {
 } from '@mui/material';
 import { auditDepartmentPaths, V4_DEPARTMENT_SOURCE_ROWS,
   V4_DEPARTMENT_LABELS, type DepartmentNode, type SourcePathReview,
+  type DepartmentReviewKind,
 } from '../data/v4DepartmentSourceAudit';
 
 type View = 'missing'|'matched'|'review';
+type ReviewFilter = 'all'|Exclude<DepartmentReviewKind,'matchable'>;
+const reviewFilterLabels: Record<ReviewFilter,string> = {
+  all:'جميع الحالات',
+  historic:'مسارات تاريخية',
+  sector:'تبعية قطاعات',
+  main:'إدارة رئيسية مباشرة',
+  incomplete:'مسار ناقص',
+};
 const viewLabels: Record<View,string> = {
   missing:'مسارات تحتاج مطابقة أو تأسيس',
   matched:'المسارات الموجودة',
@@ -22,14 +31,31 @@ export function V4DepartmentFoundationAuditPanel({
 }) {
   const audit = useMemo(()=>auditDepartmentPaths(units),[units]);
   const [view,setView]=useState<View>('missing');
+  const [reviewFilter,setReviewFilter]=useState<ReviewFilter>('all');
   const [showAll,setShowAll]=useState(false);
+  const reviewRows = reviewFilter === 'all' ? audit.review
+    : audit.review.filter(row=>row.reviewKind===reviewFilter);
   const rows = view === 'missing' ? audit.missing
-    : view === 'matched' ? audit.matched : audit.review;
+    : view === 'matched' ? audit.matched : reviewRows;
   const visible = showAll ? rows : rows.slice(0,8);
   const weightedSourceCount = V4_DEPARTMENT_SOURCE_ROWS.reduce(
     (n,r)=>n+r.sourceEmployees,0);
-  const titleByDepth = (path: readonly string[]) =>
-    V4_DEPARTMENT_LABELS[Math.min(path.length-1,3)] || 'مسار تنظيمي';
+  // Do not compress null levels. A subunit with missing department MUST stay
+  // labeled as a subunit, never as a sub-administration.
+  const titleBySourceLevel = (item:SourcePathReview) =>
+    V4_DEPARTMENT_LABELS[item.sourceLevel] || 'مسار تنظيمي';
+  const displayPath = (item:SourcePathReview) => {
+    if(item.reviewKind==='incomplete'){
+      return item.levels.map((part,i)=>part ||
+        (i<item.sourceLevel ? '['+V4_DEPARTMENT_LABELS[i]+': غير محددة]' : ''))
+        .filter(Boolean).join(' ← ');
+    }
+    if(item.reviewKind==='sector') {
+      return [...item.path,item.sector ? 'القطاع الاستشاري: '+item.sector : null,
+        item.service ? 'الخدمة: '+item.service : null].filter(Boolean).join(' ← ');
+    }
+    return item.path.join(' ← ');
+  };
 
   const renderRow=(item:SourcePathReview,index:number)=>(
     <Paper key={item.key+'-'+item.status+'-'+index} variant="outlined"
@@ -38,13 +64,17 @@ export function V4DepartmentFoundationAuditPanel({
         alignItems={{xs:'stretch',md:'center'}} justifyContent="space-between">
         <Box sx={{minWidth:0,flex:1}}>
           <Stack direction="row" gap={1} flexWrap="wrap" alignItems="center" sx={{mb:0.5}}>
-            <Chip size="small" label={titleByDepth(item.path)} variant="outlined"/>
+            <Chip size="small" label={titleBySourceLevel(item)} variant="outlined"/>
+            {view === 'review' && <Chip size="small"
+              color={item.reviewKind==='historic' ? 'default' :
+                item.reviewKind==='incomplete' ? 'warning' : 'info'}
+              label={reviewFilterLabels[item.reviewKind as ReviewFilter]} variant="outlined"/>
             <Chip size="small" label={item.sourceEmployees+' في ملف المصدر'} variant="outlined"/>
             {item.rowCount>1 && <Chip size="small"
               label={item.rowCount+' تصنيفات للخدمة نفسها'} variant="outlined"/>}
           </Stack>
           <Typography variant="body2" fontWeight={800} sx={{overflowWrap:'anywhere'}}>
-            {item.path.join(' ← ')}
+            {displayPath(item)}
           </Typography>
           {view === 'review' &&
             <Typography variant="caption" color="text.secondary">{item.note}</Typography>}
@@ -103,6 +133,22 @@ export function V4DepartmentFoundationAuditPanel({
               item==='matched'?audit.matched.length:audit.review.length})
           </Button>)}
       </Stack>
+      {view==='review' && <>
+        <Alert severity="info" variant="outlined">
+          المسارات العشرة ليست عشرة أقسام ناقصة. صنّفنا حالات المصدر إلى
+          تبعية قطاعات، إدارة مباشرة، مسارات تاريخية، وحالة واحدة تحتاج تدقيق مستوياتها.
+          الأعداد تشير إلى صفوف مرجعية في Excel لا إلى أقسام جديدة.
+        </Alert>
+        <Stack direction="row" flexWrap="wrap" gap={1}>
+          {(['all','sector','main','incomplete','historic'] as ReviewFilter[]).map(kind=>
+            <Button key={kind} size="small"
+              variant={reviewFilter===kind?'contained':'outlined'}
+              onClick={()=>{setReviewFilter(kind);setShowAll(false);}}>
+              {reviewFilterLabels[kind]} ({kind==='all'?audit.review.length:
+                audit.review.filter(row=>row.reviewKind===kind).length})
+            </Button>)}
+        </Stack>
+      </>}
       <Stack gap={1}>
         {visible.map(renderRow)}
         {rows.length===0 &&
