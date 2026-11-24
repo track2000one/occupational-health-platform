@@ -65,7 +65,7 @@ export const V4_DEPARTMENT_LABELS = [
 ] as const;
 
 export type DepartmentMatchStatus = 'matchable'|'source_review'|'excluded_historical';
-export type DepartmentReviewKind = 'matchable'|'historic'|'sector'|'main'|'incomplete';
+export type DepartmentReviewKind = 'matchable'|'historic'|'sector'|'main'|'incomplete'|'sector_unit';
 export type SourcePathReview = {
   path: string[];
   /** Exact source levels, preserving missing intermediate parents (not compressed). */
@@ -93,6 +93,17 @@ export function classifySource(row: DepartmentSourceRow): {
   if (main === 'التشغيل')
     return {status:'excluded_historical',reviewKind:'historic',
       note:'مسار تشغيل تاريخي مستبعد من التأسيس الجديد؛ يبقى محفوظًا للمراجعة دون حذف أو نقل موظفين'};
+  // The user explicitly confirmed on 2026-11-24 that the full-checkup
+  // administrative unit reports DIRECTLY to Eastern Consultative Sector 1.
+  // This is a verified source clarification, not proof that a corresponding
+  // OrganizationUnit sector->unit link exists in PostgreSQL.
+  if (main === 'الرعاية الأولية والمجتمعية' &&
+      !sub && !department &&
+      unit === 'الوحدة الإدارية للفحص الشامل' &&
+      row.sector === 'القطاع الشرقي الاستشاري 1' &&
+      row.service === 'الفحص الشامل')
+    return {status:'source_review',reviewKind:'sector_unit',
+      note:'تأكدت التبعية مباشرة للقطاع الشرقي الاستشاري 1. لا توجد إدارة فرعية أو قسم وسيط؛ يبقى إنشاء الربط الفعلي مشروطًا بمراجعة سجل الجهات في V4.'};
   if ((unit && !department) || (department && !sub) || (sub && !main))
     return {status:'source_review',reviewKind:'incomplete',
       note:'الوحدة الفرعية موجودة في المصدر لكن مستويات أعلى منها غير مثبتة؛ لا يجوز اختراع إدارة أو قسم وسيط'};
