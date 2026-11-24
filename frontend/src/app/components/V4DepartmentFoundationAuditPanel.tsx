@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { authFetch, getAccessToken } from '../context/AuthContext';
 import { V4_PRIVATE_UI } from '../data/v4AffiliationHierarchy';
 import {
-  Alert, Box, Button, Chip, Divider, Paper, Stack, Typography,
+  Alert, Box, Button, Checkbox, Chip, Divider, Paper, Stack, Typography,
 } from '@mui/material';
 import { auditDepartmentPaths, V4_DEPARTMENT_SOURCE_ROWS,
   V4_DEPARTMENT_LABELS, type DepartmentNode, type SourcePathReview,
@@ -15,6 +15,15 @@ type SectorUnitPreflight = {
   status: string; detail: string; sector_matches: number;
   unit_matches: number; linked: boolean; can_create_link: boolean;
   sector_activated: boolean; source_record_count: number; read_only: boolean;
+};
+type SectorUnitDraftPreview = {
+  mode: string; sector: string; unit: string; source_record_count:number;
+  unit_code: string; preview_token: string; confirmation_text: string;
+  target_status:string; employee_changes:number; health_center_changes:number;
+};
+type SectorUnitDraftResult = {
+  id:number; code:string; name:string; parent_id:number;
+  is_approved:boolean; created_count:number; notice:string;
 };
 type View = 'missing'|'matched'|'review';
 type ReviewFilter = 'all'|Exclude<DepartmentReviewKind,'matchable'>;
@@ -46,11 +55,65 @@ export function V4DepartmentFoundationAuditPanel({
   const [sectorUnitCheck,setSectorUnitCheck]=useState<SectorUnitPreflight|null>(null);
   const [sectorUnitError,setSectorUnitError]=useState('');
   const [sectorUnitBusy,setSectorUnitBusy]=useState(false);
+  const [draftPreview,setDraftPreview]=useState<SectorUnitDraftPreview|null>(null);
+  const [draftConfirmed,setDraftConfirmed]=useState(false);
+  const [draftCreated,setDraftCreated]=useState<SectorUnitDraftResult|null>(null);
+  const [draftBusy,setDraftBusy]=useState(false);
+
+  async function sectorUnitRequest<T>(body: Record<string,unknown>): Promise<T> {
+    const access=getAccessToken();
+    if(!access)throw new Error('يلزم تسجيل الدخول بصفة المسؤول.');
+    const response=await authFetch(
+      API+'/organization-units/sector-direct-unit-create-draft/',
+      { method:'POST', headers:{
+          'Authorization':'Bearer '+access,'Content-Type':'application/json',
+        }, body:JSON.stringify(body) },
+    );
+    const result=await response.json().catch(()=>({}));
+    if(!response.ok)throw new Error(result.detail||'تعذر تنفيذ الإجراء');
+    return result as T;
+  }
+
+  async function previewSectorUnitDraft() {
+    if(draftBusy || !sectorUnitCheck?.can_create_link ||
+      sectorUnitCheck?.status!=='unit_missing' || !sectorUnitCheck.sector_activated)return;
+    setDraftBusy(true);setDraftPreview(null);setDraftConfirmed(false);setSectorUnitError('');
+    try {
+      const result=await sectorUnitRequest<SectorUnitDraftPreview>({action:'preview'});
+      setDraftPreview(result);
+    }catch(error){
+      setSectorUnitError(error instanceof Error?error.message:'تعذرت المعاينة.');
+    }finally{setDraftBusy(false);}
+  }
+
+  async function createSectorUnitDraft() {
+    if(draftBusy || !draftPreview || !draftConfirmed || !canManage || !V4_PRIVATE_UI)return;
+    setDraftBusy(true);setSectorUnitError('');
+    try {
+      const result=await sectorUnitRequest<SectorUnitDraftResult>({
+        action:'create',preview_token:draftPreview.preview_token,
+        confirmed:true,confirmation_text:draftPreview.confirmation_text,
+      });
+      setDraftCreated(result);setDraftPreview(null);setDraftConfirmed(false);
+      setSectorUnitCheck(prev=>prev?{
+        ...prev,status:'already_linked',unit_matches:1,
+        linked:true,can_create_link:false,
+        detail:'تم إنشاء الوحدة كمسودة تحت القطاع مباشرة، ولم تُفعّل بعد ولم يتغير أي موظف.',
+      }:prev);
+    }catch(error){
+      setDraftPreview(null);setDraftConfirmed(false);
+      setSectorUnitError(error instanceof Error?error.message:'تعذر إنشاء المسودة.');
+    }finally{setDraftBusy(false);}
+  }
+
   async function checkSectorUnitLink() {
     if(!V4_PRIVATE_UI || !canManage || sectorUnitBusy)return;
     setSectorUnitBusy(true);
     setSectorUnitCheck(null);
     setSectorUnitError('');
+    setDraftPreview(null);
+    setDraftConfirmed(false);
+    setDraftCreated(null);
     try {
       const token=getAccessToken();
       if(!token)throw new Error('يلزم تسجيل الدخول للمسؤول.');
@@ -210,9 +273,58 @@ export function V4DepartmentFoundationAuditPanel({
             عدد سجلات القطاع: {sectorUnitCheck.sector_matches}،
             عدد سجلات الوحدة: {sectorUnitCheck.unit_matches}،
             سجلات المصدر المرجعية: {sectorUnitCheck.source_record_count}.
-            لم يُنشأ أي ربط أو يُعدّل أي موظف.
+            {draftCreated
+              ? ' أُنشئت مسودة وحدة واحدة فقط؛ لم يُفعّل الربط بالموظفين.'
+              : ' لم يُنشأ أي ربط أو يُعدّل أي موظف أثناء الفحص.'}
           </Typography>
         </Alert>}
+      {view==='review' && canManage && sectorUnitCheck?.status==='unit_missing' &&
+        sectorUnitCheck.can_create_link && sectorUnitCheck.sector_activated &&
+        !draftPreview && !draftCreated && <Box>
+          <Button variant="outlined" disabled={draftBusy || sectorUnitBusy}
+            onClick={()=>void previewSectorUnitDraft()}>
+            {draftBusy?'جارٍ إعداد المعاينة…':'معاينة إنشاء الوحدة كمسودة — دون حفظ'}
+          </Button>
+        </Box>}
+      {view==='review' && draftPreview && <Paper variant="outlined"
+        sx={{p:2,borderRadius:2}}>
+        <Stack gap={1.5}>
+          <Typography fontWeight={900}>معاينة إنشاء وحدة إدارية جديدة — دون حفظ</Typography>
+          <Typography variant="body2">
+            {draftPreview.sector} ← {draftPreview.unit}
+          </Typography>
+          <Typography variant="body2">
+            الرمز الداخلي: {draftPreview.unit_code}.
+            سيتم إنشاء سجل تنظيمي واحد فقط كمسودة غير مفعّلة.
+          </Typography>
+          <Alert severity="warning">
+            ليس اعتمادًا تنظيميًا رسميًا، ولا يربط الموظفين الثمانية،
+            ولا يغيّر المراكز أو السجلات الصحية.
+          </Alert>
+          <Stack direction="row" alignItems="center" gap={1}>
+            <Checkbox checked={draftConfirmed} disabled={draftBusy}
+              onChange={(_,checked)=>setDraftConfirmed(checked)}
+              inputProps={{'aria-label':'أؤكد إنشاء مسودة الوحدة تحت القطاع الشرقي الاستشاري 1'}}/>
+            <Typography variant="body2">
+              أؤكد إنشاء مسودة واحدة للوحدة تحت القطاع الشرقي الاستشاري 1.
+            </Typography>
+          </Stack>
+          <Stack direction="row" gap={1} flexWrap="wrap">
+            <Button variant="contained" color="primary"
+              disabled={!draftConfirmed || draftBusy}
+              onClick={()=>void createSectorUnitDraft()}>
+              {draftBusy?'جارٍ إنشاء المسودة…':'تأكيد إنشاء مسودة الوحدة'}
+            </Button>
+            <Button variant="outlined" disabled={draftBusy} onClick={()=>{
+              setDraftPreview(null);setDraftConfirmed(false);
+            }}>إلغاء دون حفظ</Button>
+          </Stack>
+        </Stack>
+      </Paper>}
+      {view==='review' && draftCreated && <Alert severity="success">
+        أُنشئت مسودة الوحدة التنظيمية برمز {draftCreated.code} تحت القطاع الموجود.
+        لا تزال غير مفعّلة؛ لم يُعدّل أي موظف.
+      </Alert>}
       {rows.length>8 && <Button variant="text" onClick={()=>setShowAll(v=>!v)}>
         {showAll ? 'عرض العناصر الأولى فقط' : 'عرض جميع العناصر ('+rows.length+')'}
       </Button>}
