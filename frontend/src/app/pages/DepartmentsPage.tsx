@@ -39,7 +39,20 @@ type Summary = {
   total: number; active: number; approved: number; pending: number;
   inactive: number; employees: number;
 };
-type Registry = { results: Department[]; summary: Summary };
+type SectorDirectUnit = Department & {
+  kind: 'unit'; parent_name: string; parent_kind: 'sector';
+  parent_is_approved: boolean;
+};
+type SectorDirectSummary = {
+  total: number; approved: number; pending: number; inactive: number; employees: number;
+};
+type Registry = {
+  results: Department[]; summary: Summary;
+  sector_direct_units?: SectorDirectUnit[];
+  sector_direct_summary?: SectorDirectSummary;
+};
+const EMPTY_SECTOR_DIRECT_SUMMARY: SectorDirectSummary =
+  { total: 0, approved: 0, pending: 0, inactive: 0, employees: 0 };
 type BulkDepartmentPreview = {
   selected_count: number;
   eligible_count: number;
@@ -101,6 +114,9 @@ export function DepartmentsPage() {
   const canManage = user?.isSuperuser === true;
   const [departments, setDepartments] = useState<Department[]>([]);
   const [summary, setSummary] = useState<Summary>(EMPTY_SUMMARY);
+  const [sectorDirectUnits,setSectorDirectUnits] = useState<SectorDirectUnit[]>([]);
+  const [sectorDirectSummary,setSectorDirectSummary] =
+    useState<SectorDirectSummary>(EMPTY_SECTOR_DIRECT_SUMMARY);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -131,6 +147,12 @@ export function DepartmentsPage() {
       const result = await api<Registry>('/departments/');
       setDepartments(result.results);
       setSummary(result.summary);
+      // Sector-direct units are returned separately; never mix them into
+      // department selection, matching or bulk activation.
+      setSectorDirectUnits(V4_PRIVATE_UI ? result.sector_direct_units || [] : []);
+      setSectorDirectSummary(V4_PRIVATE_UI
+        ? result.sector_direct_summary || EMPTY_SECTOR_DIRECT_SUMMARY
+        : EMPTY_SECTOR_DIRECT_SUMMARY);
     } catch (e) {
       setError(message(e));
     } finally {
@@ -365,8 +387,9 @@ export function DepartmentsPage() {
       </Stack>
 
       <Alert severity="info" sx={{ mb: 2 }}>
-        هذه القائمة تشمل الإدارات الرئيسية والفرعية والأقسام والوحدات، وليست جميعها أقسامًا.
-        تُراجع كل جهة بمسارها الكامل قبل التفعيل. ولا يتغير أي موظف أو سجل صحي خلال المطابقة.
+        تعرض الصفحة الإدارات الرئيسية والفرعية والأقسام، مع عرض مستقل للوحدات التي
+        تتبع القطاعات مباشرة. لا تدخل هذه الوحدات في عدد الأقسام أو في التفعيل
+        الجماعي الخاص بها، ولا تتغير بيانات الموظفين أو السجلات الصحية أثناء المطابقة.
       </Alert>
       {V4_PRIVATE_UI && bulkAuditIncomplete && <Alert severity="warning" sx={{ mb: 2 }}>
         التفعيل الجماعي معلّق مؤقتًا لأن هناك مسارات تنظيمية تحتاج مطابقة أو روابط غير مكتملة.
@@ -379,13 +402,15 @@ export function DepartmentsPage() {
 
       <Grid container spacing={1.5} sx={{ mb: 2.5 }}>
         {([
-          ['إجمالي الجهات التنظيمية', summary.total],
-          ['الجهات المفعّلة والنشطة', summary.approved],
-          ['بانتظار التفعيل', summary.pending],
-          ['الجهات غير النشطة', summary.inactive],
-          ['الموظفون المرتبطون بالجهات', summary.employees],
+          ['المعروض من الإدارات والأقسام والوحدات القطاعية', summary.total + sectorDirectSummary.total],
+          ['الإدارات والأقسام', summary.total],
+          ['الوحدات التابعة للقطاعات مباشرة', sectorDirectSummary.total],
+          ['الجهات المفعّلة من هذين النوعين', summary.approved + sectorDirectSummary.approved],
+          ['مسودات بانتظار التفعيل', summary.pending + sectorDirectSummary.pending],
+          ['الجهات غير النشطة', summary.inactive + sectorDirectSummary.inactive],
+          ['الموظفون المرتبطون بالجهات', summary.employees + sectorDirectSummary.employees],
         ] as Array<[string, number]>).map(([label, value]) => (
-          <Grid key={label} size={{ xs: 6, sm: 4, lg: 2.4 }}>
+          <Grid key={label} size={{ xs: 6, sm: 4, lg: 3 }}>
             <Paper sx={{ p: 2, borderRadius: 3, border: '1px solid #d7e5ef', textAlign: 'center' }}>
               <Typography variant="h4" fontWeight={950}>{value}</Typography>
               <Typography variant="body2">{label}</Typography>
@@ -393,6 +418,47 @@ export function DepartmentsPage() {
           </Grid>
         ))}
       </Grid>
+
+      {V4_PRIVATE_UI && !loading && !error && <Paper
+        variant="outlined" sx={{p:2,mb:2.5,borderRadius:3}}>
+        <Stack gap={1.5}>
+          <Typography variant="h6" fontWeight={900}>
+            الوحدات الإدارية التابعة للقطاعات مباشرة ({sectorDirectSummary.total})
+          </Typography>
+          <Alert severity="info" variant="outlined">
+            تعرض هذه القائمة سجلات الوحدات المرتبطة مباشرة بقطاع استشاري،
+            ولا تدخل في عدد الإدارات والأقسام أو إجراءات اعتمادها الجماعية.
+            لا يعني وجود المسودة السماح بربط الموظفين بها.
+          </Alert>
+          {sectorDirectUnits.length===0 && <Typography variant="body2" color="text.secondary">
+            لا توجد وحدات قطاعية مباشرة مسجلة حاليًا.
+          </Typography>}
+          {sectorDirectUnits.map(unit=><Paper variant="outlined" key={unit.id}
+            sx={{p:1.5,borderRadius:2}}>
+            <Stack direction={{xs:'column',sm:'row'}} alignItems={{xs:'stretch',sm:'center'}}
+              justifyContent="space-between" gap={1.5}>
+              <Box sx={{minWidth:0}}>
+                <Typography fontWeight={900}>{unit.name}</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  القطاع الأعلى: {unit.parent_name}
+                </Typography>
+                <Typography variant="caption" sx={{overflowWrap:'anywhere'}}>
+                  الرمز: {unit.code} — الموظفون المرتبطون: {unit.employee_count}
+                </Typography>
+              </Box>
+              <Stack direction="row" gap={1} flexWrap="wrap">
+                <Chip size="small" label="وحدة قطاعية مباشرة" variant="outlined"/>
+                <Chip size="small"
+                  color={!unit.is_active?'default':unit.is_approved?'success':'warning'}
+                  label={!unit.is_active?'غير نشطة':unit.is_approved?'مفعّلة':'مسودة غير مفعّلة'}/>
+                {!unit.parent_is_approved &&
+                  <Chip size="small" color="warning" variant="outlined"
+                    label="القطاع الأعلى ينتظر التفعيل"/>}
+              </Stack>
+            </Stack>
+          </Paper>)}
+        </Stack>
+      </Paper>}
 
       {V4_PRIVATE_UI && !loading && !error &&
         <V4DepartmentFoundationAuditPanel units={departments}
@@ -425,7 +491,7 @@ export function DepartmentsPage() {
       </Paper>
       {loading ? <Box sx={{ textAlign: 'center', my: 5 }}><CircularProgress /></Box> : <>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-          عرض {filtered.length} جهة تنظيمية من أصل {departments.length}
+          عرض {filtered.length} إدارة أو قسم من أصل {departments.length} (باستثناء الوحدات القطاعية المباشرة)
         </Typography>
         {!filtered.length && <Alert severity="info">
           {departments.length ? 'لا توجد أقسام مطابقة للتصفية الحالية.' :
