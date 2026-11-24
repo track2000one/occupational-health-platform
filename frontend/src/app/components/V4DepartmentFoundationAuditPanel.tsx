@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { authFetch, getAccessToken } from '../context/AuthContext';
 import { V4_PRIVATE_UI } from '../data/v4AffiliationHierarchy';
+import { canPreviewSectorUnitDraft } from '../data/v4SectorUnitDraftEligibility';
 import {
   Alert, Box, Button, Checkbox, Chip, Divider, Paper, Stack, Typography,
 } from '@mui/material';
@@ -77,8 +78,7 @@ export function V4DepartmentFoundationAuditPanel({
   }
 
   async function previewSectorUnitDraft() {
-    if(draftBusy || !sectorUnitCheck?.can_create_link ||
-      sectorUnitCheck?.status!=='unit_missing' || !sectorUnitCheck.sector_active)return;
+    if(draftBusy || !canPreviewSectorUnitDraft(sectorUnitCheck))return;
     setDraftBusy(true);setDraftPreview(null);setDraftConfirmed(false);setSectorUnitError('');
     try {
       const result=await sectorUnitRequest<SectorUnitDraftPreview>({action:'preview'});
@@ -280,8 +280,7 @@ export function V4DepartmentFoundationAuditPanel({
               : ' لم يُنشأ أي ربط أو يُعدّل أي موظف أثناء الفحص.'}
           </Typography>
         </Alert>}
-      {view==='review' && canManage && sectorUnitCheck?.status==='unit_missing' &&
-        sectorUnitCheck.can_create_link && sectorUnitCheck.sector_active &&
+      {view==='review' && canManage && canPreviewSectorUnitDraft(sectorUnitCheck) &&
         !draftPreview && !draftCreated && <Box>
           {!sectorUnitCheck.sector_activated && <Alert severity="info" sx={{mb:1}}>
             القطاع موجود ونشط لكنه لم يُفعّل تشغيليًا بعد. يمكن إنشاء الوحدة
