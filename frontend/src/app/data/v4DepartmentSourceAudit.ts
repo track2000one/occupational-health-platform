@@ -65,12 +65,20 @@ export const V4_DEPARTMENT_LABELS = [
 ] as const;
 
 export type DepartmentMatchStatus = 'matchable'|'source_review'|'excluded_historical';
+export type DepartmentReviewKind = 'matchable'|'historic'|'sector'|'main'|'incomplete';
 export type SourcePathReview = {
   path: string[];
+  /** Exact source levels, preserving missing intermediate parents (not compressed). */
+  levels: DepartmentSourceRow['levels'];
+  /** 0..3 from the original column, NOT filtered path.length - 1. */
+  sourceLevel: number;
   key: string;
   sourceEmployees: number;
   rowCount: number;
   status: DepartmentMatchStatus;
+  reviewKind: DepartmentReviewKind;
+  sector: string | null;
+  service: string | null;
   note: string;
 };
 
@@ -78,17 +86,24 @@ const normalize = (value: string) => value.trim().replace(/\s+/g,' ');
 export const departmentPathKey = (path: readonly string[]) =>
   path.map(normalize).join(' / ');
 
-export function classifySource(row: DepartmentSourceRow): {status:DepartmentMatchStatus,note:string} {
+export function classifySource(row: DepartmentSourceRow): {
+  status: DepartmentMatchStatus; reviewKind: DepartmentReviewKind; note: string
+} {
   const [main,sub,department,unit] = row.levels;
   if (main === 'التشغيل')
-    return {status:'excluded_historical',note:'مسار سابق مستبعد من التأسيس الجديد؛ يحفظ للمراجعة دون حذف'};
+    return {status:'excluded_historical',reviewKind:'historic',
+      note:'مسار تشغيل تاريخي مستبعد من التأسيس الجديد؛ يبقى محفوظًا للمراجعة دون حذف أو نقل موظفين'};
   if ((unit && !department) || (department && !sub) || (sub && !main))
-    return {status:'source_review',note:'يوجد مستوى أدنى دون مستوى أعلى مثبت في المصدر'};
+    return {status:'source_review',reviewKind:'incomplete',
+      note:'الوحدة الفرعية موجودة في المصدر لكن مستويات أعلى منها غير مثبتة؛ لا يجوز اختراع إدارة أو قسم وسيط'};
   if (row.sector && !sub)
-    return {status:'source_review',note:'تبعية قطاع استشاري دون قسم محدد؛ ليست قسمًا جديدًا'};
+    return {status:'source_review',reviewKind:'sector',
+      note:'هذه تبعية لقطاع استشاري، وليست قسمًا مستقلًا؛ يلزم التحقق من آلية ربط الموظف بالقطاع'};
   if (!sub)
-    return {status:'source_review',note:'إدارة رئيسية فقط؛ لا يوجد قسم أو إدارة فرعية مثبتة'};
-  return {status:'matchable',note:'مسار قابل للمطابقة مع سجل الجهات (لا يعني اعتمادًا رسميًا)'};
+    return {status:'source_review',reviewKind:'main',
+      note:'السجل يتبع الإدارة الرئيسية مباشرة حسب المصدر؛ لا يجوز إنشاء قسم افتراضي له'};
+  return {status:'matchable',reviewKind:'matchable',
+    note:'مسار قابل للمطابقة مع سجل الجهات (لا يعني اعتمادًا رسميًا)'};
 }
 
 export function sourceOrganizationPaths(): SourcePathReview[] {
@@ -104,9 +119,13 @@ export function sourceOrganizationPaths(): SourcePathReview[] {
       key+'#'+check.note+'#'+(row.sector||'')+'#'+(row.service||'');
     const prev=grouped.get(groupKey);
     if(prev){prev.sourceEmployees+=row.sourceEmployees;prev.rowCount++;continue;}
+    const sourceLevel = row.levels[3] ? 3 : row.levels[2] ? 2
+      : row.levels[1] ? 1 : 0;
     grouped.set(groupKey,{
-      path,key,sourceEmployees:row.sourceEmployees,rowCount:1,
-      status:check.status,note:check.note
+      path,levels:row.levels,sourceLevel,key,
+      sourceEmployees:row.sourceEmployees,rowCount:1,
+      status:check.status,reviewKind:check.reviewKind,
+      sector:row.sector||null,service:row.service||null,note:check.note
     });
   }
   return [...grouped.values()];
