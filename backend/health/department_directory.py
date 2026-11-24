@@ -148,7 +148,23 @@ class DepartmentDirectoryView(APIView):
             kind=OrganizationUnit.Kind.DEPARTMENT,
         ).annotate(employee_count=Count('employees', distinct=True))
                     .order_by('name', 'pk')[:3000])
-        return Response({
+        # These directory rows are DEPARTMENTS only. A direct-sector UNIT
+        # (e.g. the full-checkup administrative unit) is a different kind and
+        # MUST NOT be disguised as a department or sent to bulk department
+        # approval. Show it separately for isolated V4 without changing
+        # the legacy directory API or employee assignments.
+        sector_direct_units = []
+        if draft_import_scope() == 'v4':
+            sector_direct_units = list(
+                OrganizationUnit.objects.filter(
+                    kind=OrganizationUnit.Kind.UNIT,
+                    parent__kind=OrganizationUnit.Kind.SECTOR,
+                    health_center__isnull=True,
+                ).select_related('parent')
+                .annotate(employee_count=Count('employees', distinct=True))
+                .order_by('parent__name', 'name', 'pk')[:1000]
+            )
+        payload = {
             'results': [department_payload(unit) for unit in rows],
             'summary': {
                 'total': len(rows),
@@ -158,7 +174,23 @@ class DepartmentDirectoryView(APIView):
                 'inactive': sum(not unit.is_active for unit in rows),
                 'employees': sum(unit.employee_count for unit in rows),
             },
-        }, headers={'Cache-Control': 'private, no-store'})
+        }
+        if draft_import_scope() == 'v4':
+            payload['sector_direct_units'] = [{
+                **department_payload(unit),
+                'kind': unit.kind,
+                'parent_name': unit.parent.name,
+                'parent_kind': unit.parent.kind,
+                'parent_is_approved': unit.parent.is_approved,
+            } for unit in sector_direct_units]
+            payload['sector_direct_summary'] = {
+                'total': len(sector_direct_units),
+                'approved': sum(unit.is_active and unit.is_approved for unit in sector_direct_units),
+                'pending': sum(not unit.is_approved for unit in sector_direct_units),
+                'inactive': sum(not unit.is_active for unit in sector_direct_units),
+                'employees': sum(unit.employee_count for unit in sector_direct_units),
+            }
+        return Response(payload, headers={'Cache-Control': 'private, no-store'})
 
     def post(self, request):
         if not is_department_admin(request):
