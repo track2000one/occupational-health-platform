@@ -96,3 +96,40 @@ test('foundation dropdowns include only matching full-path parents from source a
   assert.deepEqual(m.availableOrganizationLevelChoices(live,['إدارة جديدة'],1),
     ['إدارة فرعية محدثة']);
 });
+
+test('10 review paths split into five sector placements, one direct main, one missing level, three historical',()=>{
+  const reviews=m.sourceOrganizationPaths().filter(p=>p.status!=='matchable');
+  assert.equal(reviews.length,10);
+  const buckets={
+    historic:reviews.filter(x=>x.reviewKind==='historic'),
+    sector:reviews.filter(x=>x.reviewKind==='sector'),
+    main:reviews.filter(x=>x.reviewKind==='main'),
+    incomplete:reviews.filter(x=>x.reviewKind==='incomplete'),
+  };
+  assert.deepEqual(Object.fromEntries(Object.entries(buckets).map(([key,items])=>
+    [key,{paths:items.length,rows:items.reduce((n,x)=>n+x.sourceEmployees,0)}])),{
+      historic:{paths:3,rows:56},
+      sector:{paths:5,rows:39},
+      main:{paths:1,rows:19},
+      incomplete:{paths:1,rows:8},
+  });
+  const names=buckets.sector.map(x=>x.sector);
+  assert.deepEqual(new Set(names),new Set([
+    'القطاع الشرقي الاستشاري 1','القطاع الشرقي الاستشاري 2',
+    'القطاع الغربي الاستشاري 1','القطاع الغربي الاستشاري 2',
+  ]));
+  assert.equal(buckets.sector.filter(x=>x.sector==='القطاع الشرقي الاستشاري 1').length,2);
+});
+
+test('orphaned full-checkup subunit preserves original depth, never displays as subadministration',()=>{
+  const item=m.sourceOrganizationPaths().find(p=>p.reviewKind==='incomplete');
+  assert.ok(item);
+  assert.equal(item.levels[0],'الرعاية الأولية والمجتمعية');
+  assert.equal(item.levels[1],null);
+  assert.equal(item.levels[2],null);
+  assert.equal(item.levels[3],'الوحدة الإدارية للفحص الشامل');
+  assert.equal(item.sourceLevel,3);
+  assert.equal(m.V4_DEPARTMENT_LABELS[item.sourceLevel],'الوحدة الفرعية');
+  assert.equal(item.sector,'القطاع الشرقي الاستشاري 1');
+  assert.equal(item.service,'الفحص الشامل');
+});
