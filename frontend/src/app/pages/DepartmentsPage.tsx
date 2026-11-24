@@ -15,6 +15,7 @@ import {
 } from '@mui/icons-material';
 import { authFetch, getAccessToken, useAuth } from '../context/AuthContext';
 import { V4DepartmentImport } from '../components/V4DepartmentImport';
+import { V4DepartmentFoundationAuditPanel } from '../components/V4DepartmentFoundationAuditPanel';
 import { departmentReviewGuidance } from '../data/v4DepartmentReviewGuidance';
 import { V4_PRIVATE_UI } from '../data/v4AffiliationHierarchy';
 import {
@@ -22,6 +23,8 @@ import {
   v4DepartmentChoices,
 } from '../data/v4FoundationHierarchyReference';
 import { pendingV4DepartmentIds } from '../data/v4DepartmentBulkSelection';
+import { auditDepartmentPaths, knownDepartmentPaths, V4_DEPARTMENT_LABELS,
+} from '../data/v4DepartmentSourceAudit';
 
 // Never silently use Production API for an unconfigured Staging instance.
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
@@ -146,6 +149,17 @@ export function DepartmentsPage() {
   }), [departments, search, filter]);
 
   const pendingV4Ids = useMemo(() => pendingV4DepartmentIds(departments), [departments]);
+  const hierarchyAudit = useMemo(() => auditDepartmentPaths(departments), [departments]);
+  const orgPaths = useMemo(() => knownDepartmentPaths(departments), [departments]);
+  // The V4 directory currently mixes structural parents and actual departments.
+  // Do not bulk-activate all cards while registered/source paths are inconsistent.
+  const bulkAuditIncomplete = hierarchyAudit.missing.length>0 ||
+    hierarchyAudit.broken.length>0;
+  const levelFor = (item: Department) => {
+    const path = orgPaths.get(item.id);
+    if(!path || path.status!=='valid') return 'تبعية غير مكتملة';
+    return V4_DEPARTMENT_LABELS[Math.min(path.path.length-1,3)] || 'جهة تنظيمية';
+  };
 
   async function previewBulkDepartmentActivation() {
     if (!V4_PRIVATE_UI || !canManage || bulkBusy || busy || loading || error ||
@@ -198,6 +212,17 @@ export function DepartmentsPage() {
     setName(''); setCode('');
     setNewLevel('department');
     setFoundationMain(''); setFoundationSub(''); setFoundationSection('');
+    setEdit('new');
+  }
+
+  function openSourcePathForReview(path: string[]) {
+    if (!canManage || path.length<1 || path.length>4) return;
+    setCode('');
+    setNewLevel(FOUNDATION_LEVELS[path.length-1]);
+    setFoundationMain(path.length>1 ? path[0] : '');
+    setFoundationSub(path.length>2 ? path[1] : '');
+    setFoundationSection(path.length>3 ? path[2] : '');
+    setName(path[path.length-1]);
     setEdit('new');
   }
   function openEdit(item: Department) {
@@ -309,9 +334,11 @@ export function DepartmentsPage() {
         <Stack direction="row" alignItems="center" spacing={1.2}>
           <DepartmentIcon sx={{ fontSize: 38, color: 'primary.main' }} />
           <Box>
-            <Typography variant="h4" fontWeight={950}>إدارة الأقسام</Typography>
+            <Typography variant="h4" fontWeight={950}>
+              إدارة الهيكل التنظيمي والأقسام
+            </Typography>
             <Typography variant="body2" color="text.secondary">
-              تأسيس الأقسام الإدارية المستقلة عن المراكز الصحية واعتمادها وربط الموظفين بها
+              مراجعة الإدارات الرئيسية والفرعية والأقسام والوحدات وربطها بتسلسل Excel
             </Typography>
           </Box>
         </Stack>
@@ -324,21 +351,25 @@ export function DepartmentsPage() {
             onClick={() => navigate('/admin/organization-structure')}>الهيكل التنظيمي</Button>
           {V4_PRIVATE_UI && canManage && <Button
             color="success" variant="contained" startIcon={<ApproveIcon />}
-            disabled={busy || bulkBusy || loading || Boolean(error) || !pendingV4Ids.length}
+            disabled={busy || bulkBusy || loading || Boolean(error) ||
+              !pendingV4Ids.length || bulkAuditIncomplete}
             onClick={() => void previewBulkDepartmentActivation()}>
-            معاينة وتفعيل الأقسام ({pendingV4Ids.length})
+            معاينة التفعيل الجماعي ({pendingV4Ids.length})
           </Button>}
           <V4DepartmentImport onImported={refresh} />
           {canManage && <Button variant="contained" startIcon={<AddIcon />}
-            onClick={openCreate}>إضافة قسم جديد</Button>}
+            onClick={openCreate}>تأسيس جهة تنظيمية</Button>}
         </Stack>
       </Stack>
 
       <Alert severity="info" sx={{ mb: 2 }}>
-        تُسجّل الأقسام مستقلة عن المراكز الصحية. القسم الجديد يُحفظ كمسودة أولًا،
-        ثم يُفعّل داخليًا بواسطة المسؤول بعد التحقق من الاسم والتسلسل. لا يظهر في قائمة تبعية الموظفين إلا بعد التفعيل.
-        لا تُغيّر هذه الصفحة بيانات الموظفين أو البطاقات الطبية.
+        هذه القائمة تشمل الإدارات الرئيسية والفرعية والأقسام والوحدات، وليست جميعها أقسامًا.
+        تُراجع كل جهة بمسارها الكامل قبل التفعيل. ولا يتغير أي موظف أو سجل صحي خلال المطابقة.
       </Alert>
+      {V4_PRIVATE_UI && bulkAuditIncomplete && <Alert severity="warning" sx={{ mb: 2 }}>
+        التفعيل الجماعي معلّق مؤقتًا لأن هناك مسارات تنظيمية تحتاج مطابقة أو روابط غير مكتملة.
+        راجع نتائج مطابقة Excel أدناه؛ هذا الإيقاف لا يحذف أو يعطّل أي سجل حالي.
+      </Alert>}
       {!canManage && <Alert severity="warning" sx={{ mb: 2 }}>
         حسابك مخوّل بالاطلاع فقط؛ يتطلب التأسيس والاعتماد وإيقاف الأقسام صلاحية المسؤول الأعلى.
       </Alert>}
@@ -346,11 +377,11 @@ export function DepartmentsPage() {
 
       <Grid container spacing={1.5} sx={{ mb: 2.5 }}>
         {([
-          ['إجمالي الأقسام', summary.total],
-          ['الأقسام المعتمدة والنشطة', summary.approved],
-          ['بانتظار الاعتماد', summary.pending],
-          ['الأقسام غير النشطة', summary.inactive],
-          ['الموظفون المرتبطون بالأقسام', summary.employees],
+          ['إجمالي الجهات التنظيمية', summary.total],
+          ['الجهات المفعّلة والنشطة', summary.approved],
+          ['بانتظار التفعيل', summary.pending],
+          ['الجهات غير النشطة', summary.inactive],
+          ['الموظفون المرتبطون بالجهات', summary.employees],
         ] as Array<[string, number]>).map(([label, value]) => (
           <Grid key={label} size={{ xs: 6, sm: 4, lg: 2.4 }}>
             <Paper sx={{ p: 2, borderRadius: 3, border: '1px solid #d7e5ef', textAlign: 'center' }}>
@@ -361,10 +392,14 @@ export function DepartmentsPage() {
         ))}
       </Grid>
 
+      {V4_PRIVATE_UI && !loading && !error &&
+        <V4DepartmentFoundationAuditPanel units={departments}
+          canManage={canManage} onOpenPath={openSourcePathForReview} />}
+
       <Paper sx={{ p: 2, mb: 2, borderRadius: 3, border: '1px solid #d7e5ef' }}>
         <Grid container spacing={1.4} alignItems="center">
           <Grid size={{ xs: 12, md: 6 }}>
-            <TextField fullWidth label="البحث باسم القسم أو الرمز أو مرجع الاعتماد"
+            <TextField fullWidth label="البحث باسم الجهة التنظيمية أو الرمز"
               value={search} onChange={e => setSearch(e.target.value)} />
           </Grid>
           <Grid size={{ xs: 12, md: 3 }}>
@@ -388,7 +423,7 @@ export function DepartmentsPage() {
       </Paper>
       {loading ? <Box sx={{ textAlign: 'center', my: 5 }}><CircularProgress /></Box> : <>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-          عرض {filtered.length} قسمًا من أصل {departments.length}
+          عرض {filtered.length} جهة تنظيمية من أصل {departments.length}
         </Typography>
         {!filtered.length && <Alert severity="info">
           {departments.length ? 'لا توجد أقسام مطابقة للتصفية الحالية.' :
@@ -411,6 +446,12 @@ export function DepartmentsPage() {
               <Typography variant="caption" color="text.secondary" dir="ltr" textAlign="right">
                 {item.code}
               </Typography>
+              {V4_PRIVATE_UI && <>
+                <Chip size="small" variant="outlined" color="info" label={levelFor(item)} />
+                <Typography variant="caption" color="text.secondary">
+                  {orgPaths.get(item.id)?.path.join(' ← ') || 'لا يوجد مسار مكتمل'}
+                </Typography>
+              </>}
               <Divider />
               <Grid container spacing={1}>
                 <Grid size={6}>
@@ -432,12 +473,13 @@ export function DepartmentsPage() {
         {mode === 'table' && <TableContainer component={Paper} sx={{ borderRadius: 3 }}>
           <Table size="small">
             <TableHead><TableRow>
-              <TableCell>القسم</TableCell><TableCell>الرمز</TableCell>
+              <TableCell>الجهة</TableCell><TableCell>المستوى التنظيمي</TableCell><TableCell>الرمز</TableCell>
               <TableCell>الاعتماد</TableCell><TableCell>الجهة الأعلى</TableCell><TableCell>الحالة</TableCell>
               <TableCell>الموظفون</TableCell><TableCell>الإجراءات</TableCell>
             </TableRow></TableHead>
             <TableBody>{filtered.map(item => <TableRow key={item.id} hover>
               <TableCell>{item.name}</TableCell>
+              <TableCell>{levelFor(item)}</TableCell>
               <TableCell dir="ltr">{item.code}</TableCell>
               <TableCell>{item.is_approved ? 'معتمد' : 'مسودة'}</TableCell>
               <TableCell>{reviewGuidance(item).parentName || '—'}</TableCell>
@@ -508,7 +550,7 @@ export function DepartmentsPage() {
       </Dialog>
 
       <Dialog open={edit !== null} onClose={() => !busy && setEdit(null)} maxWidth="sm" fullWidth>
-        <DialogTitle fontWeight={900}>{isEditingName ? 'تعديل مسودة القسم' : 'إضافة وتأسيس قسم جديد'}</DialogTitle>
+        <DialogTitle fontWeight={900}>{isEditingName ? 'تعديل جهة تنظيمية' : 'تأسيس جهة تنظيمية بمسارها الكامل'}</DialogTitle>
         <DialogContent dividers>
           <Stack gap={2} sx={{ mt: 1 }}>
             {V4_PRIVATE_UI && edit === 'new' && <>
