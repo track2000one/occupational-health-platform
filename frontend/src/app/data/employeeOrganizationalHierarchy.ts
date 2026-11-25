@@ -106,3 +106,55 @@ export function missingHierarchyLevels(values: EmployeeOrgHierarchy): string[] {
   return ORG_LEVELS.filter(({ key }) => !String(values[key] || '').trim())
     .map(({ label }) => label);
 }
+
+export type ApprovedOrgNode = {
+  id: number; name: string; kind: 'department' | 'sector' | 'center' | 'unit';
+  parent_id: number | null; health_center_id: number | null;
+  is_active: boolean; is_approved: boolean;
+};
+
+/** Derive affiliation only from approved parent IDs, never from draft source labels. */
+export function hierarchyFromApprovedPath(
+  nodes: ApprovedOrgNode[], selected: ApprovedOrgNode | undefined,
+  centerName?: string,
+): EmployeeOrgHierarchy | null {
+  if (!selected) return null;
+  const byId = new Map(nodes.map(node => [node.id, node]));
+  const chain: ApprovedOrgNode[] = [];
+  const visited = new Set<number>();
+  let node: ApprovedOrgNode | undefined = selected;
+  while (node) {
+    if (!node.is_active || !node.is_approved || visited.has(node.id)) return null;
+    visited.add(node.id);
+    chain.unshift(node);
+    if (node.parent_id == null) break;
+    node = byId.get(node.parent_id);
+    if (!node) return null;
+  }
+  if (chain.length < 3 || chain[0].name !== TOP_LEVELS.health_cluster ||
+      chain[1].name !== TOP_LEVELS.health_network ||
+      chain[0].kind !== 'department' || chain[1].kind !== 'department') return null;
+  const tail = chain.slice(2);
+  const kind = selected.kind === 'department' ? 'department' : 'center';
+  const result = emptyOrganizationalHierarchy(kind);
+  for (const key of ['main_administration', 'sub_administration', 'department',
+    'sub_unit', 'consultative_sector', 'health_center'] as const) result[key] = NOT_APPLICABLE;
+  const sectors = tail.filter(n => n.kind === 'sector');
+  if (sectors.length > 1) return null;
+  if (sectors.length) result.consultative_sector = sectors[0].name;
+  if (kind === 'center') {
+    const expected = selected.kind === 'unit' ? 'sector/center/unit' : 'sector/center';
+    if (tail.map(n => n.kind).join('/') !== expected || !centerName ||
+        !tail[1].health_center_id || tail[1].health_center_id !== selected.health_center_id) return null;
+    result.health_center = centerName;
+    if (selected.kind === 'unit') result.sub_unit = selected.name;
+  } else {
+    if (tail.some(n => n.health_center_id || !['department','sector'].includes(n.kind)) ||
+        (sectors.length && tail[0].kind !== 'sector')) return null;
+    const parents = tail.slice(0,-1).filter(n => n.kind === 'department');
+    result.department = selected.name;
+    if (parents.length) result.main_administration = parents[0].name;
+    if (parents.length > 1) result.sub_administration = parents.slice(1).map(n => n.name).join(' / ');
+  }
+  return Object.values(result).every(v => v.length <= 220) ? result : null;
+}

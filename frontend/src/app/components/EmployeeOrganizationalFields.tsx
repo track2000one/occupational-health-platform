@@ -62,24 +62,25 @@ export function EmployeeOrganizationalFields({
     </AccordionSummary>
     <AccordionDetails>
       <Alert severity="info" sx={{ mb: 2 }}>
-        الشركة والتجمع والشبكة ثابتة. اختر المركز أو القسم المعتمد من الحقول السابقة؛
-        سيُنسخ اسمه إلى مستوى الهيكلة تلقائيًا. للمستويات غير المنطبقة استخدم
-        «لا ينطبق»، وللمعلومة غير المتوفرة استخدم «غير محدد في المصدر».
+        اختر المركز أو القسم المعتمد؛ تُملأ مستويات التبعية تلقائيًا من التسلسل المعتمد.
+        البيانات الوصفية غير المتوفرة تستكمل من المصدر دون إنشاء تبعية جديدة.
       </Alert>
       {!isSuperuser && !isReadOnly && <Alert severity="warning" sx={{ mb: 2 }}>
         تعديل المصدر التنظيمي متاح للمسؤول الأعلى فقط، أما ربط المركز أو القسم المعتمد
         فيخضع لصلاحيات إدارة الموظفين المعتادة.
       </Alert>}
       <Grid container spacing={2}>
-        {ORG_LEVELS.map(({ key, label }) => {
+        {ORG_LEVELS.filter(({ key }) => key !== 'holding_company').map(({ key, label }) => {
           const isTop = key in TOP_LEVELS;
           const assignedCenter = key === 'health_center' && affiliationKind === 'center';
           const assignedDepartment = key === 'department' && affiliationKind === 'department';
+          const derived = mode === 'add' && ['main_administration', 'sub_administration',
+            'department', 'sub_unit', 'consultative_sector', 'health_center'].includes(key);
           return <Grid key={key} size={{ xs: 12, md: 6 }}>
             <Autocomplete freeSolo options={suggestions[key] || []}
               value={value[key]}
               disabled={isReadOnly || !isSuperuser || isTop ||
-                assignedCenter || assignedDepartment}
+                assignedCenter || assignedDepartment || derived}
               onChange={(_, selected) => onChange(key, selected || '')}
               onInputChange={(_, typed, reason) => {
                 if (reason === 'input') onChange(key, typed);
@@ -87,7 +88,7 @@ export function EmployeeOrganizationalFields({
               renderInput={params => <TextField {...params} fullWidth
                 label={label} size="small"
                 slotProps={{ htmlInput: { ...params.inputProps, maxLength: 220 } }}
-                helperText={isTop ? 'مستوى ثابت' :
+                helperText={derived ? 'يُحدد تلقائيًا من الجهة المعتمدة' : isTop ? 'مستوى ثابت' :
                   (assignedCenter || assignedDepartment) ? 'مرتبط بالجهة المعتمدة المختارة' :
                     'اختر من المقترحات أو اكتب المسمى من المصدر؛ لا يُعتمد تلقائيًا'} />}
             />
