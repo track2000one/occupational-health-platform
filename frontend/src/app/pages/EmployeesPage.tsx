@@ -482,7 +482,7 @@ export function EmployeesPage() {
       unit.is_active && unit.is_approved && String(unit.health_center_id) === centerId);
     if (!center || center.is_active === false || links.length !== 1) return null;
     if (selectedUnit && String(selectedUnit.health_center_id) !== centerId) return null;
-    return hierarchyFromApprovedPath(approvedOrganizations, selectedUnit || links[0], centerDisplayName(center, isRtl));
+    return hierarchyFromApprovedPath(approvedOrganizations, selectedUnit || links[0], center.name_ar || center.name);
   };
   const verifiedCenters = selectableCenters.filter(center => centerHierarchy(String(center.id)));
   const employeeFormCenters = dialogMode === 'add' ? verifiedCenters :

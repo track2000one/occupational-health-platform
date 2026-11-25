@@ -263,12 +263,21 @@ class OrganizationUnitReviewView(APIView):
             elif action == 'approve':
                 if not unit.is_active:
                     return Response({'detail': 'لا يمكن اعتماد جهة غير نشطة.'}, status=409)
-                if unit.kind == 'department' and (unit.health_center_id or unit.parent_id):
-                    return Response({'detail': 'القسم المركزي يجب ألا يكون مرتبطًا بمركز صحي أو بجهة أعلى غير معتمدة لهذا التصنيف.'}, status=409)
+                if unit.kind == 'department' and unit.health_center_id:
+                    return Response({'detail': 'القسم المركزي يجب ألا يكون مرتبطًا بمركز صحي.'}, status=409)
+                if unit.parent_id and unit.kind in ('department', 'sector'):
+                    allowed = ('department', 'sector') if unit.kind == 'department' else ('department',)
+                    if unit.parent.kind not in allowed:
+                        return Response({'detail': 'نوع الجهة الأعلى غير متوافق مع هذا التصنيف.'}, status=409)
                 if len(ref) < 3 or len(ref) > 255:
                     return Response({'detail': 'Enter an official approval reference (3–255 characters).'}, status=400)
-                if unit.parent_id and not unit.parent.is_approved:
-                    return Response({'detail': 'Approve the parent sector or center first.'}, status=409)
+                seen = {unit.pk}
+                ancestor = unit.parent
+                while ancestor is not None:
+                    if ancestor.pk in seen or not ancestor.is_active or not ancestor.is_approved:
+                        return Response({'detail': 'Approve all active parent organizations first; cycles are not allowed.'}, status=409)
+                    seen.add(ancestor.pk)
+                    ancestor = ancestor.parent
                 if unit.kind == 'center' and (
                     not unit.health_center_id or not unit.health_center.is_active
                 ):

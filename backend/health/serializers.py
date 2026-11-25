@@ -6,6 +6,7 @@ from django.db import transaction
 from django.db.models import Q
 from rest_framework import serializers
 from .employee_org_template_v4 import ORGANIZATION_COLUMNS, TOP_LEVELS, clean_org_value
+from .organization_assignment import employee_assignment_hierarchy
 from .models import AuditLog, ClinicVisit, CommitteeReferral, DataImportBatch, Employee, EmployeeOrganizationalHierarchyEvent, EmployeeHealthCard, EmployeeHealthProfile, EmployeeImportReview, HealthCenter, HealthCenterAlias, OrganizationUnit, InjuryCase, LabTest, OccupationalHealthAssessment, UserProfile, Vaccination
 
 
@@ -560,6 +561,25 @@ class EmployeeSerializer(serializers.ModelSerializer):
             })
         if center and (not center.is_active or center.is_archived):
             raise serializers.ValidationError({'health_center': 'Choose an active health center.'})
+        if self.instance is None:
+            configured, derived = employee_assignment_hierarchy(center, org)
+            if configured and derived is None:
+                raise serializers.ValidationError({
+                    'organization_unit': 'اختر جهة مرتبطة بمسار تنظيمي نشط ومعتمد بالكامل.'
+                })
+            if derived:
+                incoming = attrs.get('source_organizational_hierarchy', {})
+                if proposed is not None and any(
+                    clean_org_value(incoming.get(key)) != clean_org_value(value)
+                    for key, value in derived.items()
+                ):
+                    raise serializers.ValidationError({
+                        'source_organizational_hierarchy': 'التبعية التنظيمية لا تطابق المسار المعتمد؛ أعد اختيار الجهة.'
+                    })
+                attrs['source_organizational_hierarchy'] = {
+                    **incoming, **TOP_LEVELS,
+                    **{key: clean_org_value(value) for key, value in derived.items() if clean_org_value(value)},
+                }
         self._require_for_create(attrs, 'national_id', 'National ID is required and must be unique.')
         self._require_for_create(attrs, 'name', 'Name is required.')
         if attrs.get('national_id') and len(attrs['national_id']) != 10:
