@@ -14,6 +14,14 @@ OPTIONAL_COMPLETENESS_FIELDS = (
     'job_title', 'current_job', 'appointment_date',
 )
 
+# Information gathered from the person during their clinic visit is not an
+# intake prerequisite. It may already be present in source Excel; only missing
+# values are deferred, never guessed or populated automatically.
+VISIT_DEFERRED_FIELDS = frozenset((
+    'date_of_birth', 'birth_place', 'marital_status',
+    'national_address', 'current_job',
+))
+
 # Same field identifiers used in the employee Excel importer, enabling the UI
 # to translate labels without guessing about Arabic/English headings.
 COMPARE_FIELDS = (

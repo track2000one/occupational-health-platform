@@ -31,6 +31,8 @@ function report(offset, scan, counts, batch_id = 91) {
     source_name_matches_original:0,
     archived_active_name_match_for_review:0,
     cards_missing_any_optional_field:counts,
+    cards_pending_visit_data:counts,
+    cards_missing_previsit_data:counts,
     approved_count:0, creates_employee_records:false,
     modifies_employee_records:false, modifies_clinical_records:false,
     notice:'Read-only',
@@ -48,6 +50,8 @@ test('combines V4 report segments without inflating official directory count',()
   assert.equal(full.official_center_directory.active_approved_count,23);
   assert.equal(full.official_center_directory.original_linked_center,3);
   assert.equal(full.cards_missing_any_optional_field,3);
+  assert.equal(full.cards_pending_visit_data,3);
+  assert.equal(full.cards_missing_previsit_data,3);
   assert.equal(full.approved_count,0);
   assert.equal(full.modifies_employee_records,false);
 });

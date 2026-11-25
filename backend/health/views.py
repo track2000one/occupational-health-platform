@@ -5,7 +5,7 @@ from datetime import date, timedelta
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
-from django.db.models import Q
+from django.db.models import Count, Prefetch, Q
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 from rest_framework import permissions, status, viewsets
@@ -15,7 +15,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from openpyxl import load_workbook
 from .importers import process_excel_import
-from .models import AuditLog, ClinicVisit, CommitteeReferral, DataImportBatch, Employee, EmployeeArchiveEvent, EmployeeEmploymentChange, EmployeeHealthCard, EmployeeImportReview, EmployeeProfileCompletionEvent, HealthCenter, HealthCenterProfileAuditEvent, OrganizationUnit, InjuryCase, LabTest, OccupationalHealthAssessment, Vaccination
+from .models import AuditLog, ClinicVisit, CommitteeReferral, DataImportBatch, Employee, EmployeeArchiveEvent, EmployeeEmploymentChange, EmployeeHealthCard, EmployeeImportReview, EmployeeProfileCompletionEvent, HealthCenter, HealthCenterAlias, HealthCenterProfileAuditEvent, OrganizationUnit, InjuryCase, LabTest, OccupationalHealthAssessment, Vaccination
 from .serializers import AuditLogSerializer, ClinicVisitSerializer, CommitteeReferralSerializer, DataImportBatchSerializer, EmployeeHealthCardSerializer, EmployeeImportReviewSerializer, EmployeeSerializer, HealthCenterSerializer, InjuryCaseSerializer, LabTestSerializer, OccupationalHealthAssessmentSerializer, PlatformUserSerializer, VaccinationSerializer
 
 
@@ -647,8 +647,71 @@ class HealthCenterViewSet(viewsets.ModelViewSet):
     serializer_class = HealthCenterSerializer
     permission_classes = [permissions.IsAuthenticated, CanManageHealthCenters]
 
+    def create(self, request, *args, **kwargs):
+        # Only the isolated V4 center foundation flow requires the source-based
+        # hierarchy fields. Do not change existing staging/production behavior.
+        from .organization_structure import draft_import_scope, clean
+        if draft_import_scope() == 'v4':
+            sector = clean(request.data.get('proposed_sector_name'))
+            main = clean(request.data.get('proposed_parent_name'))
+            known_sectors = {
+                'القطاع الشرقي الاستشاري 1', 'القطاع الشرقي الاستشاري 2',
+                'القطاع الغربي الاستشاري 1', 'القطاع الغربي الاستشاري 2',
+            }
+            if sector not in known_sectors:
+                return Response({
+                    'proposed_sector_name': 'اختر أحد القطاعات الاستشارية الأربعة الواردة في ملف Excel.'
+                }, status=400)
+            if main != 'الرعاية الأولية والمجتمعية':
+                return Response({
+                    'proposed_parent_name': 'الإدارة الرئيسية لمسار المراكز هي الرعاية الأولية والمجتمعية.'
+                }, status=400)
+        return super().create(request, *args, **kwargs)
+
+    def list(self, request, *args, **kwargs):
+        """Return directory pages without per-center count/alias database queries.
+
+        The previous serializer issued separate queries for employee/user counts,
+        aliases and organization units on every card. Fetch the current page,
+        then resolve unit counts once. Individual record endpoints retain their
+        existing semantics.
+        """
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        records = list(page) if page is not None else list(queryset)
+        counts = {center.pk: 0 for center in records}
+        if counts:
+            center_ids = list(counts)
+            related = OrganizationUnit.objects.filter(
+                Q(health_center_id__in=center_ids) |
+                Q(parent__health_center_id__in=center_ids),
+                kind=OrganizationUnit.Kind.UNIT,
+                is_active=True,
+            ).values_list('pk', 'health_center_id', 'parent__health_center_id').distinct()
+            for _, direct_center_id, parent_center_id in related:
+                for center_id in {direct_center_id, parent_center_id}:
+                    if center_id in counts:
+                        counts[center_id] += 1
+
+        context = {**self.get_serializer_context(), 'center_units_counts': counts}
+        serializer = self.get_serializer(records, many=True, context=context)
+        if page is not None:
+            return self.get_paginated_response(serializer.data)
+        return Response(serializer.data)
+
     def get_queryset(self):
         queryset = HealthCenter.objects.all().order_by('region', 'city', 'name')
+        if self.action == 'list':
+            queryset = queryset.annotate(
+                _employee_count=Count('employees', distinct=True),
+                _user_count=Count('platform_users', distinct=True),
+            ).prefetch_related(
+                Prefetch(
+                    'aliases',
+                    queryset=HealthCenterAlias.objects.order_by('created_at', 'pk'),
+                    to_attr='_directory_aliases',
+                )
+            )
         archived = str(self.request.query_params.get('archived') or '').lower() == 'true'
         if archived and self.request.user.is_superuser:
             queryset = queryset.filter(is_archived=True)

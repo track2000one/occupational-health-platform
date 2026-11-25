@@ -11,6 +11,7 @@ from rest_framework import permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from .employee_import_classification import VISIT_DEFERRED_FIELDS
 from .employee_import_v2_matching import norm_text
 from .models import Employee, EmployeeRegistryResetBatch, ProvisionalEmployeeImportBatch
 from .provisional_employee_roster import NO_CACHE, _masked, _unseal
@@ -98,6 +99,14 @@ def build_plan(batch, *, status_filter='', page=1):
                 'name': source.get('name') or '',
                 'status': classification,
                 'missing_optional_count': len(row.missing_optional or ()),
+                'pending_visit_count': sum(
+                    field in VISIT_DEFERRED_FIELDS
+                    for field in (row.missing_optional or ())
+                ),
+                'missing_previsit_count': sum(
+                    field not in VISIT_DEFERRED_FIELDS
+                    for field in (row.missing_optional or ())
+                ),
                 'is_approved_employee': False,
             })
     start = (page - 1) * PAGE_SIZE

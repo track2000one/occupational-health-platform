@@ -25,6 +25,13 @@ test('bounded V4 readiness segments are retryable and preserve report classifica
   const policy = requestPolicy('http://127.0.0.1:18081/api/provisional-employees/readiness/?offset=100&limit=100', 'GET');
   assert.deepEqual(policy, { timeoutMs: 25000, attempts: 2, report: true });
 });
+test('health center master reads use a bounded private-proxy budget', () => {
+  assert.deepEqual(requestPolicy('http://127.0.0.1:18081/api/health-centers/?page=1', 'GET'),
+    { timeoutMs: 30000, attempts: 2, report: false });
+  assert.deepEqual(requestPolicy('http://127.0.0.1:18081/api/health-centers/?archived=true&page=1', 'GET'),
+    { timeoutMs: 30000, attempts: 2, report: false });
+});
+
 test('ordinary reads, credential refresh and writes retain existing policies', () => {
   assert.deepEqual(requestPolicy('http://127.0.0.1:18081/api/provisional-employees/?page=1', 'GET'),
     { timeoutMs: 15000, attempts: 2, report: false });
@@ -35,3 +42,23 @@ test('ordinary reads, credential refresh and writes retain existing policies', (
   assert.deepEqual(requestPolicy('http://127.0.0.1:18081/api/provisional-employees/readiness/', 'POST'),
     { timeoutMs: 30000, attempts: 1, report: false });
 });
+
+// Run the related private-proxy directory pagination safeguards in the same CI suite.
+import './healthCenterPagination.test.mjs';
+
+// Run V4 center selection regression in the existing employee lifecycle CI suite.
+import './centerActivationSelection.test.mjs';
+
+// V4: synthetic regression for canonical center/department options on employee creation.
+import '../data/v4EmployeePlacementOptions.test.mjs';
+// Isolated V4 department batch selection regression.
+import '../data/v4DepartmentBulkSelection.test.mjs';
+
+// Organizational source hierarchy regression (metadata only; no employee rows).
+import '../data/v4FoundationHierarchyReference.test.mjs';
+
+// Independent organizational reconciliation coverage; no roster data.
+import '../data/v4DepartmentSourceAudit.test.mjs';
+
+// V4 sector-unit draft must remain visible for an active parent awaiting approval.
+import '../data/v4SectorUnitDraftEligibility.test.mjs';

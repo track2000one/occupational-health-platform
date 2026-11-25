@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 import {
-  Alert, Box, Button, Chip, CircularProgress,
+  Alert, Box, Button, Checkbox, Chip, CircularProgress,
   InputAdornment, MenuItem, Paper, Stack, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, TextField, Typography,
 } from '@mui/material';
@@ -16,8 +16,15 @@ import {
 import { toast } from 'sonner';
 import { authFetch, getAccessToken, useAuth } from '../context/AuthContext';
 import { HealthCenterExcelImportDialog } from '../components/HealthCenterExcelImportDialog';
+import { loadCenterPages } from '../utils/healthCenterPagination';
 import { HealthCenterArchiveDialog, type CenterArchiveAction } from '../components/HealthCenterArchiveDialog';
 import { HealthCenterVerificationDialog } from '../components/HealthCenterVerificationDialog';
+import { V4CenterOperationalActivation } from '../components/V4CenterOperationalActivation';
+import {
+  canSelectCenter, needsOperationalActivation, retainVisibleSelection, selectableCenterIds, toggleVisibleCenter,
+} from '../utils/centerActivationSelection';
+import { V4_PRIVATE_UI } from '../data/v4AffiliationHierarchy';
+import { V4_FOUNDATION_CONTEXT } from '../data/v4FoundationHierarchyReference';
 import {
   HealthCenterProfileFormDialog, type HealthCenterFormValues,
   type CenterUnitDraft,
@@ -54,7 +61,6 @@ const REFERENCE_SECTORS = [
   'القطاع الغربي الاستشاري 1', 'القطاع الغربي الاستشاري 2',
 ];
 
-function list<T>(payload: any): T[] { return Array.isArray(payload) ? payload : Array.isArray(payload?.results) ? payload.results : []; }
 async function request<T>(path: string, init: RequestInit = {}) {
   const token = getAccessToken();
   if (!token) throw new Error('Authentication required');
@@ -81,6 +87,8 @@ export function HealthCentersPage() {
   const [archivedCenters, setArchivedCenters] = useState<Center[]>([]);
   const [importOpen, setImportOpen] = useState(false);
   const [centers, setCenters] = useState<Center[]>([]);
+  const [selectedCenterIds, setSelectedCenterIds] = useState<number[]>([]);
+  const [directoryReady, setDirectoryReady] = useState(false);
   const [organizationUnits, setOrganizationUnits] = useState<OrgCenter[]>([]);
   // Default to all records: the source-reference subset may contain none.
   const [sourceFilter, setSourceFilter] = useState<'reference' | 'all' | 'qa' | 'other'>('all');
@@ -88,6 +96,7 @@ export function HealthCentersPage() {
   const [loadError, setLoadError] = useState('');
   const [sectorFilter, setSectorFilter] = useState('all');
   const [loading, setLoading] = useState(true);
+  const loadGeneration = useRef(0);
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
   const [regionFilter, setRegionFilter] = useState('all');
@@ -108,45 +117,63 @@ export function HealthCentersPage() {
   ])].sort((a,b)=>a.localeCompare(b,'ar')), [organizationUnits, centers]);
 
   async function load() {
+    const generation = ++loadGeneration.current;
+    const isCurrent = () => generation === loadGeneration.current;
     setLoading(true);
+    setDirectoryReady(false);
     setLoadError('');
+    // Keep previously verified cards visible while refreshing in place; do
+    // not clear the directory or show a false zero while network is pending.
+    // Master centers are the primary source. Auxiliary archive/hierarchy
+    // requests must not hide loaded centers if either of them times out.
     try {
-      const first = await request<Center[] | { results: Center[]; next: string | null }>('/health-centers/?page=1');
-      const all = list<Center>(first);
-      if (!Array.isArray(first) && first.next) {
-        for (let page = 2; page <= 40; page++) {
-          const data = await request<{results: Center[]; next: string | null}>(`/health-centers/?page=${page}`);
-          all.push(...data.results);
-          if (!data.next) break;
-        }
-      }
-      setCenters(all);
-      if (canArchiveCenters) {
-        const archived = await request<Center[] | { results: Center[]; next: string | null }>('/health-centers/?archived=true&page=1');
-        const archivedList = list<Center>(archived);
-        if (!Array.isArray(archived) && archived.next) {
-          for (let page = 2; page <= 40; page++) {
-            const next = await request<{ results: Center[]; next: string | null }>(
-              `/health-centers/?archived=true&page=${page}`);
-            archivedList.push(...next.results);
-            if (!next.next) break;
+      await loadCenterPages<Center>(
+        page => request<Center[] | { results: Center[]; next: string | null }>(
+          '/health-centers/?page=' + page),
+        rows => {
+          if (isCurrent()) {
+            setCenters(rows);
+            setLoading(false); // Show verified rows as soon as the first page arrives.
           }
-        }
-        setArchivedCenters(archivedList);
-      }
-      // The organizational directory is a non-destructive proposal: not an approval.
-      try {
-        const directory = await request<{results: OrgCenter[]}>('/organization-units/');
-        setOrganizationUnits(directory.results || []);
-      } catch {
-        setOrganizationUnits([]);
-        toast.warning('تعذر تحميل روابط الهيكل التنظيمي؛ أسماء المراكز ستظل متاحة.');
-      }
+        },
+      );
+      if (isCurrent()) setDirectoryReady(true);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to load health centers';
+      if (!isCurrent()) return;
+      const message = error instanceof Error ? error.message : 'تعذر تحميل دليل المراكز الصحية.';
       setLoadError(message);
       toast.error(message);
-    } finally { setLoading(false); }
+      setLoading(false);
+      return;
+    }
+    if (!isCurrent()) return;
+    setLoading(false);
+
+    await Promise.all([
+      (async () => {
+        if (!canArchiveCenters) return;
+        try {
+          await loadCenterPages<Center>(
+            page => request<Center[] | { results: Center[]; next: string | null }>(
+              '/health-centers/?archived=true&page=' + page),
+            rows => { if (isCurrent()) setArchivedCenters(rows); },
+          );
+        } catch {
+          if (isCurrent()) toast.warning('تعذر تحميل أرشيف المراكز؛ المراكز المسجلة ستبقى ظاهرة.');
+        }
+      })(),
+      (async () => {
+        try {
+          const directory = await request<{results: OrgCenter[]}>('/organization-units/');
+          if (!Array.isArray(directory?.results)) {
+            throw new Error('استجابة الهيكل التنظيمي غير صالحة.');
+          }
+          if (isCurrent()) setOrganizationUnits(directory.results);
+        } catch {
+          if (isCurrent()) toast.warning('تعذر تحميل الروابط التنظيمية؛ المراكز المسجلة ستبقى ظاهرة.');
+        }
+      })(),
+    ]);
   }
   useEffect(() => { void load(); }, []);
 
@@ -196,6 +223,30 @@ export function HealthCentersPage() {
     || (a.name_ar || a.name).localeCompare(b.name_ar || b.name, 'ar')
   ), [visibleCenters, centerOrg, sourceFilter, sectorFilter, search, regionFilter, cityFilter, statusFilter]);
 
+  // All active, nonarchived records can be selected for review, including those
+  // activated before. The API prevents re-activation; selection is not a write.
+  // Hidden, archived and inactive records are excluded from submissions.
+  const selectableVisibleIds = useMemo(() =>
+    showArchived ? [] : selectableCenterIds(filtered), [filtered, showArchived]);
+  const selectedVisibleIds = useMemo(() =>
+    retainVisibleSelection(selectedCenterIds, showArchived ? [] : filtered),
+    [selectedCenterIds, filtered, showArchived]);
+  const allVisibleSelected = selectableVisibleIds.length > 0 &&
+    selectedVisibleIds.length === selectableVisibleIds.length;
+  const pendingVisibleCount = filtered.filter(needsOperationalActivation).length;
+  const selectedPendingCount = filtered.filter(center =>
+    selectedVisibleIds.includes(center.id) && needsOperationalActivation(center)).length;
+  const alreadyActivatedVisibleCount = filtered.filter(center =>
+    canSelectCenter(center) && !needsOperationalActivation(center)).length;
+  const selectionDisabled = !directoryReady || loading || Boolean(loadError);
+  useEffect(() => {
+    setSelectedCenterIds(previous => {
+      const next = retainVisibleSelection(previous, showArchived ? [] : filtered);
+      return previous.length === next.length &&
+        previous.every((id, index) => id === next[index]) ? previous : next;
+    });
+  }, [filtered, showArchived]);
+
   const buildingLabel = (type: Center['building_type']) => ({ unknown: isRtl ? 'غير محدد' : 'Unspecified', model: isRtl ? 'نموذجي' : 'Model', rented: isRtl ? 'مستأجر' : 'Rented', owned: isRtl ? 'مملوك' : 'Owned', other: isRtl ? 'أخرى' : 'Other' }[type]);
   const displayName = (center: Center) => (isRtl ? center.name_ar : center.name_en) || center.name || center.name_en || center.name_ar || '—';
   const secondaryName = (center: Center) => { const value = isRtl ? center.name_en : center.name_ar; return value && value !== displayName(center) ? value : ''; };
@@ -208,7 +259,9 @@ export function HealthCentersPage() {
     resetFilters();
   }
   function openAdd() {
-    setEditing(null); setForm({ ...EMPTY_FORM });
+    setEditing(null); setForm({ ...EMPTY_FORM,
+      proposed_parent_name: V4_PRIVATE_UI ? V4_FOUNDATION_CONTEXT.center_main_administration : '',
+    });
     setCenterUnits([]); setUnitName(''); setUnitReference('');
     setUnitsLoadError(''); setOpen(true);
   }
@@ -270,6 +323,8 @@ export function HealthCentersPage() {
 
   async function save() {
     if (!form.name_ar.trim()) return toast.error(isRtl ? 'اسم المركز الصحي بالعربية مطلوب' : 'Arabic health center name is required');
+    if (V4_PRIVATE_UI && !form.proposed_sector_name.trim())
+      return toast.error('اختر القطاع الاستشاري أولًا لضمان صحة التسلسل التنظيمي.');
     // Original source does not supply English translations or building type.
     // Preserve 'unknown' instead of inventing administrative facts.
     setSaving(true);
@@ -281,7 +336,9 @@ export function HealthCentersPage() {
         alternate_name: form.alternate_name.trim(),
         region: form.region.trim(), city: form.city.trim(),
         district: form.district.trim(), manager_name: form.manager_name.trim(),
-        proposed_parent_name: form.proposed_parent_name.trim(),
+        proposed_parent_name: V4_PRIVATE_UI && !editing
+          ? V4_FOUNDATION_CONTEXT.center_main_administration
+          : form.proposed_parent_name.trim(),
         proposed_sector_name: form.proposed_sector_name.trim(),
         organizational_source_reference: form.organizational_source_reference.trim(),
         supporting_document_reference: form.supporting_document_reference.trim(),
@@ -311,7 +368,7 @@ export function HealthCentersPage() {
     {canImport && <HealthCenterExcelImportDialog
       open={importOpen} onClose={() => setImportOpen(false)}
       onImported={() => load()} />}
-    {canArchiveCenters && <HealthCenterVerificationDialog
+    {canArchiveCenters && !V4_PRIVATE_UI && <HealthCenterVerificationDialog
       center={verifyTarget ? {
         id: verifyTarget.id, name: displayName(verifyTarget),
         approval_status: verifyTarget.approval_status,
@@ -376,7 +433,9 @@ export function HealthCentersPage() {
         [isRtl ? 'المراكز النشطة' : 'Active centers', centers.filter(c => c.is_active).length],
         [isRtl ? 'مراكز ملف الجهات' : 'Reference centers', sourceCenters.length],
         [isRtl ? 'مراكز اختبار QA' : 'QA centers', qaCenters.length],
-      ].map(([label, value]) => <Paper key={String(label)} sx={{ p: 2, textAlign: 'center' }}><Typography variant="h4" fontWeight={950} color="primary.main">{value}</Typography><Typography variant="body2" color="text.secondary">{label}</Typography></Paper>)}
+      ].map(([label, count]) => {
+        const value = (loading || loadError) && centers.length === 0 ? '—' : count;
+        return <Paper key={String(label)} sx={{ p: 2, textAlign: 'center' }}><Typography variant="h4" fontWeight={950} color="primary.main">{value}</Typography><Typography variant="body2" color="text.secondary">{label}</Typography></Paper>})}
     </Box>
 
     <Alert severity="info" sx={{ mb: 2, fontSize: 14 }}>
@@ -406,7 +465,13 @@ export function HealthCentersPage() {
       justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }} sx={{ mb: 1.5 }}>
       <Box>
         <Typography fontWeight={900} color="text.secondary">
-          عرض {filtered.length} مركزًا من إجمالي {visibleCenters.length} مركز {showArchived ? 'مؤرشف' : 'مسجل'}
+          {loading && visibleCenters.length === 0
+            ? 'جارٍ تحميل المراكز من الخادم…'
+            : loading && visibleCenters.length > 0
+              ? `جارٍ تحديث المراكز… (عرض ${filtered.length} مركزًا محفوظًا من آخر استجابة)`
+            : loadError && centers.length === 0
+              ? 'تعذر قراءة إجمالي المراكز — لا يعني ذلك أن السجل فارغ'
+              : `عرض ${filtered.length} مركزًا من إجمالي ${visibleCenters.length} مركز ${showArchived ? 'مؤرشف' : 'مسجل'}`}
         </Typography>
         <Typography variant="caption" color="text.secondary">
           مصدر السجل يحدد طريقة العرض فقط ولا يغيّر بيانات المراكز أو الموظفين.
@@ -426,8 +491,47 @@ export function HealthCentersPage() {
         </Button>
       </Stack>
     </Stack>
-    {loading ? <Paper sx={{ p: 6, textAlign: 'center' }}><CircularProgress /></Paper>
-      : loadError ? <Alert severity="error" action={
+    {canArchiveCenters && V4_PRIVATE_UI && !showArchived && <Paper
+      variant="outlined" sx={{ mb: 2, px: 2, py: 1.25, borderRadius: 2.5,
+        borderColor: '#bad6e7', bgcolor: '#f1f8fd' }}>
+      <Stack direction={{ xs: 'column', md: 'row' }} gap={1.5}
+        alignItems={{ xs: 'stretch', md: 'center' }} justifyContent="space-between">
+        <Stack direction="row" gap={1} alignItems="center" flexWrap="wrap">
+          <Checkbox
+            checked={allVisibleSelected}
+            indeterminate={selectedVisibleIds.length > 0 && !allVisibleSelected}
+            disabled={selectionDisabled || selectableVisibleIds.length === 0}
+            onChange={(_, checked) => setSelectedCenterIds(checked ? selectableVisibleIds : [])}
+            inputProps={{ 'aria-label': 'تحديد جميع المراكز النشطة المعروضة' }} />
+          <Button size="small" variant="outlined"
+            disabled={selectionDisabled || selectableVisibleIds.length === 0}
+            onClick={() => setSelectedCenterIds(selectableVisibleIds)}>
+            تحديد الكل ({selectableVisibleIds.length})
+          </Button>
+          <Chip label={`تم تحديد: ${selectedVisibleIds.length}`}
+            color={selectedVisibleIds.length ? 'primary' : 'default'} variant="outlined" />
+          <Button size="small" variant="text" disabled={!selectedVisibleIds.length}
+            onClick={() => setSelectedCenterIds([])}>إلغاء التحديد</Button>
+        </Stack>
+        <V4CenterOperationalActivation
+          selectedCenterIds={selectionDisabled ? [] : selectedVisibleIds}
+          pendingActivationCount={selectedPendingCount}
+          disabled={selectionDisabled || selectedVisibleIds.length === 0}
+          onActivated={async () => { setSelectedCenterIds([]); await load(); }} />
+      </Stack>
+      <Typography variant="caption" color="text.secondary">
+        تحديد الكل يشمل المراكز النشطة المعروضة حسب التصفية، حتى المفعّلة سابقًا، ويستبعد المؤرشفة وغير النشطة.
+        المفعّلة مسبقًا: {alreadyActivatedVisibleCount} | بانتظار التفعيل: {pendingVisibleCount}.
+        {!directoryReady ? ' جارٍ استكمال تحميل القائمة قبل إتاحة المراجعة.' : ''}
+      </Typography>
+    </Paper>}
+    {loadError && centers.length > 0 && <Alert severity="warning" sx={{ mb: 2 }}>
+      تعذر استكمال تحميل كل صفحات المراكز؛ البيانات الظاهرة جزئية. لم تُحذف أي سجلات.
+      السبب: {loadError}
+    </Alert>}
+    {loading && visibleCenters.length === 0
+      ? <Paper sx={{ p: 6, textAlign: 'center' }}><CircularProgress /></Paper>
+      : loadError && centers.length === 0 ? <Alert severity="error" action={
         <Button size="small" onClick={() => void load()}>إعادة المحاولة</Button>
       }>تعذر تحميل دليل المراكز الصحية: {loadError}</Alert>
       : visibleCenters.length === 0 ? <Paper sx={{ p: 4, textAlign: 'center', borderRadius: 3 }}>
@@ -462,10 +566,19 @@ export function HealthCentersPage() {
             const location = [center.region, center.city, center.district].filter(Boolean).join(' / ');
             return <Paper key={center.id} elevation={2}
               sx={{ p: 2.25, borderRadius: 3, minWidth: 0,
-                border: '1px solid #DAE5EF',
+                border: selectedVisibleIds.includes(center.id)
+                  ? '2px solid #1677a6' : '1px solid #DAE5EF',
                 borderTop: '3px solid #1B5A82',
                 display: 'flex', flexDirection: 'column', gap: 1.5 }}>
               <Stack direction="row" alignItems="flex-start" justifyContent="space-between" gap={1}>
+                {canArchiveCenters && V4_PRIVATE_UI && !showArchived && <Checkbox
+                  checked={selectedVisibleIds.includes(center.id)}
+                  disabled={selectionDisabled || !canSelectCenter(center)}
+                  onChange={(_, checked) => setSelectedCenterIds(current =>
+                    checked ? toggleVisibleCenter(current, center.id, filtered)
+                      : current.filter(id => id !== center.id))}
+                  inputProps={{ 'aria-label': 'تحديد مركز ' + displayName(center) }}
+                  sx={{ p: 0.35, flexShrink: 0 }} />}
                 <Box sx={{ minWidth: 0 }}>
                   <Typography fontWeight={900} fontSize={16} sx={{ overflowWrap: 'anywhere' }}>
                     {displayName(center)}
@@ -489,7 +602,9 @@ export function HealthCentersPage() {
                   label={org.is_approved ? 'ارتباط تنظيمي معتمد' : 'ارتباط قيد المراجعة'} />}
                 <Chip size="small" color={center.approval_status === 'approved' ? 'success' : 'warning'}
                   variant="outlined"
-                  label={center.approval_status === 'approved' ? 'مرجع المركز موثق' : 'مرجع بانتظار التوثيق'} />
+                  label={V4_PRIVATE_UI
+                    ? (center.approval_status === 'approved' ? 'مُفعّل للتشغيل' : 'ينتظر التفعيل')
+                    : (center.approval_status === 'approved' ? 'مرجع المركز موثق' : 'مرجع بانتظار التوثيق')} />
               </Stack>
               <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5, flex: 1 }}>
                 {[
@@ -520,7 +635,7 @@ export function HealthCentersPage() {
                     {center.is_active ? 'تعطيل' : 'تفعيل'}
                   </Button>
                 </>}
-                {canArchiveCenters && !center.is_archived && <Button size="small"
+                {canArchiveCenters && !V4_PRIVATE_UI && !center.is_archived && <Button size="small"
                   variant="outlined" color="primary" startIcon={<FoundationIcon />}
                   onClick={() => setVerifyTarget(center)}>
                   {center.approval_status === 'approved' ? 'مراجعة الاعتماد' : 'توثيق المرجع'}
@@ -538,6 +653,7 @@ export function HealthCentersPage() {
       ) : <TableContainer component={Paper} sx={{ borderRadius: 3, overflowX: 'auto' }}>
         <Table sx={{ minWidth: 1030 }}>
           <TableHead><TableRow sx={{ '& .MuiTableCell-root': { fontWeight: 900, fontSize: 14 } }}>
+            {canArchiveCenters && V4_PRIVATE_UI && !showArchived && <TableCell>تحديد</TableCell>}
             <TableCell>اسم المركز الصحي</TableCell>
             <TableCell>القطاع والوحدات</TableCell>
             <TableCell>مدير المركز</TableCell>
@@ -553,7 +669,16 @@ export function HealthCentersPage() {
                  (org ? organizationUnits.filter(unit =>
                    unit.kind === 'unit' && unit.parent_code === org.code).length : 0);
               const isReference = isFromSource(center);
-              return <TableRow key={center.id} hover sx={{ '& .MuiTableCell-root': { verticalAlign: 'middle', py: 1.6 } }}>
+              return <TableRow key={center.id} hover selected={selectedVisibleIds.includes(center.id)}
+                sx={{ '& .MuiTableCell-root': { verticalAlign: 'middle', py: 1.6 } }}>
+                {canArchiveCenters && V4_PRIVATE_UI && !showArchived && <TableCell>
+                  <Checkbox checked={selectedVisibleIds.includes(center.id)}
+                    disabled={selectionDisabled || !canSelectCenter(center)}
+                    onChange={(_, checked) => setSelectedCenterIds(current =>
+                      checked ? toggleVisibleCenter(current, center.id, filtered)
+                        : current.filter(id => id !== center.id))}
+                    inputProps={{ 'aria-label': 'تحديد مركز ' + displayName(center) }} />
+                </TableCell>}
                 <TableCell sx={{ minWidth: 185 }}>
                   <Typography fontWeight={900} fontSize={15}>{displayName(center)}</Typography>
                   {secondaryName(center) && <Typography variant="caption" display="block" color="text.secondary">{secondaryName(center)}</Typography>}

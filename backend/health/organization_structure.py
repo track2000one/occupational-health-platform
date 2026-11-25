@@ -365,6 +365,16 @@ class OrganizationUnitReviewView(APIView):
                             status=status.HTTP_403_FORBIDDEN)
         action = clean(request.data.get('action'))
         ref = clean(request.data.get('approval_reference'))
+        # Explicit V4-only operational activation is distinct from formal approval.
+        operational = action == 'activate'
+        if operational:
+            from .v4_operational_activation import operational_activation_enabled
+            if not operational_activation_enabled():
+                return Response({'detail': 'التفعيل التشغيلي غير متاح خارج V4 المعزولة.'},
+                                status=403)
+            if request.data.get('confirmed') is not True:
+                return Response({'detail': 'يلزم تأكيد التفعيل التشغيلي.'}, status=400)
+            ref = ''
         with transaction.atomic():
             unit = OrganizationUnit.objects.select_for_update().filter(pk=pk).first()
             if not unit:
@@ -401,7 +411,7 @@ class OrganizationUnitReviewView(APIView):
                     }, status=409)
                 unit.health_center = center
                 unit.save(update_fields=['health_center', 'updated_at'])
-            elif action == 'approve':
+            elif action in ('approve', 'activate'):
                 if not unit.is_active:
                     return Response({'detail': 'لا يمكن اعتماد جهة غير نشطة.'}, status=409)
                 if unit.kind == 'department' and unit.code.startswith('V4-D-'):
@@ -412,7 +422,7 @@ class OrganizationUnitReviewView(APIView):
                         return Response({'detail': 'اعتمد الجهات الأعلى أولاً، وتحقق من سلامة التسلسل وعدم ارتباطه بمركز صحي.'}, status=409)
                 elif unit.kind == 'department' and (unit.health_center_id or unit.parent_id):
                     return Response({'detail': 'القسم المركزي يجب ألا يكون مرتبطًا بمركز صحي أو بجهة أعلى غير معتمدة لهذا التصنيف.'}, status=409)
-                if len(ref) < 3 or len(ref) > 255:
+                if not operational and (len(ref) < 3 or len(ref) > 255):
                     return Response({'detail': 'Enter an official approval reference (3–255 characters).'}, status=400)
                 if unit.parent_id and not unit.parent.is_approved:
                     return Response({'detail': 'Approve the parent sector or center first.'}, status=409)
@@ -428,14 +438,16 @@ class OrganizationUnitReviewView(APIView):
                 unit.is_approved = True
                 unit.approved_by = request.user
                 unit.approved_at = timezone.now()
-                unit.approval_reference = ref
+                unit.approval_reference = '' if operational else ref
                 unit.save()
             else:
                 return Response({'detail': 'Action must be map-center or approve.'}, status=400)
             OrganizationUnitApprovalLog.objects.create(
-                unit=unit, action=action, approval_reference=ref, user=request.user)
+                unit=unit, action='v4-activate' if operational else action,
+                approval_reference=ref, user=request.user)
             AuditLog.objects.create(
-                user=str(request.user), action='organization_' + action,
+                user=str(request.user),
+                action='v4_operational_activate_organization' if operational else 'organization_' + action,
                 model_name='OrganizationUnit', record_id=str(unit.pk),
             )
         unit.refresh_from_db()

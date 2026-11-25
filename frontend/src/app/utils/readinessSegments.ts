@@ -68,7 +68,8 @@ export function mergeReadinessSegments<T extends ReadinessPiece>(current: T | nu
       [key, sumNumber(directoryA[key], directoryB[key])])),
   };
   for (const key of ['source_name_matches_original','archived_active_name_match_for_review',
-                      'cards_missing_any_optional_field']) {
+                      'cards_missing_any_optional_field',
+                      'cards_pending_visit_data','cards_missing_previsit_data']) {
     merged[key] = sumNumber(a[key], b[key]);
   }
   return merged as unknown as T;

@@ -2,12 +2,17 @@ from django.urls import path
 from .organization_structure import OrganizationDirectoryView, OrganizationImportView, OrganizationUnitReviewView
 from .department_directory import DepartmentDirectoryView, DepartmentStatusView
 from .organization_bulk_approval import OrganizationBulkApprovalView
+from .v4_center_operational_activation import V4HealthCenterOperationalActivationView
+from .v4_sector_direct_unit_preflight import V4SectorDirectUnitPreflightView
+from .v4_sector_direct_unit_draft_create import V4SectorDirectUnitDraftCreateView
+from .v4_sector_direct_unit_activation import V4SectorDirectUnitActivationView
 from .employee_roster_template import EmployeeRosterTemplateView
 from .employee_org_template_v4 import EmployeeOrgRosterTemplateV4View
 from .provisional_employee_template_preflight import ProvisionalEmployeeTemplatePreflightView
 from .employee_import_v2 import EmployeeImportV2PreviewView
 from .provisional_employee_roster import (ProvisionalEmployeeImportView, ProvisionalEmployeeRosterView, ProvisionalEmployeeCompletionView, ProvisionalEmployeeLookupView, ProvisionalEmployeeBatchRemovalView)
 from .provisional_employee_approval_readiness import ProvisionalEmployeeApprovalReadinessView
+from .v4_affiliation_bulk_preview import V4ProvisionalAffiliationPreviewView
 from .provisional_employee_approval_plan import ProvisionalEmployeeApprovalPlanView
 from .provisional_employee_conflict_diagnostics import ProvisionalEmployeeConflictDiagnosticsView
 from .provisional_employee_number_edit import ProvisionalEmployeeNumberEditView
@@ -22,6 +27,7 @@ from .health_center_archive import HealthCenterArchiveView
 from .center_foundation import (CenterFoundationRegistryView, CenterFoundationImportView, CenterFoundationDecisionView)
 from .center_directory_matching import CenterDirectoryMatchingView, CenterDirectoryMatchingHistoryView
 from .employee_registry_reset import EmployeeRegistryResetView
+from .v4_full_employee_data_purge import V4FullEmployeeDataPurgeView
 from .workforce_refoundation_preview import WorkforceRefoundationImpactPreviewView
 from .employee_review_cleanup import EmployeeImportReviewCleanupView
 from .employee_review_identity_reconciliation import EmployeeReviewIdentityReconciliationPreviewView
@@ -50,6 +56,7 @@ urlpatterns = [
     path('provisional-employees/import/', ProvisionalEmployeeImportView.as_view(), name='provisional-employee-import'),
     path('provisional-employees/template-preflight/', ProvisionalEmployeeTemplatePreflightView.as_view(), name='provisional-employee-template-preflight'),
     path('provisional-employees/readiness/', ProvisionalEmployeeApprovalReadinessView.as_view(), name='provisional-employee-readiness'),
+    path('provisional-employees/affiliation-preview/', V4ProvisionalAffiliationPreviewView.as_view(), name='v4-provisional-affiliation-preview'),
     path('provisional-employees/approval-plan/', ProvisionalEmployeeApprovalPlanView.as_view(), name='provisional-employee-approval-plan'),
     path('provisional-employees/name-review/', ProvisionalEmployeeNameReviewView.as_view(), name='provisional-employee-name-review'),
     path('provisional-employees/conflict-diagnostics/', ProvisionalEmployeeConflictDiagnosticsView.as_view(), name='provisional-employee-conflict-diagnostics'),
@@ -70,6 +77,7 @@ urlpatterns = [
     path('employee-import-reviews/center-reconciliation/', StagingReviewCenterReconciliationView.as_view(), name='employee-review-center-reconciliation'),
     path('staging-employee-card-reset/', StagingEmployeeCardResetView.as_view(), name='staging-employee-card-reset'),
     path('health-centers/import-excel/', HealthCenterExcelImportView.as_view(), name='health-center-excel-import'),
+    path('health-centers/operational-activation/', V4HealthCenterOperationalActivationView.as_view(), name='v4-center-operational-activation'),
     path('health-centers/archive/', HealthCenterArchiveView.as_view(), name='health-center-archive'),
     path('center-foundation/', CenterFoundationRegistryView.as_view(), name='center-foundation-registry'),
     path('center-foundation/import/', CenterFoundationImportView.as_view(), name='center-foundation-import'),
@@ -77,10 +85,14 @@ urlpatterns = [
     path('center-directory/match/', CenterDirectoryMatchingView.as_view(), name='center-directory-match'),
     path('center-directory/match-history/', CenterDirectoryMatchingHistoryView.as_view(), name='center-directory-match-history'),
     path('employee-registry-reset/', EmployeeRegistryResetView.as_view(), name='employee-registry-reset'),
+    path('admin/v4-full-employee-data-purge/', V4FullEmployeeDataPurgeView.as_view(), name='v4-full-employee-data-purge'),
     path('workforce-refoundation/preview/', WorkforceRefoundationImpactPreviewView.as_view(), name='workforce-refoundation-preview'),
     path('departments/', DepartmentDirectoryView.as_view(), name='department-directory'),
     path('departments/<int:pk>/status/', DepartmentStatusView.as_view(), name='department-status'),
     path('organization-units/', OrganizationDirectoryView.as_view(), name='organization-units'),
+    path('organization-units/sector-direct-unit-preflight/', V4SectorDirectUnitPreflightView.as_view(), name='v4-sector-direct-unit-preflight'),
+    path('organization-units/sector-direct-unit-create-draft/', V4SectorDirectUnitDraftCreateView.as_view(), name='v4-sector-direct-unit-create-draft'),
+    path('organization-units/sector-direct-unit-activation/', V4SectorDirectUnitActivationView.as_view(), name='v4-sector-direct-unit-activation'),
     path('organization-units/import/', OrganizationImportView.as_view(), name='organization-units-import'),
     path('organization-units/bulk-approval/', OrganizationBulkApprovalView.as_view(), name='organization-units-bulk-approval'),
     path('organization-units/<int:pk>/review/', OrganizationUnitReviewView.as_view(), name='organization-units-review'),

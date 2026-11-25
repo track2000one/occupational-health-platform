@@ -1,5 +1,7 @@
+import { V4_PRIVATE_UI } from '../data/v4AffiliationHierarchy';
+import { V4_CENTER_SECTORS, V4_FOUNDATION_CONTEXT, v4CenterNamesForSector } from '../data/v4FoundationHierarchyReference';
 import {
-  Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent,
+  Alert, Autocomplete, Box, Button, Chip, Dialog, DialogActions, DialogContent,
   DialogTitle, MenuItem, Paper, Stack, Switch, TextField, Typography,
 } from '@mui/material';
 
@@ -53,11 +55,54 @@ export function HealthCenterProfileFormDialog({
     </DialogTitle>
     <DialogContent dividers>
       <Stack gap={2.5} sx={{ py: 1 }}>
-        <Paper variant="outlined" sx={sectionStyle}>
-          <Typography fontWeight={900} sx={{ mb: 2 }}>أولًا: البيانات الأساسية والموقع</Typography>
+        {V4_PRIVATE_UI && <Paper variant="outlined" sx={sectionStyle}>
+          <Typography fontWeight={900} sx={{ mb: 2 }}>أولًا: التسلسل التنظيمي وتأسيس المركز</Typography>
+          <Alert severity="info" sx={{ mb: 2 }}>
+            تسلسل التأسيس كما ورد في ملف المراكز: تجمع الشرقية الصحي ← شبكة الدمام الصحية
+            ← الإدارة الرئيسية ← الإدارة الفرعية ← القطاع الاستشاري ← المركز الصحي.
+            المعلومات التنظيمية من المصدر ولا تنقل موظفًا تلقائيًا.
+          </Alert>
           <Box sx={formGrid}>
-            <TextField required label="اسم المركز الصحي بالعربية" value={form.name_ar}
-              onChange={e => onChange('name_ar', e.target.value)} inputProps={{ dir: 'rtl' }}/>
+            <TextField disabled fullWidth label="التجمع الصحي" value={V4_FOUNDATION_CONTEXT.health_cluster}/>
+            <TextField disabled fullWidth label="الشبكة الصحية" value={V4_FOUNDATION_CONTEXT.health_network}/>
+            <TextField disabled fullWidth label="الإدارة الرئيسية" value={V4_FOUNDATION_CONTEXT.center_main_administration}/>
+            <TextField disabled fullWidth label="الإدارة الفرعية" value={V4_FOUNDATION_CONTEXT.center_sub_administration}/>
+            <TextField required select fullWidth label="القطاع الاستشاري *"
+              value={form.proposed_sector_name}
+              onChange={event => onChange('proposed_sector_name',event.target.value)}>
+              <MenuItem value="">اختر القطاع الاستشاري</MenuItem>
+              {!!form.proposed_sector_name && !(form.proposed_sector_name in V4_CENTER_SECTORS) &&
+                <MenuItem value={form.proposed_sector_name}>{form.proposed_sector_name} — مراجعة</MenuItem>}
+              {Object.keys(V4_CENTER_SECTORS).map(sector =>
+                <MenuItem key={sector} value={sector}>{sector}</MenuItem>)}
+            </TextField>
+            <Autocomplete freeSolo fullWidth options={[...v4CenterNamesForSector(form.proposed_sector_name)]}
+              disabled={!form.proposed_sector_name}
+              value={form.name_ar}
+              onInputChange={(_, value, reason) => {
+                if (reason === 'input' || reason === 'clear') onChange('name_ar',value);
+              }}
+              onChange={(_,value)=>onChange('name_ar',value || '')}
+              renderInput={params => <TextField {...params} required
+                label="اسم المركز الصحي بالعربية *"
+                helperText="اقتراحات من ملف المراكز؛ يسمح بإدخال اسم جديد بعد التحقق من عدم التكرار"
+                inputProps={{...params.inputProps, dir:'rtl'}} />}
+            />
+            <TextField fullWidth label="مرجع Excel للتبعية (اختياري)"
+              value={form.organizational_source_reference}
+              onChange={event=>onChange('organizational_source_reference',event.target.value)}
+              sx={{gridColumn:{md:'1 / -1'}}}
+              helperText="مرجع للمطابقة وليس رقم قرار رسمي"/>
+          </Box>
+        </Paper>}
+        <Paper variant="outlined" sx={sectionStyle}>
+          <Typography fontWeight={900} sx={{ mb: 2 }}>
+            {V4_PRIVATE_UI ? 'ثانيًا: البيانات الأساسية والموقع' : 'أولًا: البيانات الأساسية والموقع'}
+          </Typography>
+          <Box sx={formGrid}>
+            {!V4_PRIVATE_UI && <TextField required label="اسم المركز الصحي بالعربية" value={form.name_ar}
+              onChange={e => onChange('name_ar', e.target.value)} inputProps={{ dir: 'rtl' }}/>}
+
             <TextField label="اسم المركز بالإنجليزية (اختياري)" value={form.name_en}
               onChange={e => onChange('name_en', e.target.value)} inputProps={{ dir: 'ltr' }}/>
             <TextField label="كود المركز الرسمي (إن وُجد)" value={form.code}
@@ -97,7 +142,7 @@ export function HealthCenterProfileFormDialog({
           </Box>
         </Paper>
 
-        <Paper variant="outlined" sx={sectionStyle}>
+        {!V4_PRIVATE_UI && <Paper variant="outlined" sx={sectionStyle}>
           <Typography fontWeight={900} sx={{ mb: 1 }}>ثانيًا: التبعية التنظيمية المقترحة</Typography>
           <Alert severity="info" sx={{ mb: 2 }}>
             بيانات Excel هنا للمراجعة فقط. تحديد الجهة أو القطاع لا يعتمد
@@ -123,21 +168,27 @@ export function HealthCenterProfileFormDialog({
               helperText="لحفظ مصدر التبعية المقترحة، وليس كقرار اعتماد رسمي."
               sx={{ gridColumn: { md: '1 / -1' } }}/>
           </Box>
-        </Paper>
+        </Paper>}
 
         <Paper variant="outlined" sx={sectionStyle}>
-          <Typography fontWeight={900} sx={{ mb: 1 }}>ثالثًا: التوثيق والاعتماد</Typography>
+          <Typography fontWeight={900} sx={{ mb: 1 }}>ثالثًا: التوثيق والحالة التشغيلية</Typography>
           <Alert severity="warning" sx={{ mb: 2 }}>
-            حالة «نشط» تعني التشغيل فقط؛ لا تعني اعتماد المركز أو القطاع.
-            لا يكفي إدخال رقم مستند لاعتماد المركز تلقائيًا.
+            {V4_PRIVATE_UI
+              ? 'هذه بيانات تشغيل داخلية ولا يلزم رقم قرار. تغيير تبعية موظف إجراء مستقل.'
+              : 'حالة «نشط» تعني التشغيل فقط؛ لا تعني اعتماد المركز أو القطاع. لا يكفي إدخال رقم مستند لاعتماد المركز تلقائيًا.'}
           </Alert>
           <Box sx={formGrid}>
-            <TextField label="حالة اعتماد مرجع المركز" disabled
-              value={editing?.approval_status === 'approved' ? 'موثق بقرار رسمي'
-                : editing?.approval_status === 'revoked' ? 'أُلغي التوثيق'
-                : 'بانتظار التوثيق'}/>
-            <TextField label="مرجع الاعتماد الرسمي" disabled
-              value={editing?.approval_reference || 'لا يوجد اعتماد مسجل'}/>
+            {V4_PRIVATE_UI
+              ? <TextField label="حالة التفعيل التشغيلي الداخلي" disabled
+                value={editing?.approval_status === 'approved' ? 'مُفعّل للتشغيل' : 'بانتظار التفعيل'}/>
+              : <>
+                <TextField label="حالة اعتماد مرجع المركز" disabled
+                  value={editing?.approval_status === 'approved' ? 'موثق بقرار رسمي'
+                    : editing?.approval_status === 'revoked' ? 'أُلغي التوثيق'
+                    : 'بانتظار التوثيق'}/>
+                <TextField label="مرجع الاعتماد الرسمي" disabled
+                  value={editing?.approval_reference || 'لا يوجد اعتماد مسجل'}/>
+              </>}
             <TextField label="مرجع مستند داعم (اختياري)"
               value={form.supporting_document_reference}
               onChange={e => onChange('supporting_document_reference', e.target.value)}
@@ -194,7 +245,7 @@ export function HealthCenterProfileFormDialog({
     </DialogContent>
     <DialogActions sx={{ p: 2, gap: 1 }}>
       <Button disabled={saving} onClick={onClose}>إلغاء</Button>
-      <Button variant="contained" disabled={saving || !form.name_ar.trim()} onClick={onSave}>
+      <Button variant="contained" disabled={saving || !form.name_ar.trim() || (V4_PRIVATE_UI && !form.proposed_sector_name)} onClick={onSave}>
         {saving ? 'جارٍ الحفظ...' : 'حفظ بيانات المركز'}
       </Button>
     </DialogActions>
