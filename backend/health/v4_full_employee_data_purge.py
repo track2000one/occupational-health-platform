@@ -9,7 +9,6 @@ are OUTSIDE the transactional DB scope and must be handled independently.
 This must not be enabled on the main Production service or any restored DB.
 """
 import hashlib
-import json
 from collections import OrderedDict
 
 from django.contrib.auth import get_user_model
@@ -105,7 +104,9 @@ def _employee_audit_logs():
     filters = Q(model_name__in=EMPLOYEE_LOG_MODELS)
     for prefix in EMPLOYEE_LOG_ACTIONS:
         filters |= Q(action__startswith=prefix)
-    return models.AuditLog.objects.filter(filters)
+    return models.AuditLog.objects.filter(filters).exclude(
+        model_name='V4EmployeeDataPurge'
+    )
 
 
 def _snapshot():
@@ -252,9 +253,13 @@ class V4FullEmployeeDataPurgeView(APIView):
                 if _preserved_counts() != protected_before:
                     raise RuntimeError('Protected organization or user counts changed; transaction rolled back.')
 
+                reason_reference = hashlib.sha256(
+                    request.data['reason'].strip().encode('utf-8')
+                ).hexdigest()[:24]
                 models.AuditLog.objects.create(
                     user=str(request.user), action='v4_employee_data_purge_completed',
-                    model_name='V4EmployeeDataPurge', record_id='all_employee_data',
+                    model_name='V4EmployeeDataPurge',
+                    record_id='purge-' + reason_reference,
                 )
         except (ProtectedError, RestrictedError, RuntimeError) as exc:
             # Never expose employee or healthcare values in an error.
@@ -267,5 +272,6 @@ class V4FullEmployeeDataPurgeView(APIView):
             'deleted_counts': original, 'impact': _impact(original),
             'remaining_employee_records': 0,
             'preserved_counts': protected_before,
+            'purge_reference': 'purge-' + reason_reference,
             'note': 'تم الحذف داخل قاعدة V4 فقط، وليس من نسخ Railway الاحتياطية أو قواعد البيانات الأخرى.',
         })
