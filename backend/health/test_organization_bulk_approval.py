@@ -145,3 +145,19 @@ class OrganizationBulkApprovalTests(TestCase):
             rejected = self.preview([self.sector.pk])
         self.assertEqual(rejected.status_code, 403)
         self.assertEqual(OrganizationUnit.objects.filter(is_approved=True).count(), 0)
+
+    @patch.dict('os.environ', STAGING)
+    def test_nested_administrative_ancestors_are_approved_in_parent_order(self):
+        cluster = OrganizationUnit.objects.create(code='TEST-CL', name='Cluster', kind='department')
+        network = OrganizationUnit.objects.create(code='TEST-NET', name='Network', kind='department', parent=cluster)
+        self.sector.parent = network
+        self.sector.save()
+        self.department.parent = self.sector
+        self.department.save()
+        selected = [self.department.pk, self.sector.pk, network.pk, cluster.pk]
+        preview = self.preview(selected)
+        self.assertEqual(preview.status_code, 200, preview.data)
+        self.assertEqual(preview.data['eligible_ids'], [cluster.pk, network.pk, self.sector.pk, self.department.pk])
+        done = self.apply(selected, preview)
+        self.assertEqual(done.status_code, 200, done.data)
+        self.assertEqual(done.data['approved_count'], 4)

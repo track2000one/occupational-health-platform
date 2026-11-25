@@ -59,7 +59,7 @@ import { isExcludedEmployeeCenter, selectableEmployeeCenters } from '../data/emp
 import {
   TOP_LEVELS,
   emptyOrganizationalHierarchy, fromSourceHierarchy,
-  updateHierarchyAffiliation, missingHierarchyLevels,
+  updateHierarchyAffiliation, missingHierarchyLevels, hierarchyFromApprovedPath,
   type EmployeeOrgHierarchy, type OrgLevel,
 } from '../data/employeeOrganizationalHierarchy';
 import {
@@ -133,7 +133,7 @@ type ApiHealthCenter = {
 
 type ApprovedOrganizationUnit = {
   id: number; code: string; name: string; kind: 'department' | 'sector' | 'center' | 'unit';
-  parent_name: string; health_center_id: number | null; source_path: string;
+  parent_name: string; parent_id: number | null; health_center_id: number | null; source_path: string;
   is_approved: boolean; is_active: boolean;
 };
 
@@ -476,15 +476,27 @@ export function EmployeesPage() {
   // An excluded center already assigned to an employee stays visible only for that existing record.
   const legacySelectedCenter = healthCenters.find(center =>
     String(center.id) === form.health_center && isExcludedEmployeeCenter(center));
-  const employeeFormCenters = legacySelectedCenter && dialogMode !== 'add'
-    ? [...selectableCenters, legacySelectedCenter] : selectableCenters;
+  const centerHierarchy = (centerId: string, selectedUnit?: ApprovedOrganizationUnit | null) => {
+    const center = selectableCenters.find(item => String(item.id) === centerId);
+    const links = approvedOrganizations.filter(unit => unit.kind === 'center' &&
+      unit.is_active && unit.is_approved && String(unit.health_center_id) === centerId);
+    if (!center || center.is_active === false || links.length !== 1) return null;
+    if (selectedUnit && String(selectedUnit.health_center_id) !== centerId) return null;
+    return hierarchyFromApprovedPath(approvedOrganizations, selectedUnit || links[0], center.name_ar || center.name);
+  };
+  const verifiedCenters = selectableCenters.filter(center => centerHierarchy(String(center.id)));
+  const employeeFormCenters = dialogMode === 'add' ? verifiedCenters :
+    legacySelectedCenter ? [...selectableCenters, legacySelectedCenter] : selectableCenters;
   const availableOrgUnits = approvedOrganizations.filter(unit =>
     unit.is_approved && unit.is_active &&
     (unit.kind === 'center' || unit.kind === 'unit') &&
-    unit.health_center_id !== null && String(unit.health_center_id) === form.health_center);
+    unit.health_center_id !== null && String(unit.health_center_id) === form.health_center &&
+    (dialogMode !== 'add' || (unit.kind === 'unit' && Boolean(centerHierarchy(form.health_center, unit)))));
   const approvedDepartments = approvedOrganizations.filter(unit =>
     unit.is_approved && unit.is_active && unit.kind === 'department' &&
     unit.health_center_id === null);
+  const formDepartments = dialogMode === 'add' ? approvedDepartments.filter(unit =>
+    hierarchyFromApprovedPath(approvedOrganizations, unit)) : approvedDepartments;
   const selectedOrgUnit = approvedOrganizations.find(item => String(item.id) === form.organization_unit) || null;
   // Preserve a legacy/imported title in edit mode even when it is not in the 116-item reference file.
   const jobTitleOptions = form.job_title && !JOB_TITLES.includes(form.job_title)
@@ -739,6 +751,12 @@ export function EmployeesPage() {
       return;
     }
 
+    if (dialogMode === 'add' && !(affiliationKind === 'center'
+      ? centerHierarchy(form.health_center, selectedOrgUnit)
+      : hierarchyFromApprovedPath(approvedOrganizations, selectedOrgUnit || undefined))) {
+      toast.error('اختر جهة مرتبطة بمسار تنظيمي معتمد أولًا.');
+      return;
+    }
     if (user?.isSuperuser) {
       const missingOrg = missingHierarchyLevels(form.organizational_hierarchy);
       if (missingOrg.length) {
@@ -1938,9 +1956,7 @@ export function EmployeesPage() {
                   setAffiliationKind(kind);
                   setForm(prev => ({
                     ...prev, health_center: '', organization_unit: '',
-                    organizational_hierarchy: updateHierarchyAffiliation(
-                      prev.organizational_hierarchy, kind, '',
-                    ),
+                    organizational_hierarchy: emptyOrganizationalHierarchy(kind),
                   }));
                 }}
                 helperText={isRtl ? 'اختر المركز الصحي أو القسم المركزي المعتمد؛ تغيير التبعية المثبتة يتطلب إجراء نقل معتمدًا' :
@@ -1949,6 +1965,8 @@ export function EmployeesPage() {
                 <MenuItem value="department">{isRtl ? 'قسم' : 'Department'}</MenuItem>
               </TextField>
             </Grid>
+            {dialogMode === 'add' && (affiliationKind === 'center' ? !verifiedCenters.length : !formDepartments.length) &&
+              <Grid size={{ xs: 12 }}><Alert severity="warning">لا توجد جهات لها مسار تنظيمي معتمد بالكامل. أكمل اعتماد الهيكلة أولًا.</Alert></Grid>}
             {affiliationKind === 'center' ? <>
               <Grid size={{ xs: 12, md: 6 }}>
                 <HealthCenterAutocomplete
@@ -1968,11 +1986,12 @@ export function EmployeesPage() {
                       selectedCenter ? centerDisplayName(selectedCenter, isRtl) : '',
                     );
                     if (parentSector) {
-                      organizational_hierarchy.consultative_sector = parentSector.name;
-                    }
+                       organizational_hierarchy.consultative_sector = parentSector.name;
+                     }
+                     const verified = centerHierarchy(value);
                     return {
                       ...prev, health_center: value, organization_unit: '',
-                      organizational_hierarchy,
+                      organizational_hierarchy: verified || (dialogMode === 'add' ? emptyOrganizationalHierarchy('center') : organizational_hierarchy),
                     };
                   })}
                   label={isRtl ? 'المركز الصحي' : 'Health center'}
@@ -1985,7 +2004,10 @@ export function EmployeesPage() {
                   options={availableOrgUnits}
                   value={selectedOrgUnit}
                   disabled={isReadOnly || availableOrgUnits.length === 0}
-                  onChange={(_, unit) => updateForm('organization_unit', unit ? String(unit.id) : '')}
+                  onChange={(_, unit) => setForm(prev => ({ ...prev,
+                    organization_unit: unit ? String(unit.id) : '',
+                    organizational_hierarchy: centerHierarchy(prev.health_center, unit) || prev.organizational_hierarchy,
+                  }))}
                   isOptionEqualToValue={(option, value) => option.id === value.id}
                   getOptionLabel={option => option.source_path || option.parent_name
                     ? `${option.name} — ${option.parent_name || option.source_path}`
@@ -1999,14 +2021,14 @@ export function EmployeesPage() {
             </> : <>
               <Grid size={{ xs: 12 }}>
                 <Autocomplete
-                  options={approvedDepartments}
+                  options={formDepartments}
                   value={selectedOrgUnit}
-                  disabled={isReadOnly || approvedDepartments.length === 0}
+                  disabled={isReadOnly || formDepartments.length === 0}
                   onChange={(_, unit) => setForm(prev => ({
                      ...prev, organization_unit: unit ? String(unit.id) : '', health_center: '',
-                     organizational_hierarchy: updateHierarchyAffiliation(
-                       prev.organizational_hierarchy, 'department', unit?.name || '',
-                     ),
+                     organizational_hierarchy: hierarchyFromApprovedPath(approvedOrganizations, unit || undefined) ||
+                        (dialogMode === 'add' ? emptyOrganizationalHierarchy('department') :
+                          updateHierarchyAffiliation(prev.organizational_hierarchy, 'department', unit?.name || '')),
                    }))}
                   isOptionEqualToValue={(option, value) => option.id === value.id}
                   getOptionLabel={option => option.source_path || option.parent_name

@@ -3,7 +3,7 @@ import test from 'node:test';
 import {
   ORG_LEVELS, TOP_LEVELS, UNVERIFIED, NOT_APPLICABLE,
   emptyOrganizationalHierarchy, fromSourceHierarchy,
-  updateHierarchyAffiliation, missingHierarchyLevels,
+  updateHierarchyAffiliation, missingHierarchyLevels, hierarchyFromApprovedPath, type ApprovedOrgNode,
 } from './employeeOrganizationalHierarchy.ts';
 
 test('13 separate levels align with V4 order, no blanks on new form', () => {
@@ -43,4 +43,23 @@ test('source labels appear in edit form; unknown levels remain explicit', () => 
   assert.equal(values.department, 'خدمات الأسنان');
   assert.equal(values.sub_unit, UNVERIFIED);
   assert.equal(values.health_center, NOT_APPLICABLE);
+});
+
+test('center sector derives from approved parent IDs and rejects missing ancestors', () => {
+  const mk = (id: number, name: string, kind: ApprovedOrgNode['kind'], parent_id: number | null, health_center_id: number | null = null): ApprovedOrgNode =>
+    ({ id, name, kind, parent_id, health_center_id, is_active: true, is_approved: true });
+  const root = mk(1, TOP_LEVELS.health_cluster, 'department', null);
+  const network = mk(2, TOP_LEVELS.health_network, 'department', 1);
+  const sector = mk(3, 'القطاع الشرقي الاستشاري 2', 'sector', 2);
+  const center = mk(4, 'الجلوية', 'center', 3, 41);
+  const rows = [root, network, sector, center];
+  assert.equal(hierarchyFromApprovedPath(rows, center, 'الجلوية')?.consultative_sector, sector.name);
+  assert.equal(hierarchyFromApprovedPath(rows.filter(n => n.id !== 2), center, 'الجلوية'), null);
+  const main = mk(5, 'الرعاية الأولية والمجتمعية', 'department', 2);
+  const sub = mk(6, 'الصحة العامة', 'department', 5);
+  const department = mk(7, 'الصحة المهنية', 'department', 6);
+  const result = hierarchyFromApprovedPath([...rows, main, sub, department], department);
+  assert.equal(result?.main_administration, main.name);
+  assert.equal(result?.sub_administration, sub.name);
+  assert.equal(result?.health_center, NOT_APPLICABLE);
 });

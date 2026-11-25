@@ -36,12 +36,23 @@ def _snapshot_token(selected_ids, units, active_centers):
 
 def _plan_approvals(selected_ids, units, active_centers):
     units_by_id = {unit.pk: unit for unit in units}
+    def depth(unit):
+        seen = {unit.pk}
+        level = 0
+        while unit.parent_id:
+            if unit.parent_id in seen or unit.parent_id not in units_by_id:
+                return len(units) + 1
+            seen.add(unit.parent_id)
+            unit = units_by_id[unit.parent_id]
+            level += 1
+        return level
+
     selected = sorted(
         (units_by_id[key] for key in selected_ids),
-        key=lambda unit: (ORDER.get(unit.kind, 10), unit.name, unit.pk),
+        key=lambda unit: (depth(unit), ORDER.get(unit.kind, 10), unit.name, unit.pk),
     )
     selected_ids_set = set(selected_ids)
-    previously_approved = {unit.pk for unit in units if unit.is_approved}
+    previously_approved = {unit.pk for unit in units if unit.is_approved and unit.is_active}
     planned = set()
     approved_plan = []
     blocked = []
@@ -60,21 +71,31 @@ def _plan_approvals(selected_ids, units, active_centers):
             reason = 'inactive'
         elif unit.kind not in ORDER:
             reason = 'invalid_kind'
-        elif unit.parent_id and unit.parent_id not in previously_approved | planned:
-            reason = 'parent_not_approved_or_selected'
-        elif unit.kind == 'center':
+        elif depth(unit) > len(units):
+            reason = 'invalid_parent_chain'
+        elif unit.parent_id:
+            ancestor_id = unit.parent_id
+            while ancestor_id:
+                if ancestor_id not in previously_approved | planned:
+                    reason = 'parent_not_approved_or_selected'
+                    break
+                ancestor_id = units_by_id[ancestor_id].parent_id
+        if not reason and unit.kind == 'center':
             if not unit.health_center_id or unit.health_center_id not in active_centers:
                 reason = 'center_mapping_required'
             elif len(center_usage.get(unit.health_center_id, [])) > 1:
                 reason = 'duplicate_center_mapping'
-        elif unit.kind == 'unit':
+        elif not reason and unit.kind == 'unit':
             parent = units_by_id.get(unit.parent_id)
             if not parent or parent.kind != 'center':
                 reason = 'invalid_parent_center'
             elif not parent.health_center_id or parent.health_center_id not in active_centers:
                 reason = 'parent_center_mapping_required'
-        elif unit.kind in ('sector', 'department') and unit.parent_id:
-            reason = 'unexpected_root_parent'
+        elif not reason and unit.kind in ('sector', 'department'):
+            parent = units_by_id.get(unit.parent_id)
+            allowed = ('department', 'sector') if unit.kind == 'department' else ('department',)
+            if unit.health_center_id or (parent and parent.kind not in allowed):
+                reason = 'invalid_administrative_parent'
         if reason:
             blocked.append({
                 'id': unit.pk, 'code': unit.code, 'name': unit.name, 'kind': unit.kind,
