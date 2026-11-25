@@ -28,6 +28,15 @@ type SectorUnitDraftResult = {
   id:number; code:string; name:string; parent_id:number;
   is_approved:boolean; created_count:number; notice:string;
 };
+type UnitActivationPreview = {
+  mode: string; unit_id:number; unit_name:string; sector_name:string;
+  employee_changes:number; health_center_changes:number; legal_approval:boolean;
+  preview_token:string; confirmation_text:string; notice:string;
+};
+type UnitActivationResult = {
+  status:string; unit_id:number; unit_code:string;
+  unit_name:string; is_approved:boolean; notice:string;
+};
 type View = 'missing'|'matched'|'review';
 type ReviewFilter = 'all'|Exclude<DepartmentReviewKind,'matchable'>;
 const reviewFilterLabels: Record<ReviewFilter,string> = {
@@ -62,6 +71,59 @@ export function V4DepartmentFoundationAuditPanel({
   const [draftConfirmed,setDraftConfirmed]=useState(false);
   const [draftCreated,setDraftCreated]=useState<SectorUnitDraftResult|null>(null);
   const [draftBusy,setDraftBusy]=useState(false);
+  const [activationPreview,setActivationPreview]=useState<UnitActivationPreview|null>(null);
+  const [activationConfirmed,setActivationConfirmed]=useState(false);
+  const [activationResult,setActivationResult]=useState<UnitActivationResult|null>(null);
+  const [activationBusy,setActivationBusy]=useState(false);
+
+  async function sectorUnitActivationRequest<T>(body: Record<string,unknown>): Promise<T> {
+    const access=getAccessToken();
+    if(!access)throw new Error('يلزم تسجيل الدخول بصفة المسؤول.');
+    const response=await authFetch(
+      API+'/organization-units/sector-direct-unit-activation/',
+      {method:'POST',headers:{
+        'Authorization':'Bearer '+access,'Content-Type':'application/json',
+      },body:JSON.stringify(body)},
+    );
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok)throw new Error(data.detail||'تعذر فحص أو تفعيل الوحدة');
+    return data as T;
+  }
+
+  async function previewUnitActivation() {
+    if(activationBusy || !sectorUnitCheck?.linked ||
+      !sectorUnitCheck.sector_activated || sectorUnitCheck.unit_activated ||
+      !canManage || !V4_PRIVATE_UI)return;
+    setActivationBusy(true);setActivationPreview(null);
+    setActivationConfirmed(false);setSectorUnitError('');
+    try {
+      const result=await sectorUnitActivationRequest<UnitActivationPreview>({action:'preview'});
+      setActivationPreview(result);
+    }catch(error){
+      setSectorUnitError(error instanceof Error?error.message:'تعذرت معاينة التفعيل.');
+    }finally{setActivationBusy(false);}
+  }
+
+  async function confirmUnitActivation() {
+    if(activationBusy || !activationPreview || !activationConfirmed ||
+      !canManage || !V4_PRIVATE_UI)return;
+    setActivationBusy(true);setSectorUnitError('');
+    try {
+      const result=await sectorUnitActivationRequest<UnitActivationResult>({
+        action:'activate',confirmed:true,
+        confirmation_text:activationPreview.confirmation_text,
+        preview_token:activationPreview.preview_token,
+      });
+      setActivationResult(result);
+      setActivationPreview(null);
+      setActivationConfirmed(false);
+      setSectorUnitCheck(prev=>prev?{...prev,unit_activated:true}:prev);
+    }catch(error){
+      setActivationPreview(null);
+      setActivationConfirmed(false);
+      setSectorUnitError(error instanceof Error?error.message:'تعذر تفعيل الوحدة.');
+    }finally{setActivationBusy(false);}
+  }
 
   async function sectorUnitRequest<T>(body: Record<string,unknown>): Promise<T> {
     const access=getAccessToken();
@@ -116,6 +178,9 @@ export function V4DepartmentFoundationAuditPanel({
     setDraftPreview(null);
     setDraftConfirmed(false);
     setDraftCreated(null);
+    setActivationPreview(null);
+    setActivationConfirmed(false);
+    setActivationResult(null);
     try {
       const token=getAccessToken();
       if(!token)throw new Error('يلزم تسجيل الدخول للمسؤول.');
@@ -332,6 +397,62 @@ export function V4DepartmentFoundationAuditPanel({
         أُنشئت مسودة الوحدة التنظيمية برمز {draftCreated.code} تحت القطاع الموجود.
         لا تزال غير مفعّلة؛ لم يُعدّل أي موظف.
       </Alert>}
+      {view==='review' && canManage && sectorUnitCheck?.linked &&
+        !sectorUnitCheck.unit_activated && !sectorUnitCheck.sector_activated &&
+        <Alert severity="warning">
+          الوحدة مرتبطة بالقطاع مباشرة، لكنها مسودة. يلزم تفعيل القطاع الشرقي
+          الاستشاري 1 أولًا من صفحة «الهيكل التنظيمي»، ثم إعادة «فحص الارتباط الحالي».
+          لن تُفعّل الوحدة تلقائيًا.
+        </Alert>}
+      {view==='review' && canManage && sectorUnitCheck?.linked &&
+        sectorUnitCheck.sector_activated && !sectorUnitCheck.unit_activated &&
+        !activationPreview && !activationResult &&
+        <Box>
+          <Button variant="outlined" disabled={activationBusy || sectorUnitBusy}
+            onClick={()=>void previewUnitActivation()}>
+            {activationBusy?'جارٍ فحص أهلية التفعيل…':'معاينة تفعيل الوحدة تشغيليًا — دون حفظ'}
+          </Button>
+        </Box>}
+      {view==='review' && activationPreview && <Paper variant="outlined"
+        sx={{p:2,borderRadius:2}}>
+        <Stack gap={1.5}>
+          <Typography fontWeight={900}>معاينة تفعيل الوحدة الإدارية للفحص الشامل</Typography>
+          <Typography variant="body2">
+            القطاع الأعلى: {activationPreview.sector_name} ←
+            الوحدة: {activationPreview.unit_name}
+          </Typography>
+          <Alert severity="warning">
+            هذا تفعيل تشغيلي داخلي فقط وليس اعتمادًا رسميًا للهيكل.
+            لن يغيّر القطاع أو المراكز أو بطاقات الموظفين الثمانية،
+            ولن ينقل أي موظف إلى الوحدة تلقائيًا.
+          </Alert>
+          <Stack direction="row" gap={1} alignItems="center">
+            <Checkbox checked={activationConfirmed} disabled={activationBusy}
+              onChange={(_,checked)=>setActivationConfirmed(checked)}
+              inputProps={{'aria-label':'أؤكد التفعيل التشغيلي الداخلي لوحدة الفحص الشامل فقط'}}/>
+            <Typography variant="body2">
+              أؤكد تفعيل هذه الوحدة فقط، دون تعديل بيانات الموظفين أو الجهات الأخرى.
+            </Typography>
+          </Stack>
+          <Stack direction="row" gap={1} flexWrap="wrap">
+            <Button variant="contained" color="success"
+              disabled={!activationConfirmed || activationBusy}
+              onClick={()=>void confirmUnitActivation()}>
+              {activationBusy?'جارٍ التفعيل…':'تأكيد التفعيل التشغيلي للوحدة'}
+            </Button>
+            <Button variant="outlined" disabled={activationBusy}
+              onClick={()=>{setActivationPreview(null);setActivationConfirmed(false);}}>
+              إلغاء دون حفظ
+            </Button>
+          </Stack>
+        </Stack>
+      </Paper>}
+      {view==='review' && (activationResult || sectorUnitCheck?.unit_activated) &&
+        <Alert severity="success">
+          الوحدة مفعّلة تشغيليًا في سجل الجهات.
+          لم يُنقل موظف ولم تتغير بطاقة صحية. ربط الموظفين الثمانية ومطابقتهم
+          مرحلة مستقلة.
+        </Alert>}
       {rows.length>8 && <Button variant="text" onClick={()=>setShowAll(v=>!v)}>
         {showAll ? 'عرض العناصر الأولى فقط' : 'عرض جميع العناصر ('+rows.length+')'}
       </Button>}
