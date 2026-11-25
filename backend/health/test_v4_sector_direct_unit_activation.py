@@ -146,7 +146,7 @@ class V4SectorDirectUnitActivationTests(TestCase):
         unit.source_sheet='V4 confirmed sector-direct draft'
         unit.is_active=False
         unit.save(update_fields=['source_sheet','is_active'])
-        self.assertEqual(self.preview().data['status'],'unit_missing' if False else 'unit_conflict')
+        self.assertEqual(self.preview().data['status'],'unit_conflict')
 
     def test_duplicate_name_does_not_activate_either(self):
         sector = self.sector()
