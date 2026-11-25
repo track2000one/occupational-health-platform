@@ -56,6 +56,7 @@ import { EmployeeOrganizationalFields } from '../components/EmployeeOrganization
 import { V4_PRIVATE_UI, DEPARTMENT_LEVELS, departmentPath, departmentChildren } from '../data/v4AffiliationHierarchy';
 import { v4RegisteredCenters, v4VisibleDepartments } from '../data/v4EmployeePlacementOptions';
 import { ImportedEmployeeCardsTab } from '../components/ImportedEmployeeCardsTab';
+import { V4FullEmployeePurgeDialog } from '../components/V4FullEmployeePurgeDialog';
 import { JOB_TITLES, getNationalityOptions, normalizeNationalitySearch } from '../data/employeeFormOptions';
 import { isExcludedEmployeeCenter, selectableEmployeeCenters } from '../data/employeeCenterOptions';
 import {
@@ -1103,6 +1104,16 @@ export function EmployeesPage() {
 
   return (
     <Box>
+      {V4_PRIVATE_UI && canBulkReset && (
+        <Box sx={{mb:2,display:'flex',justifyContent:'flex-start'}}>
+          <V4FullEmployeePurgeDialog onComplete={()=>{
+            setRegistryTab('approved');
+            setImportedTotal(0);
+            setShowArchived(false);
+            void loadData();
+          }} />
+        </Box>
+      )}
       {canViewImported && (
         <Paper variant="outlined" sx={{ p: 1, mb: 2, borderRadius: 3, borderColor: '#C4D8E7' }}>
           <Tabs value={registryTab}
