@@ -101,7 +101,11 @@ EMPLOYEE_LOG_ACTIONS = (
 
 def _employee_audit_logs():
     from django.db.models import Q
-    filters = Q(model_name__in=EMPLOYEE_LOG_MODELS)
+    employee_record_models = set(EMPLOYEE_LOG_MODELS)
+    employee_record_models.update(
+        model.__name__ for model in DIRECT_PURGE_MODELS + CLINICAL_MODELS
+    )
+    filters = Q(model_name__in=employee_record_models)
     for prefix in EMPLOYEE_LOG_ACTIONS:
         filters |= Q(action__startswith=prefix)
     return models.AuditLog.objects.filter(filters).exclude(
