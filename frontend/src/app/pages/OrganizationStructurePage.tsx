@@ -497,7 +497,13 @@ export function OrganizationStructurePage() {
                           ? 'مُفعّل للتشغيل' : REVIEW_LABELS[unit.review_status] || 'بانتظار المراجعة'}
                         sx={{ maxWidth: '100%', height: 28, fontSize: '12px', fontWeight: 800, '& .MuiChip-label': { overflow: 'hidden', textOverflow: 'ellipsis' } }} />
                       {needsReview && <Typography sx={{ fontSize: '12px', lineHeight: 1.6, color: '#607a90', mt: 0.5 }}>
-                        {unit.review_status === 'await_parent' ? 'يجب اعتماد الجهة الأعلى أولًا' : 'يلزم التحقق من مطابقة المركز'}
+                        {V4_PRIVATE_UI && unit.kind === 'unit' &&
+                         unit.parent_name === 'القطاع الشرقي الاستشاري 1' &&
+                         unit.code.startsWith('V4-SU-')
+                          ? 'الوحدة تتبع قطاعًا مباشرةً؛ فعّل القطاع أولًا، ثم استخدم معاينة التفعيل الفردي من صفحة إدارة الأقسام.'
+                          : unit.review_status === 'await_parent'
+                            ? 'يجب اعتماد الجهة الأعلى أولًا'
+                            : 'يلزم التحقق من مطابقة المركز'}
                       </Typography>}
                     </Box>
 
