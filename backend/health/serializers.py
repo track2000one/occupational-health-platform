@@ -597,7 +597,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'appointment_date': 'Appointment date cannot be in the future.'})
         if dob and appointment and appointment <= dob:
             raise serializers.ValidationError({
-                'appointment_date': 'Joined date must be after date of birth.',
+                'appointment_date': 'Appointment date must be after date of birth.',
             })
         for field in ('latest_virtual_visit', 'latest_field_visit', 'lab_request_date'):
             value = attrs.get(field)

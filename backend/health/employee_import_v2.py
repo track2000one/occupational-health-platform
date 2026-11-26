@@ -44,7 +44,7 @@ HEADERS = {
     'health_center': {'المركز الصحي', 'المركز الصحي مرجعي', 'health center', 'center'},
     'nationality': {'الجنسية', 'nationality'},
     'date_of_birth': {'تاريخ الميلاد', 'date of birth', 'dob'},
-    'appointment_date': {'تاريخ التعيين', 'appointment date', 'date hired'},
+    'appointment_date': {'تاريخ التعيين', 'appointment date', 'date hired', 'تاريخ الالتحاق', 'joined', 'joining date'},
     'job_title': {'المسمى الوظيفي', 'مسمى الوظيفي', 'job title'},
     'job_title_en': {'المسمى الوظيفي الانجليزي', 'المسمى الوظيفي بالإنجليزية',
                      'المسمى الوظيفي بالانجليزية', 'job title english'},
@@ -122,6 +122,10 @@ def detect_header(sheet):
                 if label in aliases:
                     matches[field] = idx
                     break
+        # Prefer the canonical appointment heading over historical aliases.
+        canonical_appointment = heading('تاريخ التعيين')
+        if canonical_appointment in normalized:
+            matches['appointment_date'] = normalized.index(canonical_appointment)
         this_score = len(matches) + (4 if all(k in matches for k in REQUIRED) else 0)
         if this_score > score:
             best = (number, cells, matches)
