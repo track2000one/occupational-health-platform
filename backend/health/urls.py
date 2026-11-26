@@ -2,6 +2,7 @@ from django.urls import path
 from .organization_structure import OrganizationDirectoryView, OrganizationImportView, OrganizationUnitReviewView
 from .department_directory import DepartmentDirectoryView, DepartmentStatusView
 from .organization_bulk_approval import OrganizationBulkApprovalView
+from .employee_organization_bulk_sync import EmployeeOrganizationBulkSyncView
 from .employee_roster_template import EmployeeRosterTemplateView
 from .employee_org_template_v4 import EmployeeOrgRosterTemplateV4View
 from .provisional_employee_template_preflight import ProvisionalEmployeeTemplatePreflightView
@@ -46,6 +47,7 @@ router.register('injury-cases', InjuryCaseViewSet)
 router.register('audit-logs', AuditLogViewSet)
 
 urlpatterns = [
+    path('employees/organization-bulk-sync/', EmployeeOrganizationBulkSyncView.as_view(), name='employee-organization-bulk-sync'),
     path('provisional-employees/import/', ProvisionalEmployeeImportView.as_view(), name='provisional-employee-import'),
     path('provisional-employees/template-preflight/', ProvisionalEmployeeTemplatePreflightView.as_view(), name='provisional-employee-template-preflight'),
     path('provisional-employees/readiness/', ProvisionalEmployeeApprovalReadinessView.as_view(), name='provisional-employee-readiness'),

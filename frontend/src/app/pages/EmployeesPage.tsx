@@ -53,6 +53,7 @@ import { CalendarDateField } from '../components/CalendarDateField';
 import { HealthCenterAutocomplete } from '../components/HealthCenterAutocomplete';
 import { EmployeeRegistryCard } from '../components/EmployeeRegistryCard';
 import { EmployeeOrganizationalFields } from '../components/EmployeeOrganizationalFields';
+import { EmployeeOrganizationBulkSync } from '../components/EmployeeOrganizationBulkSync';
 import { ImportedEmployeeCardsTab } from '../components/ImportedEmployeeCardsTab';
 import { JOB_TITLES, getNationalityOptions, normalizeNationalitySearch } from '../data/employeeFormOptions';
 import { isExcludedEmployeeCenter, selectableEmployeeCenters } from '../data/employeeCenterOptions';
@@ -1162,6 +1163,9 @@ export function EmployeesPage() {
             </Button>
           )}
 
+          {IS_STAGING_UI && user?.isSuperuser === true && !showArchived && (
+            <EmployeeOrganizationBulkSync request={apiRequest} onApplied={() => void loadData()} />
+          )}
           {can(PERMISSIONS.CREATE_EMPLOYEE) && (
             <Button variant="contained" startIcon={<AddIcon />} onClick={openAdd}>
               {t('addEmployee')}
