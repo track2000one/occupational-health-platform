@@ -2005,10 +2005,15 @@ export function EmployeesPage() {
                 <Autocomplete
                   options={availableOrgUnits}
                   value={selectedOrgUnit}
-                  disabled={isReadOnly || availableOrgUnits.length === 0}
+                  disabled={isReadOnly || availableOrgUnits.length === 0 || (dialogMode === 'edit' && Boolean(selectedEmployee?.organization_unit))}
                   onChange={(_, unit) => setForm(prev => ({ ...prev,
                     organization_unit: unit ? String(unit.id) : '',
-                    organizational_hierarchy: centerHierarchy(prev.health_center, unit) || prev.organizational_hierarchy,
+                    organizational_hierarchy: (() => {
+                      const verified = centerHierarchy(prev.health_center, unit);
+                      return verified ? (dialogMode === 'edit'
+                        ? synchronizeVerifiedHierarchy(prev.organizational_hierarchy, verified)
+                        : verified) : prev.organizational_hierarchy;
+                    })(),
                   }))}
                   isOptionEqualToValue={(option, value) => option.id === value.id}
                   getOptionLabel={option => option.source_path || option.parent_name

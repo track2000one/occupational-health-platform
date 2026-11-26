@@ -242,3 +242,59 @@ class EmployeeManualV4FormTests(TestCase):
         self.assertIn('main_administration', event.changed_levels)
         self.assertEqual(event.action, 'corrected')
         self.assertIn('المصدر التنظيمي', event.reason)
+
+    def test_verified_employee_edit_preserves_source_until_explicit_sync(self):
+        from types import SimpleNamespace
+        from .models import Employee, OrganizationUnit, EmployeeOrganizationalHierarchyEvent
+        from .serializers import EmployeeSerializer
+        from .organization_assignment import employee_assignment_hierarchy
+
+        cluster = OrganizationUnit.objects.create(
+            code='SYNC-CL', name='تجمع الشرقية الصحي', kind='department', is_approved=True)
+        network = OrganizationUnit.objects.create(
+            code='SYNC-NET', name='شبكة الدمام الصحية', kind='department',
+            parent=cluster, is_approved=True)
+        sector = OrganizationUnit.objects.create(
+            code='SYNC-SEC', name='القطاع الشرقي الاستشاري 1', kind='sector',
+            parent=network, is_approved=True)
+        OrganizationUnit.objects.create(
+            code='SYNC-C', name=self.center.name, kind='center',
+            parent=sector, health_center=self.center, is_approved=True)
+        old_source = {**TOP_LEVELS, 'health_center': self.center.name,
+                      'consultative_sector': 'قطاع سابق', 'service_program': 'برنامج محفوظ'}
+        employee = Employee.objects.create(
+            name='موظف اختبار', national_id='1000000003',
+            health_center=self.center, source_organizational_hierarchy=old_source)
+        context = {'request': SimpleNamespace(user=self.admin)}
+        ordinary = EmployeeSerializer(employee, data={'current_job': 'وظيفة اختبار'},
+                                      partial=True, context=context)
+        self.assertTrue(ordinary.is_valid(), ordinary.errors)
+        ordinary.save()
+        employee.refresh_from_db()
+        self.assertEqual(employee.source_organizational_hierarchy, old_source)
+        self.assertFalse(EmployeeOrganizationalHierarchyEvent.objects.filter(employee=employee).exists())
+        configured, labels = employee_assignment_hierarchy(self.center, None)
+        self.assertTrue(configured)
+        self.assertIsNotNone(labels)
+        updated = {**self.hierarchy(), **labels, 'service_program': 'برنامج محفوظ'}
+        invalid = EmployeeSerializer(employee, data={
+            'source_organizational_hierarchy': {**updated, 'consultative_sector': 'قطاع غير مطابق'},
+            'hierarchy_change_reason': 'تصحيح موثق بعد مراجعة المسار المعتمد'},
+            partial=True, context=context)
+        self.assertFalse(invalid.is_valid())
+        self.assertIn('source_organizational_hierarchy', invalid.errors)
+        no_reason = EmployeeSerializer(employee, data={'source_organizational_hierarchy': updated},
+                                       partial=True, context=context)
+        self.assertFalse(no_reason.is_valid())
+        self.assertIn('hierarchy_change_reason', no_reason.errors)
+        sync = EmployeeSerializer(employee, data={
+            'source_organizational_hierarchy': updated,
+            'hierarchy_change_reason': 'تصحيح موثق بعد مراجعة المسار المعتمد'},
+            partial=True, context=context)
+        self.assertTrue(sync.is_valid(), sync.errors)
+        sync.save()
+        employee.refresh_from_db()
+        self.assertEqual(employee.health_center_id, self.center.pk)
+        self.assertEqual(employee.source_organizational_hierarchy['consultative_sector'], sector.name)
+        self.assertEqual(employee.source_organizational_hierarchy['service_program'], 'برنامج محفوظ')
+        self.assertEqual(EmployeeOrganizationalHierarchyEvent.objects.filter(employee=employee).count(), 1)
