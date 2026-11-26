@@ -63,3 +63,19 @@ test('center sector derives from approved parent IDs and rejects missing ancesto
   assert.equal(result?.sub_administration, sub.name);
   assert.equal(result?.health_center, NOT_APPLICABLE);
 });
+
+test('explicit synchronization preserves descriptive values and does not mutate original source', async () => {
+  const { synchronizeVerifiedHierarchy, hasHierarchyChanges } = await import('./employeeOrganizationalHierarchy.ts');
+  const source = emptyOrganizationalHierarchy('center');
+  source.service_program = 'برنامج محفوظ';
+  source.consultative_sector = 'قطاع سابق';
+  const verified = emptyOrganizationalHierarchy('center');
+  verified.consultative_sector = 'القطاع الشرقي الاستشاري 1';
+  verified.health_center = 'إسكان الدمام';
+  const result = synchronizeVerifiedHierarchy(source, verified);
+  assert.equal(result.service_program, 'برنامج محفوظ');
+  assert.equal(result.consultative_sector, 'القطاع الشرقي الاستشاري 1');
+  assert.equal(source.consultative_sector, 'قطاع سابق');
+  assert.equal(hasHierarchyChanges(source, result), true);
+  assert.equal(hasHierarchyChanges(result, { ...result }), false);
+});

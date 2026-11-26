@@ -561,9 +561,9 @@ class EmployeeSerializer(serializers.ModelSerializer):
             })
         if center and (not center.is_active or center.is_archived):
             raise serializers.ValidationError({'health_center': 'Choose an active health center.'})
-        if self.instance is None:
+        if self.instance is None or proposed is not None:
             configured, derived = employee_assignment_hierarchy(center, org)
-            if configured and derived is None:
+            if configured and derived is None and self.instance is None:
                 raise serializers.ValidationError({
                     'organization_unit': 'اختر جهة مرتبطة بمسار تنظيمي نشط ومعتمد بالكامل.'
                 })
