@@ -54,7 +54,7 @@ export function EmployeeOrganizationalFields({
       '&:before': { display: 'none' } }}>
     <AccordionSummary expandIcon={<ExpandMoreIcon />}>
       <Stack spacing={0.5}>
-        <Typography fontWeight={800}>الهيكلة التنظيمية — القالب V4 (13 مستوى)</Typography>
+        <Typography fontWeight={800}>الهيكلة التنظيمية — القالب V4</Typography>
         <Typography variant="caption" color="text.secondary">
           كل مستوى في حقل مستقل. المسميات الوصفية لا تُعد وحدات تنظيمية معتمدة.
         </Typography>
@@ -76,22 +76,28 @@ export function EmployeeOrganizationalFields({
           const assignedDepartment = key === 'department' && affiliationKind === 'department';
           const derived = mode === 'add' && ['main_administration', 'sub_administration',
             'department', 'sub_unit', 'consultative_sector', 'health_center'].includes(key);
+          const locked = isReadOnly || !isSuperuser || isTop ||
+            assignedCenter || assignedDepartment || derived;
           return <Grid key={key} size={{ xs: 12, md: 6 }}>
-            <Autocomplete freeSolo options={suggestions[key] || []}
+            {locked ? <TextField
+              fullWidth label={label} size="small" value={value[key] || '—'}
+              slotProps={{ input: { readOnly: true }, inputLabel: { shrink: true } }}
+              sx={{ '& .MuiInputBase-input': { fontWeight: 600, color: 'text.primary' },
+                '& .MuiOutlinedInput-root': { bgcolor: 'action.hover' } }}
+              helperText={derived ? 'يُحدد تلقائيًا من الجهة المعتمدة' : isTop ? 'مستوى ثابت' :
+                (assignedCenter || assignedDepartment) ? 'مرتبط بالجهة المعتمدة المختارة' : 'للقراءة فقط'}
+            /> : <Autocomplete freeSolo options={suggestions[key] || []}
               value={value[key]}
-              disabled={isReadOnly || !isSuperuser || isTop ||
-                assignedCenter || assignedDepartment || derived}
+              inputValue={value[key] || ''}
               onChange={(_, selected) => onChange(key, selected || '')}
               onInputChange={(_, typed, reason) => {
                 if (reason === 'input') onChange(key, typed);
               }}
               renderInput={params => <TextField {...params} fullWidth
                 label={label} size="small"
-                slotProps={{ htmlInput: { ...params.inputProps, maxLength: 220 } }}
-                helperText={derived ? 'يُحدد تلقائيًا من الجهة المعتمدة' : isTop ? 'مستوى ثابت' :
-                  (assignedCenter || assignedDepartment) ? 'مرتبط بالجهة المعتمدة المختارة' :
-                    'اختر من المقترحات أو اكتب المسمى من المصدر؛ لا يُعتمد تلقائيًا'} />}
-            />
+                
+                helperText="اختر من المقترحات أو اكتب المسمى من المصدر؛ لا يُعتمد تلقائيًا" />}
+            />}
           </Grid>;
         })}
         {mode === 'edit' && isSuperuser && <Grid size={{ xs: 12 }}>
