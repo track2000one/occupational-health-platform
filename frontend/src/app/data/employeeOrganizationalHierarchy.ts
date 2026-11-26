@@ -158,3 +158,21 @@ export function hierarchyFromApprovedPath(
   }
   return Object.values(result).every(v => v.length <= 220) ? result : null;
 }
+
+/** Structural labels are distinct from editable descriptive/source data. */
+export const VERIFIED_ORG_LEVELS = [
+  'health_cluster', 'health_network', 'main_administration', 'sub_administration',
+  'department', 'sub_unit', 'consultative_sector', 'health_center',
+] as const;
+
+export function synchronizeVerifiedHierarchy(
+  source: EmployeeOrgHierarchy, verified: EmployeeOrgHierarchy,
+): EmployeeOrgHierarchy {
+  const result = { ...source };
+  for (const key of VERIFIED_ORG_LEVELS) result[key] = verified[key];
+  return result;
+}
+
+export function hasHierarchyChanges(a: EmployeeOrgHierarchy, b: EmployeeOrgHierarchy): boolean {
+  return ORG_LEVELS.some(({ key }) => a[key] !== b[key]);
+}

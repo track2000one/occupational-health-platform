@@ -60,6 +60,7 @@ import {
   TOP_LEVELS,
   emptyOrganizationalHierarchy, fromSourceHierarchy,
   updateHierarchyAffiliation, missingHierarchyLevels, hierarchyFromApprovedPath,
+  synchronizeVerifiedHierarchy, hasHierarchyChanges,
   type EmployeeOrgHierarchy, type OrgLevel,
 } from '../data/employeeOrganizationalHierarchy';
 import {
@@ -498,6 +499,15 @@ export function EmployeesPage() {
   const formDepartments = dialogMode === 'add' ? approvedDepartments.filter(unit =>
     hierarchyFromApprovedPath(approvedOrganizations, unit)) : approvedDepartments;
   const selectedOrgUnit = approvedOrganizations.find(item => String(item.id) === form.organization_unit) || null;
+  const verifiedFormHierarchy = affiliationKind === 'center'
+    ? centerHierarchy(form.health_center, selectedOrgUnit)
+    : hierarchyFromApprovedPath(approvedOrganizations, selectedOrgUnit || undefined);
+  const hierarchyChanged = dialogMode === 'edit' && selectedEmployee
+    ? hasHierarchyChanges(form.organizational_hierarchy, asForm(selectedEmployee).organizational_hierarchy)
+    : false;
+  const sourceNeedsSync = Boolean(verifiedFormHierarchy &&
+    hasHierarchyChanges(form.organizational_hierarchy,
+      synchronizeVerifiedHierarchy(form.organizational_hierarchy, verifiedFormHierarchy)));
   // Preserve a legacy/imported title in edit mode even when it is not in the 116-item reference file.
   const jobTitleOptions = form.job_title && !JOB_TITLES.includes(form.job_title)
     ? [form.job_title, ...JOB_TITLES] : [...JOB_TITLES];
@@ -624,20 +634,7 @@ export function EmployeesPage() {
     if (!canWrite) return;
     setSelectedEmployee(employee);
     setAffiliationKind(!employee.health_center && employee.organization_unit_kind === 'department' ? 'department' : 'center');
-    setForm({
-      ...asForm(employee),
-      organizational_hierarchy: {
-        ...fromSourceHierarchy(employee.source_organizational_hierarchy,
-          employee.health_center ? 'center' : 'department'),
-        ...(employee.health_center && {
-          health_center: employee.health_center_name ||
-            centerNameById.get(String(employee.health_center)) || 'غير محدد في المصدر',
-        }),
-        ...(!employee.health_center && employee.organization_unit_kind === 'department' && {
-          department: employee.organization_unit_name || 'غير محدد في المصدر',
-        }),
-      },
-    });
+    setForm(asForm(employee));
     setDialogMode('edit');
     setOpenDialog(true);
   }
@@ -757,7 +754,12 @@ export function EmployeesPage() {
       toast.error('اختر جهة مرتبطة بمسار تنظيمي معتمد أولًا.');
       return;
     }
-    if (user?.isSuperuser) {
+    const includeHierarchy = user?.isSuperuser === true && (dialogMode === 'add' || hierarchyChanged);
+    if (includeHierarchy && dialogMode === 'edit' && verifiedFormHierarchy && sourceNeedsSync) {
+      toast.error('طابق الهيكلة المحفوظة مع المسار المعتمد قبل حفظ تصحيحها.');
+      return;
+    }
+    if (includeHierarchy) {
       const missingOrg = missingHierarchyLevels(form.organizational_hierarchy);
       if (missingOrg.length) {
         toast.error('يلزم تعبئة المستوى التنظيمي: ' + missingOrg.join('، '));
@@ -814,7 +816,7 @@ export function EmployeesPage() {
       } else if (dialogMode === 'edit' && selectedEmployee) {
         const updated = await apiRequest<ApiEmployee>(`/employees/${selectedEmployee.id}/`, {
           method: 'PATCH',
-          body: JSON.stringify(buildPayload(form, user?.isSuperuser === true)),
+          body: JSON.stringify(buildPayload(form, includeHierarchy)),
         });
         setEmployees(prev => prev.map(emp => String(emp.id) === String(updated.id) ? updated : emp));
         toast.success(isRtl ? 'تم تعديل بيانات الموظف وحفظها في Django/PostgreSQL' : 'Employee updated in Django/PostgreSQL');
@@ -1996,7 +1998,7 @@ export function EmployeesPage() {
                   })}
                   label={isRtl ? 'المركز الصحي' : 'Health center'}
                   placeholder={isRtl ? 'اختر أو ابحث عن المركز' : 'Select or search for a center'}
-                  required disabled={isReadOnly}
+                  required disabled={isReadOnly || (dialogMode === 'edit' && Boolean(selectedEmployee?.health_center))}
                 />
               </Grid>
               <Grid size={{ xs: 12, md: 6 }}>
@@ -2023,7 +2025,7 @@ export function EmployeesPage() {
                 <Autocomplete
                   options={formDepartments}
                   value={selectedOrgUnit}
-                  disabled={isReadOnly || formDepartments.length === 0}
+                  disabled={isReadOnly || formDepartments.length === 0 || (dialogMode === 'edit' && Boolean(selectedEmployee?.organization_unit))}
                   onChange={(_, unit) => setForm(prev => ({
                      ...prev, organization_unit: unit ? String(unit.id) : '', health_center: '',
                      organizational_hierarchy: hierarchyFromApprovedPath(approvedOrganizations, unit || undefined) ||
@@ -2057,6 +2059,13 @@ export function EmployeesPage() {
               <EmployeeOrganizationalFields
                 mode={dialogMode}
                 value={form.organizational_hierarchy}
+                verifiedHierarchy={dialogMode === 'add' ? null : verifiedFormHierarchy}
+                sourceNeedsSync={sourceNeedsSync}
+                onSynchronize={() => {
+                  if (!verifiedFormHierarchy || !user?.isSuperuser || dialogMode !== 'edit') return;
+                  setForm(prev => ({ ...prev, organizational_hierarchy:
+                    synchronizeVerifiedHierarchy(prev.organizational_hierarchy, verifiedFormHierarchy) }));
+                }}
                 affiliationKind={affiliationKind}
                 selectedCenterNames={employeeFormCenters.map(center => centerDisplayName(center, isRtl))}
                 selectedDepartmentNames={approvedDepartments.map(unit => unit.name)}

@@ -1,11 +1,11 @@
 import { useMemo } from 'react';
 import {
-  Accordion, AccordionDetails, AccordionSummary, Alert, Autocomplete,
+  Accordion, AccordionDetails, AccordionSummary, Alert, Autocomplete, Button,
   Grid, Stack, TextField, Typography,
 } from '@mui/material';
 import { ExpandMore as ExpandMoreIcon } from '@mui/icons-material';
 import {
-  ORG_LEVELS, ORGANIZATIONAL_SUGGESTIONS, TOP_LEVELS,
+  ORG_LEVELS, ORGANIZATIONAL_SUGGESTIONS, TOP_LEVELS, VERIFIED_ORG_LEVELS,
   type OrgLevel, type EmployeeOrgHierarchy,
 } from '../data/employeeOrganizationalHierarchy';
 
@@ -13,6 +13,9 @@ type Affiliation = 'center' | 'department';
 
 type Props = {
   value: EmployeeOrgHierarchy;
+  verifiedHierarchy?: EmployeeOrgHierarchy | null;
+  sourceNeedsSync?: boolean;
+  onSynchronize?: () => void;
   affiliationKind: Affiliation;
   selectedCenterNames: string[];
   selectedDepartmentNames: string[];
@@ -32,7 +35,7 @@ type Props = {
 export function EmployeeOrganizationalFields({
   value, affiliationKind, selectedCenterNames, selectedDepartmentNames,
   selectedUnitNames, isReadOnly, isSuperuser, defaultExpanded,
-  reason, onReasonChange, onChange, mode,
+  reason, onReasonChange, onChange, mode, verifiedHierarchy, sourceNeedsSync, onSynchronize,
 }: Props) {
   const suggestions = useMemo(() => {
     const result: Partial<Record<OrgLevel, string[]>> = {};
@@ -69,18 +72,28 @@ export function EmployeeOrganizationalFields({
         تعديل المصدر التنظيمي متاح للمسؤول الأعلى فقط، أما ربط المركز أو القسم المعتمد
         فيخضع لصلاحيات إدارة الموظفين المعتادة.
       </Alert>}
+      {mode !== 'add' && <Alert severity={verifiedHierarchy ? 'info' : 'warning'} sx={{ mb: 2 }}
+        action={verifiedHierarchy && sourceNeedsSync && mode === 'edit' && isSuperuser && onSynchronize
+          ? <Button color="inherit" size="small" onClick={onSynchronize}>مطابقة الهيكلة المحفوظة</Button> : undefined}>
+        {verifiedHierarchy
+          ? sourceNeedsSync
+            ? 'المسار المعتمد ظاهر أدناه. توجد فروق عن المسميات المحفوظة؛ لن تتغير البيانات التاريخية بمجرد العرض أو تعديل بيانات أخرى.'
+            : 'المسار التنظيمي مطابق للجهة المعتمدة.'
+          : 'لا يتوفر مسار معتمد كامل لهذه التبعية. تعرض المسميات المحفوظة دون تخمين أو نقل تلقائي.'}
+      </Alert>}
       <Grid container spacing={2}>
         {ORG_LEVELS.filter(({ key }) => key !== 'holding_company').map(({ key, label }) => {
           const isTop = key in TOP_LEVELS;
           const assignedCenter = key === 'health_center' && affiliationKind === 'center';
           const assignedDepartment = key === 'department' && affiliationKind === 'department';
-          const derived = mode === 'add' && ['main_administration', 'sub_administration',
-            'department', 'sub_unit', 'consultative_sector', 'health_center'].includes(key);
+          const verifiedKey = VERIFIED_ORG_LEVELS.some(level => level === key);
+          const derived = verifiedKey && (mode === 'add' || Boolean(verifiedHierarchy));
+          const displayedValue = verifiedHierarchy && verifiedKey ? verifiedHierarchy[key] : value[key];
           const locked = isReadOnly || !isSuperuser || isTop ||
             assignedCenter || assignedDepartment || derived;
           return <Grid key={key} size={{ xs: 12, md: 6 }}>
             {locked ? <TextField
-              fullWidth label={label} size="small" value={value[key] || '—'}
+              fullWidth label={label} size="small" value={displayedValue || '—'}
               slotProps={{ input: { readOnly: true }, inputLabel: { shrink: true } }}
               sx={{ '& .MuiInputBase-input': { fontWeight: 600, color: 'text.primary' },
                 '& .MuiOutlinedInput-root': { bgcolor: 'action.hover' } }}
