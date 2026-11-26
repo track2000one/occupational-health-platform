@@ -6,6 +6,7 @@ import {
   Pagination, Paper, Stack, TextField, Typography,
 } from '@mui/material';
 import { authFetch, useAuth } from '../context/AuthContext';
+import { ProvisionalAppointmentSync } from '../components/ProvisionalAppointmentSync';
 
 const API = (import.meta.env.VITE_API_URL ||
   (typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
@@ -994,6 +995,9 @@ export function ProvisionalEmployeesPage() {
         </Stack>}
       </Stack>
     </Paper>}
+
+    {isAdmin && batch && /staging/i.test(window.location.hostname) &&
+      <ProvisionalAppointmentSync key={batch.batch_id} batchId={batch.batch_id} />}
 
     <Paper sx={{ p: 2, mb: 2, borderRadius: 3 }}>
       <Stack direction={{ xs: 'column', md: 'row' }} gap={2}>
