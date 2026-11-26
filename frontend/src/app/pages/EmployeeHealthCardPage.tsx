@@ -604,7 +604,7 @@ function HealthCardSheet({ card, form }: { card: HealthCardData; form: SectionDa
               <Field label={affiliationLabel}>{value(affiliationName)}</Field>
               <Field label="الرقم الوظيفي / Employee ID">{value(employee.employee_number)}</Field>
               <Field label="رقم وزارة الصحة / MOH ID">{value(form.employment.moh_id)}</Field>
-              <Field label="تاريخ التعيين / Start Date">{formatDate(employee.appointment_date)}</Field>
+              <Field label="تاريخ التعيين / Appointment Date">{formatDate(employee.appointment_date)}</Field>
               <Field label="المسمى الوظيفي / Job Title">{value(employee.job_title)}</Field>
               <Field label="سنوات الخبرة / Experience">{value(employee.years_of_experience)}</Field>
               <Field label="الوظيفة الحالية / Current Job">{value(form.employment.current_position)}</Field>

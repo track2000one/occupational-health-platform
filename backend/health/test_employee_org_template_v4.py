@@ -45,7 +45,19 @@ class EmployeeOrganizationalTemplateV4Tests(TestCase):
         self.assertIn('organization_unit', found[2])
         self.assertIn('health_center', found[2])
         self.assertIn('sector', found[2])
+        self.assertEqual(found[2]['appointment_date'], 30)
         book.close()
+
+    def test_legacy_joined_heading_uses_same_appointment_field(self):
+        from openpyxl import Workbook
+        for alias in ('تاريخ الالتحاق', 'Joined', 'Joining Date'):
+            book = Workbook()
+            sheet = book.active
+            sheet.append(['اسم الموظف', 'رقم الهوية', alias])
+            self.assertEqual(detect_header(sheet)[2]['appointment_date'], 2)
+            sheet.cell(1, 4, 'تاريخ التعيين')
+            self.assertEqual(detect_header(sheet)[2]['appointment_date'], 3)
+            book.close()
 
     def test_unknown_levels_never_look_like_official_org_units(self):
         self.assertTrue(is_placeholder('لا ينطبق'))

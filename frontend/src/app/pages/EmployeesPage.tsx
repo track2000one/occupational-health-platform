@@ -172,6 +172,7 @@ type ApiEmployee = {
   lab_request_date?: string | null;
   employment_start_date?: string | null;
   appointment_date?: string | null;
+  roster_hijri_appointment_date?: string;
   years_of_experience?: string | number | null;
   periodic_exam_status?: ExamStatus;
   vaccination_status?: VaccineStatus;
@@ -789,7 +790,7 @@ export function EmployeesPage() {
       return;
     }
     if (joinedPrecedesOrEqualsBirth(form.date_of_birth, form.appointment_date)) {
-      toast.error(isRtl ? 'تاريخ الالتحاق يجب أن يكون بعد تاريخ الميلاد' : 'Joined date must be after birth date');
+      toast.error(isRtl ? 'تاريخ التعيين يجب أن يكون بعد تاريخ الميلاد' : 'Appointment date must be after birth date');
       return;
     }
     if (findDuplicate('email', form.email)) {
@@ -2164,8 +2165,14 @@ export function EmployeesPage() {
               </TextField>
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
-              <CalendarDateField label={isRtl ? 'تاريخ الالتحاق' : 'Joined'} value={form.appointment_date}
+              <CalendarDateField label={isRtl ? 'تاريخ التعيين' : 'Appointment Date'} value={form.appointment_date}
                 onChange={value => updateForm('appointment_date', value)} disabled={isReadOnly} />
+              {dialogMode !== 'add' && selectedEmployee?.roster_hijri_appointment_date && (
+                <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+                  {isRtl ? 'تاريخ التعيين الهجري المحفوظ من المصدر: ' : 'Original Hijri appointment date: '}
+                  {selectedEmployee.roster_hijri_appointment_date}
+                </Typography>
+              )}
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
               <TextField select fullWidth label={isRtl ? 'الحالة الاجتماعية' : 'Marital Status'} value={form.marital_status}
