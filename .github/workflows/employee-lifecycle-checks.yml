@@ -57,28 +57,7 @@ jobs:
           node-version: '20'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      # The one-time candidate job resolves from npm in the read-only runner.
-      # It MUST be replaced with committed manifests before the PR leaves draft.
-      - name: Generate compatible npm security candidate
-        if: github.head_ref == 'feature/ohp-staging-dependency-remediation-145-20261128'
-        run: |
-          set -euo pipefail
-          npm install --package-lock-only --ignore-scripts --legacy-peer-deps --save-exact react-router@7 react-router-dom@7 i18next@26
-          npm install --package-lock-only --ignore-scripts --legacy-peer-deps --save-dev --save-exact vite@6
-          npm audit fix --package-lock-only --ignore-scripts --legacy-peer-deps || echo "Residual advisories or resolution error; inspect the subsequent audit."
-          node -e "const fs=require('fs'), p=require('./package.json'); if(p.dependencies['react-router']!==p.dependencies['react-router-dom'])throw Error('Router versions must match'); if(!/^7\\./.test(p.dependencies['react-router'])||!/^6\\./.test(p.devDependencies.vite))throw Error('Unexpected major version'); if(p.pnpm?.overrides?.vite)p.pnpm.overrides.vite=p.devDependencies.vite; fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\\n');"
-          npm install --package-lock-only --ignore-scripts --legacy-peer-deps
-          git diff --stat -- package.json package-lock.json
-      - name: Preserve candidate manifests for explicit review
-        if: github.head_ref == 'feature/ohp-staging-dependency-remediation-145-20261128'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ohp-npm-security-candidate
-          path: |
-            frontend/package.json
-            frontend/package-lock.json
-          retention-days: 3
-          if-no-files-found: error
+      # Install the reviewed committed lockfile; never generate candidate versions during CI.
       - run: npm ci --legacy-peer-deps --ignore-scripts --no-audit --no-fund
       - name: Test safe offline employee-center correction TSV
         run: node --test src/app/utils/employeeCenterCorrectionTsv.test.mjs

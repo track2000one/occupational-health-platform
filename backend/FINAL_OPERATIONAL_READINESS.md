@@ -64,3 +64,7 @@ See STAGING_SECURITY_PERFORMANCE.md. Request-local scope ancestry reuse and narr
 ## Increment 145 — dependency remediation (draft, not deployable)
 
 See STAGING_DEPENDENCY_REMEDIATION.md. Five Python pins updated from actual 144 advisory fix versions; CI generates a compatible npm manifest/lock candidate in a read-only runner for explicit review. Candidate must be committed and temporary generation removed before merge. Complete clean dependency audits are now intended as CI gates; compatibility and residual advisories pending. No Railway or Production changes. Actual independent Staging backup and authenticated UAT remain required.
+
+## Increment 146 — pin reviewed dependency candidate (pending CI)
+
+The 145 candidate artifact archive digest was verified; both committed manifest Git blob hashes exactly match the inspected candidate. 145 npm/Python scans found zero reported advisories, but 145 was merged before the lockfile was committed. This follow-up removes temporary resolution from CI and requires npm ci from the committed lock in CI and Docker; all regression and audit gates must pass again before Staging rollout. Production remains NO-GO; no real data, no new services.
