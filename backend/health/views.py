@@ -298,7 +298,12 @@ class UserViewSet(viewsets.ModelViewSet):
                 raise ValidationError({'detail':'لا تعدل حسابك الإداري من إدارة المستخدمين. استخدم إعادة تعيين كلمة المرور.'})
             if 'password' in request.data and request.data['password'] not in ('',None):
                 enforce_staging_password(request.data['password'],target)
-        return super().update(request,*args,**kwargs)
+        response=super().update(request,*args,**kwargs)
+        if staging_clinical_boundary() and response.status_code==200:
+            from core.staging_sessions import revoke_user_sessions
+            # Revoke on all administrative account edits, including role/scope changes.
+            revoke_user_sessions(target.pk)
+        return response
 
     @action(detail=False, methods=['get'])
     def me(self, request):
@@ -306,6 +311,7 @@ class UserViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
     @action(detail=True, methods=['post'])
+    @transaction.atomic
     def reset_password(self, request, pk=None):
         target = self.get_object()
         password = request.data.get('password')
@@ -314,6 +320,9 @@ class UserViewSet(viewsets.ModelViewSet):
             return Response({'password': 'Password must be at least 6 characters.'}, status=status.HTTP_400_BAD_REQUEST)
         target.set_password(password)
         target.save(update_fields=['password'])
+        if staging_clinical_boundary():
+            from core.staging_sessions import revoke_user_sessions
+            revoke_user_sessions(target.pk)
         AuditLog.objects.create(user=str(request.user), action='reset_password', model_name='User', record_id=str(target.id))
         return Response({'status': 'password_reset'})
 

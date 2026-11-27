@@ -2,7 +2,6 @@ from unittest.mock import patch
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from rest_framework.test import APIClient
-from rest_framework_simplejwt.tokens import RefreshToken
 from .models import Employee,HealthCenter,OrganizationUnit,UserProfile
 from .organization_structure import STAGING_PROJECT
 from .staging_employee_reset import QA_EXAMPLES
@@ -34,7 +33,10 @@ class ScopeTests(TestCase):
         nid,name=QA_EXAMPLES[num]
         return Employee.objects.create(name=name,national_id=nid,employee_number=num,email=num.lower()+'@example.invalid',**kw)
     def token(self,user):
-        self.client.credentials(HTTP_AUTHORIZATION='Bearer '+str(RefreshToken.for_user(user).access_token))
+        self.client.credentials()
+        r=self.client.post('/api/auth/token/',{'username':user.username,'password':'test-only'},format='json')
+        self.assertEqual(r.status_code,200,r.data)
+        self.client.credentials(HTTP_AUTHORIZATION='Bearer '+r.data['access'])
     def scope(self,node):
         self.profile.organization_scope=node;self.profile.save(update_fields=['organization_scope'])
     def ids(self):
