@@ -19,7 +19,7 @@ from .importers import process_excel_import
 from .linked_health_card_records import linked_clinical_records
 from .health_card_presence import card_presence, derived_bmi
 from .health_data_import import authorized as isolated_health_admin
-from .health_data_card_commit import synthetic as verified_health_test_employee
+from .health_data_card_commit import synthetic as verified_health_test_employee, SPECIALIZED, MASTER_HEALTH
 from .organization_structure import STAGING_PROJECT
 from .models import AuditLog, ClinicVisit, CommitteeReferral, DataImportBatch, Employee, EmployeeArchiveEvent, EmployeeEmploymentChange, EmployeeHealthCard, EmployeeImportReview, EmployeeProfileCompletionEvent, HealthCenter, HealthCenterProfileAuditEvent, OrganizationUnit, InjuryCase, LabTest, OccupationalHealthAssessment, Vaccination
 from .serializers import AuditLogSerializer, ClinicVisitSerializer, CommitteeReferralSerializer, DataImportBatchSerializer, EmployeeHealthCardSerializer, EmployeeImportReviewSerializer, EmployeeSerializer, HealthCenterSerializer, InjuryCaseSerializer, LabTestSerializer, OccupationalHealthAssessmentSerializer, PlatformUserSerializer, VaccinationSerializer
@@ -1509,17 +1509,33 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         }
 
     @action(detail=True, methods=['get', 'put', 'patch', 'delete'])
+    @transaction.atomic
     def health_card(self, request, pk=None):
         employee = self.get_object()
         if staging_clinical_boundary():
+            if request.method in ('PUT','PATCH','DELETE'):
+                employee = Employee.objects.select_for_update().get(pk=employee.pk)
             if not (isolated_health_admin(request) and verified_health_test_employee(employee)
                     and not employee.is_archived and employee.registration_status=='verified'
                     and employee.employment_status==Employee.EmploymentStatus.ACTIVE):
                 return Response({'detail':'البطاقات الصحية في Staging محصورة بالمشرف الأعلى وموظفي الاختبار النشطين الموثقين.'},
                                 status=403,headers={'Cache-Control':'private, no-store'})
             if request.method=='DELETE':
-                return Response({'detail':'حذف البطاقة غير متاح في الاختبار التشغيلي.'},status=403,
-                                headers={'Cache-Control':'private, no-store'})
+                # Only an explicitly confirmed, unchanged, unapproved synthetic
+                # draft with no specialized medical records can be deleted.
+                headers={'Cache-Control':'private, no-store'}
+                draft=EmployeeHealthCard.objects.select_for_update().filter(employee=employee).first()
+                if not draft or draft.is_approved or any(getattr(employee,key,None) for key in MASTER_HEALTH) or any(model.objects.filter(employee=employee).exists() for model in SPECIALIZED):
+                    return Response({'detail':'لا يمكن حذف بطاقة معتمدة أو مرتبطة بسجلات صحية أو غير محفوظة.'},status=403,headers=headers)
+                if request.data.get('confirmation')!='حذف مسودة الاختبار' or request.data.get('synthetic_confirmed') is not True or request.data.get('reason') not in ('correction','retest','wrong_entry'):
+                    return Response({'detail':'حدد سبب الحذف وأكد حذف مسودة الاختبار فقط.'},status=400,headers=headers)
+                if request.data.get('card_id')!=draft.pk or request.data.get('updated_at')!=draft.updated_at.isoformat():
+                    return Response({'detail':'تغيرت البطاقة منذ عرضها. حدّث الصفحة قبل الحذف.'},status=409,headers=headers)
+                deleted_id=str(draft.pk)
+                draft.delete()
+                AuditLog.objects.create(user=str(request.user)[:150],action='qa_delete_card_'+request.data['reason'],
+                    model_name='EmployeeHealthCard',record_id=deleted_id)
+                return Response({'detail':'تم حذف مسودة البطاقة التجريبية فقط، وبقي سجل الموظف.'},headers=headers)
             if request.method in ('PUT','PATCH') and request.data.get('is_approved',False) not in (False,None):
                 return Response({'detail':'الاعتماد الطبي غير متاح في تجربة المسودات.'},status=403,
                                 headers={'Cache-Control':'private, no-store'})
@@ -1787,6 +1803,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             default_data = {section:{key:'' for key in values} for section,values in default_data.items()}
             default_data['employment']['current_position'] = employee.current_job or ''
             stored = card.data if card else {}
+            payload['can_delete_draft'] = bool(card and not card.is_approved and not any(getattr(employee,key,None) for key in MASTER_HEALTH) and not any(model.objects.filter(employee=employee).exists() for model in SPECIALIZED))
             payload['completion'] = card_presence(stored)
             payload['derived_bmi'] = derived_bmi(stored)
         data = merge_health_card_data(default_data, card.data if card else {})

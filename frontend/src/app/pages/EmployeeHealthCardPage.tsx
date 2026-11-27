@@ -10,6 +10,11 @@ import {
   Button,
   Chip,
   CircularProgress,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Checkbox,
   FormControlLabel,
   Grid,
   LinearProgress,
@@ -24,6 +29,7 @@ import {
   ArrowBack as ArrowBackIcon,
   Download as DownloadIcon,
   Edit as EditIcon,
+  DeleteOutline as DeleteIcon,
   ExpandMore as ExpandMoreIcon,
   HealthAndSafety as HealthAndSafetyIcon,
   Image as ImageIcon,
@@ -135,6 +141,7 @@ type HealthCardData = {
   linked_clinical_records?: LinkedClinicalData;
   completion?: {recorded:number;possible:number;percent:number;complete:boolean};
   derived_bmi?: string | null;
+  can_delete_draft?: boolean;
   personal?: Record<string, unknown>;
   employment?: Record<string, unknown>;
   physical?: Record<string, unknown>;
@@ -835,7 +842,8 @@ export function EmployeeHealthCardPage() {
   const { formatDate } = useDatePreference();
   const requestedEditMode = searchParams.get('mode') === 'edit';
   const cardRef = useRef<HTMLElement | null>(null);
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState(employeeId || '');
+  const [localSelectedEmployeeId, setSelectedEmployeeId] = useState(employeeId || '');
+  const selectedEmployeeId = IS_STAGING ? employeeId || '' : localSelectedEmployeeId;
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeSearchOption | null>(null);
   const [card, setCard] = useState<HealthCardData | null>(null);
   const [form, setForm] = useState<SectionData>(() => createEmptySections());
@@ -846,6 +854,10 @@ export function EmployeeHealthCardPage() {
   const [editing, setEditing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deleteOpen,setDeleteOpen] = useState(false);
+  const [deleteReason,setDeleteReason] = useState('');
+  const [deletePhrase,setDeletePhrase] = useState('');
+  const [deleteConfirmed,setDeleteConfirmed] = useState(false);
   const [generatingImage, setGeneratingImage] = useState(false);
   const [generateAfterSave, setGenerateAfterSave] = useState(false);
   const [cardImage, setCardImage] = useState('');
@@ -887,7 +899,7 @@ export function EmployeeHealthCardPage() {
     setForm(normalizeSections(payload));
     setIssueDate(payload.issue_date || new Date().toISOString().slice(0, 10));
     setNextReviewDate(payload.next_review_date || '');
-    setReviewedBy(payload.reviewed_by || user?.name || '');
+    setReviewedBy(payload.reviewed_by || (IS_STAGING ? '' : user?.name || ''));
     setIsApproved(Boolean(payload.is_approved));
     setCardImage('');
   }, [user?.name]);
@@ -950,7 +962,10 @@ export function EmployeeHealthCardPage() {
       navigate('/employee-health-card', {replace: true});
       return;
     }
+    setDeleteOpen(false);
+    setDeleteReason('');setDeletePhrase('');setDeleteConfirmed(false);
     if (selectedEmployeeId) void loadCard(selectedEmployeeId);
+    else {setCard(null);setSelectedEmployee(null);setCardImage('');setEditing(false);setLoading(false);}
     return () => { ++cardRequest.current; };
   }, [loadCard, selectedEmployeeId, qaEmployees, qaSelected, user?.isSuperuser, navigate]);
 
@@ -1031,6 +1046,23 @@ export function EmployeeHealthCardPage() {
     }
   }
 
+  async function deleteDraft() {
+    if(!IS_STAGING || !user?.isSuperuser || !qaSelected || !card?.can_delete_draft || String(card.employee.id)!==selectedEmployeeId ||
+       !deleteConfirmed || deletePhrase!=='حذف مسودة الاختبار' || !deleteReason || saving) return;
+    setSaving(true);
+    try {
+      await apiRequest(`/employees/${selectedEmployeeId}/health_card/`,{
+        method:'DELETE',body:JSON.stringify({card_id:card.id,updated_at:card.updated_at,
+          confirmation:deletePhrase,synthetic_confirmed:true,reason:deleteReason})
+      });
+      setDeleteOpen(false);
+      setEditing(false);
+      toast.success('تم حذف مسودة البطاقة التجريبية فقط.');
+      await loadCard(selectedEmployeeId);
+    } catch(err) {toast.error(err instanceof Error?err.message:'تعذر حذف المسودة.');}
+    finally {setSaving(false);}
+  }
+
   async function downloadImage() {
     const image = cardImage || await captureCard();
     if (!image || !card) return;
@@ -1063,13 +1095,27 @@ export function EmployeeHealthCardPage() {
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
           <Button variant="outlined" startIcon={<ArrowBackIcon />} onClick={() => navigate('/employees')}>الموظفون</Button>
           {selectedEmployeeId && (!IS_STAGING || qaSelected) && <Button variant="outlined" startIcon={<RefreshIcon />} onClick={() => void loadCard(selectedEmployeeId)} disabled={loading}>تحديث</Button>}
-          {card && canEdit && <Button variant="outlined" startIcon={<EditIcon />} onClick={() => { setCardImage(''); setEditing(true); }}>تعبئة/تعديل</Button>}
+          {card && canEdit && <Button variant="outlined" startIcon={<EditIcon />} disabled={saving||loading} onClick={() => { setCardImage(''); setEditing(true); }}>{card.exists?'تعبئة/تعديل':'إنشاء وتعبئة البطاقة'}</Button>}
+          {IS_STAGING && card?.can_delete_draft && !editing && <Button variant="outlined" color="error" startIcon={<DeleteIcon/>} disabled={saving||loading} onClick={()=>{setDeleteReason('');setDeletePhrase('');setDeleteConfirmed(false);setDeleteOpen(true);}}>حذف مسودة الاختبار</Button>}
           {card && !editing && <Button variant="outlined" startIcon={<ImageIcon />} onClick={() => void captureCard()} disabled={generatingImage}>عرض كصورة</Button>}
           {card && !editing && <Button variant="contained" startIcon={<DownloadIcon />} onClick={() => void downloadImage()} disabled={generatingImage}>تنزيل PNG</Button>}
           {card && !editing && <Button variant="outlined" startIcon={<PrintIcon />} onClick={() => window.print()}>طباعة</Button>}
         </Stack>
       </Stack>
 
+      <Dialog open={deleteOpen} onClose={()=>{if(!saving)setDeleteOpen(false);}} fullWidth maxWidth="sm">
+        <DialogTitle>حذف مسودة البطاقة الصحية التجريبية</DialogTitle>
+        <DialogContent><Stack gap={2} sx={{pt:1}} dir="rtl">
+          <Alert severity="warning">حذف نهائي لمسودة الاختبار المحددة فقط. لا يحذف الموظف أو السجلات الطبية المرتبطة. لا تستخدم هذا الإجراء لبيانات حقيقية.</Alert>
+          <Typography>{card?.employee.name} — {card?.card_number}</Typography>
+          <TextField select label="سبب الحذف" value={deleteReason} onChange={e=>setDeleteReason(e.target.value)} disabled={saving} fullWidth>
+            <MenuItem value="correction">تصحيح إدخال</MenuItem><MenuItem value="retest">إعادة الاختبار</MenuItem><MenuItem value="wrong_entry">إدخال خاطئ</MenuItem>
+          </TextField>
+          <TextField label="اكتب: حذف مسودة الاختبار" value={deletePhrase} onChange={e=>setDeletePhrase(e.target.value)} disabled={saving} fullWidth/>
+          <FormControlLabel control={<Checkbox checked={deleteConfirmed} onChange={e=>setDeleteConfirmed(e.target.checked)} disabled={saving}/>} label="أؤكد أن المسودة اصطناعية وأنني أريد حذفها فقط"/>
+        </Stack></DialogContent>
+        <DialogActions><Button disabled={saving} onClick={()=>setDeleteOpen(false)}>إلغاء</Button><Button color="error" variant="contained" disabled={saving||!deleteReason||!deleteConfirmed||deletePhrase!=='حذف مسودة الاختبار'} onClick={()=>void deleteDraft()}>تأكيد حذف المسودة</Button></DialogActions>
+      </Dialog>
       <Paper className="ohc-selector no-print">
         {IS_STAGING ? (
           <Stack spacing={1}>
@@ -1097,6 +1143,7 @@ export function EmployeeHealthCardPage() {
         {employeeLabel && <Chip sx={{ mt: 1.25, fontWeight: 800 }} color="primary" variant="outlined" label={`الموظف المحدد: ${employeeLabel}`} />}
       </Paper>
 
+      {IS_STAGING && card?.exists && !card.can_delete_draft && !loading && <Alert severity="info" className="no-print" sx={{mb:2}}>الحذف غير متاح لهذه البطاقة: المسودات المرتبطة بسجلات صحية والبطاقات المعتمدة محمية.</Alert>}
       {IS_STAGING && card?.completion && !loading && <Paper className="no-print" variant="outlined" sx={{p:2,mb:2,borderColor:card.completion.complete?'success.main':'warning.main'}}>
         <Stack gap={1}>
           <Typography fontWeight={800}>اكتمال تدوين الحقول الصحية: {card.completion.percent}%</Typography>

@@ -39,6 +39,7 @@ type Props = {
   onView: () => void;
   onEdit: () => void;
   onHealthCard: () => void;
+  healthCardUnavailableReason?: string;
   onEmploymentHistory: () => void;
 };
 
@@ -73,7 +74,7 @@ function Info({ label, value }: { label: string; value: string }) {
 
 export function EmployeeRegistryCard({
   employee, centerName, affiliationLabel, missingFields = [], provisional = false, isRtl, canWrite, canManage, canArchive,
-  onArchive, onRestore, onView, onEdit, onHealthCard, onEmploymentHistory,
+  onArchive, onRestore, onView, onEdit, onHealthCard, onEmploymentHistory, healthCardUnavailableReason,
 }: Props) {
   const status = STATUS[employee.employment_status || 'active'] || STATUS.under_review;
   const sourceCondition = employee.roster_source_status &&
@@ -182,7 +183,7 @@ export function EmployeeRegistryCard({
         <Button variant="outlined" startIcon={<VisibilityIcon />} onClick={onView}>
           {isRtl ? 'عرض' : 'View'}
         </Button>
-        <Button variant="outlined" startIcon={<HealthCardIcon />} onClick={onHealthCard}>
+        <Button variant="outlined" startIcon={<HealthCardIcon />} onClick={onHealthCard} title={healthCardUnavailableReason} sx={healthCardUnavailableReason?{opacity:.65}:undefined}>
           {isRtl ? 'البطاقة الصحية' : 'Health card'}
         </Button>
         {canWrite && !employee.is_archived && (

@@ -3,7 +3,7 @@ from unittest.mock import patch
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from rest_framework.test import APIClient
-from .models import Employee, EmployeeHealthCard, LabTest, ClinicVisit, InjuryCase, Vaccination
+from .models import Employee, EmployeeHealthCard, LabTest, ClinicVisit, InjuryCase, Vaccination, AuditLog
 from .organization_structure import STAGING_PROJECT
 from .staging_employee_reset import QA_EXAMPLES
 
@@ -69,3 +69,36 @@ class StagingOperationalReadinessTests(TestCase):
             with patch.dict('os.environ',env):
                 self.assertEqual(self.client.get(self.url).status_code,403)
                 self.assertEqual(self.client.get(LEGACY[0]).status_code,403)
+
+    @patch.dict('os.environ',ENV)
+    def test_explicit_delete_synthetic_draft_only(self):
+        nid,name=QA_EXAMPLES['OHP-QA-02']
+        e=Employee.objects.create(name=name,national_id=nid,employee_number='OHP-QA-02',email='ohp-qa-02@example.invalid')
+        url=f'/api/employees/{e.pk}/health_card/'
+        draft=EmployeeHealthCard.objects.create(employee=e,data={'physical':{'weight_kg':'72'}})
+        before=self.client.get(url)
+        self.assertTrue(before.data['can_delete_draft'])
+        payload={'card_id':draft.pk,'updated_at':draft.updated_at.isoformat(),
+                 'confirmation':'حذف مسودة الاختبار','synthetic_confirmed':True,'reason':'correction'}
+        self.assertEqual(self.client.delete(url,{},format='json').status_code,400)
+        self.assertEqual(self.client.delete(url,{**payload,'updated_at':'old'},format='json').status_code,409)
+        self.client.force_authenticate(self.staff)
+        self.assertEqual(self.client.delete(url,payload,format='json').status_code,403)
+        self.client.force_authenticate(self.admin)
+        self.assertEqual(self.client.delete(self.other_url,payload,format='json').status_code,403)
+        self.assertEqual(self.client.delete(self.url,payload,format='json').status_code,403)
+        lab=LabTest.objects.create(employee=e,test_type='QA test')
+        self.assertFalse(self.client.get(url).data['can_delete_draft'])
+        self.assertEqual(self.client.delete(url,payload,format='json').status_code,403)
+        self.assertTrue(LabTest.objects.filter(pk=lab.pk).exists())
+        lab.delete()  # isolated test database fixture only
+        self.assertEqual(self.client.delete(url,payload,format='json').status_code,200)
+        self.assertTrue(Employee.objects.filter(pk=e.pk).exists())
+        self.assertFalse(EmployeeHealthCard.objects.filter(pk=draft.pk).exists())
+        self.assertTrue(EmployeeHealthCard.objects.filter(pk=self.card.pk).exists())
+        self.assertTrue(EmployeeHealthCard.objects.filter(pk=self.other_card.pk).exists())
+        self.assertTrue(AuditLog.objects.filter(action='qa_delete_card_correction',record_id=str(draft.pk)).exists())
+        after=self.client.get(url)
+        self.assertFalse(after.data['exists'])
+        self.assertEqual(after.data['completion']['recorded'],0)
+        self.assertFalse(after.data['can_delete_draft'])

@@ -391,6 +391,27 @@ export function EmployeesPage() {
   const isRtl = i18n.language === 'ar';
 
   const [employees, setEmployees] = useState<ApiEmployee[]>([]);
+  const [qaCardIds,setQaCardIds] = useState<Set<string>|null>(null);
+  const [qaCardListError,setQaCardListError] = useState('');
+  const isRemoteStaging = /staging/i.test(window.location.hostname);
+  useEffect(()=>{
+    if(!isRemoteStaging)return;
+    let active=true;setQaCardIds(null);setQaCardListError('');
+    if(!user?.isSuperuser)return;
+    if(API_BASE_URL!=='https://occupational-staging-backend-staging.up.railway.app/api'){
+      setQaCardListError('عنوان اتصال البطاقة التجريبية غير مطابق.');return;
+    }
+    void apiRequest<{employees:{id:number}[]}>('/staging-clinical/employees/').then(data=>{
+      if(active){if(!Array.isArray(data.employees))throw Error('Invalid list');setQaCardIds(new Set(data.employees.map(x=>String(x.id))));}
+    }).catch(()=>{if(active)setQaCardListError('تعذر جلب قائمة موظفي الاختبار. حدّث الصفحة.');});
+    return ()=>{active=false;};
+  },[isRemoteStaging,user?.isSuperuser]);
+  const canOpenHealthCard=(id:string|number)=>!isRemoteStaging||Boolean(user?.isSuperuser&&qaCardIds?.has(String(id)));
+  const cardUnavailableReason=qaCardListError||(!user?.isSuperuser?'متاح للمشرف الأعلى فقط':qaCardIds===null?'جاري التحقق من أهلية الاختبار':'البطاقة الصحية في Staging متاحة للموظفين الاصطناعيين فقط');
+  function openHealthCard(id:string|number){
+    if(!canOpenHealthCard(id)){toast.warning(cardUnavailableReason);return;}
+    navigate(`/employees/${id}/health-card`);
+  }
   const [page, setPage] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
   const [healthCenters, setHealthCenters] = useState<ApiHealthCenter[]>([]);
@@ -1383,7 +1404,8 @@ export function EmployeesPage() {
                     onRestore={() => openArchiveDialog(employee, 'restore')}
                     onView={() => openView(employee)}
                     onEdit={() => openEdit(employee)}
-                    onHealthCard={() => navigate(`/employees/${employee.id}/health-card`)}
+                    onHealthCard={() => openHealthCard(employee.id)}
+                    healthCardUnavailableReason={canOpenHealthCard(employee.id)?undefined:cardUnavailableReason}
                     onEmploymentHistory={() => navigate('/admin/employee-lifecycle')}
                   />
                   </Box>
@@ -1473,7 +1495,7 @@ export function EmployeesPage() {
                   </TableCell>
                   <TableCell>{employee.mobile || '-'}</TableCell>
                   <TableCell align="center" className="employee-registry-actions">
-                    <Button size="small" variant="outlined" color="primary" startIcon={<HealthCardIcon />} onClick={() => navigate(`/employees/${employee.id}/health-card`)}>
+                    <Button size="small" variant="outlined" color="primary" startIcon={<HealthCardIcon />} onClick={() => openHealthCard(employee.id)} title={canOpenHealthCard(employee.id)?undefined:cardUnavailableReason} sx={!canOpenHealthCard(employee.id)?{opacity:.65}:undefined}>
                       {isRtl ? 'البطاقة الصحية' : 'Health Card'}
                     </Button>
                     <Button size="small" variant="outlined" startIcon={<VisibilityIcon />} onClick={() => openView(employee)}>
