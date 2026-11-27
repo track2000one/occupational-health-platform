@@ -18,6 +18,7 @@ from .staging_clinical_entry import SyntheticClinicalEmployeesView, SyntheticCli
 from .staging_exposure_entry import SyntheticExposureView
 from .staging_health_observation import SyntheticObservationView
 from .staging_fitness_committee import SyntheticFitnessCommitteeView
+from .staging_health_metrics import StagingHealthMetricsView
 from .provisional_employee_number_edit import ProvisionalEmployeeNumberEditView
 from .provisional_employee_name_review import ProvisionalEmployeeNameReviewView
 from .employee_archived_list_visibility import ArchivedEmployeeListVisibilityView
@@ -54,6 +55,7 @@ router.register('injury-cases', InjuryCaseViewSet)
 router.register('audit-logs', AuditLogViewSet)
 
 urlpatterns = [
+    path('staging-clinical/metrics/', StagingHealthMetricsView.as_view(), name='staging-health-metrics'),
     path('staging-clinical/employees/<int:employee_id>/fitness-committee/', SyntheticFitnessCommitteeView.as_view(), name='staging-fitness-committee'),
     path('staging-clinical/employees/<int:employee_id>/observations/', SyntheticObservationView.as_view(), name='staging-health-observations'),
     path('staging-clinical/employees/<int:employee_id>/exposures/', SyntheticExposureView.as_view(), name='staging-exposures'),

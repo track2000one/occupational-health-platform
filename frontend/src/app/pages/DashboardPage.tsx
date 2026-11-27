@@ -1,3 +1,4 @@
+import { HealthMetricsDashboard } from '../components/HealthMetricsDashboard';
 import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import {
@@ -124,7 +125,7 @@ function EmptyPanel({ title, description, icon }: { title: string; description: 
   );
 }
 
-export function DashboardPage() {
+function LegacyDashboardPage() {
   const navigate = useNavigate();
 
   return (
@@ -228,3 +229,5 @@ export function DashboardPage() {
     </Box>
   );
 }
+
+export function DashboardPage(){return /staging/i.test(window.location.hostname)?<HealthMetricsDashboard mode="dashboard"/>:<LegacyDashboardPage/>;}

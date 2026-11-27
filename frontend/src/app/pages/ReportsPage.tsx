@@ -1,3 +1,4 @@
+import { HealthMetricsDashboard } from '../components/HealthMetricsDashboard';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { useState } from 'react';
@@ -37,7 +38,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 
 const COLORS = ['#667eea', '#764ba2', '#f093fb', '#4facfe', '#43e97b', '#fa709a'];
 
-export function ReportsPage() {
+function LegacyReportsPage() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const { can } = useAuth();
@@ -691,3 +692,5 @@ export function ReportsPage() {
     </Box>
   );
 }
+
+export function ReportsPage(){return /staging/i.test(window.location.hostname)?<HealthMetricsDashboard mode="reports"/>:<LegacyReportsPage/>;}
