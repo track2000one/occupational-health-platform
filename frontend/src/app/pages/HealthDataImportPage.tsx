@@ -54,7 +54,7 @@ export function HealthDataImportPage() {
   if (!isAllowed) return <Alert severity="warning">هذه الصفحة للمسؤول الأعلى في البيئة التجريبية المعزولة فقط.</Alert>;
   return <Box dir="rtl"><Stack gap={2}>
     <Typography variant="h4" fontWeight={900}>استيراد البيانات الصحية للموظفين</Typography>
-    <Alert severity="warning">المعاينة والاستكمال التجريبي — يمنع رفع البيانات الصحية الحقيقية في Staging. استخدم بيانات اصطناعية فقط.</Alert>
+    <Alert severity="warning">المعاينة والاستكمال التجريبي محصوران بموظفي الاختبار الموثقين. يمنع رفع البيانات الصحية الحقيقية في Staging.</Alert>
     <Paper sx={{ p: 3, borderRadius: 3 }}><Stack gap={2}>
       <Typography variant="h6" fontWeight={800}>قالب HealthData V1</Typography>
       <Typography color="text.secondary">61 حقلًا صحيًا و4 حقول للربط. لا يُعاد تسجيل الموظف، ولا تُنشأ بطاقة أو زيارة أثناء الفحص.</Typography>

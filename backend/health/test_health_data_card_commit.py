@@ -87,7 +87,7 @@ class DraftCardCommitTests(TestCase):
     @patch.dict('os.environ', ENV)
     def test_protect_unmarked_approved_and_specialized(self):
         other=self.workbook([{'national_id':self.other.national_id,'employee_name':self.other.name,'weight_kg':70}])
-        self.assertEqual(self.request(raw=other).data['rows'][0]['reason'],'not_verified_synthetic')
+        self.assertEqual(self.request(raw=other).data['rows'][0]['reason'],'unmatched')
         card=EmployeeHealthCard.objects.create(employee=self.e,is_approved=True)
         self.assertEqual(self.request().data['rows'][0]['reason'],'approved_card')
         card.is_approved=False

@@ -20,6 +20,7 @@ from .employee_import_classification import normalize_person_name
 from .employee_import_v2_matching import norm_text
 from .models import Employee, EmployeeHealthCard
 from .organization_structure import STAGING_PROJECT
+from .staging_employee_reset import is_verified_synthetic
 
 SHEET = 'HealthData'
 LINK_FIELDS = ('source_row', 'national_id', 'employee_name', 'source_health_center')
@@ -83,6 +84,15 @@ def authorized(request):
     return (request.user.is_authenticated and request.user.is_superuser
             and os.getenv('STAGING_MODE', '').lower() == 'true'
             and os.getenv('RAILWAY_PROJECT_ID') == STAGING_PROJECT)
+
+
+def synthetic(employee):
+    """Use exactly the same identity gate in preview and draft commit."""
+    if not employee:
+        return False
+    if (employee.employee_number or '').startswith('OHP-LOAD-') and not employee.health_center_id:
+        return False
+    return is_verified_synthetic(employee)
 
 
 def template_bytes():
@@ -245,7 +255,7 @@ def identity_status(source, employee, duplicate):
 
 def preview_rows(rows):
     nids = Counter(text(src.get('national_id')) for _, src in rows)
-    staff = {e.national_id: e for e in Employee.objects.filter(national_id__in=list(nids)).select_related('health_center')}
+    staff = {e.national_id: e for e in Employee.objects.filter(national_id__in=list(nids)).select_related('health_center') if synthetic(e)}
     cards = {c.employee_id: c for c in EmployeeHealthCard.objects.filter(employee_id__in=[e.pk for e in staff.values()]).only('employee', 'data', 'is_approved')}
     counts = Counter()
     totals = Counter()
@@ -295,7 +305,7 @@ def preview_rows(rows):
             'fields': [{'field': key, 'target': '.'.join(TARGETS.get(key, ())),
                         'counts': {s: field_counts[key][s] for s in FIELD_STATES}} for key in HEALTH_FIELDS],
             'rows': items, 'read_only': True, 'commit_available': False,
-            'notice': 'المعاينة تقارن القيم المحفوظة في البطاقة فقط، ولا تعتمد المطابقة السريرية مع السجلات المتخصصة.'}
+            'notice': 'المعاينة محصورة بهويات الاختبار الموثقة، وتقارن القيم المحفوظة في البطاقة فقط. لا تعتمد المطابقة السريرية مع السجلات المتخصصة.'}
 
 
 class HealthDataTemplateView(APIView):
