@@ -1,4 +1,5 @@
 import json
+import os
 import uuid
 from datetime import date, timedelta
 
@@ -18,6 +19,7 @@ from .importers import process_excel_import
 from .linked_health_card_records import linked_clinical_records
 from .health_data_import import authorized as isolated_health_admin
 from .health_data_card_commit import synthetic as verified_health_test_employee
+from .organization_structure import STAGING_PROJECT
 from .models import AuditLog, ClinicVisit, CommitteeReferral, DataImportBatch, Employee, EmployeeArchiveEvent, EmployeeEmploymentChange, EmployeeHealthCard, EmployeeImportReview, EmployeeProfileCompletionEvent, HealthCenter, HealthCenterProfileAuditEvent, OrganizationUnit, InjuryCase, LabTest, OccupationalHealthAssessment, Vaccination
 from .serializers import AuditLogSerializer, ClinicVisitSerializer, CommitteeReferralSerializer, DataImportBatchSerializer, EmployeeHealthCardSerializer, EmployeeImportReviewSerializer, EmployeeSerializer, HealthCenterSerializer, InjuryCaseSerializer, LabTestSerializer, OccupationalHealthAssessmentSerializer, PlatformUserSerializer, VaccinationSerializer
 
@@ -61,6 +63,14 @@ class CanManageHealthCenters(permissions.BasePermission):
             return request.user.health_profile.role == 'ohManager'
         except Exception:
             return False
+
+
+class LegacyFitnessCommitteePermission(permissions.BasePermission):
+    """Isolated Staging uses the scoped synthetic API, not these global endpoints."""
+    def has_permission(self, request, view):
+        if os.getenv('STAGING_MODE','').lower()=='true' or os.getenv('RAILWAY_PROJECT_ID')==STAGING_PROJECT:
+            return False
+        return bool(request.user and request.user.is_authenticated)
 
 
 class CanManageOccupationalHealthAssessments(permissions.BasePermission):
@@ -1748,6 +1758,10 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             # Do not treat a scheduled follow-up as a completed virtual visit
             # or silently materialize a legacy clinical event into card fields.
             default_data['conditions']['needle_stick_history'] = ''
+            # Generic advice and computed review dates are not a recorded medical decision.
+            default_data['recommendations']['medical'] = ''
+            default_data['recommendations']['vaccination'] = ''
+            payload['next_review_date'] = card.next_review_date.isoformat() if card and card.next_review_date else None
             for key in ('latest_virtual_visit', 'latest_field_visit'):
                 default_data['follow_up'][key] = ''
             for key in ('joined', 'lab_request', 'lab_request_date', 'lab_result',
@@ -1795,7 +1809,7 @@ class LabTestViewSet(LegacyClinicalViewSet):
 class OccupationalHealthAssessmentViewSet(viewsets.ModelViewSet):
     queryset = OccupationalHealthAssessment.objects.select_related('employee', 'employee__health_center', 'created_by').all()
     serializer_class = OccupationalHealthAssessmentSerializer
-    permission_classes = [CanManageOccupationalHealthAssessments]
+    permission_classes = [LegacyFitnessCommitteePermission, CanManageOccupationalHealthAssessments]
     search_fields = ['employee__name', 'employee__national_id', 'employee__employee_number', 'assessor_name', 'restrictions']
 
     def perform_create(self, serializer):
@@ -1865,6 +1879,9 @@ class ClinicVisitViewSet(viewsets.ModelViewSet):
             model_name='ClinicVisit',
             record_id=record_id,
         )
-class CommitteeReferralViewSet(viewsets.ModelViewSet): queryset=CommitteeReferral.objects.select_related('employee').all().order_by('-id'); serializer_class=CommitteeReferralSerializer; permission_classes=[permissions.IsAuthenticated]
+class CommitteeReferralViewSet(viewsets.ModelViewSet):
+    queryset=CommitteeReferral.objects.select_related('employee').filter(qa_workflow=False).order_by('-id')
+    serializer_class=CommitteeReferralSerializer
+    permission_classes=[LegacyFitnessCommitteePermission]
 class InjuryCaseViewSet(viewsets.ModelViewSet): queryset=InjuryCase.objects.select_related('employee').all().order_by('-id'); serializer_class=InjuryCaseSerializer; permission_classes=[permissions.IsAuthenticated]
 class AuditLogViewSet(viewsets.ReadOnlyModelViewSet): queryset=AuditLog.objects.all().order_by('-created_at'); serializer_class=AuditLogSerializer; permission_classes=[permissions.IsAdminUser]

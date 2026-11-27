@@ -1088,6 +1088,10 @@ class CommitteeReferral(models.Model):
     decision = models.TextField(blank=True)
     status = models.CharField(max_length=30, choices=STATUS, default='draft')
     date = models.DateField(null=True, blank=True)
+    referral_date = models.DateField(null=True, blank=True)
+    decision_date = models.DateField(null=True, blank=True)
+    recommendations = models.TextField(blank=True, default='')
+    qa_workflow = models.BooleanField(default=False, editable=False)
 
 
 class MedicalCommitteeCase(ImportTraceModel):
