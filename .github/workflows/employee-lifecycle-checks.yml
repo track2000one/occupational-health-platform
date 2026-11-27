@@ -96,40 +96,42 @@ jobs:
         run: python manage.py migrate --noinput
       - name: Run workforce tests against real PostgreSQL (not SQLite)
         run: python manage.py test health.test_department_directory health.test_employee_department_affiliation health.test_provisional_employee_roster health.test_employee_import_v2 health.test_employee_import_v2_restore health.test_employee_import_v2_direct health.test_employee_roster_reconciliation health.test_employee_review_cleanup health.test_employee_review_identity_reconciliation health.test_employee_import_classification health.test_employee_provisional_registry health.test_employee_completion_review health.test_center_directory_matching health.test_health_center_structured_profile health.test_health_center_archive health.test_center_foundation health.test_health_center_excel_import health.test_employee_registry_reset health.test_employee_safe_archive health.test_employee_archived_list_visibility health.test_employee_registry_reports health.test_employment_lifecycle health.test_workforce_preview health.test_workforce_import health.test_staging_synthetic health.test_staging_load health.test_temporary_workforce health.test_employee_org_template_v4 health.test_employee_organization_bulk_sync health.test_provisional_appointment_sync health.test_health_data_import health.test_health_data_card_commit health.test_linked_health_card_records health.test_staging_clinical_entry health.test_linked_visit_injury_records health.test_staging_health_observation health.test_staging_fitness_committee health.test_staging_health_metrics health.test_health_import_end_to_end health.test_staging_operational_readiness health.test_health_import_sample health.test_health_card_completion health.test_staging_security health.test_staging_registry_scope health.test_staging_sessions health.test_staging_medical_attachments periodic_stats.tests --verbosity 2
-      - name: Seed synthetic restore sample
-        run: |
-          python manage.py shell -c "from health.models import HealthCenter,Employee; c=HealthCenter.objects.create(name='Synthetic CI Center'); Employee.objects.create(name='Synthetic CI Employee',national_id='1000000001',employee_number='CI001',health_center=c,risk_level='high')"
-      - name: Encrypt PostgreSQL synthetic backup and verify isolated restore
+      - name: Seed synthetic disaster recovery fixture
+        run: OHP_DR_CI_SYNTHETIC=yes python manage.py shell -c "exec(open('ops/seed_disaster_drill.py',encoding='utf-8').read())"
+      - name: Encrypted snapshot and independent synthetic disaster restore
         run: |
           set -euo pipefail
-          pg_dump --version
-          gpg --version | head -1
-          mkdir -p "$RUNNER_TEMP/ohp-secure-ci"
-          printf '%s' 'Synthetic-CI-Only-Backup-Key-Not-For-Real-Employees-2026!' > "$RUNNER_TEMP/ohp-synthetic-passphrase"
-          chmod 600 "$RUNNER_TEMP/ohp-synthetic-passphrase"
-          export PGSSLMODE=disable
-          python ops/secure_pg_backup.py backup \
-            --output-dir "$RUNNER_TEMP/ohp-secure-ci" \
-            --passphrase-file "$RUNNER_TEMP/ohp-synthetic-passphrase"
-          archive=$(find "$RUNNER_TEMP/ohp-secure-ci" -maxdepth 1 -name '*.pgdump.gpg' -print -quit)
+          umask 077
+          work=$(mktemp -d "$RUNNER_TEMP/ohp-dr.XXXXXX")
+          trap 'rm -rf "$work"' EXIT
+          mkdir "$work/archive"
+          printf '%s' 'Synthetic-CI-Only-Backup-Key-Not-For-Real-Employees-2026!' > "$work/key"
+          printf '%s' 'Synthetic-Wrong-CI-Only-Key-Not-For-Real-Employees-2026!' > "$work/wrong"
+          export OHP_DR_SOURCE_URL="$DATABASE_URL"
+          export OHP_DR_TARGET_URL=postgresql://ci_only:synthetic_ci_password@127.0.0.1:5432/occupational_ci_dr_restore
+          python ops/staging_disaster_drill.py backup --output-dir "$work/archive" --passphrase-file "$work/key" --confirm-synthetic
+          archive=$(find "$work/archive" -name '*.pgdump.gpg' -print -quit)
           test -s "$archive"
-          test -f "$archive.sha256"
-          # The archive must not accidentally contain recognizable plaintext.
-          if grep -aq 'Synthetic CI Employee' "$archive"; then echo "Plaintext in encrypted archive"; exit 1; fi
-          createdb -h 127.0.0.1 -p 5432 -U ci_only occupational_ci_restored
-          export RESTORE_DATABASE_URL=postgresql://ci_only:synthetic_ci_password@127.0.0.1:5432/occupational_ci_restored
-          python ops/secure_pg_backup.py restore-verify \
-            --archive "$archive" \
-            --passphrase-file "$RUNNER_TEMP/ohp-synthetic-passphrase" \
-            --confirm-disposable
-          count=$(psql -At "$RESTORE_DATABASE_URL" -c "SELECT count(*) FROM health_employee WHERE employee_number='CI001' AND risk_level='high';")
-          test "$count" = "1"
-          if python ops/secure_pg_backup.py restore-verify \
-              --archive "$archive" --passphrase-file "$RUNNER_TEMP/ohp-synthetic-passphrase" --confirm-disposable; then
-            echo "Dangerous repeated restore was not rejected"; exit 1
-          fi
-          echo "Encrypted archive, checksum, isolated restore, clinical risk preservation: PASS"
-          rm -rf "$RUNNER_TEMP/ohp-secure-ci" "$RUNNER_TEMP/ohp-synthetic-passphrase"
+          test -s "$archive.manifest.gpg"
+          if grep -aq 'ohp-qa-01@example.invalid' "$archive"; then echo "Plaintext detected"; exit 1; fi
+          createdb -h 127.0.0.1 -p 5432 -U ci_only occupational_ci_dr_restore
+          # Source may change or be unavailable after backup. Restore must use snapshot evidence, not current source.
+          psql -h 127.0.0.1 -U ci_only -d occupational_ci -v ON_ERROR_STOP=1 -c "UPDATE health_employee SET risk_level='low' WHERE employee_number='OHP-QA-01';"
+          unset OHP_DR_SOURCE_URL DATABASE_URL
+          if python ops/staging_disaster_drill.py restore-verify --archive "$archive" --passphrase-file "$work/wrong" --confirm-synthetic --confirm-disposable; then echo "Wrong key accepted"; exit 1; fi
+          cp "$archive" "$work/original"
+          printf 'tampered' >> "$archive"
+          if python ops/staging_disaster_drill.py restore-verify --archive "$archive" --passphrase-file "$work/key" --confirm-synthetic --confirm-disposable; then echo "Tampered archive accepted"; exit 1; fi
+          mv "$work/original" "$archive"
+          test "$(psql -h 127.0.0.1 -U ci_only -d occupational_ci_dr_restore -Atc "SELECT count(*) FROM pg_tables WHERE schemaname='public'")" = 0
+          if OHP_DR_TARGET_URL=postgresql://ci_only:synthetic_ci_password@127.0.0.1:5432/occupational_ci python ops/staging_disaster_drill.py restore-verify --archive "$archive" --passphrase-file "$work/key" --confirm-synthetic --confirm-disposable; then echo "Source name accepted"; exit 1; fi
+          if python ops/staging_disaster_drill.py restore-verify --archive "$archive" --passphrase-file "$work/key" --confirm-synthetic; then echo "Unconfirmed restore accepted"; exit 1; fi
+          python ops/staging_disaster_drill.py restore-verify --archive "$archive" --passphrase-file "$work/key" --confirm-synthetic --confirm-disposable
+          test "$(psql -h 127.0.0.1 -U ci_only -d occupational_ci_dr_restore -Atc "SELECT count(*) FROM health_employee WHERE employee_number='OHP-QA-01' AND risk_level='high'")" = 1
+          test "$(psql -h 127.0.0.1 -U ci_only -d occupational_ci_dr_restore -Atc "SELECT count(*) FROM health_stagingmedicalattachment WHERE byte_size=octet_length(file_data) AND checksum_sha256=encode(sha256(file_data),'hex')")" = 1
+          test "$(psql -h 127.0.0.1 -U ci_only -d occupational_ci_dr_restore -Atc "SELECT count(*) FROM health_stagingauthsession WHERE revoked_at IS NOT NULL")" = 1
+          if python ops/staging_disaster_drill.py restore-verify --archive "$archive" --passphrase-file "$work/key" --confirm-synthetic --confirm-disposable; then echo "Repeated restore accepted"; exit 1; fi
+          echo "Synthetic recovery: encrypted snapshot, authenticated manifest, row fingerprints, attachments, revoked sessions, source independence, rejection gates PASS."
 
 
   staging-smoke:
