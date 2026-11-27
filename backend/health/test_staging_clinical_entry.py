@@ -58,7 +58,7 @@ class StagingClinicalEntryTests(TestCase):
         self.assertEqual(self.post({**self.req,'synthetic_confirmed':False}).status_code,400)
         self.assertEqual(self.post(self.req,f'/api/staging-clinical/employees/{self.other.pk}/').status_code,403)
         self.assertEqual(len(self.client.get('/api/staging-clinical/employees/').data['employees']),1)
-        self.assertEqual(self.client.post('/api/lab-tests/',{'employee':self.e.pk,'test_type':'CBC'},format='json').status_code,400)
+        self.assertEqual(self.client.post('/api/lab-tests/',{'employee':self.e.pk,'test_type':'CBC'},format='json').status_code,403)
         staff=get_user_model().objects.create_user(username='staff',password='test-only',is_staff=True)
         self.client.force_authenticate(staff)
         self.assertEqual(self.post(self.req).status_code,403)
