@@ -39,10 +39,12 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const IS_STAGING_HOST = /staging/i.test(window.location.hostname);
+const STAGING_API_BASE_URL = 'https://occupational-staging-backend-staging.up.railway.app/api';
 const PRODUCTION_API_BASE_URL = 'https://occupational-health-platform-production.up.railway.app/api';
 const LOCAL_API_BASE_URL = 'http://localhost:8000/api';
 const API_BASE_URL = (
-  import.meta.env.VITE_API_URL ||
+  (IS_STAGING_HOST ? STAGING_API_BASE_URL : import.meta.env.VITE_API_URL) ||
   (typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
     ? LOCAL_API_BASE_URL
     : PRODUCTION_API_BASE_URL)
@@ -54,6 +56,9 @@ const USER_KEY = 'ohp_current_user';
 const SESSION_EXPIRED_EVENT = 'ohp:session-expired';
 
 let refreshInFlight: Promise<string> | null = null;
+let sessionGeneration=0;
+const sessionStore=IS_STAGING_HOST?sessionStorage:localStorage;
+if(IS_STAGING_HOST){for(const key of [ACCESS_TOKEN_KEY,REFRESH_TOKEN_KEY,USER_KEY])localStorage.removeItem(key);}
 
 
 // Normal paginated reads may include authentication renewal and proxy latency.
@@ -118,23 +123,24 @@ async function resilientFetch(input: RequestInfo | URL, options: RequestInit = {
 }
 
 export function getAccessToken() {
-  return localStorage.getItem(ACCESS_TOKEN_KEY);
+  return sessionStore.getItem(ACCESS_TOKEN_KEY);
 }
 
 function getRefreshToken() {
-  return localStorage.getItem(REFRESH_TOKEN_KEY);
+  return sessionStore.getItem(REFRESH_TOKEN_KEY);
 }
 
 function persistSession(user: User, access: string, refresh: string) {
-  localStorage.setItem(USER_KEY, JSON.stringify(user));
-  localStorage.setItem(ACCESS_TOKEN_KEY, access);
-  localStorage.setItem(REFRESH_TOKEN_KEY, refresh);
+  sessionStore.setItem(USER_KEY, JSON.stringify(user));
+  sessionStore.setItem(ACCESS_TOKEN_KEY, access);
+  sessionStore.setItem(REFRESH_TOKEN_KEY, refresh);
 }
 
 function clearSession() {
-  localStorage.removeItem(USER_KEY);
-  localStorage.removeItem(ACCESS_TOKEN_KEY);
-  localStorage.removeItem(REFRESH_TOKEN_KEY);
+  sessionGeneration+=1;
+  sessionStore.removeItem(USER_KEY);
+  sessionStore.removeItem(ACCESS_TOKEN_KEY);
+  sessionStore.removeItem(REFRESH_TOKEN_KEY);
 }
 
 function expireSession() {
@@ -145,6 +151,7 @@ function expireSession() {
 async function refreshAccessToken() {
   if (refreshInFlight) return refreshInFlight;
   refreshInFlight = (async () => {
+    const generation=sessionGeneration;
     const refresh = getRefreshToken();
     if (!refresh) {
       expireSession();
@@ -156,12 +163,13 @@ async function refreshAccessToken() {
       body: JSON.stringify({ refresh }),
     });
     const body = await response.json().catch(() => ({}));
+    if(generation!==sessionGeneration)throw new Error('تغيرت جلسة الدخول.');
     if (!response.ok || !body.access) {
       expireSession();
       throw new Error('انتهت جلسة الدخول. سجّل الدخول مرة أخرى.');
     }
-    localStorage.setItem(ACCESS_TOKEN_KEY, body.access);
-    if (body.refresh) localStorage.setItem(REFRESH_TOKEN_KEY, body.refresh);
+    sessionStore.setItem(ACCESS_TOKEN_KEY, body.access);
+    if (body.refresh) sessionStore.setItem(REFRESH_TOKEN_KEY, body.refresh);
     return String(body.access);
   })().finally(() => {
     refreshInFlight = null;
@@ -176,7 +184,9 @@ function withBearerToken(options: RequestInit, accessToken: string) {
 }
 
 export async function authFetch(input: RequestInfo | URL, options: RequestInit = {}) {
+  if(IS_STAGING_HOST){const url=new URL(String(input),window.location.origin);const api=new URL(STAGING_API_BASE_URL);if(url.origin!==api.origin||!url.pathname.startsWith('/api/'))throw new Error('مسار خارج بيئة Staging.');}
   const accessToken = getAccessToken();
+  const generation=sessionGeneration;
   if (!accessToken) {
     expireSession();
     throw new Error('انتهت جلسة الدخول. سجّل الدخول مرة أخرى.');
@@ -185,7 +195,9 @@ export async function authFetch(input: RequestInfo | URL, options: RequestInit =
   let response = await resilientFetch(input, withBearerToken(options, accessToken));
   if (response.status !== 401) return response;
 
+  if(generation!==sessionGeneration)throw new Error('تغيرت جلسة الدخول.');
   const renewedAccessToken = await refreshAccessToken();
+  if(generation!==sessionGeneration)throw new Error('تغيرت جلسة الدخول.');
   response = await resilientFetch(input, withBearerToken(options, renewedAccessToken));
   if (response.status === 401) {
     expireSession();
@@ -200,7 +212,7 @@ function readStoredUser(): User | null {
       clearSession();
       return null;
     }
-    const raw = localStorage.getItem(USER_KEY);
+    const raw = sessionStore.getItem(USER_KEY);
     return raw ? JSON.parse(raw) as User : null;
   } catch {
     return null;
@@ -267,13 +279,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     const normalized = normalizeUser(me);
     if (!normalized.isActive) throw new Error('Account is disabled');
+    sessionGeneration+=1;
     persistSession(normalized, tokenData.access, tokenData.refresh);
     setUser(normalized);
   };
 
   const logout = () => {
+    const refresh=getRefreshToken();
     clearSession();
     setUser(null);
+    if(IS_STAGING_HOST&&refresh){void resilientFetch(STAGING_API_BASE_URL+'/auth/logout/',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({refresh})}).then(r=>{if(!r.ok)throw Error('logout not confirmed');}).catch(()=>{window.alert('تم إنهاء الجلسة محليًا، لكن لم يتأكد إبطالها على الخادم. تنتهي الجلسة وفق مدتها المحددة.');});}
   };
 
   const can = (permission: Permission): boolean => {

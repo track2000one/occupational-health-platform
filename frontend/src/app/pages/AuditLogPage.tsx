@@ -225,7 +225,7 @@ function StagingAuditLogPage(){
     .finally(()=>{if(active)setLoading(false);});
     return()=>{active=false;};
   },[user?.isSuperuser,page,revision,filters]);
-  const labels:Record<string,string>={qa_view_health_card:'عرض بطاقة اختبار',qa_export_health_metrics:'تصدير مؤشرات الاختبار',
+  const labels:Record<string,string>={qa_login_success:'تسجيل دخول ناجح',qa_login_failed:'محاولة دخول مرفوضة',qa_logout:'إنهاء جلسة',qa_refresh_replay_denied:'رفض رمز تجديد مستخدم سابقًا',qa_view_health_card:'عرض بطاقة اختبار',qa_export_health_metrics:'تصدير مؤشرات الاختبار',
     create_employee_health_card:'إنشاء بطاقة',update_employee_health_card:'تعديل بطاقة',
     qa_delete_card_correction:'حذف مسودة — تصحيح',qa_delete_card_retest:'حذف مسودة — إعادة اختبار',
     qa_delete_card_wrong_entry:'حذف مسودة — إدخال خاطئ',health_data_draft_fill:'استكمال مسودة من Excel',

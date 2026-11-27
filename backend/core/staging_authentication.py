@@ -12,7 +12,10 @@ class ScopedStagingJWTAuthentication(JWTAuthentication):
         from health.organization_structure import STAGING_PROJECT
         flag=os.getenv('STAGING_MODE','').lower()=='true'
         project=os.getenv('RAILWAY_PROJECT_ID')==STAGING_PROJECT
-        user,_=result
+        user,token=result
+        if flag or project:
+            from core.staging_sessions import validate_access
+            validate_access(user,token)
         if not (flag or project) or user.is_superuser:
             return result
         path=request.path_info

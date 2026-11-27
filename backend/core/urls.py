@@ -3,7 +3,7 @@ from django.urls import path, include
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from core.staging_sessions import StagingTokenObtainView, StagingTokenRefreshView, StagingLogoutView
 
 
 class Health(APIView):
@@ -16,8 +16,9 @@ class Health(APIView):
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('health/', Health.as_view()),
-    path('api/auth/token/', TokenObtainPairView.as_view()),
-    path('api/auth/token/refresh/', TokenRefreshView.as_view()),
+    path('api/auth/token/', StagingTokenObtainView.as_view()),
+    path('api/auth/token/refresh/', StagingTokenRefreshView.as_view()),
+    path('api/auth/logout/', StagingLogoutView.as_view()),
     path('api/periodic-statistics/', include('periodic_stats.urls')),
     path('api/', include('health.urls')),
 ]

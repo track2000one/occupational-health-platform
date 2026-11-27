@@ -1456,3 +1456,21 @@ class ProvisionalEmployeeNumberCorrectionEvent(models.Model):
 
     class Meta:
         ordering = ['-created_at', '-pk']
+
+
+class StagingAuthSession(models.Model):
+    """Opaque server-side session. Never store a bearer token."""
+    id = models.UUIDField(primary_key=True, editable=False)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='staging_auth_sessions')
+    password_stamp = models.CharField(max_length=64)
+    refresh_jti = models.CharField(max_length=64)
+    expires_at = models.DateTimeField(db_index=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class StagingLoginWindow(models.Model):
+    """HMAC of identifier and time window, no submitted username or IP."""
+    key = models.CharField(max_length=64, primary_key=True)
+    expires_at = models.DateTimeField(db_index=True)
+    attempts = models.PositiveIntegerField(default=0)
