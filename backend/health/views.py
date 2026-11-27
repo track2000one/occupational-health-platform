@@ -65,10 +65,15 @@ class CanManageHealthCenters(permissions.BasePermission):
             return False
 
 
+def staging_clinical_boundary():
+    # An incomplete/misconfigured staging marker must not fall back to legacy access.
+    return os.getenv('STAGING_MODE','').lower()=='true' or os.getenv('RAILWAY_PROJECT_ID')==STAGING_PROJECT
+
+
 class LegacyFitnessCommitteePermission(permissions.BasePermission):
     """Isolated Staging uses the scoped synthetic API, not these global endpoints."""
     def has_permission(self, request, view):
-        if os.getenv('STAGING_MODE','').lower()=='true' or os.getenv('RAILWAY_PROJECT_ID')==STAGING_PROJECT:
+        if staging_clinical_boundary():
             return False
         return bool(request.user and request.user.is_authenticated)
 
@@ -213,6 +218,9 @@ class HealthCardVerificationView(APIView):
     authentication_classes = []
 
     def get(self, request, token):
+        # Public verification is not part of the isolated clinical QA trial.
+        if staging_clinical_boundary():
+            return Response({'valid':False,'status':'unavailable','message_ar':'التحقق العام غير متاح في بيئة الاختبار.'},status=404,headers={'Cache-Control':'no-store'})
         card = EmployeeHealthCard.from_verification_token(token)
         if not card:
             return Response(
@@ -1502,6 +1510,18 @@ class EmployeeViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get', 'put', 'patch', 'delete'])
     def health_card(self, request, pk=None):
         employee = self.get_object()
+        if staging_clinical_boundary():
+            if not (isolated_health_admin(request) and verified_health_test_employee(employee)
+                    and not employee.is_archived and employee.registration_status=='verified'
+                    and employee.employment_status==Employee.EmploymentStatus.ACTIVE):
+                return Response({'detail':'البطاقات الصحية في Staging محصورة بالمشرف الأعلى وموظفي الاختبار النشطين الموثقين.'},
+                                status=403,headers={'Cache-Control':'private, no-store'})
+            if request.method=='DELETE':
+                return Response({'detail':'حذف البطاقة غير متاح في الاختبار التشغيلي.'},status=403,
+                                headers={'Cache-Control':'private, no-store'})
+            if request.method in ('PUT','PATCH') and request.data.get('is_approved',False) not in (False,None):
+                return Response({'detail':'الاعتماد الطبي غير متاح في تجربة المسودات.'},status=403,
+                                headers={'Cache-Control':'private, no-store'})
         if not self._can_view_health_card(request, employee):
             return Response(
                 {'detail': 'You do not have permission to view this health card.'},
@@ -1509,6 +1529,9 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             )
 
         card = EmployeeHealthCard.objects.filter(employee=employee).first()
+        if staging_clinical_boundary() and card and card.is_approved and request.method in ('PUT','PATCH'):
+            return Response({'detail':'البطاقة المعتمدة محمية من تعديل المسودة.'},status=403,
+                            headers={'Cache-Control':'private, no-store'})
         if request.method == 'DELETE':
             if not self._can_write_health_card(request):
                 return Response(
@@ -1804,7 +1827,7 @@ class LegacyClinicalViewSet(viewsets.ModelViewSet):
 class LabTestViewSet(LegacyClinicalViewSet):
     queryset=LabTest.objects.select_related('employee').all().order_by('-id')
     serializer_class=LabTestSerializer
-    permission_classes=[permissions.IsAuthenticated]
+    permission_classes=[LegacyFitnessCommitteePermission]
     explicit_date_field='request_date'
 class OccupationalHealthAssessmentViewSet(viewsets.ModelViewSet):
     queryset = OccupationalHealthAssessment.objects.select_related('employee', 'employee__health_center', 'created_by').all()
@@ -1844,12 +1867,12 @@ class OccupationalHealthAssessmentViewSet(viewsets.ModelViewSet):
 class VaccinationViewSet(LegacyClinicalViewSet):
     queryset=Vaccination.objects.select_related('employee').all().order_by('-id')
     serializer_class=VaccinationSerializer
-    permission_classes=[permissions.IsAuthenticated]
+    permission_classes=[LegacyFitnessCommitteePermission]
     explicit_date_field='dose_date'
 class ClinicVisitViewSet(viewsets.ModelViewSet):
     queryset = ClinicVisit.objects.select_related('employee', 'employee__health_center', 'created_by').all()
     serializer_class = ClinicVisitSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes=[LegacyFitnessCommitteePermission]
     search_fields = ['employee__name', 'employee__employee_number', 'employee__national_id', 'clinic_type', 'doctor_name']
 
     def perform_create(self, serializer):
@@ -1883,5 +1906,5 @@ class CommitteeReferralViewSet(viewsets.ModelViewSet):
     queryset=CommitteeReferral.objects.select_related('employee').filter(qa_workflow=False).order_by('-id')
     serializer_class=CommitteeReferralSerializer
     permission_classes=[LegacyFitnessCommitteePermission]
-class InjuryCaseViewSet(viewsets.ModelViewSet): queryset=InjuryCase.objects.select_related('employee').all().order_by('-id'); serializer_class=InjuryCaseSerializer; permission_classes=[permissions.IsAuthenticated]
+class InjuryCaseViewSet(viewsets.ModelViewSet): queryset=InjuryCase.objects.select_related('employee').all().order_by('-id'); serializer_class=InjuryCaseSerializer; permission_classes=[LegacyFitnessCommitteePermission]
 class AuditLogViewSet(viewsets.ReadOnlyModelViewSet): queryset=AuditLog.objects.all().order_by('-created_at'); serializer_class=AuditLogSerializer; permission_classes=[permissions.IsAdminUser]
