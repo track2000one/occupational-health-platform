@@ -14,9 +14,11 @@ TEMPLATE='/api/health-data-import/template/'
 METRICS='/api/staging-clinical/metrics/'
 IMPORT='/api/health-data-import/draft-commit/'
 
-@patch.dict('os.environ',ENV)
 class CardCompletionTests(TestCase):
     def setUp(self):
+        environment = patch.dict('os.environ', ENV)
+        environment.start()
+        self.addCleanup(environment.stop)
         self.admin=get_user_model().objects.create_superuser(username='completion_qa',password='test-only')
         self.client=APIClient()
         self.client.force_authenticate(self.admin)
