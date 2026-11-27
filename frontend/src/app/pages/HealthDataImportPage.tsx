@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Alert, Box, Button, Checkbox, Chip, FormControlLabel, Paper, Stack, Table,
   TableBody, TableCell, TableContainer, TableHead, TableRow, Typography } from '@mui/material';
 import { authFetch, useAuth } from '../context/AuthContext';
+import { HealthDataDraftCommit } from '../components/HealthDataDraftCommit';
 
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 const fieldLabels: Record<string, string> = { empty: 'فارغ', proposed: 'قيمة مقترحة للفحص',
@@ -53,7 +54,7 @@ export function HealthDataImportPage() {
   if (!isAllowed) return <Alert severity="warning">هذه الصفحة للمسؤول الأعلى في البيئة التجريبية المعزولة فقط.</Alert>;
   return <Box dir="rtl"><Stack gap={2}>
     <Typography variant="h4" fontWeight={900}>استيراد البيانات الصحية للموظفين</Typography>
-    <Alert severity="warning">المرحلة الأولى — معاينة فقط. يمنع رفع البيانات الصحية الحقيقية في Staging. استخدم القالب الفارغ وبيانات اصطناعية.</Alert>
+    <Alert severity="warning">المعاينة والاستكمال التجريبي — يمنع رفع البيانات الصحية الحقيقية في Staging. استخدم بيانات اصطناعية فقط.</Alert>
     <Paper sx={{ p: 3, borderRadius: 3 }}><Stack gap={2}>
       <Typography variant="h6" fontWeight={800}>قالب HealthData V1</Typography>
       <Typography color="text.secondary">61 حقلًا صحيًا و4 حقول للربط. لا يُعاد تسجيل الموظف، ولا تُنشأ بطاقة أو زيارة أثناء الفحص.</Typography>
@@ -74,7 +75,7 @@ export function HealthDataImportPage() {
           <Chip key={key} label={(identityLabels[key] || key) + ': ' + value} variant="outlined" />)}</Stack>
         <Stack direction="row" gap={1} flexWrap="wrap">{Object.entries(preview.field_totals).map(([key, value]) =>
           <Chip key={key} label={(fieldLabels[key] || key) + ': ' + value} color={key === 'review' || key === 'card_conflict' ? 'warning' : 'default'} />)}</Stack>
-        <Alert severity="info">{preview.notice} لا تتوفر عملية حفظ في هذا الإصدار.</Alert>
+        <Alert severity="info">{preview.notice} الحفظ التجريبي يتطلب معاينة مستقلة أدناه.</Alert>
       </Stack></Paper>
       <Paper sx={{p: 2, borderRadius: 3}}>
         <Typography variant="h6" fontWeight={800}>مطابقة الحقول بالبطاقة الصحية</Typography>
@@ -99,5 +100,6 @@ export function HealthDataImportPage() {
         </Table></TableContainer>}
       </Paper>
     </>}
+    {preview && file && confirmed && <HealthDataDraftCommit file={file} api={API} />}
   </Stack></Box>;
 }
