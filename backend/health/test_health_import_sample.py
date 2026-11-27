@@ -57,7 +57,8 @@ class SyntheticSampleTests(TestCase):
         self.assertFalse(AuditLog.objects.filter(action='health_data_draft_fill').exists())
 
     def test_no_eligible_and_wrong_project_denied(self):
-        EmployeeHealthCard.objects.bulk_create([EmployeeHealthCard(employee=e,is_approved=True) for e in self.employees])
+        for e in self.employees:
+            EmployeeHealthCard.objects.create(employee=e,is_approved=True)
         self.assertEqual(self.client.get(URL).status_code,409)
         with patch.dict('os.environ',{'RAILWAY_PROJECT_ID':'other'}):
             self.assertEqual(self.client.get(URL).status_code,403)
