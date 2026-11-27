@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { healthFieldLabel } from '../utils/healthImportLabels';
 import { Alert, Button, Checkbox, Chip, FormControlLabel, Paper, Stack, Table, TableBody,
   TableCell, TableContainer, TableHead, TableRow, TextField, Typography } from '@mui/material';
 import { authFetch } from '../context/AuthContext';
@@ -11,7 +12,7 @@ const labels: Record<string,string> = { ready:'مؤهل', review:'موقوف ل�
   specialized_records:'سجلات صحية متخصصة قائمة', invalid_existing_card:'بنية بطاقة غير صالحة',
   card_conflict:'تعارض مع البطاقة', ambiguous_or_invalid:'قيم تحتاج مراجعة',
   same_card_values:'القيم مطابقة', no_values:'لا توجد قيم', duplicate:'هوية مكررة',
-  identity_review:'مطابقة غير مؤكدة', unmatched:'موظف غير مطابق', inactive:'غير نشط أو غير موثق' };
+  identity_review:'مطابقة غير مؤكدة', unmatched:'غير مطابق ضمن نطاق الاختبار', inactive:'غير نشط أو غير موثق' };
 const confirmationPhrase = 'استكمال مسودات الاختبار';
 
 export function HealthDataDraftCommit({ file, api }: { file: File; api: string }) {
@@ -73,9 +74,10 @@ export function HealthDataDraftCommit({ file, api }: { file: File; api: string }
         <TableBody>{plan.rows.map(r=><TableRow key={r.row}>
           <TableCell><Checkbox checked={selected.includes(r.row)} disabled={busy||r.status!=='ready'} onChange={(_,checked)=>{setSelected(old=>checked?[...old,r.row]:old.filter(i=>i!==r.row));setAck(false);}}/></TableCell>
           <TableCell>{r.row}</TableCell><TableCell>{labels[r.status]} {r.reason && '— '+(labels[r.reason]||r.reason)}</TableCell>
-          <TableCell>{r.eligible_fields.join('، ')||'—'}</TableCell><TableCell>{r.conflict_fields.join('، ')||'—'}</TableCell><TableCell>{r.review_fields.join('، ')||'—'}</TableCell>
+          <TableCell>{r.eligible_fields.map(healthFieldLabel).join('، ')||'—'}</TableCell><TableCell>{r.conflict_fields.map(healthFieldLabel).join('، ')||'—'}</TableCell><TableCell>{r.review_fields.map(healthFieldLabel).join('، ')||'—'}</TableCell>
         </TableRow>)}</TableBody>
       </Table></TableContainer>
+      {plan.counts.ready === 0 && <Alert severity="info">لا توجد صفوف مؤهلة للحفظ. راجع أسباب الإيقاف أو نزّل عينة اختبار جديدة.</Alert>}
       <TextField label="سبب الاستكمال ومرجع الاختبار (دون بيانات شخصية أو صحية)" value={reason} disabled={busy} onChange={e=>{setReason(e.target.value);setAck(false);}} helperText="10 إلى 350 حرفًا" slotProps={{htmlInput:{maxLength:350}}}/>
       <TextField label={'اكتب: '+confirmationPhrase} value={phrase} disabled={busy} onChange={e=>setPhrase(e.target.value)}/>
       <FormControlLabel control={<Checkbox checked={ack} disabled={busy||!selected.length} onChange={(_,v)=>setAck(v)}/>} label="راجعت الملف الاصطناعي وأوافق على استكمال الحقول الناقصة فقط دون اعتماد طبي."/>
