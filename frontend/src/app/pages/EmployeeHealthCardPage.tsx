@@ -45,6 +45,7 @@ import {
 import logoImg from '@/imports/ChatGPT_Image_21______2026__10_06_18__.png';
 import { EmployeeQuickSearch, type EmployeeSearchOption } from '../components/EmployeeQuickSearch';
 import { CalendarDateField } from '../components/CalendarDateField';
+import { LinkedClinicalRecords, type LinkedClinicalData } from '../components/LinkedClinicalRecords';
 import { authFetch, getAccessToken, useAuth } from '../context/AuthContext';
 import { useDatePreference } from '../context/DatePreferenceContext';
 import '../../styles/employee-health-card.css';
@@ -125,6 +126,7 @@ type HealthCardData = {
   updated_at?: string | null;
   employee: EmployeeData;
   data?: Partial<SectionData>;
+  linked_clinical_records?: LinkedClinicalData;
   personal?: Record<string, unknown>;
   employment?: Record<string, unknown>;
   physical?: Record<string, unknown>;
@@ -672,6 +674,7 @@ function HealthCardSheet({ card, form }: { card: HealthCardData; form: SectionDa
         </aside>
       </main>
 
+      {card.linked_clinical_records && <LinkedClinicalRecords data={card.linked_clinical_records} />}
       <footer className="ohc-card-footer">
         <Section number="8" title="التوصيات" subtitle="Recommendations" color="#0b5f94" icon={<ClipboardList />}>
           <div className="ohc-recommendations">
@@ -1063,6 +1066,7 @@ export function EmployeeHealthCardPage() {
             </Grid>
           </Paper>
 
+          {card.linked_clinical_records && <LinkedClinicalRecords data={card.linked_clinical_records} />}
           <div className="ohc-form-sections-grid">
             <FormSection sectionKey="personal" number="1" title="المعلومات الشخصية الإضافية" subtitle="حقول Excel غير الموجودة في سجل الموظف" color="#0ea5e9" colorEnd="#2563eb" icon={<UserRound />} fields={PERSONAL_FIELDS} values={form.personal} onChange={(key, fieldValue) => updateSection('personal', key, fieldValue)} defaultExpanded />
             <FormSection sectionKey="employment" number="2" title="معلومات العمل الإضافية" subtitle="رقم وزارة الصحة والوظيفة الحالية" color="#8b5cf6" colorEnd="#6d28d9" icon={<BriefcaseBusiness />} fields={EMPLOYMENT_FIELDS} values={form.employment} onChange={(key, fieldValue) => updateSection('employment', key, fieldValue)} />
