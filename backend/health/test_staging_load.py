@@ -80,9 +80,20 @@ class StagingFullLoadTests(TestCase):
         call_command('seed_staging_synthetic')
         call_command('seed_staging_load')
         client = APIClient()
-        user = get_user_model().objects.create_user(
+        # The full administrative registry must retain pagination and filtering.
+        # Staff without an approved scope must no longer see the entire roster.
+        User = get_user_model()
+        limited = User.objects.create_user(
             'qa_list_reader', password='not-for-use', is_staff=True)
-        client.force_authenticate(user)
+        client.force_authenticate(limited)
+        denied_scope = client.get('/api/employees/?page=1')
+        self.assertEqual(denied_scope.status_code, 200)
+        self.assertEqual(denied_scope.data['count'], 0)
+        self.assertEqual(denied_scope.data['results'], [])
+
+        admin = User.objects.create_superuser(
+            'qa_full_registry_admin', password='not-for-use')
+        client.force_authenticate(admin)
 
         first = client.get('/api/employees/?page=1')
         self.assertEqual(first.status_code, 200)
