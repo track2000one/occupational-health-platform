@@ -797,6 +797,21 @@ class EmployeeHealthProfile(ImportTraceModel):
         return f'Health profile - {self.employee}'
 
 
+class EmployeeHealthObservation(models.Model):
+    """Dated, explicitly recorded observations; not an inferred diagnosis."""
+    employee = models.ForeignKey(Employee, on_delete=models.PROTECT, related_name='health_observations')
+    observation_date = models.DateField(db_index=True)
+    data = models.JSONField(default=dict)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+                                  related_name='created_health_observations')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-observation_date', '-pk']
+        constraints = [models.UniqueConstraint(fields=['employee', 'observation_date'],
+                                               name='unique_employee_health_observation_date')]
+
+
 class EmployeeHealthCard(models.Model):
     """A saved, employee-specific occupational health card.
 
