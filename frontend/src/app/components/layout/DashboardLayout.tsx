@@ -92,6 +92,7 @@ export function DashboardLayout() {
     { key: 'periodicStatistics', label: isRtl ? 'الإحصائيات والمؤشرات' : 'Statistics & Indicators', icon: <AssessmentIcon />, path: '/periodic-statistics', group: 'followup', permission: PERMISSIONS.VIEW_REPORTS },
     { key: 'reports',            label: t('reports'),            icon: <AssessmentIcon />,          path: '/reports',               group: 'followup', permission: PERMISSIONS.VIEW_REPORTS },
     { key: 'dataQuality',        label: isRtl ? 'جودة البيانات' : 'Data Quality',              icon: <FactCheckIcon />,      path: '/data-quality',  group: 'followup', permission: PERMISSIONS.VIEW_DATA_QUALITY },
+    { key: 'healthDataImport', label: isRtl ? 'استيراد البيانات الصحية' : 'Import Health Data', icon: <CloudUploadIcon />, path: '/health-data-import', group: 'followup', permission: PERMISSIONS.MANAGE_USERS },
     { key: 'dataImport',         label: isRtl ? 'استيراد بيانات الموظفين' : 'Import Employees', icon: <CloudUploadIcon />, path: '/employees/provisional', group: 'followup', permission: PERMISSIONS.MANAGE_USERS },
     { key: 'appointments',       label: isRtl ? 'المواعيد' : 'Appointments',                   icon: <CalendarIcon />,      path: '/appointments',  group: 'followup', permission: PERMISSIONS.VIEW_DASHBOARD },
     { key: 'notifications',      label: isRtl ? 'الإشعارات' : 'Notifications',                 icon: <NotificationsIcon />, path: '/notifications', group: 'followup', permission: PERMISSIONS.VIEW_DASHBOARD },
@@ -113,7 +114,7 @@ export function DashboardLayout() {
     { key: 'admin', label: isRtl ? 'الإدارة والنظام' : 'Administration' },
   ];
 
-  const filteredNavItems = navItems.filter(item => !item.permission || can(item.permission));
+  const filteredNavItems = navItems.filter(item => (!item.permission || can(item.permission)) && (item.key !== 'healthDataImport' || (user?.isSuperuser === true && /staging/i.test(window.location.hostname))));
 
   const activeNav = filteredNavItems.find(item => {
     if (item.path === '/admin') return location.pathname === '/admin';
