@@ -41,6 +41,19 @@ class StagingPrivacyMiddleware:
     def __call__(self,request):
         if not staging_boundary():
             return self.get_response(request)
+        # Bound auth request bodies before parsing/password hashing, without changing Excel limits.
+        if request.path_info in ('/api/auth/token/','/api/auth/token/refresh/','/api/auth/logout/') and request.method=='POST':
+            try:
+                length=int(request.META.get('CONTENT_LENGTH') or '0')
+            except (TypeError,ValueError):
+                length=0
+            if length>16384 or length<0:
+                response=JsonResponse({'detail':'حجم طلب المصادقة غير مقبول.'},status=413)
+                add_never_cache_headers(response)
+                response['X-Content-Type-Options']='nosniff'
+                response['Referrer-Policy']='no-referrer'
+                response['X-Frame-Options']='DENY'
+                return response
         if request.path_info=='/admin' or request.path_info.startswith('/admin/'):
             response=JsonResponse({'detail':'لوحة Django الإدارية مغلقة في Staging؛ استخدم المسارات المعتمدة.'},status=403)
             add_never_cache_headers(response)
@@ -50,4 +63,7 @@ class StagingPrivacyMiddleware:
             # Preserve the explicit no-store header used by existing clinical APIs.
             if 'no-store' not in response.get('Cache-Control',''):
                 add_never_cache_headers(response)
+            response['X-Content-Type-Options']='nosniff'
+            response['Referrer-Policy']='no-referrer'
+            response['X-Frame-Options']='DENY'
         return response

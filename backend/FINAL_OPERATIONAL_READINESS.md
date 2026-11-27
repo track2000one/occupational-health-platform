@@ -56,3 +56,7 @@ A separate protected card FK and opaque UUID for a saved, unapproved, active exa
 ## Increment 143 — independent synthetic disaster recovery drill (pending CI)
 
 See STAGING_DISASTER_RECOVERY.md. Local-only PostgreSQL snapshot backup, authenticated encrypted manifest, independent restore verification against complete ordinary public table row fingerprints, including synthetic binary attachment, card and revoked session. Wrong key, tamper, source-name, missing confirmation and repeated restore denied in CI. No Railway services, storage, database connection or scheduling added; existing operator backup script remains unchanged. RPO 24h/RTO 4h proposed only; independent authorized Staging backup/restore, storage approval, key management, real incident recovery and measured objectives remain NO-GO gates. Do not enable real employee data or Production.
+
+## Increment 144 — bounded security and performance regression (pending CI)
+
+See STAGING_SECURITY_PERFORMANCE.md. Request-local scope ancestry reuse and narrower selects, bounded query budget, actual JWT role matrix and revocation, oversized auth request guard, API response headers, bearer redirect denial, 1,423 synthetic employees/25 centers and 20 local concurrent PostgreSQL reads. Dependency advisory scans are report-only and must be reviewed separately, including any unavailable scan. No live Railway load tests, resource changes, migrations, or Production deployment. No claim of full penetration testing or production SLA. Independent backup, live UAT and institutional approval remain NO-GO gates.
