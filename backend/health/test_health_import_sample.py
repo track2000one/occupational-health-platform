@@ -8,7 +8,7 @@ from rest_framework.test import APIClient
 from .health_data_import import HEADERS
 from .models import Employee, EmployeeHealthCard, LabTest, DataImportBatch, AuditLog
 from .organization_structure import STAGING_PROJECT
-from .staging_employee_reset import QA_EXAMPLES
+from .staging_employee_reset import QA_EXAMPLES, IMPORT_QA_EXAMPLES
 
 ENV={'STAGING_MODE':'true','RAILWAY_PROJECT_ID':STAGING_PROJECT}
 URL='/api/health-data-import/template/?sample=1'
@@ -65,3 +65,74 @@ class SyntheticSampleTests(TestCase):
         staff=get_user_model().objects.create_user(username='sample_staff',password='test-only',is_staff=True)
         self.client.force_authenticate(staff)
         self.assertEqual(self.client.get(URL).status_code,403)
+
+
+    def prepare(self, **override):
+        return self.client.post('/api/health-data-import/template/',
+            {'action':'prepare_import_fixtures','synthetic_confirmed':True,**override},format='json')
+
+    def test_dedicated_fixtures_create_once_and_import_end_to_end(self):
+        before = list(Employee.objects.order_by('pk').values())
+        self.assertEqual(self.prepare(synthetic_confirmed=False).status_code,400)
+        self.assertEqual(self.prepare().data,{'created':3,'existing':0})
+        self.assertEqual(self.prepare().data,{'created':0,'existing':3})
+        self.assertEqual(Employee.objects.count(),7)
+        self.assertEqual(list(Employee.objects.filter(pk__in=[r['id'] for r in before]).order_by('pk').values()),before)
+        self.assertEqual(AuditLog.objects.filter(action='staging_health_import_fixture_create').count(),3)
+        sample=self.client.get(URL)
+        self.assertEqual(sample.status_code,200)
+        book=load_workbook(BytesIO(sample.content))
+        self.assertEqual([row[1] for row in book['HealthData'].iter_rows(min_row=2,values_only=True)],
+                         [nid for nid,_ in IMPORT_QA_EXAMPLES.values()])
+        book.close()
+        path='/api/health-data-import/draft-commit/'
+        def send(**kwargs):
+            return self.client.post(path,{'file':SimpleUploadedFile('sample.xlsx',sample.content),
+                'synthetic_confirmed':'true',**kwargs},format='multipart')
+        plan=send(action='preview')
+        self.assertEqual(plan.status_code,200,plan.data)
+        self.assertEqual(plan.data['counts']['ready'],3)
+        self.assertEqual(plan.data['eligible_values'],9)
+        applied=send(action='apply',preview_token=plan.data['preview_token'],
+            selected_rows='[2,3,4]',confirmation='استكمال مسودات الاختبار',reason='اختبار الاستيراد UAT-002')
+        self.assertEqual(applied.status_code,200,applied.data)
+        self.assertEqual(applied.data['updated_cards'],3)
+        self.assertEqual(applied.data['updated_values'],9)
+        cards=EmployeeHealthCard.objects.filter(employee__employee_number__in=IMPORT_QA_EXAMPLES)
+        self.assertEqual(cards.count(),3)
+        self.assertFalse(cards.filter(is_approved=True).exists())
+        for card in cards:
+            self.assertEqual(card.data['physical']['weight_kg'],'72')
+            self.assertEqual(card.data['conditions']['diabetes'],'No')
+        snapshot=list(cards.order_by('pk').values())
+        self.assertEqual(self.prepare().data,{'created':0,'existing':3})
+        self.assertEqual(list(cards.order_by('pk').values()),snapshot)
+        self.assertEqual(list(Employee.objects.filter(pk__in=[r['id'] for r in before]).order_by('pk').values()),before)
+
+    def test_collision_atomic_and_prepare_permissions(self):
+        nid,_=IMPORT_QA_EXAMPLES['OHP-QA-IMPORT-02']
+        Employee.objects.create(national_id=nid,name='COLLISION FIXTURE')
+        before=list(Employee.objects.order_by('pk').values())
+        self.assertEqual(self.prepare().status_code,409)
+        self.assertEqual(list(Employee.objects.order_by('pk').values()),before)
+        self.assertEqual(AuditLog.objects.filter(action='staging_health_import_fixture_create').count(),0)
+        with patch.dict('os.environ',{'RAILWAY_PROJECT_ID':'other'}):
+            self.assertEqual(self.prepare().status_code,403)
+        staff=get_user_model().objects.create_user(username='prepare_staff',password='test-only',is_staff=True)
+        self.client.force_authenticate(staff)
+        self.assertEqual(self.prepare().status_code,403)
+
+    def test_blocker_categories_without_medical_values(self):
+        e=self.employees[0]
+        e.lab_request='PRIVATE-QA-TEST-DETAIL'
+        e.save(update_fields=['lab_request'])
+        LabTest.objects.create(employee=e,test_type='PRIVATE-QA-LAB-DETAIL')
+        from .health_data_import import template_bytes
+        raw=template_bytes([{'national_id':e.national_id,'employee_name':e.name,'weight_kg':72}])
+        result=self.client.post('/api/health-data-import/draft-commit/',{'file':SimpleUploadedFile('sample.xlsx',raw),
+            'synthetic_confirmed':'true','action':'preview'},format='multipart')
+        self.assertEqual(result.status_code,200,result.data)
+        row=result.data['rows'][0]
+        self.assertEqual(row['reason'],'specialized_records')
+        self.assertEqual(row['blockers'],['LabTest','lab_request'])
+        self.assertNotIn('PRIVATE-QA',str(result.data))

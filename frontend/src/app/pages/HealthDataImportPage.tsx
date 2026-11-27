@@ -28,7 +28,24 @@ export function HealthDataImportPage() {
   const [error, setError] = useState('');
   const [preview, setPreview] = useState<Preview | null>(null);
   const [showRows, setShowRows] = useState(false);
+  const [prepareAck, setPrepareAck] = useState(false);
+  const [prepared, setPrepared] = useState('');
   const isAllowed = user?.isSuperuser === true && /staging/i.test(window.location.hostname);
+  async function prepareFixtures() {
+    if (busy || !prepareAck) return;
+    setBusy(true); setError(''); setPrepared(''); setPreview(null);
+    try {
+      const res = await authFetch(base() + '/health-data-import/template/', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({action:'prepare_import_fixtures',synthetic_confirmed:true})
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'تعذر تأسيس سجلات الاختبار.');
+      setPrepared('تم إنشاء '+data.created+' سجل اختبار جديد؛ '+data.existing+' سجل موجود دون تعديل. نزّل عينة اختبار مطابقة ثم افحصها.');
+      setPrepareAck(false);
+    } catch(e) { setError(e instanceof Error ? e.message : 'تعذر تأسيس سجلات الاختبار.'); }
+    finally { setBusy(false); }
+  }
   async function download(sample = false) {
     setBusy(true); setError('');
     try {
@@ -59,6 +76,15 @@ export function HealthDataImportPage() {
     <Paper sx={{ p: 3, borderRadius: 3 }}><Stack gap={2}>
       <Typography variant="h6" fontWeight={800}>قالب HealthData V1</Typography>
       <Typography color="text.secondary">61 حقلًا صحيًا و4 حقول للربط. لا يُعاد تسجيل الموظف، ولا تُنشأ بطاقة أو زيارة أثناء الفحص.</Typography>
+      <Paper variant="outlined" sx={{p:2,borderRadius:2}}>
+        <Stack gap={1}>
+          <Typography fontWeight={800}>تأسيس سجلات اختبار الاستيراد (UAT-002)</Typography>
+          <Typography variant="body2">ثلاث هويات اصطناعية ثابتة مخصصة للاختبار فقط، دون بيانات صحية مسبقة. لا يُعدّل أو يُحذف أي سجل قائم؛ إعادة التنفيذ لا تكرر السجلات.</Typography>
+          <FormControlLabel control={<Checkbox checked={prepareAck} disabled={busy} onChange={(_,v)=>setPrepareAck(v)}/>} label="أوافق على إنشاء سجلات الاختبار الاصطناعية فقط في Staging."/>
+          <Button variant="outlined" color="success" disabled={busy||!prepareAck} onClick={()=>void prepareFixtures()}>تأسيس سجلات اختبار الاستيراد</Button>
+          {prepared && <Alert severity="success">{prepared}</Alert>}
+        </Stack>
+      </Paper>
       <Stack direction="row" gap={1} flexWrap="wrap">
         <Button variant="outlined" disabled={busy} onClick={() => void download()}>تنزيل القالب الصحي المعتمد</Button>
         <Button variant="outlined" color="success" disabled={busy} onClick={() => void download(true)}>تنزيل عينة اختبار مطابقة</Button>
@@ -67,7 +93,7 @@ export function HealthDataImportPage() {
         </Button>
         <Button variant="contained" disabled={busy || !file || !confirmed} onClick={() => void inspect()}>{busy ? 'جارٍ الفحص…' : 'فحص ومطابقة البيانات الصحية'}</Button>
       </Stack>
-      <Alert severity="info">عينة الاختبار تحتوي على ما يصل إلى 3 موظفين مؤهلين وقت التنزيل، و3 قيم اصطناعية لكل موظف. لا تنشئ أو تعدّل سجلات بمجرد تنزيلها.</Alert>
+      <Alert severity="info">عينة الاختبار تعطي الأولوية لسجلات الاستيراد المخصصة، وتحتوي على ما يصل إلى 3 موظفين مؤهلين وقت التنزيل، و3 قيم اصطناعية لكل موظف. لا تنشئ أو تعدّل سجلات بمجرد تنزيلها.</Alert>
       <FormControlLabel control={<Checkbox checked={confirmed} disabled={busy} onChange={(_, c) => setConfirmed(c)} />} label="أقر بأن الملف يحتوي على بيانات اصطناعية للاختبار فقط." />
     </Stack></Paper>
     {error && <Alert severity="error">{error}</Alert>}
