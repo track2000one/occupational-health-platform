@@ -15,7 +15,7 @@ from .staging_clinical_entry import eligible, reply
 from .models import (Employee, OrganizationUnit, EmployeeHealthCard, EmployeeHealthProfile,
     EmployeeHealthObservation, LabTest, LabScreening, Vaccination, VaccinationRecord, VaccinationDose,
     ClinicVisit, EmployeeClinicVisit, OccupationalClinicVisit, InjuryCase, NeedleStickExposure,
-    OccupationalHealthAssessment, CommitteeReferral, MedicalCommitteeCase)
+    OccupationalHealthAssessment, CommitteeReferral, MedicalCommitteeCase, AuditLog)
 
 MAX_CANDIDATES=5000
 MAX_ORG=5000
@@ -234,7 +234,9 @@ class StagingHealthMetricsView(APIView):
         except ValueError as exc:
             return reply({'detail':str(exc)},400)
         if download=='xlsx':
-            response=HttpResponse(workbook_bytes(data),content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            content=workbook_bytes(data)
+            AuditLog.objects.create(user=str(request.user)[:150],action='qa_export_health_metrics',model_name='HealthMetrics',record_id='')
+            response=HttpResponse(content,content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
             response['Content-Disposition']='attachment; filename="OHP_Staging_Health_KPI.xlsx"'
             response['Cache-Control']=NO_CACHE['Cache-Control']
             return response

@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { authFetch, useAuth } from '../context/AuthContext';
+import { Button, Stack, CircularProgress } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import {
   Box, Paper, Typography, Chip, TextField, MenuItem, Avatar,
@@ -27,7 +29,7 @@ const ACTION_CONFIG: Record<AuditLog['action'], { icon: React.ReactNode; color: 
   reject: { icon: <RejectIcon sx={{ fontSize: 16 }} />, color: '#ff6b6b', labelAr: 'رفض', labelEn: 'Reject' },
 };
 
-export function AuditLogPage() {
+function LegacyAuditLogPage() {
   const { i18n } = useTranslation();
   const isRtl = i18n.language === 'ar';
 
@@ -195,3 +197,65 @@ export function AuditLogPage() {
     </Box>
   );
 }
+
+type ActualAuditRow={id:number;user:string;action:string;model_name:string;record_id:string;created_at:string};
+type AuditResponse={count:number;next:string|null;previous:string|null;results:ActualAuditRow[]};
+const AUDIT_API='https://occupational-staging-backend-staging.up.railway.app/api';
+function StagingAuditLogPage(){
+  const {user}=useAuth();
+  const [data,setData]=useState<AuditResponse|null>(null);
+  const [page,setPage]=useState(1),[revision,setRevision]=useState(0);
+  const [action,setAction]=useState(''),[model,setModel]=useState('');
+  const [filters,setFilters]=useState({action:'',model:''});
+  const [loading,setLoading]=useState(false),[error,setError]=useState('');
+  useEffect(()=>{
+    let active=true;setData(null);setError('');
+    if(!user?.isSuperuser){setLoading(false);return;}
+    if((import.meta.env.VITE_API_URL||'').replace(/\/$/,'')!==AUDIT_API){setError('اتصال Staging غير مطابق.');return;}
+    setLoading(true);
+    const q=new URLSearchParams({page:String(page)});
+    if(filters.action)q.set('action',filters.action);
+    if(filters.model)q.set('model_name',filters.model);
+    void authFetch(AUDIT_API+'/audit-logs/?'+q.toString()).then(async r=>{
+      if(!r.ok)throw Error('تعذر قراءة سجل التدقيق أو لا توجد صلاحية.');
+      const body=await r.json();
+      if(!Array.isArray(body.results)||typeof body.count!=='number')throw Error('صيغة سجل التدقيق غير صالحة.');
+      if(active)setData(body);
+    }).catch(e=>{if(active)setError(e instanceof Error?e.message:'تعذر قراءة السجل.');})
+    .finally(()=>{if(active)setLoading(false);});
+    return()=>{active=false;};
+  },[user?.isSuperuser,page,revision,filters]);
+  const labels:Record<string,string>={qa_view_health_card:'عرض بطاقة اختبار',qa_export_health_metrics:'تصدير مؤشرات الاختبار',
+    create_employee_health_card:'إنشاء بطاقة',update_employee_health_card:'تعديل بطاقة',
+    qa_delete_card_correction:'حذف مسودة — تصحيح',qa_delete_card_retest:'حذف مسودة — إعادة اختبار',
+    qa_delete_card_wrong_entry:'حذف مسودة — إدخال خاطئ',health_data_draft_fill:'استكمال مسودة من Excel',
+    create_user:'إنشاء حساب',update_user:'تعديل حساب',reset_password:'إعادة تعيين كلمة المرور'};
+  return <Box dir="rtl"><Stack gap={2}>
+    <Typography variant="h4" fontWeight={900}>سجل التدقيق الفعلي — Staging</Typography>
+    <Alert severity="info">سجل PostgreSQL للقراءة فقط من التطبيق. يعرض العمليات التي يسجلها النظام فعليًا، وليس كل طلب أو حدث. لا يعرض القيم الصحية السابقة أو اللاحقة أو كلمات المرور أو عناوين IP.</Alert>
+    {!user?.isSuperuser?<Alert severity="warning">متاح للمسؤول الأعلى فقط.</Alert>:<>
+      <Paper sx={{p:2}}><Stack gap={2}>
+        <Grid container spacing={2}>
+          <Grid size={{xs:12,md:6}}><TextField fullWidth label="رمز العملية (مطابقة تامة)" value={action} onChange={e=>setAction(e.target.value)}/></Grid>
+          <Grid size={{xs:12,md:6}}><TextField fullWidth label="نوع السجل (مطابقة تامة)" value={model} onChange={e=>setModel(e.target.value)}/></Grid>
+        </Grid>
+        <Stack direction="row" gap={1} flexWrap="wrap">
+          <Button variant="contained" disabled={loading} onClick={()=>{setPage(1);setFilters({action:action.trim(),model:model.trim()});}}>تطبيق المرشحات</Button>
+          <Button variant="outlined" disabled={loading} onClick={()=>{setPage(1);setAction('');setModel('');setFilters({action:'',model:''});}}>إعادة ضبط</Button>
+          <Button variant="outlined" disabled={loading} onClick={()=>setRevision(n=>n+1)}>تحديث السجل</Button>
+        </Stack>
+      </Stack></Paper>
+      {error&&<Alert severity="error">{error}</Alert>}
+      {loading&&<CircularProgress/>}
+      {data&&!loading&&<><Typography fontWeight={800}>العمليات المطابقة: {data.count.toLocaleString('ar-SA')}</Typography>
+        <TableContainer component={Paper}><Table size="small"><TableHead><TableRow>{['الوقت','المستخدم','العملية','نوع السجل','معرف السجل'].map(h=><TableCell key={h}>{h}</TableCell>)}</TableRow></TableHead>
+          <TableBody>{data.results.map(r=><TableRow key={r.id}><TableCell><DateText value={r.created_at} withTime/></TableCell><TableCell>{r.user||'—'}</TableCell>
+            <TableCell>{labels[r.action]||r.action}<Typography variant="caption" display="block" color="text.secondary">{r.action}</Typography></TableCell><TableCell>{r.model_name}</TableCell><TableCell>{r.record_id||'—'}</TableCell></TableRow>)}</TableBody>
+        </Table></TableContainer>
+        {data.results.length===0&&<Alert severity="info">لا توجد عمليات مطابقة.</Alert>}
+        <Stack direction="row" gap={2} alignItems="center"><Button disabled={!data.previous} onClick={()=>setPage(p=>p-1)}>السابق</Button><Typography>صفحة {page}</Typography><Button disabled={!data.next} onClick={()=>setPage(p=>p+1)}>التالي</Button></Stack>
+      </>}
+    </>}
+  </Stack></Box>;
+}
+export function AuditLogPage(){return /staging/i.test(window.location.hostname)?<StagingAuditLogPage/>:<LegacyAuditLogPage/>;}

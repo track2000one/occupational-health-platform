@@ -18,6 +18,7 @@ from openpyxl import load_workbook
 from .importers import process_excel_import
 from .linked_health_card_records import linked_clinical_records
 from .health_card_presence import card_presence, derived_bmi
+from .staging_security import StagingAdminOrLegacyStaff, enforce_staging_password
 from .health_data_import import authorized as isolated_health_admin
 from .health_data_card_commit import synthetic as verified_health_test_employee, SPECIALIZED, MASTER_HEALTH
 from .organization_structure import STAGING_PROJECT
@@ -277,7 +278,25 @@ class UserViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action == 'me':
             return [permissions.IsAuthenticated()]
-        return [permissions.IsAdminUser()]
+        return [StagingAdminOrLegacyStaff()]
+
+    @transaction.atomic
+    def create(self, request, *args, **kwargs):
+        if staging_clinical_boundary():
+            User=get_user_model()
+            candidate=User(username=str(request.data.get('email','')),email=str(request.data.get('email','')),first_name=str(request.data.get('name','')))
+            enforce_staging_password(request.data.get('password'),candidate)
+        return super().create(request,*args,**kwargs)
+
+    @transaction.atomic
+    def update(self, request, *args, **kwargs):
+        if staging_clinical_boundary():
+            target=self.get_object()
+            if target.pk==request.user.pk:
+                raise ValidationError({'detail':'لا تعدل حسابك الإداري من إدارة المستخدمين. استخدم إعادة تعيين كلمة المرور.'})
+            if 'password' in request.data and request.data['password'] not in ('',None):
+                enforce_staging_password(request.data['password'],target)
+        return super().update(request,*args,**kwargs)
 
     @action(detail=False, methods=['get'])
     def me(self, request):
@@ -288,6 +307,7 @@ class UserViewSet(viewsets.ModelViewSet):
     def reset_password(self, request, pk=None):
         target = self.get_object()
         password = request.data.get('password')
+        enforce_staging_password(password,target)
         if not password or len(str(password)) < 6:
             return Response({'password': 'Password must be at least 6 characters.'}, status=status.HTTP_400_BAD_REQUEST)
         target.set_password(password)
@@ -296,6 +316,8 @@ class UserViewSet(viewsets.ModelViewSet):
         return Response({'status': 'password_reset'})
 
     def destroy(self, request, *args, **kwargs):
+        if staging_clinical_boundary():
+            return Response({'detail':'حذف الحساب نهائيًا غير متاح في Staging؛ استخدم تعطيل حساب الاختبار.'},status=403)
         instance = self.get_object()
         if instance == request.user:
             raise ValidationError({'detail': 'You cannot delete your current account.'})
@@ -327,6 +349,8 @@ class ExcelImportViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=False, methods=['post'])
     def upload(self, request):
+        if staging_clinical_boundary():
+            return Response({'detail':'الاستيراد القديم مغلق في Staging. استخدم قوالب الاستيراد المعتمدة ومسار البيانات الصحية الاصطناعية.'},status=403)
         uploaded=request.FILES.get('file')
         if not uploaded:
             return Response({'file':'Excel file is required.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -1809,6 +1833,8 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         data = merge_health_card_data(default_data, card.data if card else {})
         payload['data'] = data
         payload.update(data)
+        if staging_clinical_boundary() and request.method=='GET':
+            AuditLog.objects.create(user=str(request.user)[:150],action='qa_view_health_card',model_name='EmployeeHealthCard',record_id=str(card.pk) if card else '')
         response_status = status.HTTP_201_CREATED if request.method in ('PUT', 'PATCH') and was_created else status.HTTP_200_OK
         return Response(payload, status=response_status, headers={'Cache-Control': 'private, no-store'})
 
@@ -1919,4 +1945,18 @@ class CommitteeReferralViewSet(viewsets.ModelViewSet):
     serializer_class=CommitteeReferralSerializer
     permission_classes=[LegacyFitnessCommitteePermission]
 class InjuryCaseViewSet(viewsets.ModelViewSet): queryset=InjuryCase.objects.select_related('employee').all().order_by('-id'); serializer_class=InjuryCaseSerializer; permission_classes=[LegacyFitnessCommitteePermission]
-class AuditLogViewSet(viewsets.ReadOnlyModelViewSet): queryset=AuditLog.objects.all().order_by('-created_at'); serializer_class=AuditLogSerializer; permission_classes=[permissions.IsAdminUser]
+class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset=AuditLog.objects.all().order_by('-created_at','-pk')
+    serializer_class=AuditLogSerializer
+    permission_classes=[StagingAdminOrLegacyStaff]
+
+    def get_queryset(self):
+        qs=super().get_queryset()
+        if staging_clinical_boundary():
+            for key in ('action','model_name'):
+                value=self.request.query_params.get(key,'').strip()
+                if value:
+                    if len(value)>120:
+                        raise ValidationError({'detail':'مرشح التدقيق غير صالح.'})
+                    qs=qs.filter(**{key:value})
+        return qs
