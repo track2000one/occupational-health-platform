@@ -44,6 +44,7 @@ def clean_optional_identifier(value):
 
 
 class PlatformUserSerializer(serializers.ModelSerializer):
+    organizationScopeId = serializers.IntegerField(required=False,allow_null=True,min_value=1)
     id = serializers.IntegerField(read_only=True)
     name = serializers.CharField(required=True, allow_blank=False)
     email = serializers.EmailField(required=True)
@@ -68,7 +69,7 @@ class PlatformUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = get_user_model()
         fields = [
-            'id', 'username', 'name', 'email', 'role', 'personType', 'healthCenterId',
+            'id', 'username', 'name', 'email', 'role', 'personType', 'healthCenterId', 'organizationScopeId',
             'nationalId', 'employeeNumber', 'medicalRecordNumber', 'phone', 'department',
             'jobTitle', 'specialty', 'licenseNumber', 'isActive', 'isStaff', 'isSuperuser',
             'lastLogin', 'permissions', 'password'
@@ -94,6 +95,8 @@ class PlatformUserSerializer(serializers.ModelSerializer):
             'personType': profile.person_type,
             'healthCenterId': str(profile.health_center_id) if profile.health_center_id else '',
             'healthCenterName': profile.health_center.name if profile.health_center_id else '',
+            'organizationScopeId': profile.organization_scope_id,
+            'organizationScopeName': profile.organization_scope.name if profile.organization_scope_id else '',
             'nationalId': profile.national_id or '',
             'employeeNumber': profile.employee_number or '',
             'medicalRecordNumber': profile.medical_record_number or '',
@@ -108,6 +111,14 @@ class PlatformUserSerializer(serializers.ModelSerializer):
             'lastLogin': instance.last_login,
             'permissions': self.get_permissions(instance),
         }
+
+    def validate_organizationScopeId(self,value):
+        from .staging_registry_scope import isolated, validated_scope
+        if not isolated():
+            raise serializers.ValidationError('تعيين النطاق متاح في Staging المعزولة فقط.')
+        if value is not None and not validated_scope(value):
+            raise serializers.ValidationError('اختر وحدة نشطة معتمدة مع كامل تسلسلها التنظيمي.')
+        return value
 
     def _resolve_health_center(self, health_center_id):
         if not health_center_id:
@@ -165,6 +176,7 @@ class PlatformUserSerializer(serializers.ModelSerializer):
         password = validated_data.pop('password', None)
         role = validated_data.pop('role', 'employee')
         health_center_id = validated_data.pop('healthCenterId', None)
+        organization_scope_id=validated_data.pop('organizationScopeId',None)
         profile_values = self._profile_values(validated_data)
         name = validated_data.pop('name')
         email = validated_data.pop('email').lower().strip()
@@ -186,6 +198,7 @@ class PlatformUserSerializer(serializers.ModelSerializer):
             defaults={
                 'role': role,
                 'health_center': self._resolve_health_center(health_center_id),
+                'organization_scope_id': organization_scope_id,
                 **profile_values,
             }
         )
@@ -196,6 +209,8 @@ class PlatformUserSerializer(serializers.ModelSerializer):
         password = validated_data.pop('password', None)
         role = validated_data.pop('role', None)
         health_center_id = validated_data.pop('healthCenterId', None)
+        scope_supplied='organizationScopeId' in validated_data
+        organization_scope_id=validated_data.pop('organizationScopeId',None)
         profile_values = self._profile_values(validated_data, instance=instance, partial=True)
         name = validated_data.pop('name', None)
         email = validated_data.pop('email', None)
@@ -221,6 +236,11 @@ class PlatformUserSerializer(serializers.ModelSerializer):
         instance.save()
 
         profile = self._profile(instance)
+        from .staging_registry_scope import isolated
+        if scope_supplied:
+            profile.organization_scope_id=organization_scope_id
+        elif isolated() and role is not None and role!=profile.role:
+            profile.organization_scope_id=None
         if role is not None:
             profile.role = role
         if health_center_id is not None:
@@ -879,3 +899,13 @@ class EmployeeImportReviewSerializer(serializers.ModelSerializer):
             'employee_number': employee.employee_number or '',
             'national_id_masked': f"******{employee.national_id[-4:]}" if employee.national_id else '',
         }
+
+
+class ScopedEmployeeSerializer(serializers.ModelSerializer):
+    """Only administrative minimum; no national ID, contact or clinical fields."""
+    organization_unit_name=serializers.CharField(source='organization_unit.name',read_only=True,default='')
+    health_center_name=serializers.CharField(source='health_center.name',read_only=True,default='')
+    class Meta:
+        model=Employee
+        fields=('id','name','employee_number','job_title','health_center_name','organization_unit_name')
+        read_only_fields=fields
