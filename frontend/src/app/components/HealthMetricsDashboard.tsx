@@ -105,7 +105,7 @@ export function HealthMetricsDashboard({mode='dashboard'}:{mode?:'dashboard'|'re
    {data&&!loading&&<>
     <Typography color="text.secondary" variant="body2">وقت الاحتساب: {new Date(data.generated_at).toLocaleString('ar-SA')} — {data.filter_labels.sector} / {data.filter_labels.center} / {data.filter_labels.department}</Typography>
     {data.summary[0]?.value===0&&<Alert severity="info">لا يوجد موظفون مؤهلون في نطاق الاختبار المحدد. النسب ذات المقام صفر غير متاحة.</Alert>}
-    <Grid container spacing={2}>{data.summary.map((r,i)=><Grid key={r.key} size={{xs:12,sm:6,lg:4}}><Card sx={{height:'100%',borderRadius:3,borderInlineStart:'5px solid '+['#137e83','#164d73','#287a50','#b7791f','#5173a8','#725d99'][i%6]}}>
+    <Grid container spacing={2}>{data.summary.map((r,i)=><Grid key={r.key} size={{xs:12,sm:6,lg:4}}><Card sx={{height:'100%',borderRadius:3,borderInlineStart:'5px solid '+(r.key==='incomplete_cards'?'#d4a72c':r.key==='complete_cards'?'#287a50':['#137e83','#164d73','#287a50','#b7791f','#5173a8','#725d99'][i%6])}}>
      <CardContent><Typography variant="body2" color="text.secondary">{r.label}</Typography><Typography variant="h4" fontWeight={900} sx={{my:1}}>{display(r.value,r.unit)}</Typography>
       <Typography variant="caption" color="text.secondary">{r.unit==='%'?'نسبة وجود بيانات لا اكتمال طبي':r.unit}</Typography>
       {r.unit==='%'&&r.value!==null&&<LinearProgress variant="determinate" value={r.value} sx={{mt:1,height:7,borderRadius:4}}/>}

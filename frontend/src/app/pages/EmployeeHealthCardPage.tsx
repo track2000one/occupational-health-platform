@@ -12,6 +12,7 @@ import {
   CircularProgress,
   FormControlLabel,
   Grid,
+  LinearProgress,
   MenuItem,
   Paper,
   Stack,
@@ -108,7 +109,7 @@ type EmployeeData = {
   mobile?: string;
   date_of_birth?: string;
   birth_place?: string;
-  age?: number | string;
+  age?: number | string | null;
   gender?: string;
   marital_status?: string;
   health_center_name?: string;
@@ -132,6 +133,8 @@ type HealthCardData = {
   employee: EmployeeData;
   data?: Partial<SectionData>;
   linked_clinical_records?: LinkedClinicalData;
+  completion?: {recorded:number;possible:number;percent:number;complete:boolean};
+  derived_bmi?: string | null;
   personal?: Record<string, unknown>;
   employment?: Record<string, unknown>;
   physical?: Record<string, unknown>;
@@ -447,7 +450,9 @@ function value(input: unknown, fallback = '—') {
 }
 
 function localizedGender(input: unknown) {
-  return String(input).toLowerCase() === 'female' ? 'أنثى / Female' : 'ذكر / Male';
+  const gender=String(input || '').toLowerCase();
+  if (IS_STAGING && gender!=='female' && gender!=='male') return '—';
+  return gender === 'female' ? 'أنثى / Female' : 'ذكر / Male';
 }
 
 function localizedMarital(input: unknown) {
@@ -591,6 +596,10 @@ function HealthCardSheet({ card, form }: { card: HealthCardData; form: SectionDa
         </div>
       </header>
 
+      {IS_STAGING && card.completion && <div className="ohc-documentation-status" style={{margin:'8px 0',padding:'10px 12px',border:'1px solid '+(card.completion.complete?'#16805d':'#d4a72c'),background:card.completion.complete?'#edf8f1':'#fff7db',color:'#203047',borderRadius:8}}>
+        <strong>{card.completion.complete?'جميع الحقول المرجعية مدونة':'حقول صحية غير مدونة'} — {card.completion.percent}%</strong>
+        <div style={{fontSize:12}}>التدوين المحفوظ: {card.completion.recorded} من {card.completion.possible} حقلًا مرجعيًا · ليس اعتمادًا طبيًا</div>
+      </div>}
       <main className="ohc-grid">
         <div className="ohc-left">
           <Section number="1" title="المعلومات الشخصية" subtitle="Personal Information" color="#0b76b7" icon={<UserRound />}>
@@ -598,7 +607,7 @@ function HealthCardSheet({ card, form }: { card: HealthCardData; form: SectionDa
               <Field label="رقم الهوية / National ID">{value(employee.national_id)}</Field>
               <Field label="الاسم / Name">{value(employee.name)}</Field>
               <Field label="تاريخ الميلاد / Date of Birth">{formatDate(employee.date_of_birth)}</Field>
-              <Field label="العمر / Age">{value(employee.age)}</Field>
+              <Field label="العمر / Age">{value(IS_STAGING && !employee.date_of_birth ? null : employee.age)}</Field>
               <Field label="الجوال / Mobile">{value(employee.mobile)}</Field>
               <Field label="الجنس / Gender">{localizedGender(employee.gender)}</Field>
               <Field label="الحالة الاجتماعية / Marital Status">{localizedMarital(employee.marital_status)}</Field>
@@ -624,7 +633,7 @@ function HealthCardSheet({ card, form }: { card: HealthCardData; form: SectionDa
 
           <Section number="3" title="المعلومات البدنية" subtitle="Physical Information" color="#68a844" icon={<HeartPulse />}>
             <div className="ohc-fields-grid three">
-              {PHYSICAL_FIELDS.map(field => <Field key={field.key} label={`${field.label} / ${field.en || ''}`}>{value(form.physical[field.key])}</Field>)}
+              {PHYSICAL_FIELDS.map(field => <Field key={field.key} label={`${field.label} / ${field.en || ''}`}>{IS_STAGING && field.key==='bmi' && card.derived_bmi ? `${card.derived_bmi} (محسوب / Calculated)` : value(form.physical[field.key])}</Field>)}
             </div>
           </Section>
 
@@ -975,7 +984,7 @@ export function EmployeeHealthCardPage() {
         ...previous,
         [section]: { ...previous[section], [key]: fieldValue },
       };
-      if (section === 'physical' && (key === 'weight_kg' || key === 'height_cm')) {
+      if (!IS_STAGING && section === 'physical' && (key === 'weight_kg' || key === 'height_cm')) {
         const weight = Number(next.physical.weight_kg);
         const heightCm = Number(next.physical.height_cm);
         if (weight > 0 && heightCm > 0) {
@@ -1088,6 +1097,14 @@ export function EmployeeHealthCardPage() {
         {employeeLabel && <Chip sx={{ mt: 1.25, fontWeight: 800 }} color="primary" variant="outlined" label={`الموظف المحدد: ${employeeLabel}`} />}
       </Paper>
 
+      {IS_STAGING && card?.completion && !loading && <Paper className="no-print" variant="outlined" sx={{p:2,mb:2,borderColor:card.completion.complete?'success.main':'warning.main'}}>
+        <Stack gap={1}>
+          <Typography fontWeight={800}>اكتمال تدوين الحقول الصحية: {card.completion.percent}%</Typography>
+          <LinearProgress variant="determinate" color={card.completion.complete?'success':'warning'} value={card.completion.percent}/>
+          <Typography variant="body2">{card.completion.recorded} من {card.completion.possible} حقلًا مرجعيًا محفوظًا؛ {card.completion.possible-card.completion.recorded} غير مدونة. {card.exists?'بطاقة محفوظة.':'معاينة غير محفوظة.'}</Typography>
+          <Typography variant="caption" color="text.secondary">الحقول غير المدونة لا تمنع إنشاء البطاقة. لا تشمل النسبة البيانات الإدارية أو القيم المحسوبة للعرض أو السجلات المتخصصة، ولا تمثل اكتمال الفحص الطبي.</Typography>
+        </Stack>
+      </Paper>}
       {card?.linked_clinical_records?.health_observations && !editing && !loading && user?.isSuperuser && /staging/i.test(window.location.hostname) && String(card.employee.id)===selectedEmployeeId && <HealthObservationEntry key={selectedEmployeeId} employeeId={selectedEmployeeId} employeeName={card.employee.name||''} onSaved={()=>void loadCard(selectedEmployeeId)}/>}
       {error && <Alert severity="warning" className="no-print" sx={{ mb: 2 }}>{error}</Alert>}
       {!selectedEmployeeId && (
@@ -1118,7 +1135,7 @@ export function EmployeeHealthCardPage() {
             <Grid container spacing={1.25}>
               {[
                 ['الاسم', card.employee.name], ['رقم الهوية', card.employee.national_id], ['الرقم الوظيفي', card.employee.employee_number],
-                ['تاريخ الميلاد', formatDate(card.employee.date_of_birth)], ['العمر', card.employee.age], ['الجوال', card.employee.mobile],
+                ['تاريخ الميلاد', formatDate(card.employee.date_of_birth)], ['العمر', IS_STAGING && !card.employee.date_of_birth ? null : card.employee.age], ['الجوال', card.employee.mobile],
                 [card.employee.organization_unit_kind === 'department' ? 'القسم' : 'المركز الصحي', card.employee.health_center_name || (card.employee.organization_unit_kind === 'department' ? card.employee.organization_unit_name : '')], ['المسمى الوظيفي', card.employee.job_title], ['تاريخ التعيين', formatDate(card.employee.appointment_date)],
               ].map(([label, fieldValue]) => (
                 <Grid key={String(label)} size={{ xs: 12, sm: 6, lg: 4 }}><Field label={String(label)}>{value(fieldValue)}</Field></Grid>
@@ -1150,6 +1167,7 @@ export function EmployeeHealthCardPage() {
           </Paper>
 
           {card.linked_clinical_records && <LinkedClinicalRecords data={card.linked_clinical_records} />}
+          {IS_STAGING && <Alert severity="info" sx={{mb:2}}>يُحسب BMI للعرض بعد حفظ وزن وطول صالحين إذا لم يكن مدونًا. لا يُحفظ الحساب تلقائيًا ولا يستنتج النظام تصنيف الوزن. القيم المحفوظة سابقًا لا تُستبدل.</Alert>}
           <div className="ohc-form-sections-grid">
             <FormSection sectionKey="personal" number="1" title="المعلومات الشخصية الإضافية" subtitle="حقول Excel غير الموجودة في سجل الموظف" color="#0ea5e9" colorEnd="#2563eb" icon={<UserRound />} fields={PERSONAL_FIELDS} values={form.personal} onChange={(key, fieldValue) => updateSection('personal', key, fieldValue)} defaultExpanded />
             <FormSection sectionKey="employment" number="2" title="معلومات العمل الإضافية" subtitle="رقم وزارة الصحة والوظيفة الحالية" color="#8b5cf6" colorEnd="#6d28d9" icon={<BriefcaseBusiness />} fields={EMPLOYMENT_FIELDS} values={form.employment} onChange={(key, fieldValue) => updateSection('employment', key, fieldValue)} />
