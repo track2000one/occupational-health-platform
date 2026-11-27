@@ -12,6 +12,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from .staging_evidence import LegacyEvidencePermission, prevent_parent_delete
+from health.staging_registry_scope import boundary
 from .models import DailyStatistic, EvidenceAttachment, Indicator, Initiative, ReferenceDocument, WorkforceMember, WorkforceTarget
 from .serializers import (
     DailyStatisticSerializer,
@@ -109,7 +111,9 @@ class InitiativeViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        queryset = Initiative.objects.select_related('created_by').prefetch_related('attachments').all()
+        queryset = Initiative.objects.select_related('created_by').all()
+        if not boundary():
+            queryset=queryset.prefetch_related('attachments')
         year = self.request.query_params.get('year')
         quarter = self.request.query_params.get('quarter')
         if year and str(year).isdigit():
@@ -123,17 +127,27 @@ class InitiativeViewSet(viewsets.ModelViewSet):
         serializer.save(created_by=self.request.user)
 
 
+    def perform_destroy(self,instance):
+        prevent_parent_delete(instance)
+        super().perform_destroy(instance)
+
+
 class ReferenceDocumentViewSet(viewsets.ModelViewSet):
     serializer_class = ReferenceDocumentSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return ReferenceDocument.objects.prefetch_related('attachments').all()
+        queryset=ReferenceDocument.objects.all()
+        return queryset if boundary() else queryset.prefetch_related('attachments')
+
+    def perform_destroy(self,instance):
+        prevent_parent_delete(instance)
+        super().perform_destroy(instance)
 
 
 class EvidenceAttachmentViewSet(viewsets.ModelViewSet):
     serializer_class = EvidenceAttachmentSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, LegacyEvidencePermission]
     parser_classes = [MultiPartParser, FormParser]
     http_method_names = ['get', 'post', 'delete', 'head', 'options']
 

@@ -8,6 +8,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from health.staging_registry_scope import boundary
 from .models import EvidenceAttachment
 from .serializers import InitiativeSerializer, ReferenceDocumentSerializer
 
@@ -50,6 +51,8 @@ def _parse_payload(request):
 
 def _validate_files(request):
     uploads = request.FILES.getlist('files')
+    if boundary() and request.FILES:
+        return None,Response({'detail':'رفع المرفقات القديمة مجمد في Staging.'},status=403)
     if len(uploads) > MAX_FILES_PER_BATCH:
         return None, Response(
             {'files': [f'Maximum {MAX_FILES_PER_BATCH} files are allowed in one save.']},

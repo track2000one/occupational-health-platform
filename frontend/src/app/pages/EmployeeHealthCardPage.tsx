@@ -55,6 +55,7 @@ import { EmployeeQuickSearch, type EmployeeSearchOption } from '../components/Em
 import { CalendarDateField } from '../components/CalendarDateField';
 import { LinkedClinicalRecords, type LinkedClinicalData } from '../components/LinkedClinicalRecords';
 import { HealthObservationEntry } from '../components/HealthObservationEntry';
+import { StagingMedicalAttachments } from '../components/StagingMedicalAttachments';
 import { authFetch, getAccessToken, useAuth } from '../context/AuthContext';
 import { useDatePreference } from '../context/DatePreferenceContext';
 import '../../styles/employee-health-card.css';
@@ -1233,6 +1234,7 @@ export function EmployeeHealthCardPage() {
         </Paper>
       )}
 
+      {IS_STAGING && card?.exists && !card.is_approved && !loading && !editing && card.employee.id && <StagingMedicalAttachments key={String(card.employee.id)} employeeId={String(card.employee.id)} onUploaded={()=>setCard(prev=>prev?{...prev,can_delete_draft:false}:prev)} />}
       {card && !editing && !loading && (
         <>
           {generatingImage && <Alert severity="info" className="no-print" sx={{ mb: 2 }}>جاري إنشاء صورة PNG عالية الدقة للبطاقة...</Alert>}

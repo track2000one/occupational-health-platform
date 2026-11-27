@@ -15,6 +15,7 @@ from .provisional_appointment_sync import ProvisionalAppointmentSyncView
 from .health_data_import import HealthDataTemplateView, HealthDataPreviewView
 from .health_data_card_commit import HealthDataCardCommitView
 from .staging_clinical_entry import SyntheticClinicalEmployeesView, SyntheticClinicalEntryView
+from .staging_medical_attachments import StagingMedicalAttachmentCollection, StagingMedicalAttachmentContent
 from .staging_exposure_entry import SyntheticExposureView
 from .staging_health_observation import SyntheticObservationView
 from .staging_fitness_committee import SyntheticFitnessCommitteeView
@@ -55,6 +56,8 @@ router.register('injury-cases', InjuryCaseViewSet)
 router.register('audit-logs', AuditLogViewSet)
 
 urlpatterns = [
+    path('staging-clinical/employees/<int:employee_id>/attachments/', StagingMedicalAttachmentCollection.as_view(), name='staging-medical-attachments'),
+    path('staging-clinical/employees/<int:employee_id>/attachments/<uuid:attachment_id>/content/', StagingMedicalAttachmentContent.as_view(), name='staging-medical-attachment-content'),
     path('staging-clinical/metrics/', StagingHealthMetricsView.as_view(), name='staging-health-metrics'),
     path('staging-clinical/employees/<int:employee_id>/fitness-committee/', SyntheticFitnessCommitteeView.as_view(), name='staging-fitness-committee'),
     path('staging-clinical/employees/<int:employee_id>/observations/', SyntheticObservationView.as_view(), name='staging-health-observations'),
