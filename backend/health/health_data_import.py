@@ -8,6 +8,7 @@ import re
 import zipfile
 
 from django.http import HttpResponse
+from django.db.models import Q
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
@@ -95,14 +96,16 @@ def synthetic(employee):
     return is_verified_synthetic(employee)
 
 
-def template_bytes():
+def template_bytes(sample_rows=()):
     book = Workbook()
     sheet = book.active
     sheet.title = SHEET
     sheet.sheet_view.rightToLeft = True
     sheet.freeze_panes = 'E2'
     sheet.append(HEADERS)
-    sheet.auto_filter.ref = f'A1:{get_column_letter(len(HEADERS))}1'
+    for row in sample_rows:
+        sheet.append([row.get(key) for key in HEADERS])
+    sheet.auto_filter.ref = f'A1:{get_column_letter(len(HEADERS))}{sheet.max_row}'
     colors = ('184B65', '497A49', 'A46021', '78518B', '216989', '167D86', '17766D', '995546', '426C85')
     for index, keys in enumerate((LINK_FIELDS, *(keys for _, keys in GROUPS))):
         for key in keys:
@@ -116,14 +119,77 @@ def template_bytes():
     sheet.column_dimensions['B'].number_format = '@'
     guide = book.create_sheet('دليل الحقول')
     guide.sheet_view.rightToLeft = True
-    guide.append(('المفتاح البرمجي', 'المجموعة', 'الربط المستهدف', 'ضابط المعاينة'))
+    labels = {
+      "weight_kg": "الوزن (كجم)",
+      "height_cm": "الطول (سم)",
+      "bmi": "مؤشر كتلة الجسم",
+      "obesity_status": "حالة الوزن",
+      "physical_activity": "النشاط البدني",
+      "diabetes": "السكري",
+      "hypertension": "ارتفاع ضغط الدم",
+      "thyroid_disease": "اضطرابات الغدة الدرقية",
+      "asthma": "الربو",
+      "ms_disorder_source": "اضطراب MS (دلالة المصدر تحتاج مراجعة)",
+      "chronic_disease": "الأمراض المزمنة",
+      "blood_disease": "أمراض الدم",
+      "smoking_status": "حالة التدخين",
+      "surgical_history": "تاريخ العمليات الجراحية",
+      "surgical_details": "تفاصيل العمليات الجراحية",
+      "other_family_history_source": "تاريخ عائلي آخر (مراجعة المصدر)",
+      "colon_cancer_history": "تاريخ سرطان القولون",
+      "breast_cancer_history": "تاريخ سرطان الثدي",
+      "other_cancer_history_source": "تاريخ أورام أخرى (مراجعة المصدر)",
+      "medical_restrictions": "القيود الطبية",
+      "phq_result": "نتيجة PHQ",
+      "gad_result": "نتيجة GAD",
+      "mbi_result": "نتيجة MBI",
+      "other_psychological": "معلومات نفسية أخرى",
+      "depression": "الاكتئاب",
+      "anxiety": "القلق",
+      "burnout": "الاحتراق المهني",
+      "latest_virtual_visit": "آخر زيارة افتراضية",
+      "joined_program": "الانضمام للبرنامج",
+      "latest_field_visit_source": "آخر زيارة ميدانية (مراجعة المصدر)",
+      "lab_request": "طلب الفحص المخبري",
+      "lab_request_date": "تاريخ طلب الفحص",
+      "lab_result": "نتيجة الفحص المدونة",
+      "result_checked_date": "تاريخ مراجعة النتيجة",
+      "follow_up_source": "المتابعة (مراجعة المصدر)",
+      "anti_hbs": "أجسام مضادة لالتهاب الكبد B (Anti-HBs)",
+      "measles_igg": "أجسام مضادة للحصبة IgG",
+      "varicella_igg": "أجسام مضادة للجدري المائي IgG",
+      "ppd_test": "اختبار PPD",
+      "ppd_date": "تاريخ اختبار PPD",
+      "hcv": "فحص التهاب الكبد C",
+      "hbsag": "مستضد سطح التهاب الكبد B",
+      "hiv": "فحص فيروس نقص المناعة",
+      "rubella_igg": "أجسام مضادة للحصبة الألمانية IgG",
+      "flu_vaccine": "لقاح الإنفلونزا",
+      "mcv4_vaccine": "لقاح المكورات السحائية MCV4",
+      "covid_19": "لقاح كوفيد-19",
+      "other_vaccine": "لقاحات أخرى",
+      "hbv_vaccine": "لقاح التهاب الكبد B",
+      "hbv_dose_1": "تاريخ جرعة التهاب الكبد B الأولى",
+      "hbv_dose_2": "تاريخ الجرعة الثانية",
+      "hbv_dose_3": "تاريخ الجرعة الثالثة",
+      "post_vaccine_anti_hbs": "Anti-HBs بعد التطعيم",
+      "post_vaccine_anti_hbs_date": "تاريخ الفحص بعد التطعيم",
+      "mmr_vaccine": "لقاح MMR",
+      "mmr_dose_1": "تاريخ جرعة MMR الأولى",
+      "mmr_dose_2": "تاريخ جرعة MMR الثانية",
+      "nsi_source": "إصابة وخز الإبر (مراجعة المصدر)",
+      "needle_stick_history": "تاريخ وخز الإبر",
+      "breast_cancer_screening": "فحص سرطان الثدي",
+      "colon_cancer_screening": "فحص سرطان القولون"
+    }
+    guide.append(('المفتاح البرمجي', 'المسمى العربي', 'المجموعة', 'الربط المستهدف', 'ضابط المعاينة'))
     for key in LINK_FIELDS:
-        guide.append((key, 'الربط', '', 'للمطابقة فقط، لا تعديل للموظف'))
+        guide.append((key, {'source_row':'مرجع الصف','national_id':'هوية الاختبار','employee_name':'اسم موظف الاختبار','source_health_center':'المركز المرجعي'}[key], 'الربط', '', 'للمطابقة فقط، لا تعديل للموظف'))
     for group, keys in GROUPS:
         for key in keys:
-            guide.append((key, group, '.'.join(TARGETS.get(key, ())),
+            guide.append((key, labels[key], group, '.'.join(TARGETS.get(key, ())),
                 'مراجعة دلالة المصدر' if key in AMBIGUOUS else 'قيمة غير فارغة؛ المعاينة لا تحفظ'))
-    for col, width in zip('ABCD', (32, 25, 43, 48)):
+    for col, width in zip('ABCDE', (32, 45, 25, 43, 48)):
         guide.column_dimensions[col].width = width
     info = book.create_sheet('تعليمات')
     info.sheet_view.rightToLeft = True
@@ -134,6 +200,9 @@ def template_bytes():
                  'لا تعتبر حالة التحصين أو المناعة إثبات جرعة أو نتيجة تشخيص.',
                  'الفحص لا يحفظ بيانات ولا يعتمد بطاقة صحية.'):
         info.append((line,))
+    if sample_rows:
+        info.append(('هذا الملف يحتوي على قيم اصطناعية مصطنعة فقط. لا تمثل فحصًا طبيًا أو تشخيصًا.',))
+        info.append(('أُعد من موظفي الاختبار المؤهلين وقت التنزيل؛ أعد المعاينة قبل الحفظ.',))
     info.column_dimensions['A'].width = 110
     out = BytesIO()
     book.save(out)
@@ -308,14 +377,52 @@ def preview_rows(rows):
             'notice': 'المعاينة محصورة بهويات الاختبار الموثقة، وتقارن القيم المحفوظة في البطاقة فقط. لا تعتمد المطابقة السريرية مع السجلات المتخصصة.'}
 
 
+def synthetic_sample_rows():
+    # Local import avoids circular dependency. Reuse the same fill-only planner
+    # so download never suggests a protected or conflicting card.
+    from .health_data_card_commit import plan_cards
+    candidates = list(Employee.objects.filter(is_archived=False, registration_status='verified',
+        employment_status=Employee.EmploymentStatus.ACTIVE).filter(
+        Q(employee_number__startswith='OHP-QA-') | Q(employee_number__startswith='OHP-LOAD-')
+    ).select_related('health_center').order_by('pk')[:5001])
+    if len(candidates) > 5000:
+        raise ValueError('تجاوز عدد مرشحي الاختبار الحد الآمن.')
+    for start in range(0, len(candidates), 100):
+        rows = []
+        for e in candidates[start:start+100]:
+            if not synthetic(e):
+                continue
+            rows.append((len(rows)+2, {'source_row':len(rows)+2, 'national_id':e.national_id,
+                'employee_name':e.name, 'source_health_center':e.health_center.code if e.health_center_id else '',
+                'weight_kg':72, 'height_cm':170, 'diabetes':'No'}))
+        if not rows:
+            continue
+        items, _, _ = plan_cards(rows)
+        ready = {item['row'] for item in items if item['status']=='ready' and len(item['eligible_fields'])==3}
+        result = [src for number,src in rows if number in ready][:3]
+        if result:
+            for i, row in enumerate(result, 2):
+                row['source_row'] = i
+            return result
+    raise ValueError('لا توجد مسودات اختبار مؤهلة لهذه العينة. لم يتم تعديل أي سجل.')
+
+
 class HealthDataTemplateView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
         if not authorized(request):
             return Response({'detail': 'متاح للمسؤول الأعلى في Staging فقط.'}, status=403, headers=NO_CACHE)
-        response = HttpResponse(template_bytes(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-        response['Content-Disposition'] = 'attachment; filename="OHP_HealthData_V1.xlsx"'
+        if set(request.query_params) - {'sample'} or request.query_params.get('sample','0') not in ('0','1'):
+            return Response({'detail':'خيار القالب غير صالح.'}, status=400, headers=NO_CACHE)
+        sample = request.query_params.get('sample') == '1'
+        try:
+            rows = synthetic_sample_rows() if sample else ()
+        except ValueError as exc:
+            return Response({'detail':str(exc)}, status=409, headers=NO_CACHE)
+        response = HttpResponse(template_bytes(rows), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        filename = 'OHP_HealthData_V1_SYNTHETIC.xlsx' if sample else 'OHP_HealthData_V1.xlsx'
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
         response['Cache-Control'] = NO_CACHE['Cache-Control']
         return response
 
