@@ -34,3 +34,9 @@ Scope: isolated Staging, verified synthetic employees only. **NO-GO for real cli
 ## Release decision
 
 Staging technical completion is not an operational or medical authorization. Status remains **NO-GO for Production** pending the above gates. A future production change must have a separate reviewed PR/plan with role-level and object-level authorization, clinical approval, real data governance and signed operational acceptance. No automatic production deployment or real import is implied.
+
+## Staging hardening increment 137 (pending CI and browser evidence)
+
+- User/account administration and audit API require the isolated active superuser; self-demotion and hard account deletion blocked. New/reset passwords must meet 12-character/common/numeric/similarity checks. Existing passwords and active tokens are not changed.
+- Django web admin and legacy Excel upload are blocked during Staging, including partial environment markers. API responses receive no-store when absent. The actual audit page uses authenticated paginated PostgreSQL data without mock fallback, no invented IP/before/after. Card read and KPI Excel export record actor, operation, model and internal card ID only. Not tamper-proof database-level auditing; not all events are captured.
+- Remaining NO-GO: scope general roster/import review and periodic stats/attachments to approved roles and object/center boundaries; review JWT browser storage, revocation, password reset sessions, runtime secrets and TLS, clinical approval, backup/restore and retention. No production configuration change; no actual credential or employee data access. UAT Excel/PDF still needs evidence.
