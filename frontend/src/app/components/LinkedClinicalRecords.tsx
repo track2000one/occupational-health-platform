@@ -1,4 +1,5 @@
 import { useDatePreference } from '../context/DatePreferenceContext';
+import { LinkedFitnessCommitteeRecords, type LinkedFitnessCommitteeData } from './LinkedFitnessCommitteeRecords';
 import { HealthObservationRecords, type LinkedObservationData } from './HealthObservationRecords';
 import { LinkedVisitInjuryRecords, type LinkedVisitInjuryData } from './LinkedVisitInjuryRecords';
 type Source<T> = { items: T[]; has_more: boolean };
@@ -9,7 +10,7 @@ type Vaccine = { id:number; vaccine_type:string; dose:string; status:string; nex
 type Dose = { label:string;date:string|null };
 type Series = {id:number;vaccine_type:string;status:string;campaign_name:string;recorded_dates:Dose[];
   doses:(Dose&{id:number})[];more_doses:boolean;post_vaccine_result:string};
-export type LinkedClinicalData = LinkedVisitInjuryData & LinkedObservationData & {lab_tests:Source<Lab>;lab_screenings:Source<Screening>;
+export type LinkedClinicalData = LinkedVisitInjuryData & LinkedObservationData & LinkedFitnessCommitteeData & {lab_tests:Source<Lab>;lab_screenings:Source<Screening>;
   vaccinations:Source<Vaccine>;vaccination_records:Source<Series>;read_only:boolean;limit_per_source:number};
 const statusLabels:Record<string,string> = {pending:'قيد الانتظار',completed:'مكتمل (حالة السجل)',
   missing:'مفقود',requested:'مطلوب',not_required:'غير مطلوب',given:'معطى (حالة السجل)',
@@ -62,5 +63,6 @@ export function LinkedClinicalRecords({ data }: {data:LinkedClinicalData}) {
     </div>
     <LinkedVisitInjuryRecords data={data}/>
     <HealthObservationRecords data={data}/>
+    <LinkedFitnessCommitteeRecords data={data}/>
   </section>;
 }

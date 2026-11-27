@@ -841,7 +841,7 @@ class ClinicVisitSerializer(serializers.ModelSerializer):
 
 
 class CommitteeReferralSerializer(serializers.ModelSerializer):
-    class Meta: model = CommitteeReferral; fields = '__all__'
+    class Meta: model = CommitteeReferral; fields = ('id','employee','diagnosis','decision','status','date')
 class InjuryCaseSerializer(serializers.ModelSerializer):
     class Meta: model = InjuryCase; fields = '__all__'
 class AuditLogSerializer(serializers.ModelSerializer):

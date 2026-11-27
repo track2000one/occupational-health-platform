@@ -90,6 +90,28 @@ def needle_stick(record):
             'status': record.status, 'referred_to_employee_clinic': record.referred_to_employee_clinic}
 
 
+def fitness_assessment(record):
+    return {'id':record.pk,'assessment_date':iso(record.assessment_date),
+            'assessment_type':record.assessment_type,'fitness_decision':record.fitness_decision,
+            'restrictions':record.restrictions,'next_assessment_date':iso(record.next_assessment_date),
+            'assessor_name':record.assessor_name}
+
+
+def committee_referral(record):
+    # Legacy date is ambiguous and is never relabeled as a decision date.
+    return {'id':record.pk,'record_date':iso(record.date),
+            'referral_date':iso(record.referral_date),'decision_date':iso(record.decision_date),
+            'diagnosis':record.diagnosis,'decision':record.decision,'recommendations':record.recommendations,
+            'status':record.status,'qa_workflow':record.qa_workflow}
+
+
+def medical_committee_case(record):
+    return {'id':record.pk,'transaction_number':record.transaction_number,
+            'diagnosis':record.diagnosis,'recommendations':record.recommendations,
+            'decision':record.decision,'decision_date':iso(record.decision_date),
+            'status':record.status}
+
+
 def linked_clinical_records(employee):
     """Each collection is scoped to this employee; separate source models remain distinct."""
     records = employee.vaccination_records.order_by('-updated_at', '-pk').prefetch_related(
@@ -114,5 +136,8 @@ def linked_clinical_records(employee):
             F('exposure_date').desc(nulls_last=True), '-pk'), needle_stick),
         'health_profile': profile_record(EmployeeHealthProfile.objects.filter(employee=employee).first()),
         'health_observations': bounded(employee.health_observations.order_by('-observation_date', '-pk'), observation_record),
+        'fitness_assessments': bounded(employee.occupational_health_assessments.order_by('-assessment_date','-pk'), fitness_assessment),
+        'committee_referrals': bounded(employee.committee_referrals.order_by(F('referral_date').desc(nulls_last=True),F('date').desc(nulls_last=True),'-pk'), committee_referral),
+        'medical_committee_cases': bounded(employee.medical_committee_cases.order_by(F('decision_date').desc(nulls_last=True),'-pk'), medical_committee_case),
         'read_only': True, 'limit_per_source': LIMIT,
     }
