@@ -14,7 +14,7 @@ from rest_framework.views import APIView
 from .health_data_import import (authorized, read_rows, normalized_value, text,
     identity_status, HEALTH_FIELDS, TARGETS, NO_CACHE)
 from .models import (Employee, EmployeeHealthCard, DataImportBatch, AuditLog,
-    EmployeeHealthProfile, LabTest, LabScreening, Vaccination, VaccinationRecord,
+    EmployeeHealthProfile, EmployeeHealthObservation, LabTest, LabScreening, Vaccination, VaccinationRecord,
     ClinicVisit, EmployeeClinicVisit, OccupationalClinicVisit, OccupationalHealthAssessment,
     CommitteeReferral, MedicalCommitteeCase, InjuryCase, NeedleStickExposure, ScreeningProgramRecord)
 from .staging_employee_reset import is_verified_synthetic
@@ -22,7 +22,7 @@ from .staging_employee_reset import is_verified_synthetic
 SALT = 'ohp-health-data-draft-fill-v1'
 MAX_SELECTED = 2500
 CONFIRM = 'استكمال مسودات الاختبار'
-SPECIALIZED = (EmployeeHealthProfile, LabTest, LabScreening, Vaccination, VaccinationRecord,
+SPECIALIZED = (EmployeeHealthProfile, EmployeeHealthObservation, LabTest, LabScreening, Vaccination, VaccinationRecord,
     ClinicVisit, EmployeeClinicVisit, OccupationalClinicVisit, OccupationalHealthAssessment,
     CommitteeReferral, MedicalCommitteeCase, InjuryCase, NeedleStickExposure, ScreeningProgramRecord)
 MASTER_HEALTH = ('latest_virtual_visit', 'latest_field_visit', 'lab_request', 'lab_request_date')

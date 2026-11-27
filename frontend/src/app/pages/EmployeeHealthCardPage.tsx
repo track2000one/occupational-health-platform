@@ -46,6 +46,7 @@ import logoImg from '@/imports/ChatGPT_Image_21______2026__10_06_18__.png';
 import { EmployeeQuickSearch, type EmployeeSearchOption } from '../components/EmployeeQuickSearch';
 import { CalendarDateField } from '../components/CalendarDateField';
 import { LinkedClinicalRecords, type LinkedClinicalData } from '../components/LinkedClinicalRecords';
+import { HealthObservationEntry } from '../components/HealthObservationEntry';
 import { authFetch, getAccessToken, useAuth } from '../context/AuthContext';
 import { useDatePreference } from '../context/DatePreferenceContext';
 import '../../styles/employee-health-card.css';
@@ -1006,6 +1007,7 @@ export function EmployeeHealthCardPage() {
         {employeeLabel && <Chip sx={{ mt: 1.25, fontWeight: 800 }} color="primary" variant="outlined" label={`الموظف المحدد: ${employeeLabel}`} />}
       </Paper>
 
+      {card?.linked_clinical_records?.health_observations && !editing && !loading && user?.isSuperuser && /staging/i.test(window.location.hostname) && String(card.employee.id)===selectedEmployeeId && <HealthObservationEntry key={selectedEmployeeId} employeeId={selectedEmployeeId} employeeName={card.employee.name||''} onSaved={()=>void loadCard(selectedEmployeeId)}/>}
       {error && <Alert severity="warning" className="no-print" sx={{ mb: 2 }}>{error}</Alert>}
       {!selectedEmployeeId && (
         <Alert severity="info" className="no-print">ابحث عن الموظف أولًا، ثم عبّئ بيانات البطاقة واحفظها. ستظهر البطاقة بعد الحفظ كصورة قابلة للتنزيل.</Alert>

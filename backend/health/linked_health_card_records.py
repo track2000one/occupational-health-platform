@@ -1,6 +1,7 @@
 """Read-only clinical projection: never creates events or modifies the saved card."""
 from django.db.models import F, Prefetch
-from .models import VaccinationDose
+from .models import VaccinationDose, EmployeeHealthProfile
+from .health_observation_fields import observation_record, profile_record
 
 LIMIT = 8
 DOSE_LIMIT = 8
@@ -111,5 +112,7 @@ def linked_clinical_records(employee):
             F('exposure_date').desc(nulls_last=True), '-pk'), injury_case),
         'needle_stick_exposures': bounded(employee.needle_stick_exposures.order_by(
             F('exposure_date').desc(nulls_last=True), '-pk'), needle_stick),
+        'health_profile': profile_record(EmployeeHealthProfile.objects.filter(employee=employee).first()),
+        'health_observations': bounded(employee.health_observations.order_by('-observation_date', '-pk'), observation_record),
         'read_only': True, 'limit_per_source': LIMIT,
     }
