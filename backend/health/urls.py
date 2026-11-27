@@ -15,6 +15,7 @@ from .provisional_appointment_sync import ProvisionalAppointmentSyncView
 from .health_data_import import HealthDataTemplateView, HealthDataPreviewView
 from .health_data_card_commit import HealthDataCardCommitView
 from .staging_clinical_entry import SyntheticClinicalEmployeesView, SyntheticClinicalEntryView
+from .staging_exposure_entry import SyntheticExposureView
 from .provisional_employee_number_edit import ProvisionalEmployeeNumberEditView
 from .provisional_employee_name_review import ProvisionalEmployeeNameReviewView
 from .employee_archived_list_visibility import ArchivedEmployeeListVisibilityView
@@ -51,6 +52,7 @@ router.register('injury-cases', InjuryCaseViewSet)
 router.register('audit-logs', AuditLogViewSet)
 
 urlpatterns = [
+    path('staging-clinical/employees/<int:employee_id>/exposures/', SyntheticExposureView.as_view(), name='staging-exposures'),
     path('staging-clinical/employees/', SyntheticClinicalEmployeesView.as_view()),
     path('staging-clinical/employees/<int:employee_id>/', SyntheticClinicalEntryView.as_view()),
     path('health-data-import/draft-commit/', HealthDataCardCommitView.as_view(), name='health-data-draft-commit'),

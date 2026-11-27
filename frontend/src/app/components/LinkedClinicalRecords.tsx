@@ -1,4 +1,5 @@
 import { useDatePreference } from '../context/DatePreferenceContext';
+import { LinkedVisitInjuryRecords, type LinkedVisitInjuryData } from './LinkedVisitInjuryRecords';
 type Source<T> = { items: T[]; has_more: boolean };
 type Lab = { id: number; test_type: string; status: string; result: string; record_date: string|null; request_date?:string|null; result_date?:string|null };
 type Screening = { id:number; request_status:string; request_date:string|null; result_status:string;
@@ -7,7 +8,7 @@ type Vaccine = { id:number; vaccine_type:string; dose:string; status:string; nex
 type Dose = { label:string;date:string|null };
 type Series = {id:number;vaccine_type:string;status:string;campaign_name:string;recorded_dates:Dose[];
   doses:(Dose&{id:number})[];more_doses:boolean;post_vaccine_result:string};
-export type LinkedClinicalData = {lab_tests:Source<Lab>;lab_screenings:Source<Screening>;
+export type LinkedClinicalData = LinkedVisitInjuryData & {lab_tests:Source<Lab>;lab_screenings:Source<Screening>;
   vaccinations:Source<Vaccine>;vaccination_records:Source<Series>;read_only:boolean;limit_per_source:number};
 const statusLabels:Record<string,string> = {pending:'قيد الانتظار',completed:'مكتمل (حالة السجل)',
   missing:'مفقود',requested:'مطلوب',not_required:'غير مطلوب',given:'معطى (حالة السجل)',
@@ -58,5 +59,6 @@ export function LinkedClinicalRecords({ data }: {data:LinkedClinicalData}) {
         </div>)}{more(data.vaccination_records.has_more)}
       </section>
     </div>
+    <LinkedVisitInjuryRecords data={data}/>
   </section>;
 }
