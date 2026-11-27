@@ -12,12 +12,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .health_data_import import (authorized, read_rows, normalized_value, text,
-    identity_status, HEALTH_FIELDS, TARGETS, NO_CACHE)
+    identity_status, HEALTH_FIELDS, TARGETS, NO_CACHE, synthetic)
 from .models import (Employee, EmployeeHealthCard, DataImportBatch, AuditLog,
     EmployeeHealthProfile, EmployeeHealthObservation, LabTest, LabScreening, Vaccination, VaccinationRecord,
     ClinicVisit, EmployeeClinicVisit, OccupationalClinicVisit, OccupationalHealthAssessment,
     CommitteeReferral, MedicalCommitteeCase, InjuryCase, NeedleStickExposure, ScreeningProgramRecord)
-from .staging_employee_reset import is_verified_synthetic
 
 SALT = 'ohp-health-data-draft-fill-v1'
 MAX_SELECTED = 2500
@@ -28,20 +27,13 @@ SPECIALIZED = (EmployeeHealthProfile, EmployeeHealthObservation, LabTest, LabScr
 MASTER_HEALTH = ('latest_virtual_visit', 'latest_field_visit', 'lab_request', 'lab_request_date')
 
 
-def synthetic(employee):
-    if not employee:
-        return False
-    if (employee.employee_number or '').startswith('OHP-LOAD-') and not employee.health_center_id:
-        return False
-    return is_verified_synthetic(employee)
-
-
 def plan_cards(rows, *, lock=False):
     ids = Counter(text(src.get('national_id')) for _, src in rows)
     staff_qs = Employee.objects.filter(national_id__in=list(ids)).order_by('pk')
     if lock:
         staff_qs = staff_qs.select_for_update()
-    staff = {e.national_id: e for e in staff_qs}
+    # Only exact QA identities may reach card and specialized-record queries.
+    staff = {e.national_id: e for e in staff_qs if synthetic(e)}
     staff_ids = [e.pk for e in staff.values()]
     card_qs = EmployeeHealthCard.objects.filter(employee_id__in=staff_ids).order_by('pk')
     if lock:
@@ -57,6 +49,10 @@ def plan_cards(rows, *, lock=False):
     for row_number, source in rows:
         nid = text(source.get('national_id'))
         employee = staff.get(nid)
+        # Never compare a non-QA employee's name, affiliation or saved values.
+        # Use a generic unmatched result, indistinguishable from an absent identity.
+        if employee is not None and not synthetic(employee):
+            employee = None
         status = identity_status(source, employee, ids[nid] > 1)
         card = cards.get(employee.pk) if employee else None
         item = {'row': row_number, 'status': 'review', 'reason': status,
@@ -67,9 +63,6 @@ def plan_cards(rows, *, lock=False):
                       card.pk if card else None, card.updated_at.isoformat() if card else None,
                       card.is_approved if card else None])
         if status != 'matched':
-            continue
-        if not synthetic(employee):
-            item['reason'] = 'not_verified_synthetic'
             continue
         if card and card.is_approved:
             item['reason'] = 'approved_card'
