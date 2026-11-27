@@ -75,8 +75,8 @@ class MedicalAttachmentTests(TestCase):
         self.assertEqual(self.upload().status_code,403)
     def test_card_protection_and_frozen_legacy_evidence(self):
         self.assertEqual(self.upload().status_code,201)
-        route=f'/api/employees/{self.e.pk}/health-card/'
-        r=self.client.get(route);self.assertEqual(r.status_code,200,r.data)
+        route=f'/api/employees/{self.e.pk}/health_card/'
+        r=self.client.get(route);self.assertEqual(r.status_code,200,getattr(r,'data',None))
         self.assertFalse(r.data['can_delete_draft'])
         r=self.client.delete(route,{'confirmation':'حذف مسودة الاختبار','synthetic_confirmed':True,
             'reason':'retest','card_id':self.card.pk,'updated_at':self.card.updated_at.isoformat()},format='json')
@@ -92,8 +92,12 @@ class MedicalAttachmentTests(TestCase):
         self.assertEqual(self.client.delete(ir).status_code,403)
         self.assertTrue(EvidenceAttachment.objects.filter(pk=a.pk).exists())
     def test_environment_gate_and_legacy_compound(self):
+        before=set(ReferenceDocument.objects.values_list('pk',flat=True))
+        evidence_before=EvidenceAttachment.objects.count()
         r=self.client.post('/api/periodic-statistics/reference-documents/create-with-attachments/',{'payload':'{"title":"QA"}','files':self.png()},format='multipart')
         self.assertEqual(r.status_code,403)
-        self.assertFalse(ReferenceDocument.objects.exists())
+        self.assertEqual(set(ReferenceDocument.objects.values_list('pk',flat=True)),before)
+        self.assertEqual(EvidenceAttachment.objects.count(),evidence_before)
+        self.assertFalse(ReferenceDocument.objects.filter(title='QA').exists())
         with patch.dict('os.environ',{'STAGING_MODE':'false','RAILWAY_PROJECT_ID':'not-staging'}):
             self.assertEqual(self.client.get(self.url).status_code,403)
