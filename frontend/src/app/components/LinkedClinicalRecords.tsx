@@ -1,9 +1,9 @@
 import { useDatePreference } from '../context/DatePreferenceContext';
 type Source<T> = { items: T[]; has_more: boolean };
-type Lab = { id: number; test_type: string; status: string; result: string; record_date: string|null };
+type Lab = { id: number; test_type: string; status: string; result: string; record_date: string|null; request_date?:string|null; result_date?:string|null };
 type Screening = { id:number; request_status:string; request_date:string|null; result_status:string;
   result_checked_date:string|null; results:{test:string;result:string}[]; follow_up_required:boolean };
-type Vaccine = { id:number; vaccine_type:string; dose:string; status:string; next_due_date:string|null };
+type Vaccine = { id:number; vaccine_type:string; dose:string; status:string; next_due_date: string|null; dose_date?:string|null };
 type Dose = { label:string;date:string|null };
 type Series = {id:number;vaccine_type:string;status:string;campaign_name:string;recorded_dates:Dose[];
   doses:(Dose&{id:number})[];more_doses:boolean;post_vaccine_result:string};
@@ -28,6 +28,7 @@ export function LinkedClinicalRecords({ data }: {data:LinkedClinicalData}) {
         {!data.lab_tests.items.length&&<p>{empty}</p>}
         {data.lab_tests.items.map(r=><div key={r.id} className="ohc-linked-row">
           <strong>{val(r.test_type)}</strong><span>الحالة: {state(r.status)} • تاريخ السجل: {fmt(r.record_date)}</span>
+          <span>تاريخ الطلب: {fmt(r.request_date ?? null)} • تاريخ النتيجة: {fmt(r.result_date ?? null)}</span>
           <span>النتيجة المدونة: {val(r.result)}</span></div>)}{more(data.lab_tests.has_more)}
       </section>
       <section><h4>طلبات الفحوصات والمناعة (LabScreening)</h4>
@@ -42,6 +43,7 @@ export function LinkedClinicalRecords({ data }: {data:LinkedClinicalData}) {
         {!data.vaccinations.items.length&&<p>{empty}</p>}
         {data.vaccinations.items.map(r=><div key={r.id} className="ohc-linked-row">
           <strong>{val(r.vaccine_type)}</strong><span>الجرعة المدونة: {val(r.dose)} • {state(r.status)}</span>
+          <span>تاريخ الجرعة: {fmt(r.dose_date ?? null)}</span>
           <span>موعد الاستحقاق القادم: {fmt(r.next_due_date)}</span></div>)}{more(data.vaccinations.has_more)}
       </section>
       <section><h4>سلاسل التطعيم والجرعات (VaccinationRecord)</h4>

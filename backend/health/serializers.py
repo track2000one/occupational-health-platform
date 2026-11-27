@@ -748,9 +748,9 @@ class OccupationalHealthAssessmentSerializer(serializers.ModelSerializer):
 
 
 class LabTestSerializer(serializers.ModelSerializer):
-    class Meta: model = LabTest; fields = '__all__'
+    class Meta: model = LabTest; fields = ('id', 'employee', 'test_type', 'result', 'status', 'date')
 class VaccinationSerializer(serializers.ModelSerializer):
-    class Meta: model = Vaccination; fields = '__all__'
+    class Meta: model = Vaccination; fields = ('id', 'employee', 'vaccine_type', 'dose', 'status', 'next_due_date')
 class ClinicVisitSerializer(serializers.ModelSerializer):
     identity_checked = serializers.BooleanField(write_only=True, required=False, default=False)
     visit_number = serializers.SerializerMethodField()

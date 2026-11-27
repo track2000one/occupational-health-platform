@@ -916,6 +916,10 @@ class LabTest(models.Model):
     result = models.CharField(max_length=200, blank=True)
     status = models.CharField(max_length=20, choices=STATUS, default='pending')
     date = models.DateField(null=True, blank=True)
+    request_date = models.DateField(null=True, blank=True)
+    result_date = models.DateField(null=True, blank=True)
+    request_notes = models.TextField(blank=True, default='')
+    result_notes = models.TextField(blank=True, default='')
 
 
 class LabScreening(ImportTraceModel):
@@ -951,6 +955,8 @@ class Vaccination(models.Model):
     dose = models.CharField(max_length=50)
     status = models.CharField(max_length=20, choices=STATUS, default='due')
     next_due_date = models.DateField(null=True, blank=True)
+    dose_date = models.DateField(null=True, blank=True)
+    notes = models.TextField(blank=True, default='')
 
 
 class VaccinationRecord(ImportTraceModel):
