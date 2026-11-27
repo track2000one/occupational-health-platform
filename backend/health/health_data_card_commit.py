@@ -32,7 +32,8 @@ def plan_cards(rows, *, lock=False):
     staff_qs = Employee.objects.filter(national_id__in=list(ids)).order_by('pk')
     if lock:
         staff_qs = staff_qs.select_for_update()
-    staff = {e.national_id: e for e in staff_qs}
+    # Only exact QA identities may reach card and specialized-record queries.
+    staff = {e.national_id: e for e in staff_qs if synthetic(e)}
     staff_ids = [e.pk for e in staff.values()]
     card_qs = EmployeeHealthCard.objects.filter(employee_id__in=staff_ids).order_by('pk')
     if lock:
