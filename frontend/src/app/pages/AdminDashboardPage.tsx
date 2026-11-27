@@ -1,3 +1,4 @@
+import { HealthMetricsDashboard } from '../components/HealthMetricsDashboard';
 import { useMemo, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
@@ -80,7 +81,7 @@ function GovernanceItem({ label, value, color }: { label: string; value: number;
   );
 }
 
-export function AdminDashboardPage() {
+function LegacyAdminDashboardPage() {
   const { i18n } = useTranslation();
   const navigate = useNavigate();
   const isRtl = i18n.language === 'ar';
@@ -302,3 +303,5 @@ export function AdminDashboardPage() {
     </Box>
   );
 }
+
+export function AdminDashboardPage(){return /staging/i.test(window.location.hostname)?<HealthMetricsDashboard mode="admin"/>:<LegacyAdminDashboardPage/>;}
