@@ -29,7 +29,7 @@ import {
   ArrowBack as ArrowBackIcon,
   Download as DownloadIcon,
   Edit as EditIcon,
-  DeleteOutline as DeleteIcon,
+  DeleteSweepOutlined as DeleteIcon,
   ExpandMore as ExpandMoreIcon,
   HealthAndSafety as HealthAndSafetyIcon,
   Image as ImageIcon,
