@@ -1572,7 +1572,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 # draft with no specialized medical records can be deleted.
                 headers={'Cache-Control':'private, no-store'}
                 draft=EmployeeHealthCard.objects.select_for_update().filter(employee=employee).first()
-                if not draft or draft.is_approved or any(getattr(employee,key,None) for key in MASTER_HEALTH) or any(model.objects.filter(employee=employee).exists() for model in SPECIALIZED):
+                if not draft or draft.is_approved or draft.staging_medical_attachments.exists() or any(getattr(employee,key,None) for key in MASTER_HEALTH) or any(model.objects.filter(employee=employee).exists() for model in SPECIALIZED):
                     return Response({'detail':'لا يمكن حذف بطاقة معتمدة أو مرتبطة بسجلات صحية أو غير محفوظة.'},status=403,headers=headers)
                 if request.data.get('confirmation')!='حذف مسودة الاختبار' or request.data.get('synthetic_confirmed') is not True or request.data.get('reason') not in ('correction','retest','wrong_entry'):
                     return Response({'detail':'حدد سبب الحذف وأكد حذف مسودة الاختبار فقط.'},status=400,headers=headers)
@@ -1850,7 +1850,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             default_data = {section:{key:'' for key in values} for section,values in default_data.items()}
             default_data['employment']['current_position'] = employee.current_job or ''
             stored = card.data if card else {}
-            payload['can_delete_draft'] = bool(card and not card.is_approved and not any(getattr(employee,key,None) for key in MASTER_HEALTH) and not any(model.objects.filter(employee=employee).exists() for model in SPECIALIZED))
+            payload['can_delete_draft'] = bool(card and not card.is_approved and not card.staging_medical_attachments.exists() and not any(getattr(employee,key,None) for key in MASTER_HEALTH) and not any(model.objects.filter(employee=employee).exists() for model in SPECIALIZED))
             payload['completion'] = card_presence(stored)
             payload['derived_bmi'] = derived_bmi(stored)
         data = merge_health_card_data(default_data, card.data if card else {})

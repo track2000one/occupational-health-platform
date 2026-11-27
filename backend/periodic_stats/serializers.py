@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from health.staging_registry_scope import boundary
 
 from .models import DailyStatistic, EvidenceAttachment, Indicator, Initiative, ReferenceDocument, WorkforceMember, WorkforceTarget
 
@@ -52,7 +53,15 @@ class EvidenceAttachmentSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
-class InitiativeSerializer(serializers.ModelSerializer):
+class StagingLegacyMetadataMixin:
+    def get_fields(self):
+        fields=super().get_fields()
+        if boundary():
+            fields.pop('attachments',None)
+        return fields
+
+
+class InitiativeSerializer(StagingLegacyMetadataMixin,serializers.ModelSerializer):
     year = serializers.SerializerMethodField()
     quarter = serializers.SerializerMethodField()
     total_beneficiaries = serializers.IntegerField(read_only=True)
@@ -110,7 +119,7 @@ class InitiativeSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class ReferenceDocumentSerializer(serializers.ModelSerializer):
+class ReferenceDocumentSerializer(StagingLegacyMetadataMixin,serializers.ModelSerializer):
     attachments = EvidenceAttachmentSerializer(many=True, read_only=True)
 
     class Meta:

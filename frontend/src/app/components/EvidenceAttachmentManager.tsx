@@ -78,7 +78,11 @@ function authHeaders() {
   return { Authorization: `Bearer ${token}` };
 }
 
-export function EvidenceAttachmentManager({ ownerType, ownerId, canEdit, isRtl, initialAttachments, compact = false }: Props) {
+export function EvidenceAttachmentManager(props:Props){
+  if(/staging/i.test(window.location.hostname))return <Alert severity="warning">المرفقات القديمة مجمدة في Staging دون حذف أو عرض. استخدم مرفقات البطاقة الصحية التجريبية.</Alert>;
+  return <LegacyEvidenceAttachmentManager {...props}/>;
+}
+function LegacyEvidenceAttachmentManager({ ownerType, ownerId, canEdit, isRtl, initialAttachments, compact = false }: Props) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [attachments, setAttachments] = useState<EvidenceAttachment[]>(initialAttachments || []);
   const [loading, setLoading] = useState(initialAttachments == null);

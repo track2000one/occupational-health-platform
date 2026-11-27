@@ -10,3 +10,5 @@ psycopg2-binary==2.9.10
 openpyxl==3.1.5
 cryptography==45.0.7
 hijridate==2.5.0
+
+Pillow==13.0.0

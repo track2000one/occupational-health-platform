@@ -1474,3 +1474,19 @@ class StagingLoginWindow(models.Model):
     key = models.CharField(max_length=64, primary_key=True)
     expires_at = models.DateTimeField(db_index=True)
     attempts = models.PositiveIntegerField(default=0)
+
+
+class StagingMedicalAttachment(models.Model):
+    """Canonical synthetic QA image or server-generated PDF; no original upload."""
+    id = models.UUIDField(primary_key=True, editable=False)
+    card = models.ForeignKey(EmployeeHealthCard, on_delete=models.PROTECT, related_name='staging_medical_attachments')
+    content_type = models.CharField(max_length=32)
+    byte_size = models.PositiveIntegerField()
+    checksum_sha256 = models.CharField(max_length=64)
+    file_data = models.BinaryField(editable=False)
+    uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='staging_medical_attachments')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at','id']
+        constraints = [models.UniqueConstraint(fields=['card','checksum_sha256'],name='qa_medical_card_checksum_unique')]
