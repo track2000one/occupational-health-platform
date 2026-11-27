@@ -60,3 +60,7 @@ See STAGING_DISASTER_RECOVERY.md. Local-only PostgreSQL snapshot backup, authent
 ## Increment 144 — bounded security and performance regression (pending CI)
 
 See STAGING_SECURITY_PERFORMANCE.md. Request-local scope ancestry reuse and narrower selects, bounded query budget, actual JWT role matrix and revocation, oversized auth request guard, API response headers, bearer redirect denial, 1,423 synthetic employees/25 centers and 20 local concurrent PostgreSQL reads. Dependency advisory scans are report-only and must be reviewed separately, including any unavailable scan. No live Railway load tests, resource changes, migrations, or Production deployment. No claim of full penetration testing or production SLA. Independent backup, live UAT and institutional approval remain NO-GO gates.
+
+## Increment 145 — dependency remediation (draft, not deployable)
+
+See STAGING_DEPENDENCY_REMEDIATION.md. Five Python pins updated from actual 144 advisory fix versions; CI generates a compatible npm manifest/lock candidate in a read-only runner for explicit review. Candidate must be committed and temporary generation removed before merge. Complete clean dependency audits are now intended as CI gates; compatibility and residual advisories pending. No Railway or Production changes. Actual independent Staging backup and authenticated UAT remain required.
