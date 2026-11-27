@@ -9,7 +9,8 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from rest_framework import permissions, serializers
 from rest_framework.views import APIView
-from .health_data_import import authorized, TARGETS, NO_CACHE
+from .health_data_import import authorized, NO_CACHE
+from .health_card_presence import CARD_FIELDS, card_presence, percent
 from .staging_clinical_entry import eligible, reply
 from .models import (Employee, OrganizationUnit, EmployeeHealthCard, EmployeeHealthProfile,
     EmployeeHealthObservation, LabTest, LabScreening, Vaccination, VaccinationRecord, VaccinationDose,
@@ -49,7 +50,6 @@ COVERAGE=(
 CONDITION_KEYS=(('diabetes','السكري'),('hypertension','ارتفاع ضغط الدم'),('thyroid_disease','أمراض الغدة الدرقية'),
  ('asthma','الربو'),('blood_disease','أمراض الدم'),('chronic_disease','مرض مزمن'))
 MENTAL_KEYS=(('phq','PHQ'),('gad','GAD'),('mbi','MBI'))
-CARD_FIELDS=tuple(dict.fromkeys(TARGETS.values()))
 
 class MetricsFilter(serializers.Serializer):
     sector=serializers.IntegerField(required=False,min_value=1)
@@ -64,17 +64,6 @@ class MetricsFilter(serializers.Serializer):
         if a and (a>b or (b-a).days>MAX_DAYS or a.year<1900 or b>timezone.localdate()):
             raise serializers.ValidationError('الفترة غير صالحة أو تزيد على عشر سنوات أو تقع في المستقبل.')
         return attrs
-
-def recorded(value):
-    # False and zero are actual recorded values; missing/placeholder strings are not.
-    if value is None or isinstance(value,(dict,list)):
-        return False
-    if isinstance(value,str):
-        return value.strip().lower() not in ('','-','—','n/a','na','null','none','unknown','غير معروف','غير مدون','غير متوفر')
-    return isinstance(value,(bool,int,float))
-
-def percent(n,d):
-    return round(n*100/d,1) if d else None
 
 def cohort():
     candidates=list(Employee.objects.filter(is_archived=False,registration_status='verified',
@@ -140,13 +129,9 @@ def build_metrics(filters):
     ids,options,labels=organization_scope(employees,filters)
     n=len(ids)
     cards=list(EmployeeHealthCard.objects.filter(employee_id__in=ids).values_list('is_approved','data'))
-    entered=0
-    for _,data in cards:
-        if not isinstance(data,dict):continue
-        for section,key in CARD_FIELDS:
-            block=data.get(section)
-            if isinstance(block,dict) and recorded(block.get(key)):
-                entered+=1
+    presence=[card_presence(data) for _,data in cards]
+    entered=sum(row['recorded'] for row in presence)
+    complete=sum(row['complete'] for row in presence)
     saved=len(cards)
     approved=sum(1 for a,_ in cards if a)
     capacity=saved*len(CARD_FIELDS)
@@ -157,6 +142,8 @@ def build_metrics(filters):
         {'key':'no_card','label':'موظفون بلا بطاقة محفوظة','value':n-saved,'unit':'موظف'},
         {'key':'card_presence','label':'نسبة وجود بطاقة محفوظة','value':percent(saved,n),'unit':'%'},
         {'key':'field_presence','label':'نسبة الحقول المدونة في البطاقات المحفوظة','value':percent(entered,capacity),'unit':'%'},
+        {'key':'complete_cards','label':'بطاقات جميع حقولها المرجعية مدونة','value':complete,'unit':'بطاقة'},
+        {'key':'incomplete_cards','label':'بطاقات بها حقول مرجعية غير مدونة','value':saved-complete,'unit':'بطاقة'},
     ]
     coverage=[]
     for key,label,*models in COVERAGE:
@@ -187,7 +174,7 @@ def build_metrics(filters):
             'المجتمع: الموظفون النشطون الموثقون المطابقون لعلامات الاختبار الدقيقة، غير المؤرشفين. التصفية بالارتباط التنظيمي الحالي المسجل.',
             'التاريخ يطبق على السجلات المؤرخة والأمراض/أدوات التقييم المدونة فقط؛ مؤشرات الموظفين والبطاقات ووجود السجلات لجميع التواريخ.',
             'وجود سجل لا يعني اكتمال الفحص أو المناعة أو اللياقة. النسب لا تعني التغطية السريرية ولا تحقق الالتزام الطبي.',
-            'الحقول المدونة تُقاس من القيم المحفوظة فقط في حقول القالب الواضحة، ولا تشمل قيم العرض الافتراضية أو الحقول المبهمة. لا تعني الحقول الفارغة نقصًا إلزاميًا.',
+            'الحقول المدونة تُقاس من القيم المحفوظة فقط في حقول القالب الواضحة، ولا تشمل قيم العرض الافتراضية أو الحقول المبهمة. لا تعني الحقول الفارغة نقصًا إلزاميًا. مؤشر كتلة الجسم المحسوب للعرض فقط لا يُحتسب كحقل مدون، واكتمال التدوين لا يعني اعتمادًا طبيًا.',
             'كل عداد أحداث يمثل مصدرًا مستقلًا؛ لا تجمع المصادر المختلفة باعتبارها عدد حالات فريدة. السجلات غير المؤرخة مستبعدة من عدادات الأحداث.',
             'الأمراض: عدد موظفين لهم قيمة نعم مدونة في تقييم مؤرخ خلال الفترة، وليس انتشارًا أو تشخيصًا حاليًا. الأدوات النفسية: وجود نتيجة ونسخة مدونتين فقط.',
         ]}

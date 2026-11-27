@@ -17,6 +17,7 @@ from rest_framework.views import APIView
 from openpyxl import load_workbook
 from .importers import process_excel_import
 from .linked_health_card_records import linked_clinical_records
+from .health_card_presence import card_presence, derived_bmi
 from .health_data_import import authorized as isolated_health_admin
 from .health_data_card_commit import synthetic as verified_health_test_employee
 from .organization_structure import STAGING_PROJECT
@@ -1773,27 +1774,21 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 'follow_up_spare_3': '', 'comments': '',
             },
         }
-        # In the isolated synthetic trial, live sources are shown separately
-        # from the editable card snapshot; do not copy or infer clinical fields.
+        # Staging display/edit snapshot contains only explicitly saved clinical
+        # fields. Live records remain separate; never persist inferred defaults.
         if isolated_health_admin(request) and verified_health_test_employee(employee):
             payload['linked_clinical_records'] = linked_clinical_records(employee)
-            # Visit and exposure collections carry actual recorded dates.
-            # Do not treat a scheduled follow-up as a completed virtual visit
-            # or silently materialize a legacy clinical event into card fields.
-            default_data['conditions']['needle_stick_history'] = ''
-            # Generic advice and computed review dates are not a recorded medical decision.
-            default_data['recommendations']['medical'] = ''
-            default_data['recommendations']['vaccination'] = ''
+            payload['employee']['age'] = employee.age if employee.date_of_birth else None
+            payload['employee']['gender'] = employee.gender if employee.gender in ('male','female') else ''
+            payload['employee']['years_of_experience'] = serialize_decimal(employee.years_of_experience) if employee.appointment_date else None
+            payload['reviewed_by'] = card.reviewed_by if card else ''
             payload['next_review_date'] = card.next_review_date.isoformat() if card and card.next_review_date else None
-            for key in ('latest_virtual_visit', 'latest_field_visit'):
-                default_data['follow_up'][key] = ''
-            for key in ('joined', 'lab_request', 'lab_request_date', 'lab_result',
-                        'result_checked_date', 'ppd_date', 'ppd_test', 'flu_vaccine',
-                        'covid_19', 'other_vaccine'):
-                default_data['follow_up'][key] = ''
-            for key in ('anti_hbs', 'hbsag', 'hcv', 'hiv', 'rubella_igg',
-                        'measles_igg', 'varicella_igg', 'influenza_vaccine'):
-                default_data['vaccinations'][key] = ''
+            payload['verification_token'] = ''
+            default_data = {section:{key:'' for key in values} for section,values in default_data.items()}
+            default_data['employment']['current_position'] = employee.current_job or ''
+            stored = card.data if card else {}
+            payload['completion'] = card_presence(stored)
+            payload['derived_bmi'] = derived_bmi(stored)
         data = merge_health_card_data(default_data, card.data if card else {})
         payload['data'] = data
         payload.update(data)
