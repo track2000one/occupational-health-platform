@@ -23,7 +23,8 @@ def bounded(queryset, convert):
 
 def lab_test(record):
     return {'id': record.pk, 'test_type': record.test_type, 'status': record.status,
-            'result': record.result, 'record_date': iso(record.date)}
+            'result': record.result, 'record_date': iso(record.date),
+            'request_date': iso(record.request_date), 'result_date': iso(record.result_date)}
 
 
 def lab_screening(record):
@@ -37,7 +38,7 @@ def lab_screening(record):
 
 def vaccination(record):
     return {'id': record.pk, 'vaccine_type': record.vaccine_type, 'dose': record.dose,
-            'status': record.status, 'next_due_date': iso(record.next_due_date)}
+            'status': record.status, 'next_due_date': iso(record.next_due_date), 'dose_date': iso(record.dose_date)}
 
 
 def vaccine_record(record):

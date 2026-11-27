@@ -1758,7 +1758,34 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         return Response(payload, status=response_status, headers={'Cache-Control': 'private, no-store'})
 
 
-class LabTestViewSet(viewsets.ModelViewSet): queryset=LabTest.objects.select_related('employee').all().order_by('-id'); serializer_class=LabTestSerializer; permission_classes=[permissions.IsAuthenticated]
+class LegacyClinicalViewSet(viewsets.ModelViewSet):
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if self.action not in ('list', 'retrieve'):
+            qs = qs.filter(**{self.explicit_date_field + '__isnull': True})
+        return qs
+
+    def perform_create(self, serializer):
+        if __import__('os').environ.get('STAGING_MODE', '').lower() == 'true':
+            raise ValidationError('Use the isolated clinical workflow in Staging.')
+        super().perform_create(serializer)
+
+    def perform_update(self, serializer):
+        if __import__('os').environ.get('STAGING_MODE', '').lower() == 'true':
+            raise ValidationError('Use the isolated clinical workflow in Staging.')
+        super().perform_update(serializer)
+
+    def perform_destroy(self, instance):
+        if __import__('os').environ.get('STAGING_MODE', '').lower() == 'true':
+            raise ValidationError('Clinical deletion is disabled in Staging.')
+        super().perform_destroy(instance)
+
+
+class LabTestViewSet(LegacyClinicalViewSet):
+    queryset=LabTest.objects.select_related('employee').all().order_by('-id')
+    serializer_class=LabTestSerializer
+    permission_classes=[permissions.IsAuthenticated]
+    explicit_date_field='request_date'
 class OccupationalHealthAssessmentViewSet(viewsets.ModelViewSet):
     queryset = OccupationalHealthAssessment.objects.select_related('employee', 'employee__health_center', 'created_by').all()
     serializer_class = OccupationalHealthAssessmentSerializer
@@ -1794,7 +1821,11 @@ class OccupationalHealthAssessmentViewSet(viewsets.ModelViewSet):
             record_id=record_id,
         )
 
-class VaccinationViewSet(viewsets.ModelViewSet): queryset=Vaccination.objects.select_related('employee').all().order_by('-id'); serializer_class=VaccinationSerializer; permission_classes=[permissions.IsAuthenticated]
+class VaccinationViewSet(LegacyClinicalViewSet):
+    queryset=Vaccination.objects.select_related('employee').all().order_by('-id')
+    serializer_class=VaccinationSerializer
+    permission_classes=[permissions.IsAuthenticated]
+    explicit_date_field='dose_date'
 class ClinicVisitViewSet(viewsets.ModelViewSet):
     queryset = ClinicVisit.objects.select_related('employee', 'employee__health_center', 'created_by').all()
     serializer_class = ClinicVisitSerializer
