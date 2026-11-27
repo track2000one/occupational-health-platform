@@ -4,6 +4,7 @@ import {
   Accordion,
   AccordionDetails,
   AccordionSummary,
+  Autocomplete,
   Alert,
   Box,
   Button,
@@ -59,6 +60,9 @@ const API_BASE_URL = (
     ? LOCAL_API_BASE_URL
     : PRODUCTION_API_BASE_URL)
 ).replace(/\/$/, '');
+
+const IS_STAGING = typeof window !== 'undefined' && /staging/i.test(window.location.hostname);
+type QaEmployee = { id: number; name: string; number: string };
 
 type SectionKey =
   | 'personal'
@@ -415,6 +419,10 @@ function normalizeSections(card: HealthCardData): SectionData {
 }
 
 async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
+  // Never fall back to the production API when running the staging card page.
+  if (IS_STAGING && API_BASE_URL !== 'https://occupational-staging-backend-staging.up.railway.app/api') {
+    throw new Error('عنوان API لبيئة الاختبار غير مطابق. أوقف الطلب حفاظًا على البيانات.');
+  }
   const token = getAccessToken();
   if (!token) throw new Error('لا يوجد رمز دخول من Django. أعد تسجيل الدخول بحساب Backend.');
   const response = await authFetch(`${API_BASE_URL}${path}`, {
@@ -490,7 +498,7 @@ async function elementToPng(element: HTMLElement, pixelRatio = 2): Promise<strin
 
 function CardCode({ token, cardNumber }: { token?: string; cardNumber: string }) {
   const verificationUrl = useMemo(() => {
-    if (!token || typeof window === 'undefined') return '';
+    if (IS_STAGING || !token || typeof window === 'undefined') return '';
     return `${window.location.origin}/v/${encodeURIComponent(token)}`;
   }, [token]);
 
@@ -833,8 +841,32 @@ export function EmployeeHealthCardPage() {
   const [generateAfterSave, setGenerateAfterSave] = useState(false);
   const [cardImage, setCardImage] = useState('');
   const [error, setError] = useState('');
+  const [qaEmployees, setQaEmployees] = useState<QaEmployee[] | null>(null);
+  const [qaError, setQaError] = useState('');
+  const cardRequest = useRef(0);
 
-  const canEdit = Boolean(user?.role && EDITABLE_ROLES.has(user.role));
+  useEffect(() => {
+    if (!IS_STAGING) return;
+    let active = true;
+    setQaEmployees(null);
+    setQaError('');
+    if (!user?.isSuperuser) {
+      setQaError('اختبار البطاقة الصحية متاح للمشرف الأعلى فقط.');
+      return;
+    }
+    void apiRequest<{employees: QaEmployee[]}>('/staging-clinical/employees/').then(payload => {
+      if (!active) return;
+      if (!Array.isArray(payload.employees)) throw new Error('قائمة الاختبار غير صالحة.');
+      setQaEmployees(payload.employees);
+    }).catch(() => {
+      if (active) setQaError('تعذر جلب موظفي الاختبار المؤهلين. لا يتم الرجوع إلى دليل الموظفين العام.');
+    });
+    return () => { active = false; };
+  }, [user?.isSuperuser]);
+
+  const canEdit = Boolean(user?.role && EDITABLE_ROLES.has(user.role)
+    && (!IS_STAGING || (user?.isSuperuser && !card?.is_approved)));
+  const qaSelected = qaEmployees?.find(e => String(e.id) === selectedEmployeeId) || null;
 
   const employeeLabel = useMemo(() => {
     const employee = card?.employee || selectedEmployee;
@@ -853,10 +885,16 @@ export function EmployeeHealthCardPage() {
 
   const loadCard = useCallback(async (id: string) => {
     if (!id) return;
+    if (IS_STAGING && (!user?.isSuperuser || !qaEmployees?.some(e => String(e.id) === id))) return;
+    const requestId = ++cardRequest.current;
     setLoading(true);
+    setCard(null);
+    setCardImage('');
+    setSelectedEmployee(null);
     setError('');
     try {
       const payload = await apiRequest<HealthCardData>(`/employees/${id}/health_card/`);
+      if (requestId !== cardRequest.current) return;
       applyCard(payload);
       setSelectedEmployee({
         id: payload.employee.id || id,
@@ -870,20 +908,42 @@ export function EmployeeHealthCardPage() {
       });
       // View always renders the complete visual card, even before its optional
       // clinical fields are saved. The explicit Edit action opens the form.
-      setEditing(requestedEditMode);
+      setEditing(requestedEditMode && (!IS_STAGING || !payload.is_approved));
     } catch (loadError) {
+      if (requestId !== cardRequest.current) return;
       const message = loadError instanceof Error ? loadError.message : 'تعذر تحميل البطاقة الصحية.';
       setError(message);
       setCard(null);
       toast.error(message);
     } finally {
-      setLoading(false);
+      if (requestId === cardRequest.current) setLoading(false);
     }
-  }, [applyCard, requestedEditMode]);
+  }, [applyCard, requestedEditMode, qaEmployees, user?.isSuperuser]);
 
   useEffect(() => {
+    if (IS_STAGING && (!user?.isSuperuser || qaEmployees === null)) {
+      ++cardRequest.current;
+      setCard(null);
+      setSelectedEmployee(null);
+      setCardImage('');
+      setLoading(false);
+      return;
+    }
+    if (IS_STAGING && selectedEmployeeId && !qaSelected) {
+      ++cardRequest.current;
+      setCard(null);
+      setSelectedEmployee(null);
+      setCardImage('');
+      setSelectedEmployeeId('');
+      setLoading(false);
+      setEditing(false);
+      setError('هذا السجل غير مؤهل للاختبار. اختر موظفًا من قائمة الاختبار فقط.');
+      navigate('/employee-health-card', {replace: true});
+      return;
+    }
     if (selectedEmployeeId) void loadCard(selectedEmployeeId);
-  }, [loadCard, selectedEmployeeId]);
+    return () => { ++cardRequest.current; };
+  }, [loadCard, selectedEmployeeId, qaEmployees, qaSelected, user?.isSuperuser, navigate]);
 
   const captureCard = useCallback(async () => {
     setCardImage('');
@@ -929,6 +989,7 @@ export function EmployeeHealthCardPage() {
   }
 
   async function handleSave() {
+    if (IS_STAGING && (!canEdit || !qaSelected || String(card?.employee.id) !== selectedEmployeeId)) return;
     if (!selectedEmployeeId) {
       toast.error('يرجى اختيار الموظف أولًا.');
       return;
@@ -945,7 +1006,7 @@ export function EmployeeHealthCardPage() {
           issue_date: issueDate,
           next_review_date: nextReviewDate || null,
           reviewed_by: reviewedBy.trim(),
-          is_approved: isApproved,
+          is_approved: IS_STAGING ? false : isApproved,
           data: form,
         }),
       });
@@ -971,6 +1032,9 @@ export function EmployeeHealthCardPage() {
   }
 
   function handleEmployeeChange(id: string, employee: EmployeeSearchOption | null) {
+    ++cardRequest.current;
+    setLoading(false);
+    setError('');
     setSelectedEmployeeId(id);
     setSelectedEmployee(employee);
     setCard(null);
@@ -989,7 +1053,7 @@ export function EmployeeHealthCardPage() {
         </Box>
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
           <Button variant="outlined" startIcon={<ArrowBackIcon />} onClick={() => navigate('/employees')}>الموظفون</Button>
-          {selectedEmployeeId && <Button variant="outlined" startIcon={<RefreshIcon />} onClick={() => void loadCard(selectedEmployeeId)} disabled={loading}>تحديث</Button>}
+          {selectedEmployeeId && (!IS_STAGING || qaSelected) && <Button variant="outlined" startIcon={<RefreshIcon />} onClick={() => void loadCard(selectedEmployeeId)} disabled={loading}>تحديث</Button>}
           {card && canEdit && <Button variant="outlined" startIcon={<EditIcon />} onClick={() => { setCardImage(''); setEditing(true); }}>تعبئة/تعديل</Button>}
           {card && !editing && <Button variant="outlined" startIcon={<ImageIcon />} onClick={() => void captureCard()} disabled={generatingImage}>عرض كصورة</Button>}
           {card && !editing && <Button variant="contained" startIcon={<DownloadIcon />} onClick={() => void downloadImage()} disabled={generatingImage}>تنزيل PNG</Button>}
@@ -998,12 +1062,29 @@ export function EmployeeHealthCardPage() {
       </Stack>
 
       <Paper className="ohc-selector no-print">
-        <EmployeeQuickSearch
+        {IS_STAGING ? (
+          <Stack spacing={1}>
+            <Alert severity="info">تجربة معزولة — اختر من موظفي الاختبار الموثقين فقط. لا تُعرض نتائج دليل الموظفين العام هنا.</Alert>
+            {qaError && <Alert severity="warning">{qaError}</Alert>}
+            {!qaError && qaEmployees?.length === 0 && <Alert severity="warning">لا يوجد موظفو اختبار مؤهلون. يلزم تجهيز سجلات اصطناعية معتمدة للاختبار.</Alert>}
+            <Autocomplete
+              options={qaEmployees || []}
+              value={qaSelected}
+              disabled={!user?.isSuperuser || qaEmployees === null || saving}
+              loading={qaEmployees === null && !qaError && Boolean(user?.isSuperuser)}
+              getOptionLabel={option => option.name + ' — ' + option.number}
+              isOptionEqualToValue={(a,b) => a.id === b.id}
+              noOptionsText="لا يوجد موظف اختبار مطابق"
+              onChange={(_, option) => handleEmployeeChange(option ? String(option.id) : '', option ? {id:option.id,name:option.name,employee_number:option.number} : null)}
+              renderInput={params => <TextField {...params} label="موظف الاختبار للبطاقة الصحية" helperText="ابحث بالاسم الاصطناعي أو رقم الاختبار OHP-QA / OHP-LOAD." />}
+            />
+          </Stack>
+        ) : <EmployeeQuickSearch
           value={selectedEmployeeId}
           onChange={handleEmployeeChange}
           label="بحث الموظف للبطاقة الصحية"
           helperText="ابحث بالاسم، الهوية الوطنية، الرقم الوظيفي، الجوال أو البريد الإلكتروني. لكل موظف بطاقة واحدة فقط."
-        />
+        />}
         {employeeLabel && <Chip sx={{ mt: 1.25, fontWeight: 800 }} color="primary" variant="outlined" label={`الموظف المحدد: ${employeeLabel}`} />}
       </Paper>
 
@@ -1019,7 +1100,7 @@ export function EmployeeHealthCardPage() {
         </Paper>
       )}
 
-      {card && editing && !loading && (
+      {card && editing && canEdit && !loading && (
         <Paper className="ohc-form-shell no-print">
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} justifyContent="space-between" alignItems={{ xs: 'stretch', md: 'center' }} sx={{ mb: 2 }}>
             <Box>
@@ -1059,10 +1140,10 @@ export function EmployeeHealthCardPage() {
             <Grid container spacing={1.5} alignItems="stretch">
               <Grid size={{ xs: 12, md: 6 }}><CalendarDateField required label="تاريخ إصدار البطاقة" value={issueDate} onChange={setIssueDate} /></Grid>
               <Grid size={{ xs: 12, md: 6 }}><CalendarDateField label="تاريخ المراجعة القادمة" value={nextReviewDate} onChange={setNextReviewDate} /></Grid>
-              <Grid size={{ xs: 12, md: 8 }}><TextField fullWidth label="مراجعة واعتماد من قبل" value={reviewedBy} onChange={event => setReviewedBy(event.target.value)} /></Grid>
+              <Grid size={{ xs: 12, md: 8 }}><TextField fullWidth label={IS_STAGING ? 'مراجع المسودة التجريبية' : 'مراجعة واعتماد من قبل'} value={reviewedBy} onChange={event => setReviewedBy(event.target.value)} /></Grid>
               <Grid size={{ xs: 12, md: 4 }}>
                 <Paper variant="outlined" className={`ohc-approval-control${isApproved ? ' is-approved' : ''}`}>
-                  <FormControlLabel control={<Switch checked={isApproved} onChange={event => setIsApproved(event.target.checked)} />} label="تمت مراجعة واعتماد البطاقة" />
+                  <FormControlLabel control={<Switch checked={IS_STAGING ? false : isApproved} disabled={IS_STAGING} onChange={event => setIsApproved(event.target.checked)} />} label={IS_STAGING ? 'الاعتماد الطبي غير متاح في الاختبار' : 'تمت مراجعة واعتماد البطاقة'} />
                 </Paper>
               </Grid>
             </Grid>
