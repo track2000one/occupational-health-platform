@@ -1018,7 +1018,10 @@ class EmployeeViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = super().get_queryset()
         if staging_clinical_boundary() and not self.request.user.is_superuser:
-            queryset=queryset.filter(pk__in=eligible_ids(self.request.user))
+            # Only fields of the minimized directory are materialized; no health card JOIN.
+            queryset=Employee.objects.filter(pk__in=eligible_ids(self.request.user)).select_related('health_center','organization_unit').only(
+                'id','name','employee_number','job_title','health_center_id','health_center__id','health_center__name',
+                'organization_unit_id','organization_unit__id','organization_unit__name')
             # Only permitted output fields may be searched; never query identity or clinical values.
             query=str(self.request.query_params.get('search') or '').strip()[:120]
             if query:

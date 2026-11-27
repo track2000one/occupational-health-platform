@@ -180,7 +180,7 @@ async function refreshAccessToken() {
 function withBearerToken(options: RequestInit, accessToken: string) {
   const headers = new Headers(options.headers || {});
   headers.set('Authorization', `Bearer ${accessToken}`);
-  return { ...options, headers };
+  return { ...options, headers, ...(IS_STAGING_HOST ? {redirect:'error' as RequestRedirect} : {}) };
 }
 
 export async function authFetch(input: RequestInfo | URL, options: RequestInit = {}) {

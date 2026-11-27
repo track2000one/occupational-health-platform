@@ -20,7 +20,7 @@ def isolated():
     return os.getenv('STAGING_MODE','').lower()=='true' and os.getenv('RAILWAY_PROJECT_ID')==STAGING_PROJECT
 
 def graph():
-    nodes=list(OrganizationUnit.objects.filter(is_active=True,is_approved=True).select_related('health_center').order_by('pk')[:MAX_NODES+1])
+    nodes=list(OrganizationUnit.objects.filter(is_active=True,is_approved=True).select_related('health_center').only('id','parent_id','kind','health_center_id','health_center__id','health_center__is_active','health_center__is_archived').order_by('pk')[:MAX_NODES+1])
     if len(nodes)>MAX_NODES:
         raise PermissionDenied('الهيكل التنظيمي يتجاوز حد الاختبار.')
     return {n.pk:n for n in nodes}
@@ -51,24 +51,31 @@ def eligible_ids(user):
     if not isolated() or not profile:
         return []
     nodes=graph()
+    # Request-local cache: permissions are recalculated on every request.
+    paths={}
+    def ancestors(node_id):
+        if node_id not in paths:
+            paths[node_id]=chain(node_id,nodes)
+        return paths[node_id]
     own=profile.role=='employee'
     scope=profile.organization_scope_id
     if own:
         if not profile.national_id and not profile.employee_number:
             return []
-    elif profile.role not in SCOPED_ROLES or not chain(scope,nodes):
+    elif profile.role not in SCOPED_ROLES or not ancestors(scope):
         return []
     q=Employee.objects.filter(is_archived=False,registration_status='verified',employment_status=Employee.EmploymentStatus.ACTIVE).filter(
         Q(employee_number__startswith='OHP-QA-')|Q(employee_number__startswith='OHP-LOAD-'))
     if own:
         if profile.national_id:q=q.filter(national_id=profile.national_id)
         if profile.employee_number:q=q.filter(employee_number=profile.employee_number)
-    candidates=list(q.select_related('health_center').order_by('pk')[:MAX_CANDIDATES+1])
+    candidates=list(q.select_related('health_center').only('id','name','email','national_id','employee_number',
+        'organization_unit_id','health_center_id','health_center__id','health_center__code').order_by('pk')[:MAX_CANDIDATES+1])
     if len(candidates)>MAX_CANDIDATES:
         raise PermissionDenied('تجاوز عدد سجلات الاختبار الحد الآمن.')
     centers=defaultdict(list)
     for n in nodes.values():
-        if n.kind=='center' and n.health_center_id and chain(n.pk,nodes):
+        if n.kind=='center' and n.health_center_id and ancestors(n.pk):
             centers[n.health_center_id].append(n.pk)
     ids=[]
     for e in candidates:
@@ -81,12 +88,12 @@ def eligible_ids(user):
         if unit is None and e.health_center_id:
             matches=centers[e.health_center_id]
             unit=matches[0] if len(matches)==1 else None
-        ancestors=chain(unit,nodes)
-        if not ancestors or scope not in ancestors:
+        ancestry=ancestors(unit)
+        if not ancestry or scope not in ancestry:
             continue
         # A recorded center FK must agree with the explicit organization ancestry.
         if e.health_center_id:
-            mapped={nodes[i].health_center_id for i in ancestors if nodes[i].kind=='center' and nodes[i].health_center_id}
+            mapped={nodes[i].health_center_id for i in ancestry if nodes[i].kind=='center' and nodes[i].health_center_id}
             if mapped!={e.health_center_id}:
                 continue
         ids.append(e.pk)
