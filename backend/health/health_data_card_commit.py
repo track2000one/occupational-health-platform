@@ -39,12 +39,13 @@ def plan_cards(rows, *, lock=False):
     if lock:
         card_qs = card_qs.select_for_update()
     cards = {c.employee_id: c for c in card_qs}
-    specialized_ids = set()
+    specialized_ids = defaultdict(set)
     for model in SPECIALIZED:
         qs = model.objects.filter(employee_id__in=staff_ids).order_by('pk')
         if lock:
             qs = qs.select_for_update()
-        specialized_ids.update(qs.values_list('employee_id', flat=True))
+        for employee_id in qs.values_list('employee_id', flat=True):
+            specialized_ids[employee_id].add(model.__name__)
     items, changes, facts = [], {}, []
     for row_number, source in rows:
         nid = text(source.get('national_id'))
@@ -69,6 +70,8 @@ def plan_cards(rows, *, lock=False):
             continue
         if employee.pk in specialized_ids or any(getattr(employee, key, None) for key in MASTER_HEALTH):
             item['reason'] = 'specialized_records'
+            item['blockers'] = sorted(specialized_ids.get(employee.pk, set())) + [
+                key for key in MASTER_HEALTH if getattr(employee, key, None)]
             continue
         existing = card.data if card else {}
         if not isinstance(existing, dict) or any(not isinstance(v, dict) for v in existing.values()):

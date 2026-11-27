@@ -9,6 +9,7 @@ import zipfile
 
 from django.http import HttpResponse
 from django.db.models import Q
+from django.db import transaction, IntegrityError
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
@@ -19,9 +20,9 @@ from rest_framework.views import APIView
 
 from .employee_import_classification import normalize_person_name
 from .employee_import_v2_matching import norm_text
-from .models import Employee, EmployeeHealthCard
+from .models import Employee, EmployeeHealthCard, AuditLog
 from .organization_structure import STAGING_PROJECT
-from .staging_employee_reset import is_verified_synthetic
+from .staging_employee_reset import is_verified_synthetic, IMPORT_QA_EXAMPLES
 
 SHEET = 'HealthData'
 LINK_FIELDS = ('source_row', 'national_id', 'employee_name', 'source_health_center')
@@ -377,6 +378,33 @@ def preview_rows(rows):
             'notice': 'المعاينة محصورة بهويات الاختبار الموثقة، وتقارن القيم المحفوظة في البطاقة فقط. لا تعتمد المطابقة السريرية مع السجلات المتخصصة.'}
 
 
+def prepare_import_fixtures(user):
+    """Create fixed identities only; never update or remove any existing row.
+
+    No real employee attributes are used. Any identity collision aborts the
+    entire transaction, even if one of the other fixed fixtures is absent.
+    """
+    created = 0
+    with transaction.atomic():
+        for number, (nid, name) in IMPORT_QA_EXAMPLES.items():
+            email = number.lower() + '@example.invalid'
+            matches = list(Employee.objects.select_for_update().filter(
+                Q(national_id=nid) | Q(employee_number=number) | Q(email__iexact=email)
+            )[:2])
+            if matches:
+                if len(matches) != 1 or matches[0].employee_number != number or not synthetic(matches[0]):
+                    raise ValueError('تعارض مع هوية اختبار محجوزة. لم يُعدّل أو يُنشأ أي سجل.')
+                continue
+            e = Employee.objects.create(national_id=nid, employee_number=number,
+                name=name, email=email, registration_status='verified',
+                employment_status=Employee.EmploymentStatus.ACTIVE,
+                job_title='اختبار الاستيراد الصحي فقط')
+            AuditLog.objects.create(user=str(user)[:150], action='staging_health_import_fixture_create',
+                model_name='Employee', record_id=str(e.pk))
+            created += 1
+    return {'created':created, 'existing':len(IMPORT_QA_EXAMPLES)-created}
+
+
 def synthetic_sample_rows():
     # Local import avoids circular dependency. Reuse the same fill-only planner
     # so download never suggests a protected or conflicting card.
@@ -387,6 +415,7 @@ def synthetic_sample_rows():
     ).select_related('health_center').order_by('pk')[:5001])
     if len(candidates) > 5000:
         raise ValueError('تجاوز عدد مرشحي الاختبار الحد الآمن.')
+    candidates.sort(key=lambda e: (e.employee_number not in IMPORT_QA_EXAMPLES, e.pk))
     for start in range(0, len(candidates), 100):
         rows = []
         for e in candidates[start:start+100]:
@@ -409,6 +438,17 @@ def synthetic_sample_rows():
 
 class HealthDataTemplateView(APIView):
     permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        if not authorized(request):
+            return Response({'detail': 'متاح للمسؤول الأعلى في Staging فقط.'}, status=403, headers=NO_CACHE)
+        if request.query_params or request.data != {'action':'prepare_import_fixtures', 'synthetic_confirmed':True}:
+            return Response({'detail':'يلزم تأكيد صريح لإنشاء سجلات الاختبار الاصطناعية فقط.'}, status=400, headers=NO_CACHE)
+        try:
+            result = prepare_import_fixtures(request.user)
+        except (ValueError, IntegrityError):
+            return Response({'detail':'تعذر تأسيس سجلات الاختبار بسبب تعارض الهوية. لم يتم تغيير أي سجل.'}, status=409, headers=NO_CACHE)
+        return Response(result, status=201 if result['created'] else 200, headers=NO_CACHE)
 
     def get(self, request):
         if not authorized(request):

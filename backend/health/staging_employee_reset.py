@@ -35,6 +35,13 @@ QA_EXAMPLES = {
     'OHP-QA-06': ('9990000006', 'تجريبي — موظف منقول خارج الجهة'),
 }
 
+# Dedicated import UAT fixtures, never sourced from employee workbooks.
+IMPORT_QA_EXAMPLES = {
+    'OHP-QA-IMPORT-01': ('9990000101', 'موظف اصطناعي لاختبار الاستيراد 01'),
+    'OHP-QA-IMPORT-02': ('9990000102', 'موظف اصطناعي لاختبار الاستيراد 02'),
+    'OHP-QA-IMPORT-03': ('9990000103', 'موظف اصطناعي لاختبار الاستيراد 03'),
+}
+
 
 def is_verified_synthetic(employee):
     """All independent seed identifiers must match EXACTLY, never a prefix alone."""
@@ -48,10 +55,12 @@ def is_verified_synthetic(employee):
             and identity == f'9991{index:06d}'
             and email == f'qa-load-{index:04d}@example.invalid'
             and employee.name == f'موظف تجريبي رقم {index:04d}'
+            and employee.health_center_id is not None
             and employee.health_center.code == f'QA-C{((index - 1) * 37 % 131) % 25 + 1:02d}'
         )
-    if number in QA_EXAMPLES:
-        expected_id, expected_name = QA_EXAMPLES[number]
+    examples = {**QA_EXAMPLES, **IMPORT_QA_EXAMPLES}
+    if number in examples:
+        expected_id, expected_name = examples[number]
         return (identity == expected_id and employee.name == expected_name
                 and email == number.lower() + '@example.invalid')
     return False
