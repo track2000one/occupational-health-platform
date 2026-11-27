@@ -15,6 +15,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from openpyxl import load_workbook
 from .importers import process_excel_import
+from .linked_health_card_records import linked_clinical_records
+from .health_data_import import authorized as isolated_health_admin
+from .health_data_card_commit import synthetic as verified_health_test_employee
 from .models import AuditLog, ClinicVisit, CommitteeReferral, DataImportBatch, Employee, EmployeeArchiveEvent, EmployeeEmploymentChange, EmployeeHealthCard, EmployeeImportReview, EmployeeProfileCompletionEvent, HealthCenter, HealthCenterProfileAuditEvent, OrganizationUnit, InjuryCase, LabTest, OccupationalHealthAssessment, Vaccination
 from .serializers import AuditLogSerializer, ClinicVisitSerializer, CommitteeReferralSerializer, DataImportBatchSerializer, EmployeeHealthCardSerializer, EmployeeImportReviewSerializer, EmployeeSerializer, HealthCenterSerializer, InjuryCaseSerializer, LabTestSerializer, OccupationalHealthAssessmentSerializer, PlatformUserSerializer, VaccinationSerializer
 
@@ -1737,11 +1740,22 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 'follow_up_spare_3': '', 'comments': '',
             },
         }
+        # In the isolated synthetic trial, live sources are shown separately
+        # from the editable card snapshot; do not copy or infer clinical fields.
+        if isolated_health_admin(request) and verified_health_test_employee(employee):
+            payload['linked_clinical_records'] = linked_clinical_records(employee)
+            for key in ('joined', 'lab_request', 'lab_request_date', 'lab_result',
+                        'result_checked_date', 'ppd_date', 'ppd_test', 'flu_vaccine',
+                        'covid_19', 'other_vaccine'):
+                default_data['follow_up'][key] = ''
+            for key in ('anti_hbs', 'hbsag', 'hcv', 'hiv', 'rubella_igg',
+                        'measles_igg', 'varicella_igg', 'influenza_vaccine'):
+                default_data['vaccinations'][key] = ''
         data = merge_health_card_data(default_data, card.data if card else {})
         payload['data'] = data
         payload.update(data)
         response_status = status.HTTP_201_CREATED if request.method in ('PUT', 'PATCH') and was_created else status.HTTP_200_OK
-        return Response(payload, status=response_status)
+        return Response(payload, status=response_status, headers={'Cache-Control': 'private, no-store'})
 
 
 class LabTestViewSet(viewsets.ModelViewSet): queryset=LabTest.objects.select_related('employee').all().order_by('-id'); serializer_class=LabTestSerializer; permission_classes=[permissions.IsAuthenticated]

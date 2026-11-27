@@ -1067,3 +1067,14 @@
   .ohc-mini-table > div { min-height: 24px; }
   .ohc-confidential { font-size: .6rem; padding: 6px; }
 }
+
+.ohc-linked { margin: 12px 0; padding: 12px; background: #f3fbfd; color: #123b52; border: 1px solid #79b5c4; border-radius: 12px; direction: rtl; overflow-wrap: anywhere; }
+.ohc-linked h3 { margin: 0 0 5px; font-size: 1.05rem; }
+.ohc-linked h4 { margin: 0 0 7px; font-size: .88rem; color: #0d6372; }
+.ohc-linked p { margin: 4px 0 8px; font-size: .78rem; }
+.ohc-linked-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+.ohc-linked-grid > section { background: #fff; border: 1px solid #bddce3; border-radius: 8px; padding: 8px; }
+.ohc-linked-row { display: grid; gap: 3px; border-top: 1px solid #d8e8ed; padding: 6px 0; font-size: .78rem; break-inside: avoid; }
+.ohc-linked-more { color: #8b591c; }
+@media(max-width:700px) { .ohc-linked-grid { grid-template-columns: 1fr; } }
+@media print { .ohc-linked { break-inside: auto; } .ohc-linked-row { break-inside: avoid; font-size: .65rem; } .ohc-card-sheet:has(.ohc-linked) { break-inside: auto; } }
