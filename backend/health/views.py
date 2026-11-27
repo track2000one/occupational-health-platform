@@ -1744,6 +1744,12 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         # from the editable card snapshot; do not copy or infer clinical fields.
         if isolated_health_admin(request) and verified_health_test_employee(employee):
             payload['linked_clinical_records'] = linked_clinical_records(employee)
+            # Visit and exposure collections carry actual recorded dates.
+            # Do not treat a scheduled follow-up as a completed virtual visit
+            # or silently materialize a legacy clinical event into card fields.
+            default_data['conditions']['needle_stick_history'] = ''
+            for key in ('latest_virtual_visit', 'latest_field_visit'):
+                default_data['follow_up'][key] = ''
             for key in ('joined', 'lab_request', 'lab_request_date', 'lab_result',
                         'result_checked_date', 'ppd_date', 'ppd_test', 'flu_vaccine',
                         'covid_19', 'other_vaccine'):

@@ -54,6 +54,41 @@ def vaccine_record(record):
             'more_doses': len(doses) > DOSE_LIMIT, 'post_vaccine_result': record.post_vaccine_result}
 
 
+def clinic_visit(record):
+    return {'id': record.pk, 'clinic_type': record.clinic_type,
+            'visit_date': iso(record.visit_date), 'visit_time': iso(record.visit_time),
+            'diagnosis': record.diagnosis, 'action_taken': record.action_taken,
+            'status': record.status, 'sick_leave_days': record.sick_leave_days,
+            'follow_up_date': iso(record.follow_up_date)}
+
+
+def employee_clinic_visit(record):
+    return {'id': record.pk, 'visit_date': iso(record.visit_date),
+            'diagnosis': record.diagnosis, 'sick_leave_days': record.sick_leave_days,
+            'follow_up_date': iso(record.follow_up_date),
+            'weight_kg': str(record.weight_kg) if record.weight_kg is not None else None}
+
+
+def occupational_clinic_visit(record):
+    return {'id': record.pk, 'visit_date': iso(record.visit_date),
+            'action_taken': record.action}
+
+
+def injury_case(record):
+    # Legacy source_known defaults to False; do not represent this as a
+    # confirmed unknown source or expose any third-party details.
+    return {'id': record.pk, 'exposure_date': iso(record.exposure_date),
+            'workplace': record.workplace, 'status': record.status}
+
+
+def needle_stick(record):
+    # Deliberately omit third-party name, identity, test result and free-text
+    # notes (which may contain third-party identifiers).
+    return {'id': record.pk, 'exposure_date': iso(record.exposure_date),
+            'workplace': record.workplace, 'injury_method': record.injury_method,
+            'status': record.status, 'referred_to_employee_clinic': record.referred_to_employee_clinic}
+
+
 def linked_clinical_records(employee):
     """Each collection is scoped to this employee; separate source models remain distinct."""
     records = employee.vaccination_records.order_by('-updated_at', '-pk').prefetch_related(
@@ -66,5 +101,15 @@ def linked_clinical_records(employee):
             F('request_date').desc(nulls_last=True), '-pk'), lab_screening),
         'vaccinations': bounded(employee.vaccinations.order_by('-pk'), vaccination),
         'vaccination_records': bounded(records, vaccine_record),
+        'clinic_visits': bounded(employee.clinic_visits.order_by(
+            F('visit_date').desc(nulls_last=True), F('visit_time').desc(nulls_last=True), '-pk'), clinic_visit),
+        'employee_clinic_visits': bounded(employee.employee_clinic_visits.order_by(
+            F('visit_date').desc(nulls_last=True), '-pk'), employee_clinic_visit),
+        'occupational_clinic_visits': bounded(employee.occupational_clinic_visits.order_by(
+            F('visit_date').desc(nulls_last=True), '-pk'), occupational_clinic_visit),
+        'injury_cases': bounded(employee.injury_cases.order_by(
+            F('exposure_date').desc(nulls_last=True), '-pk'), injury_case),
+        'needle_stick_exposures': bounded(employee.needle_stick_exposures.order_by(
+            F('exposure_date').desc(nulls_last=True), '-pk'), needle_stick),
         'read_only': True, 'limit_per_source': LIMIT,
     }
