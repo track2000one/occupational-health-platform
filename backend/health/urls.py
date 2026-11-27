@@ -12,6 +12,7 @@ from .provisional_employee_approval_readiness import ProvisionalEmployeeApproval
 from .provisional_employee_approval_plan import ProvisionalEmployeeApprovalPlanView
 from .provisional_employee_conflict_diagnostics import ProvisionalEmployeeConflictDiagnosticsView
 from .provisional_appointment_sync import ProvisionalAppointmentSyncView
+from .health_data_import import HealthDataTemplateView, HealthDataPreviewView
 from .provisional_employee_number_edit import ProvisionalEmployeeNumberEditView
 from .provisional_employee_name_review import ProvisionalEmployeeNameReviewView
 from .employee_archived_list_visibility import ArchivedEmployeeListVisibilityView
@@ -48,6 +49,8 @@ router.register('injury-cases', InjuryCaseViewSet)
 router.register('audit-logs', AuditLogViewSet)
 
 urlpatterns = [
+    path('health-data-import/template/', HealthDataTemplateView.as_view(), name='health-data-template'),
+    path('health-data-import/preview/', HealthDataPreviewView.as_view(), name='health-data-preview'),
     path('provisional-employees/appointment-sync/', ProvisionalAppointmentSyncView.as_view(), name='provisional-appointment-sync'),
     path('employees/organization-bulk-sync/', EmployeeOrganizationBulkSyncView.as_view(), name='employee-organization-bulk-sync'),
     path('provisional-employees/import/', ProvisionalEmployeeImportView.as_view(), name='provisional-employee-import'),

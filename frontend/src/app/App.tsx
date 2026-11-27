@@ -36,6 +36,7 @@ import { DashboardPage } from './pages/DashboardPage';
 import { EmployeesPage } from './pages/EmployeesPage';
 import { EmployeeImportV2Page } from './pages/EmployeeImportV2Page';
 import { ProvisionalEmployeesPage } from './pages/ProvisionalEmployeesPage';
+import { HealthDataImportPage } from './pages/HealthDataImportPage';
 import { EmployeeRegistryReportPage } from './pages/EmployeeRegistryReportPage';
 import { EmployeeHealthCardPage } from './pages/EmployeeHealthCardPage';
 import { LabTestsPage } from './pages/LabTestsPage';
@@ -111,6 +112,7 @@ function AppRoutes() {
           </PermissionRoute>
         } />
         <Route path="employees/provisional" element={<ProvisionalEmployeesPage />} />
+        <Route path="health-data-import" element={<PermissionRoute permission="manage:users"><HealthDataImportPage /></PermissionRoute>} />
         <Route path="employees/import" element={
           <PermissionRoute permission="manage:users">
             <EmployeeImportV2Page />
