@@ -126,6 +126,8 @@ function normalizeUser(user: any): User {
     personType: user.personType || 'employee',
     healthCenterId: user.healthCenterId || '',
     healthCenterName: user.healthCenterName || '',
+    organizationScopeId: user.organizationScopeId ?? null,
+    organizationScopeName: user.organizationScopeName || '',
     nationalId: user.nationalId || '',
     employeeNumber: user.employeeNumber || '',
     medicalRecordNumber: user.medicalRecordNumber || '',
@@ -201,6 +203,12 @@ export function AdminUsersPage() {
   const isRtl = i18n.language === 'ar';
   const fallbackCenters = useMemo(() => mockHealthCenters.map((center: any) => ({ id: String(center.id), name: center.name || center.nameAr, nameAr: center.nameAr || center.name })), []);
 
+  const staging=/staging/i.test(window.location.hostname);
+  const [scopeOptions,setScopeOptions]=useState<{id:number;name:string;kind:string;code:string}[]>([]);
+  const [scopeReady,setScopeReady]=useState(false);
+  useEffect(()=>{if(!staging||!currentUser?.isSuperuser||API_BASE_URL!=='https://occupational-staging-backend-staging.up.railway.app/api')return;
+    let active=true;void apiRequest<any>('/organization-units/?approved=1').then(body=>{if(active){setScopeOptions(normalizeList<any>(body));setScopeReady(true);}}).catch(()=>{if(active)setScopeReady(false);});return()=>{active=false;};
+  },[staging,currentUser?.isSuperuser]);
   const [users, setUsers] = useState<User[]>([]);
   const [healthCenters, setHealthCenters] = useState<HealthCenterOption[]>(fallbackCenters);
   const [loading, setLoading] = useState(false);
@@ -288,6 +296,7 @@ export function AdminUsersPage() {
         licenseNumber: form.licenseNumber || '',
         isActive: form.isActive ?? true,
       };
+      if(staging && scopeReady)payload.organizationScopeId=form.organizationScopeId ?? null;
       if (form.password) payload.password = form.password;
 
       if (selectedUser) {
@@ -583,6 +592,13 @@ export function AdminUsersPage() {
             <Box>
               <Typography className="user-section-title" variant="subtitle1" fontWeight={900} sx={{ mb: 1 }}><WorkIcon />{isRtl ? '٣ · البيانات المهنية والصحية' : '3 · Professional / Healthcare Details'}</Typography>
               <Grid container spacing={2}>
+                {staging&&<Grid size={{xs:12}}><Alert severity="info">نطاق دليل الاختبار مستقل عن المركز الوظيفي. لا يتيح السجلات الطبية أو الكتابة، ولا يمنح وصولًا إلى موظفين حقيقيين.</Alert>
+                  <TextField sx={{mt:1}} fullWidth select label="نطاق الصلاحية التنظيمي المعتمد" disabled={!scopeReady} value={form.organizationScopeId??''} onChange={e=>setForm(prev=>({...prev,organizationScopeId:e.target.value?Number(e.target.value):null}))} helperText={scopeReady?'اختر القطاع أو المركز أو القسم أو الوحدة؛ بدون نطاق لا يوجد وصول.':'تعذر تحميل النطاقات المعتمدة أو لا توجد صلاحية.'}>
+                    <MenuItem value="">بدون نطاق</MenuItem>
+                    {form.organizationScopeId&&!scopeOptions.some(x=>x.id===form.organizationScopeId)&&<MenuItem value={form.organizationScopeId} disabled>النطاق السابق غير متاح</MenuItem>}
+                    {scopeOptions.map(x=><MenuItem key={x.id} value={x.id}>{x.name} — {x.kind} — {x.code}</MenuItem>)}
+                  </TextField>
+                </Grid>}
                 <Grid size={{ xs: 12, md: 4 }}><HealthCenterAutocomplete options={healthCenters} value={form.healthCenterId || ''} onChange={value => setForm(prev => ({ ...prev, healthCenterId: value }))} label={isRtl ? 'المركز الصحي' : 'Health Center'} placeholder={isRtl ? 'اختر أو ابحث باسم المركز' : 'Select or search center'} allowEmpty /></Grid>
                 <Grid size={{ xs: 12, md: 4 }}><TextField fullWidth InputLabelProps={{ shrink: true }} label={isRtl ? 'القسم' : 'Department'} value={form.department || ''} onChange={e => setForm(prev => ({ ...prev, department: e.target.value }))} /></Grid>
                 <Grid size={{ xs: 12, md: 4 }}><TextField fullWidth InputLabelProps={{ shrink: true }} label={isRtl ? 'المسمى الوظيفي' : 'Job Title'} value={form.jobTitle || ''} onChange={e => setForm(prev => ({ ...prev, jobTitle: e.target.value }))} /></Grid>

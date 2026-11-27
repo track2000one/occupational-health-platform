@@ -11,6 +11,8 @@ export interface User {
   personType?: 'admin' | 'healthStaff' | 'employee' | 'patient' | 'external';
   healthCenterId?: string;
   healthCenterName?: string;
+  organizationScopeId?: number | null;
+  organizationScopeName?: string;
   nationalId?: string;
   employeeNumber?: string;
   medicalRecordNumber?: string;

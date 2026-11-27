@@ -384,7 +384,7 @@ async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T
   return body as T;
 }
 
-export function EmployeesPage() {
+function FullEmployeesPage() {
   const { t, i18n } = useTranslation();
   const { can, user } = useAuth();
   const navigate = useNavigate();
@@ -2236,4 +2236,33 @@ export function EmployeesPage() {
       )}
     </Box>
   );
+}
+
+function ScopedTrialDirectory(){
+  const {user}=useAuth();
+  const [search,setSearch]=useState(''),[applied,setApplied]=useState(''),[page,setPage]=useState(1);
+  const [rows,setRows]=useState<{id:number;name:string;employee_number:string;job_title:string;health_center_name:string;organization_unit_name:string}[]>([]);
+  const [count,setCount]=useState(0),[next,setNext]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
+  useEffect(()=>{let live=true;setRows([]);setCount(0);setNext(false);setError('');setBusy(true);
+    if(API_BASE_URL!=='https://occupational-staging-backend-staging.up.railway.app/api'){setError('اتصال Staging غير مطابق.');setBusy(false);return;}
+    const q=new URLSearchParams({page:String(page),search:applied});
+    void apiRequest<{results:typeof rows;count:number;next:string|null}>('/employees/?'+q.toString()).then(r=>{
+      if(!Array.isArray(r.results))throw Error('استجابة غير صالحة.');
+      if(live){setRows(r.results);setCount(r.count);setNext(Boolean(r.next));}
+    }).catch(e=>{if(live)setError(e instanceof Error?e.message:'تعذر تحميل النطاق.');}).finally(()=>{if(live)setBusy(false);});
+    return()=>{live=false;};
+  },[page,applied,user?.id]);
+  return <Box dir="rtl"><Stack gap={2}>
+    <Typography variant="h4" fontWeight={900}>دليل الموظفين — نطاق الاختبار</Typography>
+    <Alert severity="info">عرض إداري محدود للموظفين الاصطناعيين فقط وفق النطاق المعتمد في الخادم. لا تظهر الهوية الوطنية أو الاتصال أو البيانات الطبية. لا تعديل أو تصدير أو حذف في هذه التجربة.</Alert>
+    <Paper sx={{p:2}}><Stack direction="row" gap={1}><TextField fullWidth label="بحث بالاسم أو رقم الاختبار" value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'){setPage(1);setApplied(search);}}}/><Button variant="contained" onClick={()=>{setPage(1);setApplied(search);}}>بحث</Button></Stack></Paper>
+    {error&&<Alert severity="error">{error}</Alert>}{busy&&<CircularProgress/>}
+    {!busy&&!error&&<><Typography>السجلات المصرح بها: {count}</Typography><TableContainer component={Paper}><Table size="small"><TableHead><TableRow>{['اسم الاختبار','الرقم الوظيفي','المسمى الوظيفي','المركز','القسم / الوحدة'].map(h=><TableCell key={h}>{h}</TableCell>)}</TableRow></TableHead><TableBody>{rows.map(r=><TableRow key={r.id}><TableCell>{r.name}</TableCell><TableCell>{r.employee_number}</TableCell><TableCell>{r.job_title||'—'}</TableCell><TableCell>{r.health_center_name||'—'}</TableCell><TableCell>{r.organization_unit_name||'—'}</TableCell></TableRow>)}</TableBody></Table></TableContainer>
+      {!rows.length&&<Alert severity="info">لا توجد سجلات اختبار ضمن نطاقك. راجع المسؤول الأعلى لتحديد نطاق معتمد.</Alert>}
+      <Stack direction="row" gap={1}><Button disabled={page<=1} onClick={()=>setPage(p=>p-1)}>السابق</Button><Button disabled={!next} onClick={()=>setPage(p=>p+1)}>التالي</Button></Stack></>}
+  </Stack></Box>;
+}
+export function EmployeesPage(){
+  const {user}=useAuth();
+  return /staging/i.test(window.location.hostname)&&!user?.isSuperuser?<ScopedTrialDirectory/>:<FullEmployeesPage/>;
 }

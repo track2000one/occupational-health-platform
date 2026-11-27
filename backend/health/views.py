@@ -19,6 +19,8 @@ from .importers import process_excel_import
 from .linked_health_card_records import linked_clinical_records
 from .health_card_presence import card_presence, derived_bmi
 from .staging_security import StagingAdminOrLegacyStaff, enforce_staging_password
+from .staging_registry_scope import StagingRegistryPermission, eligible_ids
+from .serializers import ScopedEmployeeSerializer
 from .health_data_import import authorized as isolated_health_admin
 from .health_data_card_commit import synthetic as verified_health_test_employee, SPECIALIZED, MASTER_HEALTH
 from .organization_structure import STAGING_PROJECT
@@ -886,7 +888,12 @@ class HealthCenterViewSet(viewsets.ModelViewSet):
 class EmployeeViewSet(viewsets.ModelViewSet):
     queryset=Employee.objects.select_related('health_center', 'health_card').all().order_by('-created_at')
     serializer_class=EmployeeSerializer
-    permission_classes=[permissions.IsAuthenticated,IsAdminOrManagerForWrite]
+    permission_classes=[permissions.IsAuthenticated,IsAdminOrManagerForWrite,StagingRegistryPermission]
+
+    def get_serializer_class(self):
+        if staging_clinical_boundary() and not self.request.user.is_superuser:
+            return ScopedEmployeeSerializer
+        return super().get_serializer_class()
     search_fields=['name','email','employee_number','national_id','mobile','job_title','birth_place','national_address']
 
     @action(detail=True, methods=['post'], url_path='complete-profile')
@@ -1001,6 +1008,13 @@ class EmployeeViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = super().get_queryset()
+        if staging_clinical_boundary() and not self.request.user.is_superuser:
+            queryset=queryset.filter(pk__in=eligible_ids(self.request.user))
+            # Only permitted output fields may be searched; never query identity or clinical values.
+            query=str(self.request.query_params.get('search') or '').strip()[:120]
+            if query:
+                queryset=queryset.filter(Q(name__icontains=query)|Q(employee_number__icontains=query))
+            return queryset.order_by('name','pk')
         # An archived record remains stored for medical and audit history.
         # Only the system administrator may view archived records in a separate
         # registry. Never expose them through the normal active employee list.

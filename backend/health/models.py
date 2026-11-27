@@ -342,6 +342,7 @@ class UserProfile(models.Model):
     role = models.CharField(max_length=40, choices=ROLE_CHOICES, default='employee')
     person_type = models.CharField(max_length=30, choices=PERSON_TYPE_CHOICES, default='employee')
     health_center = models.ForeignKey(HealthCenter, on_delete=models.SET_NULL, null=True, blank=True, related_name='platform_users')
+    organization_scope = models.ForeignKey('OrganizationUnit', on_delete=models.PROTECT, null=True, blank=True, related_name='scoped_users')
     national_id = models.CharField(max_length=30, unique=True, null=True, blank=True)
     employee_number = models.CharField(max_length=40, unique=True, null=True, blank=True)
     medical_record_number = models.CharField(max_length=40, unique=True, null=True, blank=True)
